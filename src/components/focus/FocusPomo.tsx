@@ -35,7 +35,9 @@ import {
   ChevronLeft,
   GripVertical,
   Layers3,
+  Minus,
   Play,
+  Plus,
   Slash,
   Square,
   X,
@@ -47,6 +49,22 @@ import {
   sortFocusPomoQueue,
   type FocusPomoQueueItem,
 } from "@/lib/focus/focusPomoQueue";
+
+declare module "@/lib/focus/focusPomoQueue" {
+  interface FocusPomoQueueItem {
+    fitnessExerciseId?: string;
+    fitnessSetNumber?: number;
+    fitnessTotalSets?: number;
+    fitnessReps?: string;
+    fitnessDuration?: string;
+    fitnessPlannedReps?: number | null;
+    fitnessCompletedReps?: number | null;
+    fitnessPlannedDurationSeconds?: number | null;
+    fitnessCompletedDurationSeconds?: number | null;
+    fitnessWeight?: string;
+    fitnessWeightUnit?: string;
+  }
+}
 import { HABIT_TYPE_OPTIONS as APP_HABIT_TYPE_OPTIONS } from "@/components/habits/habit-form-fields";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
@@ -82,6 +100,7 @@ import {
 import {
   expandFitnessWorkoutFocusSessionSets,
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+  FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
   readFitnessWorkoutFocusSessionPayload,
   type FitnessWorkoutFocusSessionPayload,
 } from "@/lib/focus/fitnessWorkoutFocusSession";
@@ -3718,6 +3737,19 @@ function applyFocusPomoQueueOrder(
   return orderedItems;
 }
 
+function parseFitnessWorkoutDurationSeconds(value: string | undefined) {
+  if (!value) return null;
+  const match = value.trim().toLowerCase().match(
+    /(\d+(?:\.\d+)?)\s*(sec|secs|second|seconds|min|mins|minute|minutes)\b/,
+  );
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return match[2]?.startsWith("sec") || match[2]?.startsWith("second")
+    ? Math.round(amount)
+    : Math.round(amount * 60);
+}
+
 function parseFitnessWorkoutDurationMinutes(value: string | undefined) {
   const normalizedValue = value?.trim().toLowerCase();
   if (!normalizedValue) return null;
@@ -3741,11 +3773,19 @@ function formatFitnessWorkoutFocusSetSubtitle(item: {
   reps?: string;
   duration?: string;
   weight?: string;
+  weightUnit?: string;
+  targetLabel?: boolean;
 }) {
+  const weightLabel = item.weightUnit === "bodyweight"
+    ? "bodyweight"
+    : item.weightUnit
+      ? `${item.weight?.trim() || "0"} ${item.weightUnit}`
+      : null;
   const detailParts = [
     `Set ${item.setNumber} of ${item.totalSets}`,
-    item.duration || (item.reps ? `${item.reps} reps` : null),
-    item.weight || null,
+    item.duration ||
+      (item.reps ? `${item.targetLabel ? "Target: " : ""}${item.reps} reps` : null),
+    weightLabel,
   ].filter(Boolean);
 
   return detailParts.join(" · ");
@@ -3776,7 +3816,15 @@ function toFitnessWorkoutFocusQueueItems(
       fitnessTotalSets: set.totalSets,
       fitnessReps: set.reps,
       fitnessDuration: set.duration,
-      fitnessWeight: set.weight,
+      fitnessPlannedReps: set.plannedReps,
+      fitnessCompletedReps: set.completedReps,
+      fitnessPlannedDurationSeconds: set.plannedDurationSeconds,
+      fitnessCompletedDurationSeconds: set.completedDurationSeconds,
+      fitnessWeight:
+        set.weightUnit && set.weightUnit !== "bodyweight"
+          ? set.weight?.trim() || "0"
+          : set.weight,
+      fitnessWeightUnit: set.weightUnit,
     };
   });
 }
@@ -3820,6 +3868,17 @@ type SortableFocusQueueItemProps = {
   onSelect(): void;
   onLongPressEdit(originElement: HTMLElement): void;
 };
+
+function isFitnessWorkoutQueueItem(
+  item: FocusPomoQueueItem | null | undefined,
+): boolean {
+  return Boolean(
+    item &&
+      (item.sourceType === "FITNESS" ||
+        item.fitnessExerciseId ||
+        item.fitnessSetNumber != null),
+  );
+}
 
 function SortableFocusQueueItem({
   item,
@@ -4051,7 +4110,7 @@ function SortableFocusQueueItem({
             {item.title}
           </span>
           <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
-            {item.sourceType === "FITNESS"
+            {isFitnessWorkoutQueueItem(item)
               ? item.subtitle
               : (item.rawTypeLabel ?? item.kind)}
           </span>
@@ -5370,6 +5429,148 @@ export default function FocusPomo({
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
+  const currentFitnessWeightUnit = currentItem?.fitnessWeightUnit;
+  const currentFitnessHasAdjustableWeight = Boolean(
+    isFitnessWorkoutQueueItem(currentItem) &&
+      currentFitnessWeightUnit &&
+      currentFitnessWeightUnit !== "bodyweight",
+  );
+  const currentFitnessIsBodyweight = Boolean(
+    isFitnessWorkoutQueueItem(currentItem) &&
+      currentFitnessWeightUnit === "bodyweight",
+  );
+  const currentFitnessHasReps = Boolean(
+    isFitnessWorkoutQueueItem(currentItem) &&
+      currentItem.fitnessPlannedReps != null,
+  );
+
+  function writeFitnessWorkoutSessionResult(
+    resultQueue: FocusPomoQueueItem[] = queue,
+    action?: {
+      itemKey: string;
+      status: "completed" | "dismissed";
+      actualMs?: number;
+    },
+  ) {
+    if (!activeFitnessWorkoutSession || typeof window === "undefined") return;
+
+    const historyByItemKey = new Map(
+      runHistory.map((result) => [
+        getFocusPomoQueueItemKey(result.item),
+        result,
+      ]),
+    );
+    const sets = resultQueue.flatMap((item) => {
+      if (!isFitnessWorkoutQueueItem(item)) return [];
+      const itemKey = getFocusPomoQueueItemKey(item);
+      const history = historyByItemKey.get(itemKey);
+      const status = action?.itemKey === itemKey
+        ? action.status
+        : history?.action === "completed"
+          ? "completed"
+          : history?.action === "skipped" || dismissedQueueItemKeys.has(itemKey)
+            ? "dismissed"
+            : "pending";
+      const plannedReps = item.fitnessPlannedReps;
+      const plannedDurationSeconds =
+        item.fitnessPlannedDurationSeconds ??
+        parseFitnessWorkoutDurationSeconds(item.fitnessDuration);
+      const actualMs = action?.itemKey === itemKey
+        ? action.actualMs
+        : history?.actualMs ?? undefined;
+
+      return [{
+        exerciseId: item.fitnessExerciseId ?? item.title,
+        exerciseName: item.title,
+        setNumber: item.fitnessSetNumber ?? 1,
+        totalSets: item.fitnessTotalSets ?? 1,
+        plannedReps: plannedReps == null ? item.fitnessReps : String(plannedReps),
+        plannedDurationSeconds,
+        completedReps:
+          status === "completed" ? item.fitnessCompletedReps ?? plannedReps : null,
+        completedDurationSeconds:
+          status === "completed" && plannedDurationSeconds != null
+            ? actualMs == null
+              ? plannedDurationSeconds
+              : Math.max(0, Math.round(actualMs / 1000))
+            : null,
+        weight: item.fitnessWeight,
+        weightUnit: item.fitnessWeightUnit,
+        status,
+      }];
+    });
+
+    try {
+      window.sessionStorage.setItem(
+        FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
+        JSON.stringify({
+          source: "fitness",
+          workoutName: activeFitnessWorkoutSession.workoutName,
+          sessionCreatedAt: activeFitnessWorkoutSession.createdAt,
+          updatedAt: new Date().toISOString(),
+          sets,
+        }),
+      );
+    } catch {
+      // The execution queue remains usable when temporary storage is unavailable.
+    }
+  }
+
+  function bumpCurrentFitnessWeight(offset: -1 | 1) {
+    if (!currentItem || !currentFitnessHasAdjustableWeight) return;
+
+    const currentWeight = Number(currentItem.fitnessWeight?.trim() || "0");
+    if (!Number.isFinite(currentWeight)) return;
+
+    const step = currentFitnessWeightUnit === "kg" ? 2.5 : 5;
+    const nextWeight = String(Math.max(0, currentWeight + step * offset));
+    const currentSetNumber = currentItem.fitnessSetNumber ?? 1;
+    const exerciseId = currentItem.fitnessExerciseId;
+
+    const nextQueue = queue.map((item) => {
+        const itemKey = getFocusPomoQueueItemKey(item);
+        const isCurrentItem = itemKey === currentItemKey;
+        const isRemainingSet = Boolean(
+          exerciseId &&
+            item.fitnessExerciseId === exerciseId &&
+            (item.fitnessSetNumber ?? 0) >= currentSetNumber &&
+            !dismissedQueueItemKeys.has(itemKey),
+        );
+
+        if (!isCurrentItem && !isRemainingSet) return item;
+
+        const nextItem = { ...item, fitnessWeight: nextWeight };
+        return {
+          ...nextItem,
+          subtitle: formatFitnessWorkoutFocusSetSubtitle({
+            setNumber: nextItem.fitnessSetNumber ?? 1,
+            totalSets: nextItem.fitnessTotalSets ?? 1,
+            reps: nextItem.fitnessReps,
+            duration: nextItem.fitnessDuration,
+            weight: nextItem.fitnessWeight,
+            weightUnit: nextItem.fitnessWeightUnit,
+          }),
+        };
+      });
+    setQueue(nextQueue);
+    writeFitnessWorkoutSessionResult(nextQueue);
+    void hapticSoftTick();
+  }
+
+  function bumpCurrentFitnessReps(offset: -1 | 1) {
+    if (!currentItem || !currentFitnessHasReps || currentItemKey == null) return;
+    const currentReps =
+      currentItem.fitnessCompletedReps ?? currentItem.fitnessPlannedReps ?? 0;
+    const nextReps = Math.max(0, currentReps + offset);
+    const nextQueue = queue.map((item) =>
+      getFocusPomoQueueItemKey(item) === currentItemKey
+        ? { ...item, fitnessCompletedReps: nextReps }
+        : item,
+    );
+    setQueue(nextQueue);
+    writeFitnessWorkoutSessionResult(nextQueue);
+    void hapticSoftTick();
+  }
   const focusWidgetActiveSession = focusPomoLiveActivityRef.current;
   const focusWidgetTitle = currentItem?.title ?? focusWidgetActiveSession?.title ?? null;
   const focusWidgetSkillIcon = itemSkillIcon(currentItem);
@@ -6510,6 +6711,7 @@ export default function FocusPomo({
   const handleClose = () => {
     void hapticPress();
     setIsRunning(false);
+    writeFitnessWorkoutSessionResult();
     onClose();
   };
 
@@ -6952,6 +7154,12 @@ export default function FocusPomo({
     const completedAt = new Date().toISOString();
     const timeZone = getBrowserTimeZone();
 
+    writeFitnessWorkoutSessionResult(queue, {
+      itemKey,
+      status: "dismissed",
+      actualMs,
+    });
+
     setHasRunStarted(true);
     setIsRunLogExpanded(false);
     setRunHistory((current) => [
@@ -7010,6 +7218,12 @@ export default function FocusPomo({
     const completedAt = new Date().toISOString();
     const timeZone = getBrowserTimeZone();
     const sessionId = createLocalSessionId();
+
+    writeFitnessWorkoutSessionResult(queue, {
+      itemKey,
+      status: "completed",
+      actualMs,
+    });
 
     setHasRunStarted(true);
     setIsRunLogExpanded(false);
@@ -7823,7 +8037,16 @@ export default function FocusPomo({
                             </div>
                           ) : null}
                           <div className="flex min-w-0 flex-1 items-start gap-1.5 overflow-visible sm:gap-3">
-                            <div className="min-w-0 flex-1">
+                            <div
+                              className={
+                                isFitnessWorkoutQueueItem(currentItem) &&
+                                (currentFitnessHasAdjustableWeight ||
+                                  currentFitnessIsBodyweight ||
+                                  currentFitnessHasReps)
+                                  ? "grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3"
+                                  : "min-w-0 flex-1"
+                              }
+                            >
                               {activeCardLoading ? (
                                 <>
                                   <h2 id={titleId} className="sr-only">
@@ -7836,6 +8059,93 @@ export default function FocusPomo({
                                     <div className="h-7 w-11/12 animate-pulse rounded-lg bg-white/10 min-[390px]:h-8 sm:h-10" />
                                     <div className="h-7 w-7/12 animate-pulse rounded-lg bg-white/[0.07] min-[390px]:h-8 sm:h-10" />
                                   </div>
+                                </>
+                              ) : isFitnessWorkoutQueueItem(currentItem) ? (
+                                <>
+                                  <div className="min-w-0">
+                                    <h2
+                                      id={titleId}
+                                      className="min-w-0 truncate text-[1.35rem] font-semibold uppercase leading-tight tracking-normal text-white min-[390px]:text-[1.55rem] sm:text-4xl"
+                                    >
+                                      {cardState.title}
+                                    </h2>
+                                    <p className="mt-1 text-xs font-semibold text-zinc-400 sm:text-sm">
+                                      {formatFitnessWorkoutFocusSetSubtitle({
+                                        setNumber:
+                                          currentItem.fitnessSetNumber ?? 1,
+                                        totalSets:
+                                          currentItem.fitnessTotalSets ?? 1,
+                                        reps: currentItem.fitnessReps,
+                                        duration: currentItem.fitnessDuration,
+                                        targetLabel: true,
+                                      })}
+                                    </p>
+                                  </div>
+                                  {currentFitnessHasAdjustableWeight ? (
+                                    <div className="inline-flex h-8 shrink-0 items-center self-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
+                                      <button
+                                        type="button"
+                                        aria-label={`Decrease weight for ${currentItem.title}`}
+                                        onClick={() =>
+                                          bumpCurrentFitnessWeight(-1)
+                                        }
+                                        className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                      >
+                                        <Minus
+                                          className="size-3.5 sm:size-4"
+                                          aria-hidden="true"
+                                        />
+                                      </button>
+                                      <span className="flex h-full min-w-16 items-center justify-center border-x border-white/[0.07] px-2 text-xs font-semibold tabular-nums text-white sm:min-w-20 sm:px-3 sm:text-sm">
+                                        {currentItem.fitnessWeight?.trim() || "0"}{" "}
+                                        {currentFitnessWeightUnit}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        aria-label={`Increase weight for ${currentItem.title}`}
+                                        onClick={() => bumpCurrentFitnessWeight(1)}
+                                        className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                      >
+                                        <Plus
+                                          className="size-3.5 sm:size-4"
+                                          aria-hidden="true"
+                                        />
+                                      </button>
+                                    </div>
+                                  ) : currentFitnessIsBodyweight ? (
+                                    <span className="shrink-0 self-center whitespace-nowrap rounded-md border border-white/10 bg-black/30 px-2 py-1 text-[10px] font-semibold text-zinc-300 sm:text-xs">
+                                      bodyweight
+                                    </span>
+                                  ) : null}
+                                  {currentFitnessHasReps ? (
+                                    <div className="col-span-2 mt-1 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-2">
+                                      <span className="text-xs font-semibold text-zinc-400 sm:text-sm">
+                                        Actual reps
+                                      </span>
+                                      <div className="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
+                                        <button
+                                          type="button"
+                                          aria-label={`Decrease actual reps for ${currentItem.title}`}
+                                          onClick={() => bumpCurrentFitnessReps(-1)}
+                                          className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                        >
+                                          <Minus className="size-3.5 sm:size-4" aria-hidden="true" />
+                                        </button>
+                                        <span className="flex h-full min-w-12 items-center justify-center border-x border-white/[0.07] px-2 text-xs font-semibold tabular-nums text-white sm:min-w-14 sm:text-sm">
+                                          {currentItem.fitnessCompletedReps ??
+                                            currentItem.fitnessPlannedReps}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          aria-label={`Increase actual reps for ${currentItem.title}`}
+                                          onClick={() => bumpCurrentFitnessReps(1)}
+                                          className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                        >
+                                          <Plus className="size-3.5 sm:size-4" aria-hidden="true" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </>
                               ) : (
                                 <h2
@@ -7857,12 +8167,6 @@ export default function FocusPomo({
                             ) : null}
                           </div>
                         </div>
-
-                        {currentItem?.sourceType === "FITNESS" ? (
-                          <p className="mt-1.5 text-xs font-semibold text-zinc-400 sm:mt-2 sm:text-sm">
-                            {currentItem.subtitle}
-                          </p>
-                        ) : null}
 
                         {activeCardLoading ? (
                           <div

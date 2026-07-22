@@ -492,6 +492,7 @@ type FabHabitEditSnapshot = {
   durationMinutes?: number | null;
   energy?: string | null;
   goalId?: string | null;
+  completionTarget?: number | null;
   skillId?: string | null;
   routineId?: string | null;
   circleId?: string | null;
@@ -6903,6 +6904,7 @@ export function Fab({
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
+  const [habitCompletionTarget, setHabitCompletionTarget] = useState("10");
   const [habitSkillId, setHabitSkillId] = useState<string | "">("");
   const [habitWhy, setHabitWhy] = useState("");
   const [habitLocationContextId, setHabitLocationContextId] = useState("");
@@ -7076,6 +7078,7 @@ export function Fab({
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
+    setHabitCompletionTarget("10");
     setHabitSkillId("");
     setHabitWhy("");
     setHabitLocationContextId("");
@@ -7147,6 +7150,11 @@ export function Fab({
           : "LOW",
       );
       setHabitGoalId(typeof draft?.goalId === "string" ? draft.goalId : "");
+      setHabitCompletionTarget(
+        typeof draft?.completionTarget === "number"
+          ? String(draft.completionTarget)
+          : "10",
+      );
       setHabitSkillId(typeof draft?.skillId === "string" ? draft.skillId : "");
       setHabitRoutineId(
         typeof draft?.routineId === "string" ? draft.routineId : "",
@@ -9301,6 +9309,10 @@ export function Fab({
               typeof habitRowRecord.goal_id === "string"
                 ? habitRowRecord.goal_id
                 : null,
+            completionTarget:
+              typeof habitRowRecord.completion_target === "number"
+                ? habitRowRecord.completion_target
+                : null,
             skillId:
               typeof habitRowRecord.skill_id === "string"
                 ? habitRowRecord.skill_id
@@ -11421,6 +11433,7 @@ export function Fab({
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
+    setHabitCompletionTarget("10");
     setHabitSkillId("");
     setHabitWhy("");
     setHabitLocationContextId("");
@@ -21899,6 +21912,12 @@ export function Fab({
       if (!habitRecurrence) return true;
       if (!habitType) return true;
       if (!habitSkillId) return true;
+      if (
+        habitType.toUpperCase() === "TEMP" &&
+        (!habitGoalId ||
+          !Number.isInteger(Number(habitCompletionTarget)) ||
+          Number(habitCompletionTarget) <= 0)
+      ) return true;
       return false;
     }
     return habitName.trim().length === 0;
@@ -21909,6 +21928,8 @@ export function Fab({
     goalName,
     goalPriority,
     habitEnergy,
+    habitGoalId,
+    habitCompletionTarget,
     habitName,
     habitRecurrence,
     habitSkillId,
@@ -22504,6 +22525,18 @@ export function Fab({
         }
         if (!habitSkillId) {
           setBlockedSaveError("Link this habit to a skill before saving.");
+          return;
+        }
+        if (habitType.toUpperCase() === "TEMP" && !habitGoalId) {
+          setBlockedSaveError("Link this Temp habit to a goal before saving.");
+          return;
+        }
+        if (
+          habitType.toUpperCase() === "TEMP" &&
+          (!Number.isInteger(Number(habitCompletionTarget)) ||
+            Number(habitCompletionTarget) <= 0)
+        ) {
+          setBlockedSaveError("Enter a whole-number completion target greater than zero.");
           return;
         }
       }
@@ -23470,6 +23503,10 @@ export function Fab({
               routine_id: routineIdToUse,
               circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
+              completion_target:
+                habitType.toUpperCase() === "TEMP"
+                  ? Number(habitCompletionTarget)
+                  : null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
                 : null,
@@ -23710,6 +23747,10 @@ export function Fab({
               routine_id: routineIdToUse,
               circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
+              completion_target:
+                habitType.toUpperCase() === "TEMP"
+                  ? Number(habitCompletionTarget)
+                  : null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
                 : null,
@@ -24013,6 +24054,7 @@ export function Fab({
     habitFixedEndTime,
     habitFixedStartTime,
     habitGoalId,
+    habitCompletionTarget,
     habitInlineRoutineDescription,
     habitInlineRoutineEmoji,
     habitInlineRoutineName,
@@ -30200,6 +30242,24 @@ export function Fab({
                               </SelectContent>
                             </Select>
                           </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {isHabit && habitType.toUpperCase() === "TEMP" ? (
+                      <div className={detailCardClass}>
+                        <div className={detailRowClass}>
+                          <Label className={detailLabelClass}>Goal</Label>
+                          <Select value={habitGoalId || "__none__"} onValueChange={(value) => setHabitGoalId(value === "__none__" ? "" : value)}>
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                              <SelectItem value="__none__">Select a goal</SelectItem>
+                              {goals.map((goal) => <SelectItem key={goal.id} value={goal.id}>{goal.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className={detailRowClass}>
+                          <Label htmlFor="fab-temp-completion-target" className={detailLabelClass}>Completion target</Label>
+                          <Input id="fab-temp-completion-target" type="number" min={1} step={1} value={habitCompletionTarget} onChange={(event) => setHabitCompletionTarget(event.target.value)} className="h-9 w-24 text-right" />
                         </div>
                       </div>
                     ) : null}

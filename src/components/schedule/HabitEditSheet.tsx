@@ -147,7 +147,11 @@ function isGoalMetadataError(maybeError?: unknown) {
   if (!haystack) {
     return false;
   }
-  return haystack.includes("goal_id") || haystack.includes("completion_target");
+  return (
+    haystack.includes("goal_id") ||
+    haystack.includes("completion_target") ||
+    haystack.includes("finished_at")
+  );
 }
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
@@ -185,7 +189,7 @@ function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   ];
 
   if (includeGoalMetadata) {
-    columns.push("goal_id, completion_target");
+    columns.push("goal_id, completion_target, finished_at");
   }
 
   return columns.filter(Boolean).join(", ");
@@ -389,6 +393,8 @@ export function HabitEditSheet({
   const [goalId, setGoalId] = useState<string>("none");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [completionCount, setCompletionCount] = useState(0);
+  const [tempFinishedAt, setTempFinishedAt] = useState<string | null>(null);
   const [lastCompletedAt, setLastCompletedAt] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -1074,6 +1080,12 @@ export function HabitEditSheet({
           throw habitResponse?.error ?? new Error("Failed to load habit.");
         }
 
+        const { count: authoritativeCompletionCount } = await supabase
+          .from("habit_completion_days")
+          .select("id", { count: "exact", head: true })
+          .eq("habit_id", habitId)
+          .eq("user_id", user.id);
+
         const data = habitResponse.data;
 
         if (!data) {
@@ -1216,6 +1228,10 @@ export function HabitEditSheet({
                 ? String(data.completion_target)
                 : "10";
             setCompletionTarget(completionValue);
+            setCompletionCount(authoritativeCompletionCount ?? 0);
+            setTempFinishedAt(
+              typeof data.finished_at === "string" ? data.finished_at : null
+            );
           } else {
             setGoalId("none");
             setCompletionTarget("10");
@@ -1550,20 +1566,21 @@ export function HabitEditSheet({
         };
 
         if (goalMetadataSupported) {
-          const isTempHabit =
-            habitType.toUpperCase() === "TEMP" ||
-            habitType.toUpperCase() === "MEMO";
+          const isTempHabit = habitType.toUpperCase() === "TEMP";
           const parsedCompletionTarget = Number(completionTarget);
-          const goalMetadataRequired =
+          if (
             isTempHabit &&
-            goalId !== "none" &&
-            Number.isFinite(parsedCompletionTarget) &&
-            parsedCompletionTarget > 0;
+            (goalId === "none" ||
+              !Number.isInteger(parsedCompletionTarget) ||
+              parsedCompletionTarget <= 0)
+          ) {
+            setError("Temp habits need a goal and a whole-number completion target greater than zero.");
+            setSaving(false);
+            return;
+          }
           basePayload.goal_id =
             isTempHabit && goalId !== "none" ? goalId : null;
-          basePayload.completion_target = goalMetadataRequired
-            ? Math.max(1, parsedCompletionTarget)
-            : null;
+          basePayload.completion_target = isTempHabit ? parsedCompletionTarget : null;
         }
 
         let nextDueOverrideValue: string | null = null;
@@ -1840,6 +1857,11 @@ export function HabitEditSheet({
                 footerSlot={routineFooter}
                 advancedResetKey={advancedResetKey}
               />
+              {habitType.toUpperCase() === "TEMP" ? (
+                <p className="text-sm text-white/70">
+                  Progress: {completionCount}/{completionTarget || "—"} · {tempFinishedAt ? "Finished" : "Active"}
+                </p>
+              ) : null}
 
               <div className="space-y-3">
                 <Button

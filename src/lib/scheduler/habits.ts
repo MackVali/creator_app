@@ -28,6 +28,7 @@ export type HabitScheduleItem = {
   skillMonumentId?: string | null;
   goalId: string | null;
   completionTarget: number | null;
+  finishedAt?: string | null;
   locationContextId: string | null;
   locationContextValue: string | null;
   locationContextName: string | null;
@@ -75,6 +76,7 @@ type HabitRecord = {
   } | null;
   goal_id?: string | null;
   completion_target?: number | null;
+  finished_at?: string | null;
   location_context_id?: string | null;
   location_context?: {
     id?: string | null;
@@ -131,7 +133,7 @@ function isGoalMetadataMissingError(error: PostgrestError | null): boolean {
   if (error.code === "42703") return true;
   const haystack = `${error.message ?? ""}`.toLowerCase();
   if (!haystack) return false;
-  return haystack.includes("goal_id") || haystack.includes("completion_target");
+  return haystack.includes("goal_id") || haystack.includes("completion_target") || haystack.includes("finished_at");
 }
 
 export async function fetchHabitsForSchedule(
@@ -150,7 +152,7 @@ export async function fetchHabitsForSchedule(
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`;
   const skillJoin = "skill:skills(monument_id)";
   const baseColumns = `id, name, memo_capture_config, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, fixed_start_local, fixed_end_local, fixed_timezone, ${windowJoin}`;
-  const extendedColumns = `${baseColumns}, goal_id, completion_target`;
+  const extendedColumns = `${baseColumns}, goal_id, completion_target, finished_at`;
 
   let supportsGoalMetadata = cachedGoalMetadataSupport !== "unsupported";
   let data: HabitRecord[] | null = null;
@@ -236,7 +238,12 @@ export async function fetchHabitsForSchedule(
     supportsGoalMetadata = false;
   }
 
-  return (data ?? []).map((record: HabitRecord) => ({
+  return (data ?? [])
+    .filter(
+      (record: HabitRecord) =>
+        normalizeHabitType(record.habit_type) !== "TEMP" || !record.finished_at
+    )
+    .map((record: HabitRecord) => ({
     id: record.id,
     name: record.name ?? "Untitled habit",
     memoCaptureConfig: record.memo_capture_config ?? null,
@@ -268,6 +275,7 @@ export async function fetchHabitsForSchedule(
       Number.isFinite(record.completion_target)
         ? record.completion_target
         : null,
+    finishedAt: supportsGoalMetadata ? record.finished_at ?? null : null,
     locationContextId: record.location_context_id ?? null,
     locationContextValue: record.location_context?.value
       ? String(record.location_context.value).toUpperCase().trim()

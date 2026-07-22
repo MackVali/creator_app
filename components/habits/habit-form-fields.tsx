@@ -97,6 +97,11 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     description: "Maintenance that keeps life running.",
   },
   {
+    label: "Temp",
+    value: "TEMP",
+    description: "A goal-linked routine that finishes after a set number of completions.",
+  },
+  {
     label: "Sync",
     value: "SYNC",
     description: "Self-paced rituals you can do anytime.",

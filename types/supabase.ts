@@ -226,6 +226,7 @@ export interface Database {
           window_edge_preference: string | null;
           goal_id: string | null;
           completion_target: number | null;
+          finished_at: string | null;
           last_completed_at: string | null;
           current_streak_days: number;
           longest_streak_days: number;
@@ -261,6 +262,7 @@ export interface Database {
           window_edge_preference?: string | null;
           goal_id?: string | null;
           completion_target?: number | null;
+          finished_at?: string | null;
           last_completed_at?: string | null;
           current_streak_days?: number;
           longest_streak_days?: number;
@@ -295,6 +297,7 @@ export interface Database {
           window_edge_preference?: string | null;
           goal_id?: string | null;
           completion_target?: number | null;
+          finished_at?: string | null;
           last_completed_at?: string | null;
           current_streak_days?: number;
           longest_streak_days?: number;
@@ -2579,6 +2582,19 @@ export interface Database {
     };
     Views: Record<string, unknown>;
     Functions: {
+      set_habit_completion_day: {
+        Args: {
+          p_habit_id: string;
+          p_completion_day: string;
+          p_completed_at: string;
+          p_is_complete: boolean;
+        };
+        Returns: {
+          completion_count: number;
+          completion_target: number | null;
+          finished_at: string | null;
+        }[];
+      };
       check_api_rate_limit: {
         Args: {
           p_user_id: string;

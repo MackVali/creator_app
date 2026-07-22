@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import {
+  completionProductivityDayKey,
   ensureCompletionEvent,
   isCompletionSchemaMissing,
 } from '@/lib/completions/completionEvents'
-import { normalizeTimeZone, formatDateKeyInTimeZone } from '@/lib/scheduler/timezone'
+import { normalizeTimeZone } from '@/lib/scheduler/timezone'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { refreshHabitStreak } from '@/lib/streaks'
 
@@ -49,34 +50,27 @@ export async function POST(request: NextRequest) {
     if (Number.isNaN(completedAtDate.getTime())) {
       return NextResponse.json({ error: 'Invalid completedAt timestamp' }, { status: 400 })
     }
-    const completionDay = formatDateKeyInTimeZone(completedAtDate, resolvedTimeZone)
+    const completionDay = completionProductivityDayKey(completedAtDate, resolvedTimeZone)
     const completionTimestamp = completedAtDate.toISOString()
 
+    const { data: lifecycleRows, error: lifecycleError } = await supabase.rpc(
+      'set_habit_completion_day',
+      {
+        p_habit_id: habitId,
+        p_completion_day: completionDay,
+        p_completed_at: completionTimestamp,
+        p_is_complete: action === 'complete',
+      }
+    )
+
+    if (lifecycleError) {
+      return NextResponse.json(
+        { error: lifecycleError.message ?? 'Failed to update completion' },
+        { status: 500 }
+      )
+    }
+
     if (action === 'complete') {
-      const { error } = await supabase
-        .from('habit_completion_days')
-        .upsert(
-          {
-            habit_id: habitId,
-            user_id: user.id,
-            completion_day: completionDay,
-            completed_at: completionTimestamp,
-          },
-          { onConflict: 'habit_id,completion_day' }
-        )
-
-      if (error) {
-        return NextResponse.json({ error: error.message ?? 'Failed to record completion' }, { status: 500 })
-      }
-
-      const { error: overrideError } = await supabase
-        .from('habits')
-        .update({ next_due_override: null })
-        .eq('id', habitId)
-        .eq('user_id', user.id)
-      if (overrideError) {
-        console.error('Failed to clear habit due override after completion', overrideError)
-      }
 
       try {
         await ensureCompletionEvent({
@@ -99,19 +93,6 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      const { error } = await supabase
-        .from('habit_completion_days')
-        .delete()
-        .match({
-          habit_id: habitId,
-          user_id: user.id,
-          completion_day: completionDay,
-        })
-
-      if (error) {
-        return NextResponse.json({ error: error.message ?? 'Failed to remove completion' }, { status: 500 })
-      }
-
       try {
         await ensureCompletionEvent({
           client: supabase,
@@ -135,7 +116,13 @@ export async function POST(request: NextRequest) {
 
     await refreshHabitStreak(supabase, habitId, user.id)
 
-    return NextResponse.json({ success: true })
+    const lifecycle = lifecycleRows?.[0] ?? null
+    return NextResponse.json({
+      success: true,
+      completionCount: lifecycle?.completion_count ?? null,
+      completionTarget: lifecycle?.completion_target ?? null,
+      lifecycleStatus: lifecycle?.finished_at ? 'finished' : 'active',
+    })
   } catch (error) {
     console.error('Failed to persist habit completion metadata', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
