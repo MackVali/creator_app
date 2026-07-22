@@ -21,6 +21,18 @@ const VALID_UNITS = new Set([
   "l",
   "item",
 ]);
+const NATURAL_CONTAINER_LABELS: Record<string, { singularLabel: string; pluralLabel: string }> = {
+  can: { singularLabel: "can", pluralLabel: "cans" },
+  jar: { singularLabel: "jar", pluralLabel: "jars" },
+  bottle: { singularLabel: "bottle", pluralLabel: "bottles" },
+  box: { singularLabel: "box", pluralLabel: "boxes" },
+  bag: { singularLabel: "bag", pluralLabel: "bags" },
+  pouch: { singularLabel: "pouch", pluralLabel: "pouches" },
+  carton: { singularLabel: "carton", pluralLabel: "cartons" },
+  tub: { singularLabel: "tub", pluralLabel: "tubs" },
+  tray: { singularLabel: "tray", pluralLabel: "trays" },
+  packet: { singularLabel: "packet", pluralLabel: "packets" },
+};
 const LOCATIONS = new Set(["pantry", "fridge", "freezer", "counter", "other"]);
 const MAX_LIMIT = 200;
 const MAX_QUANTITY = 1_000_000_000;
@@ -107,7 +119,33 @@ function normalizeUnit(value: unknown) {
 function normalizeMetadata(value: unknown): Json {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const metadata = { ...(value as Record<string, unknown>) };
-  const profile = metadata.inventory_measurement_profile;
+  const sourceSummary =
+    metadata.source_summary &&
+    typeof metadata.source_summary === "object" &&
+    !Array.isArray(metadata.source_summary)
+      ? (metadata.source_summary as Record<string, unknown>)
+      : {};
+  const containerType = normalizeText(
+    metadata.container_type ?? sourceSummary.container_type,
+    64,
+  )?.toLowerCase();
+  const containerLabels = containerType ? NATURAL_CONTAINER_LABELS[containerType] : undefined;
+  const profile = metadata.inventory_measurement_profile ??
+    (containerType && containerLabels
+      ? {
+          preferredKind: "count",
+          countUnitKey: containerType,
+          ...containerLabels,
+          source:
+            metadata.container_source === "barcode" || sourceSummary.container_source === "barcode"
+              ? "barcode"
+              : "name_fallback",
+          confidence:
+            metadata.container_confidence === "high" || sourceSummary.container_confidence === "high"
+              ? "high"
+              : "medium",
+        }
+      : null);
   if (profile && typeof profile === "object" && !Array.isArray(profile)) {
     const candidate = profile as Record<string, unknown>;
     const countUnitKey = normalizeText(candidate.countUnitKey, 64);
@@ -165,7 +203,7 @@ function mapFoodResource(row: FoodResourceWithCatalog) {
     expires_on: row.expires_on,
     notes: row.notes,
     status: row.status,
-    metadata: row.metadata,
+    metadata: normalizeMetadata(row.metadata),
     created_at: row.created_at,
     updated_at: row.updated_at,
     catalog_food: row.catalog_food ?? null,
