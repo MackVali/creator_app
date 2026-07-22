@@ -9576,11 +9576,16 @@ export function NoteDatabaseEntrySheet({
         return;
       }
 
+      if (payload.status === "invalid_barcode") {
+        setNutritionBarcodeLookupStatus("Enter a valid UPC, EAN, or GTIN.");
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(payload.error || "Unable to look up barcode.");
       }
 
-      if (payload.food) {
+      if (payload.food && (payload.status === "found" || payload.status === "created")) {
         const foodForSelection: FoodSearchResult = isGroceryDatabase
           ? {
               ...payload.food,
@@ -9638,32 +9643,17 @@ export function NoteDatabaseEntrySheet({
         missing_nutrition: "Nutrition data is incomplete for this product.",
         invalid_nutrition: "Nutrition data is incomplete for this product.",
         external_error: "Barcode lookup is unavailable right now.",
+        incomplete: "Barcode data incomplete across connected sources",
+        conflict: "Conflicting exact barcode data across connected sources",
         rate_limited: "Too many barcode lookups. Try again in a bit.",
       };
-      if (isGroceryDatabase && payload.status === "not_found") {
-        stageScannedFood({
-          id: `barcode:${normalizedBarcode}`,
-          name: "",
-          brand_name: null,
-          source: "grocery_custom",
-          serving_size: null,
-          serving_unit: null,
-          serving_grams: null,
-          calories: null,
-          carbs_g: null,
-          protein_g: null,
-          fat_g: null,
-          metadata: {
-            barcode: normalizedBarcode,
-            scan_status: "not_found",
-            scan_source: "inline_completion",
-            container_type: "package",
-            container_singular_label: "package",
-            container_plural_label: "packages",
-          },
-        });
-        setNutritionBarcodeValue("");
-        setNutritionBarcodeLookupStatus("Product not found · Complete package details");
+      if (isGroceryDatabase && (payload.status === "incomplete" || payload.status === "conflict")) {
+        const recognizedName = payload.food?.name?.trim();
+        const missing = payload.barcodeResolution?.missingFields ?? [];
+        setNutritionBarcodeValue(normalizedBarcode);
+        setNutritionBarcodeLookupStatus(
+          `${messageByStatus[payload.status]}${recognizedName ? ` · ${recognizedName}` : ""} · ${payload.barcodeResolution?.canonicalBarcode ?? normalizedBarcode}${missing.length ? ` · Missing ${missing.slice(0, 4).join(", ")}` : ""} · Retry lookup`,
+        );
         return;
       }
       setNutritionBarcodeLookupStatus(messageByStatus[payload.status]);
