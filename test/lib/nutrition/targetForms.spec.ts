@@ -3,8 +3,10 @@ import {
   buildTargetPayload,
   createInitialTargetForm,
   derivePercentageMacroDetails,
+  inferPreferredUnitsFromLocales,
   macroPercentTotal,
   prefillTargetSetupForm,
+  resolveInitialTargetUnits,
   setTargetFormUnits,
   setWeightDisplay,
 } from "@/lib/nutrition/targetForms";
@@ -71,6 +73,24 @@ describe("Nutrition target setup form helpers", () => {
     expect(form.weight).toBe("176.4");
   });
 
+  it("resolves saved unit preference before unsaved state or locale", () => {
+    const unsaved = createInitialTargetForm({ units: "metric" });
+    expect(resolveInitialTargetUnits({ profile: { preferred_units: "us" }, unsavedForm: unsaved, localeUnits: "metric" })).toBe("us");
+    expect(resolveInitialTargetUnits({ profile: { preferred_units: "metric" }, unsavedForm: createInitialTargetForm({ units: "us" }), localeUnits: "us" })).toBe("metric");
+  });
+
+  it("uses unsaved setup units before locale defaults", () => {
+    expect(resolveInitialTargetUnits({ profile: null, unsavedForm: createInitialTargetForm({ units: "us" }), localeUnits: "metric" })).toBe("us");
+  });
+
+  it("defaults U.S. locales to US units and non-U.S. locales to Metric", () => {
+    expect(inferPreferredUnitsFromLocales(["en-US"])).toBe("us");
+    expect(inferPreferredUnitsFromLocales(["en-US", "fr-FR"])).toBe("us");
+    expect(inferPreferredUnitsFromLocales(["en-GB"])).toBe("metric");
+    expect(inferPreferredUnitsFromLocales(["fr-CA"])).toBe("metric");
+    expect(inferPreferredUnitsFromLocales(null)).toBe("metric");
+  });
+
   it("builds goal weight, manual maintenance, and custom percentage payloads", () => {
     const form = {
       ...createInitialTargetForm({ goalType: "lose", rate: "0.5", goalWeightKgCanonical: "70", goalWeight: "70" }),
@@ -102,4 +122,3 @@ describe("Nutrition target setup form helpers", () => {
     expect(derivePercentageMacroDetails(form)?.fat.grams).toBeCloseTo(55.56, 2);
   });
 });
-

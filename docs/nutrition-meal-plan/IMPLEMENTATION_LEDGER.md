@@ -16,6 +16,59 @@ Every future Codex session must read both the PRD and this ledger before editing
 
 `Phase 2A complete with manual SQL pending; authenticated persistence and real-app target setup verification remain post-SQL prerequisites`
 
+# Phase 2A.2 Mobile Target Wizard (2026-07-24)
+
+## Classification
+
+`UI restructuring complete; live iPhone visual approval not performed`
+
+The Nutrition target setup opened by `openSetup("new_goal")` now uses a compact mobile wizard with four input steps followed by a result view. Calculation formulas, activity coefficients, calorie guardrails, macro formulas, goal-version persistence, APIs, daily-target behavior, and Meal Plan behavior were preserved.
+
+## Completed UI changes
+
+- The normal setup path is now `About you`, `Your body`, `Your activity`, `Your goal`, then `Your target`.
+- `About you` shows the unit toggle, `Sex` as `Male`/`Female`, and age only. The sex choices continue to map to the existing `formulaInput` values used by the target engine.
+- `Your body` shows US height/weight fields or metric height/weight fields from the existing canonical conversion helpers. Switching units converts the current canonical values instead of clearing inputs.
+- `Your activity` maps five tappable user-facing rows to the existing activity keys: `sedentary`, `light`, `moderate`, `active`, and `very_active`.
+- `Your goal` shows `Lose weight`, `Maintain`, `Gain weight`, and `Recomposition` in a two-by-two layout and keeps the existing default rates for primary setup.
+- `Your target` emphasizes calories and macros from the existing server-authoritative preview endpoint. `Use this target` still saves through the existing goal/profile creation path.
+- Locale-aware unit defaults now resolve saved profile preference first, then unsaved setup state in the same session, then browser locale region without location permission or server-render browser access, then Metric fallback.
+- Advanced/manual controls moved behind `Adjust target`, including goal rate, manual calories, manual maintenance, goal weight, body-fat percentage, pregnancy/breastfeeding considerations, suggested macro tuning, custom grams, and custom percentages.
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/targets.spec.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetSql.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 4 files and 34 tests.
+- `pnpm exec eslint src/components/nutrition/NutritionTargetPanel.tsx src/lib/nutrition/targetForms.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with no findings.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/(lib/nutrition/(targets|targetApi|targetForms)|components/nutrition/NutritionTargetPanel|app/api/nutrition/(profile|goals|targets))|test/lib/nutrition/(targets|targetForms|nutritionTargetSql|nutritionTargetUiStatic)' || true` - no focused diagnostics. A full repository TypeScript run still reports unrelated pre-existing diagnostics outside the Nutrition target files.
+
+# Phase 2A.1 UI Compression Pass (2026-07-24)
+
+## Classification
+
+`UI-only compression complete; live app/mobile verification not performed`
+
+The Nutrition target setup sheet was compressed into a compact, mobile-first section flow without changing target formulas, SQL, API contracts, persistence helpers, or the Daily Override sheet.
+
+## Completed UI changes
+
+- Default setup now presents Body basics, Activity, Goal, and Preview and save as the primary path.
+- Preferred units were folded into Body basics instead of a standalone section.
+- Activity choices are compact selectable rows with behavioral descriptions and no prominent coefficient display.
+- Goal selection uses compact choices, with only Lose and Gain showing simple rate options.
+- Goal weight, manual maintenance, body-fat percentage, current nutrition considerations, adaptive adjustment toggle, and custom macro controls moved into a collapsed Advanced options disclosure.
+- Existing advanced values surface through a subtle Advanced options summary while the section remains closed by default.
+- Manual calorie entry is shown directly when manual calories are selected.
+- Suggested macros remain the default; the secondary Customize control opens Advanced options and reveals one selected custom macro mode at a time.
+- Preview now emphasizes calories, protein, carbohydrates, fat, estimated maintenance, and goal adjustment; detailed math moved behind View calculation.
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/targets.spec.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetSql.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 4 files and 29 tests.
+- `pnpm exec eslint src/components/nutrition/NutritionTargetPanel.tsx test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with no findings.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/(lib/nutrition/(targets|targetApi|targetForms)|components/nutrition/NutritionTargetPanel|app/api/nutrition/(profile|goals|targets))|test/lib/nutrition/(targets|targetForms|nutritionTargetSql|nutritionTargetUiStatic)' || true` - no focused diagnostics.
+- `git diff --check` - passed.
+- `pnpm dev` could not bind to `0.0.0.0:3000` inside the sandbox. Elevated dev-server execution was requested and rejected, so interactive browser/iPhone verification was not performed.
+
 # Phase 2A Completion Handoff (2026-07-22)
 
 ## Classification

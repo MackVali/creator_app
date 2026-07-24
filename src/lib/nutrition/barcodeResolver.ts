@@ -10,7 +10,51 @@ import {
 
 export type BarcodeProvider = "user_food_resource" | "foods_catalog" | "usda_fdc" | "open_food_facts";
 export type BarcodeIdentity = { raw: string; digits: string; canonicalGtin: string; variants: string[]; checkDigitValid: boolean };
-export type ProviderDiagnostic = { provider: BarcodeProvider; status: "matched" | "not_found" | "skipped" | "timeout" | "unavailable" | "rejected"; warning?: string };
+export type BarcodeDiagnosticField =
+  | "productName"
+  | "brand"
+  | "container"
+  | "packageQuantity"
+  | "servingSize"
+  | "servingsPerContainer"
+  | "nutritionBasis"
+  | "calories"
+  | "carbohydrates"
+  | "protein"
+  | "fat";
+export type ProviderDiagnosticOutcome =
+  | "skipped_missing_key"
+  | "matched"
+  | "no_results"
+  | "no_exact_match"
+  | "rejected_invalid_provider_barcode"
+  | "timeout"
+  | "unauthorized"
+  | "rate_limited"
+  | "http_error"
+  | "parse_error";
+export type ProviderDiagnostic = {
+  provider: BarcodeProvider;
+  status: "matched" | "not_found" | "skipped" | "timeout" | "unavailable" | "rejected";
+  attempted: boolean;
+  outcome: ProviderDiagnosticOutcome;
+  configured?: boolean;
+  httpStatus?: number;
+  queriedBarcodeVariants: string[];
+  totalSearchResultCount?: number;
+  canonicalExactMatchCount?: number;
+  matchedProviderGtin?: string;
+  matchedFdcId?: string;
+  returnedProductCode?: string;
+  canonicalExactMatch?: boolean;
+  exactMatchFound?: boolean;
+  profileComplete?: boolean | null;
+  fieldsPresentOnExactResult?: BarcodeDiagnosticField[];
+  contributedFields: BarcodeDiagnosticField[];
+  fieldsPresentButRejected?: BarcodeDiagnosticField[];
+  rejectionReason?: string;
+  warning?: string;
+};
 export type BarcodeProviderResult = {
   provider: BarcodeProvider;
   requestedBarcode: string;
@@ -23,15 +67,29 @@ export type BarcodeProviderResult = {
   warnings: string[];
 };
 export type BarcodeResolutionMetadata = {
+  requestId?: string;
   canonicalBarcode: string;
+  barcodeVariants: string[];
   exactMatch: boolean;
   providersQueried: BarcodeProvider[];
   providersMatched: BarcodeProvider[];
   providersFailed: ProviderDiagnostic[];
+  providerDiagnostics: ProviderDiagnostic[];
   mergedFieldSources: Record<string, { provider: BarcodeProvider | "derived"; providerRecordId: string | null; explicit: boolean; confidence: "high" | "medium" | "low"; fetchedAt?: string }>;
   profileCompleteness: FoodPackageProfile["completeness"];
   missingFields: string[];
   conflicts: FoodPackageProfile["conflicts"];
+  notStagedReason: string | null;
+  mergedDiagnostics: {
+    canonicalBarcode: string;
+    providersQueried: BarcodeProvider[];
+    providersMatched: BarcodeProvider[];
+    providersFailed: BarcodeProvider[];
+    finalMissingFields: string[];
+    finalConflicts: FoodPackageProfile["conflicts"];
+    completeness: FoodPackageProfile["completeness"];
+    notStagedReason: string | null;
+  };
 };
 
 const VALID_LENGTHS = new Set([8, 12, 13, 14]);
@@ -73,10 +131,75 @@ function record(value: unknown): Record<string, unknown> {
 }
 function number(value: unknown) { const parsed = Number(value); return value !== null && value !== "" && Number.isFinite(parsed) ? parsed : null; }
 function text(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
+function identifier(value: unknown) { return value === null || value === undefined || value === "" ? null : String(value); }
 function nutrientValue(value: unknown) { return number(record(value).value ?? value); }
 function completeNutrition(value: unknown) {
   const item = record(value);
   return ["calories", "carbs_g", "protein_g", "fat_g"].every((key) => number(item[key]) !== null);
+}
+
+function providerDiagnosticStatus(outcome: ProviderDiagnosticOutcome): ProviderDiagnostic["status"] {
+  if (outcome === "matched") return "matched";
+  if (outcome === "no_results" || outcome === "no_exact_match") return "not_found";
+  if (outcome === "skipped_missing_key") return "skipped";
+  if (outcome === "timeout") return "timeout";
+  if (outcome === "rejected_invalid_provider_barcode") return "rejected";
+  return "unavailable";
+}
+
+export function providerDiagnostic(input: Omit<ProviderDiagnostic, "status" | "contributedFields"> & { contributedFields?: BarcodeDiagnosticField[] }): ProviderDiagnostic {
+  return {
+    ...input,
+    status: providerDiagnosticStatus(input.outcome),
+    contributedFields: input.contributedFields ?? [],
+  };
+}
+
+function classifyHttpOutcome(status: number): Extract<ProviderDiagnosticOutcome, "unauthorized" | "rate_limited" | "http_error"> {
+  if (status === 401 || status === 403) return "unauthorized";
+  if (status === 429) return "rate_limited";
+  return "http_error";
+}
+
+function uniqueDiagnosticFields(fields: Array<BarcodeDiagnosticField | null | undefined>) {
+  return [...new Set(fields.filter((field): field is BarcodeDiagnosticField => Boolean(field)))];
+}
+
+export function providerResultDiagnosticFields(result: BarcodeProviderResult | null): BarcodeDiagnosticField[] {
+  if (!result) return [];
+  const profile = reconcileFoodPackageProfile(result.food);
+  const fields: Array<BarcodeDiagnosticField | null> = [
+    result.food.name ? "productName" : null,
+    result.food.brand_name ? "brand" : null,
+    result.explicitFields.includes("netQuantityPerContainer") ? "container" : null,
+    result.explicitFields.includes("netQuantityPerContainer") ? "packageQuantity" : null,
+    result.explicitFields.includes("servingQuantity") || result.explicitFields.includes("servingUnit") ? "servingSize" : null,
+    result.explicitFields.includes("servingsPerContainer") ? "servingsPerContainer" : null,
+    profile.nutritionBasis ? "nutritionBasis" : null,
+    number(result.food.calories) !== null ? "calories" : null,
+    number(result.food.carbs_g) !== null ? "carbohydrates" : null,
+    number(result.food.protein_g) !== null ? "protein" : null,
+    number(result.food.fat_g) !== null ? "fat" : null,
+  ];
+  return uniqueDiagnosticFields(fields);
+}
+
+function usdaExactResultDiagnosticFields(food: Record<string, unknown>) {
+  const labels = record(food.labelNutrients);
+  return uniqueDiagnosticFields([
+    text(food.description) ? "productName" : null,
+    text(food.brandName) || text(food.brandOwner) ? "brand" : null,
+    number(food.servingSize) !== null ? "servingSize" : null,
+    text(food.servingSizeUnit) || number(food.servingSize) !== null ? "nutritionBasis" : null,
+    nutrientValue(labels.calories) !== null ? "calories" : null,
+    nutrientValue(labels.carbohydrates) !== null ? "carbohydrates" : null,
+    nutrientValue(labels.protein) !== null ? "protein" : null,
+    nutrientValue(labels.fat) !== null ? "fat" : null,
+  ]);
+}
+
+function openFoodFactsExactResultDiagnosticFields(result: BarcodeProviderResult | null) {
+  return providerResultDiagnosticFields(result);
 }
 
 export type UsdaSearchFood = { fdcId?: unknown; gtinUpc?: unknown; publicationDate?: unknown; modifiedDate?: unknown } & Record<string, unknown>;
@@ -125,37 +248,78 @@ async function fetchJson(url: URL, init: RequestInit, fetchImpl: typeof fetch) {
 }
 
 export async function fetchUsdaExact(identity: BarcodeIdentity, apiKey: string | undefined, fetchImpl: typeof fetch = fetch): Promise<{ result: BarcodeProviderResult | null; diagnostic: ProviderDiagnostic }> {
-  if (!apiKey) return { result: null, diagnostic: { provider: "usda_fdc", status: "skipped", warning: "USDA_FDC_API_KEY is not configured" } };
+  const queriedBarcodeVariants = [identity.digits];
+  if (!apiKey) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: false, attempted: false, outcome: "skipped_missing_key", queriedBarcodeVariants, warning: "USDA key is not configured" }) };
   try {
     const searchUrl = new URL("https://api.nal.usda.gov/fdc/v1/foods/search"); searchUrl.searchParams.set("api_key", apiKey);
     const response = await fetchJson(searchUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: identity.digits, dataType: ["Branded"], pageSize: 10 }) }, fetchImpl);
-    if (!response.ok) return { result: null, diagnostic: { provider: "usda_fdc", status: "unavailable", warning: `HTTP ${response.status}` } };
-    const searchPayload = record(await response.json());
-    const exact = selectExactUsdaSearchResult(identity, Array.isArray(searchPayload.foods) ? searchPayload.foods as UsdaSearchFood[] : []);
-    if (!exact) return { result: null, diagnostic: { provider: "usda_fdc", status: "not_found" } };
+    if (!response.ok) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: classifyHttpOutcome(response.status), httpStatus: response.status, queriedBarcodeVariants, warning: `USDA search HTTP ${response.status}` }) };
+    let searchPayload: Record<string, unknown>;
+    try {
+      searchPayload = record(await response.json());
+    } catch {
+      return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: "parse_error", httpStatus: response.status, queriedBarcodeVariants, rejectionReason: "USDA search response could not be parsed" }) };
+    }
+    const foods = Array.isArray(searchPayload.foods) ? searchPayload.foods as UsdaSearchFood[] : [];
+    const totalSearchResultCount = number(searchPayload.totalHits) ?? foods.length;
+    const canonicalExactMatchCount = foods.filter((food) => barcodesAreExact(food.gtinUpc, identity.canonicalGtin)).length;
+    const exact = selectExactUsdaSearchResult(identity, foods);
+    if (!exact) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: foods.length ? "no_exact_match" : "no_results", httpStatus: response.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, rejectionReason: foods.length ? "USDA returned branded results, but none matched the canonical barcode exactly" : "USDA returned no branded barcode search results" }) };
     const detailsUrl = new URL(`https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(String(exact.fdcId))}`); detailsUrl.searchParams.set("api_key", apiKey);
     const detailsResponse = await fetchJson(detailsUrl, {}, fetchImpl);
-    if (!detailsResponse.ok) return { result: null, diagnostic: { provider: "usda_fdc", status: "unavailable", warning: `Details HTTP ${detailsResponse.status}` } };
-    const result = normalizeUsdaFood(identity, record(await detailsResponse.json()));
-    return { result, diagnostic: { provider: "usda_fdc", status: result ? "matched" : "rejected", warning: result ? undefined : "USDA details barcode was not an exact match" } };
-  } catch (error) { return { result: null, diagnostic: { provider: "usda_fdc", status: error instanceof Error && error.name === "AbortError" ? "timeout" : "unavailable", warning: "USDA request failed" } }; }
+    if (!detailsResponse.ok) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: classifyHttpOutcome(detailsResponse.status), httpStatus: detailsResponse.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, matchedProviderGtin: identifier(exact.gtinUpc) ?? undefined, matchedFdcId: identifier(exact.fdcId) ?? undefined, warning: `USDA details HTTP ${detailsResponse.status}` }) };
+    let detailsPayload: Record<string, unknown>;
+    try {
+      detailsPayload = record(await detailsResponse.json());
+    } catch {
+      return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: "parse_error", httpStatus: detailsResponse.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, matchedProviderGtin: identifier(exact.gtinUpc) ?? undefined, matchedFdcId: identifier(exact.fdcId) ?? undefined, rejectionReason: "USDA detail response could not be parsed" }) };
+    }
+    const result = normalizeUsdaFood(identity, detailsPayload);
+    const fieldsPresentOnExactResult = result ? providerResultDiagnosticFields(result) : usdaExactResultDiagnosticFields(detailsPayload);
+    return {
+      result,
+      diagnostic: providerDiagnostic({
+        provider: "usda_fdc",
+        configured: true,
+        attempted: true,
+        outcome: result ? "matched" : "rejected_invalid_provider_barcode",
+        httpStatus: detailsResponse.status,
+        queriedBarcodeVariants,
+        totalSearchResultCount,
+        canonicalExactMatchCount,
+        matchedProviderGtin: identifier(detailsPayload.gtinUpc) ?? identifier(exact.gtinUpc) ?? undefined,
+        matchedFdcId: identifier(detailsPayload.fdcId) ?? identifier(exact.fdcId) ?? undefined,
+        canonicalExactMatch: result ? true : false,
+        fieldsPresentOnExactResult,
+        rejectionReason: result ? undefined : "USDA detail barcode was not an exact canonical match",
+      }),
+    };
+  } catch (error) { return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: error instanceof Error && error.name === "AbortError" ? "timeout" : "http_error", queriedBarcodeVariants, warning: "USDA request failed" }) }; }
 }
 
 export async function fetchOpenFoodFactsExact(identity: BarcodeIdentity, fetchImpl: typeof fetch = fetch): Promise<{ result: BarcodeProviderResult | null; diagnostic: ProviderDiagnostic }> {
+  const queriedBarcodeVariants: string[] = [];
   try {
     const fields = "code,product_name,product_name_en,abbreviated_product_name,generic_name,brands,quantity,product_quantity,product_quantity_unit,serving_size,serving_quantity,serving_quantity_unit,servings_per_container,servings_per_package,packaging,packaging_text,packaging_tags,categories,categories_tags,nutrition_data_per,nutriments";
     for (const variant of identity.variants) {
+      queriedBarcodeVariants.push(variant);
       const url = new URL(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(variant)}.json`); url.searchParams.set("fields", fields);
       const response = await fetchJson(url, { headers: { Accept: "application/json", "User-Agent": "CREATOR Grocery barcode resolver/1.0 (https://creator.app)" } }, fetchImpl);
       if (response.status === 404) continue;
-      if (!response.ok) return { result: null, diagnostic: { provider: "open_food_facts", status: "unavailable", warning: `HTTP ${response.status}` } };
-      const payload = record(await response.json());
+      if (!response.ok) return { result: null, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: true, outcome: classifyHttpOutcome(response.status), httpStatus: response.status, queriedBarcodeVariants, warning: `Open Food Facts HTTP ${response.status}` }) };
+      let payload: Record<string, unknown>;
+      try {
+        payload = record(await response.json());
+      } catch {
+        return { result: null, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: true, outcome: "parse_error", httpStatus: response.status, queriedBarcodeVariants, rejectionReason: "Open Food Facts response could not be parsed" }) };
+      }
       const result = payload.status === 1 ? normalizeOpenFoodFactsFood(identity, record(payload.product) as OpenFoodFactsProduct) : null;
-      if (result) return { result, diagnostic: { provider: "open_food_facts", status: "matched" } };
-      if (payload.status === 1) return { result: null, diagnostic: { provider: "open_food_facts", status: "rejected", warning: "Returned barcode was not an exact canonical match" } };
+      const returnedProductCode = identifier(record(payload.product).code) ?? undefined;
+      if (result) return { result, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: true, outcome: "matched", httpStatus: response.status, queriedBarcodeVariants, returnedProductCode, canonicalExactMatch: true, fieldsPresentOnExactResult: openFoodFactsExactResultDiagnosticFields(result) }) };
+      if (payload.status === 1) return { result: null, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: true, outcome: "rejected_invalid_provider_barcode", httpStatus: response.status, queriedBarcodeVariants, returnedProductCode, canonicalExactMatch: false, rejectionReason: "Open Food Facts returned barcode was not an exact canonical match" }) };
     }
-    return { result: null, diagnostic: { provider: "open_food_facts", status: "not_found" } };
-  } catch (error) { return { result: null, diagnostic: { provider: "open_food_facts", status: error instanceof Error && error.name === "AbortError" ? "timeout" : "unavailable", warning: error instanceof Error ? error.message : "Request failed" } }; }
+    return { result: null, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: queriedBarcodeVariants.length > 0, outcome: "no_results", queriedBarcodeVariants, canonicalExactMatch: false, rejectionReason: "Open Food Facts returned no product for the queried variants" }) };
+  } catch (error) { return { result: null, diagnostic: providerDiagnostic({ provider: "open_food_facts", attempted: true, outcome: error instanceof Error && error.name === "AbortError" ? "timeout" : "http_error", queriedBarcodeVariants, warning: error instanceof Error ? error.message : "Open Food Facts request failed" }) }; }
 }
 
 export function mergeExactProviderResults(identity: BarcodeIdentity, results: BarcodeProviderResult[], diagnostics: ProviderDiagnostic[] = []) {
@@ -189,7 +353,71 @@ export function mergeExactProviderResults(identity: BarcodeIdentity, results: Ba
   const mergedFieldSources: BarcodeResolutionMetadata["mergedFieldSources"] = {};
   for (const [field, source] of [["productName", identitySource], ["packageQuantity", packageSource], ["servingMeasurement", servingSource], ["servingsPerContainer", servingsSource], ["nutrition", nutritionSource]] as const) if (source) mergedFieldSources[field] = { provider: source.provider, providerRecordId: source.providerRecordId, explicit: true, confidence: source.provider === "user_food_resource" || source.provider === "foods_catalog" ? "high" : "medium", fetchedAt: source.fetchedAt };
   if (profile?.fieldStatus.servingsPerContainer === "derived") mergedFieldSources.servingsPerContainer = { provider: "derived", providerRecordId: null, explicit: false, confidence: "high" };
-  const metadata: BarcodeResolutionMetadata = { canonicalBarcode: identity.canonicalGtin, exactMatch: sorted.length > 0, providersQueried: [...new Set([...sorted.map((item) => item.provider), ...diagnostics.map((item) => item.provider)])], providersMatched: sorted.map((item) => item.provider), providersFailed: diagnostics.filter((item) => item.status !== "matched" && item.status !== "not_found"), mergedFieldSources, profileCompleteness: profile?.completeness ?? "incomplete", missingFields: profile?.missingFields ?? ["productName"], conflicts: profile?.conflicts ?? [] };
+  const fieldContributions = new Map<BarcodeProvider, Set<BarcodeDiagnosticField>>();
+  const addContribution = (source: BarcodeProviderResult | undefined, fields: BarcodeDiagnosticField[]) => {
+    if (!source) return;
+    const current = fieldContributions.get(source.provider) ?? new Set<BarcodeDiagnosticField>();
+    fields.forEach((field) => current.add(field));
+    fieldContributions.set(source.provider, current);
+  };
+  addContribution(identitySource, ["productName", ...(identitySource?.food.brand_name ? ["brand" as const] : [])]);
+  addContribution(packageSource, ["container", "packageQuantity"]);
+  addContribution(servingSource, ["servingSize"]);
+  addContribution(servingsSource, ["servingsPerContainer"]);
+  addContribution(nutritionSource, ["nutritionBasis", "calories", "carbohydrates", "protein", "fat"]);
+  const sortedDiagnostics = sorted.map((result) => diagnostics.find((item) => item.provider === result.provider) ?? providerDiagnostic({ provider: result.provider, attempted: true, outcome: "matched", queriedBarcodeVariants: [result.requestedBarcode], exactMatchFound: true, profileComplete: reconcileFoodPackageProfile(result.food).completeness === "complete", fieldsPresentOnExactResult: providerResultDiagnosticFields(result) }));
+  const diagnosticsByProvider = new Map<BarcodeProvider, ProviderDiagnostic>();
+  for (const item of [...diagnostics, ...sortedDiagnostics]) diagnosticsByProvider.set(item.provider, item);
+  const providerDiagnostics = precedence.flatMap((provider) => {
+    const item = diagnosticsByProvider.get(provider);
+    if (!item) return [];
+    const contributedFields = [...(fieldContributions.get(provider) ?? new Set<BarcodeDiagnosticField>())];
+    const presentFields = item.fieldsPresentOnExactResult ?? providerResultDiagnosticFields(sorted.find((result) => result.provider === provider) ?? null);
+    return [{
+      ...item,
+      contributedFields,
+      fieldsPresentOnExactResult: presentFields,
+      fieldsPresentButRejected: presentFields.filter((field) => !contributedFields.includes(field)),
+    }];
+  });
+  const providersQueried = [...new Set([...sorted.map((item) => item.provider), ...providerDiagnostics.map((item) => item.provider)])];
+  const providersMatched = sorted.map((item) => item.provider);
+  const providerFailed = (item: ProviderDiagnostic) => !["matched", "no_results", "no_exact_match", "skipped_missing_key"].includes(item.outcome);
+  const providersFailed = providerDiagnostics.filter(providerFailed);
+  const missingFields = profile?.missingFields ?? ["productName"];
+  const conflicts = profile?.conflicts ?? [];
+  const profileCompleteness = profile?.completeness ?? "incomplete";
+  const notStagedReason = !mergedFood
+    ? "No exact barcode match was found from connected sources"
+    : profileCompleteness === "conflict"
+      ? "Conflicting exact barcode data prevented staging"
+      : profileCompleteness === "incomplete"
+        ? `Missing required package fields: ${missingFields.join(", ")}`
+        : null;
+  const metadata: BarcodeResolutionMetadata = {
+    canonicalBarcode: identity.canonicalGtin,
+    barcodeVariants: identity.variants,
+    exactMatch: sorted.length > 0,
+    providersQueried,
+    providersMatched,
+    providersFailed,
+    providerDiagnostics,
+    mergedFieldSources,
+    profileCompleteness,
+    missingFields,
+    conflicts,
+    notStagedReason,
+    mergedDiagnostics: {
+      canonicalBarcode: identity.canonicalGtin,
+      providersQueried,
+      providersMatched,
+      providersFailed: providersFailed.map((item) => item.provider),
+      finalMissingFields: missingFields,
+      finalConflicts: conflicts,
+      completeness: profileCompleteness,
+      notStagedReason,
+    },
+  };
   return { food: mergedFood, profile, metadata };
 }
 
