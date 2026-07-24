@@ -25,6 +25,16 @@ describe("barcode canonicalization", () => {
   it("rejects an invalid GS1 check digit", () => {
     expect(parseBarcodeIdentity("036000291453")).toBeNull();
   });
+
+  it("keeps equivalent runtime barcode variants visible for diagnostics", () => {
+    const runtimeIdentity = parseBarcodeIdentity("0009300113083")!;
+    expect(runtimeIdentity.canonicalGtin).toBe("00009300113083");
+    expect(runtimeIdentity.variants).toEqual([
+      "0009300113083",
+      "009300113083",
+      "00009300113083",
+    ]);
+  });
 });
 
 describe("exact provider adapters", () => {
@@ -72,8 +82,44 @@ describe("field-level exact merging", () => {
     const usdaResult = await fetchUsdaExact(identity, "secret", timeoutFetch as typeof fetch);
     const resolved = mergeExactProviderResults(identity, [off], [usdaResult.diagnostic]);
     expect(usdaResult.diagnostic.status).toBe("timeout");
+    expect(usdaResult.diagnostic.outcome).toBe("timeout");
     expect(resolved.food?.name).toBe("Sliced Jalapeños");
     expect(JSON.stringify(resolved.metadata)).not.toContain("secret");
+  });
+
+  it("reports USDA missing-key diagnostics without exposing the key", async () => {
+    const usdaResult = await fetchUsdaExact(identity, undefined, vi.fn() as typeof fetch);
+    expect(usdaResult.diagnostic).toMatchObject({
+      provider: "usda_fdc",
+      configured: false,
+      attempted: false,
+      outcome: "skipped_missing_key",
+      queriedBarcodeVariants: [identity.digits],
+    });
+    expect(JSON.stringify(usdaResult.diagnostic)).not.toContain("USDA_FDC_API_KEY");
+  });
+
+  it("classifies USDA unauthorized responses and keeps the existing search query", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 401 }));
+    const usdaResult = await fetchUsdaExact(identity, "secret", fetchMock as typeof fetch);
+    expect(usdaResult.diagnostic).toMatchObject({
+      provider: "usda_fdc",
+      configured: true,
+      attempted: true,
+      outcome: "unauthorized",
+      httpStatus: 401,
+      queriedBarcodeVariants: [identity.digits],
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ query: identity.digits });
+    expect(JSON.stringify(usdaResult.diagnostic)).not.toContain("secret");
+  });
+
+  it("adds final provider diagnostics without changing incomplete merge results", () => {
+    const resolved = mergeExactProviderResults(identity, [off, usda], []);
+    expect(resolved.profile?.completeness).toBe("complete");
+    expect(resolved.metadata.providerDiagnostics.find((item) => item.provider === "usda_fdc")?.contributedFields).toEqual(expect.arrayContaining(["servingSize", "calories", "carbohydrates", "protein", "fat"]));
+    expect(resolved.metadata.providerDiagnostics.find((item) => item.provider === "open_food_facts")?.contributedFields).toEqual(expect.arrayContaining(["packageQuantity"]));
+    expect(resolved.metadata.notStagedReason).toBeNull();
   });
 
   it("supplements an incomplete single-provider product", () => {

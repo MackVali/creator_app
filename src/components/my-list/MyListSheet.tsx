@@ -48,13 +48,13 @@ import {
   Clock,
   GripVertical,
   Grid2x2,
+  Landmark,
   List,
   Moon,
   Pin,
   Plus,
   Sun,
   Sunrise,
-  Tags,
   X,
 } from "lucide-react";
 
@@ -62,7 +62,6 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
-import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   MY_LIST_PINNABLE_SOURCE_TYPES,
   type MyListPinnableSourceType,
@@ -156,10 +155,13 @@ const MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX = "creator:my-list:view-mode";
 const MY_LIST_VIEW_MODE_ANONYMOUS_ID = "anonymous";
 const MY_LIST_VIEW_MODE_PREFERENCES = [
   "priority",
-  "tags",
+  "monuments",
   "day",
   "matrix",
 ] as const;
+const MY_LIST_LEGACY_TAGS_VIEW_MODE = "tags";
+const MY_LIST_NO_MONUMENT_GROUP_ID = "no-monument";
+const MY_LIST_NO_MONUMENT_GROUP_LABEL = "No Monument";
 const MY_LIST_CREATOR_DAY_ROLLOVER_HOUR = 4;
 const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
 const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
@@ -273,11 +275,19 @@ type MyListRowKey =
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
 type MyListViewModePreference = (typeof MY_LIST_VIEW_MODE_PREFERENCES)[number];
-type MyListCustomTag = { id: string; name: string };
-type MyListTagRelation = {
-  tag_id: string;
-  entity_type: string;
-  entity_id: string;
+
+export type MyListMonumentRow = {
+  id: string;
+  title: string;
+  emoji?: string | null;
+  priorityRank?: number | null;
+};
+
+type MyListMonumentGroup = {
+  id: string;
+  label: string;
+  icon?: string | null;
+  rows: MyListVisibleTodoRow[];
 };
 
 function buildPinnedSourceRowKey(
@@ -285,6 +295,10 @@ function buildPinnedSourceRowKey(
   sourceId: string
 ): MyListPinnedSourceRowKey {
   return `pinnedSource:${sourceType}:${sourceId}`;
+}
+
+function readTrimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 type MyListManualRow = {
@@ -409,10 +423,13 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
         : `Untitled ${sourceType.toLowerCase()}`,
     icon: typeof record.icon === "string" ? record.icon : null,
     goalIcon: typeof record.goalIcon === "string" ? record.goalIcon : null,
+    monumentId: readTrimmedString(record.monumentId),
     monumentIcon:
       typeof record.monumentIcon === "string" ? record.monumentIcon : null,
     monumentName:
       typeof record.monumentName === "string" ? record.monumentName : null,
+    skillId: readTrimmedString(record.skillId),
+    skillMonumentId: readTrimmedString(record.skillMonumentId),
     skillIcon: typeof record.skillIcon === "string" ? record.skillIcon : null,
     priority: typeof record.priority === "string" ? record.priority : null,
     priorityId:
@@ -423,6 +440,7 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
     energy: typeof record.energy === "string" ? record.energy : null,
     stage: typeof record.stage === "string" ? record.stage : null,
     goalId: typeof record.goalId === "string" ? record.goalId : null,
+    projectId: readTrimmedString(record.projectId),
     isPinned: record.isPinned !== false,
     completedAt:
       typeof record.completedAt === "string" && record.completedAt.trim()
@@ -485,6 +503,9 @@ function normalizeMyListViewModePreference(
 ): MyListViewModePreference | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
+  if (normalized === MY_LIST_LEGACY_TAGS_VIEW_MODE) {
+    return "monuments";
+  }
   if (
     MY_LIST_VIEW_MODE_PREFERENCES.includes(
       normalized as MyListViewModePreference
@@ -639,8 +660,11 @@ export type MyListPinnedSourceRow = {
   title: string;
   icon?: string | null;
   goalIcon?: string | null;
+  monumentId?: string | null;
   monumentIcon?: string | null;
   monumentName?: string | null;
+  skillId?: string | null;
+  skillMonumentId?: string | null;
   skillIcon?: string | null;
   priority?: string | null;
   priorityId?: PriorityBucketId | null;
@@ -648,6 +672,7 @@ export type MyListPinnedSourceRow = {
   energy?: string | null;
   stage?: string | null;
   goalId?: string | null;
+  projectId?: string | null;
   isPinned?: boolean;
   completedAt?: string | null;
 };
@@ -1006,6 +1031,9 @@ export function MyListSheet({
   tasks,
   pinnedSourceRows,
   pinnedGoalRows,
+  monuments,
+  goalMonumentIdsById,
+  projectGoalIdsById,
   skills,
   skillCategories,
   pendingTaskIds,
@@ -1023,6 +1051,9 @@ export function MyListSheet({
   tasks: TaskLite[];
   pinnedSourceRows?: MyListPinnedSourceRow[];
   pinnedGoalRows?: MyListPinnedGoalRow[];
+  monuments?: MyListMonumentRow[];
+  goalMonumentIdsById?: Record<string, string | null>;
+  projectGoalIdsById?: Record<string, string | null>;
   skills: SkillRow[];
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
@@ -1060,13 +1091,9 @@ export function MyListSheet({
   const [isDayLensActive, setIsDayLensActive] = useState(
     () => readStoredMyListViewModePreference(userId) === "day"
   );
-  const [isTagLensActive, setIsTagLensActive] = useState(
-    () => readStoredMyListViewModePreference(userId) === "tags"
+  const [isMonumentLensActive, setIsMonumentLensActive] = useState(
+    () => readStoredMyListViewModePreference(userId) === "monuments"
   );
-  const [customTags, setCustomTags] = useState<MyListCustomTag[]>([]);
-  const [customTagIdsByEntityKey, setCustomTagIdsByEntityKey] = useState<
-    Map<string, string[]>
-  >(() => new Map());
   const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
     useState(false);
   const [expandedPinnedGoalIds, setExpandedPinnedGoalIds] = useState<Set<string>>(
@@ -1106,7 +1133,7 @@ export function MyListSheet({
   const [collapsedDayGroups, setCollapsedDayGroups] = useState<
     Partial<Record<MyListDayViewBucketId, boolean>>
   >({});
-  const [collapsedTagGroups, setCollapsedTagGroups] = useState<
+  const [collapsedMonumentGroups, setCollapsedMonumentGroups] = useState<
     Record<string, boolean>
   >({});
   const manualReorderCompactDayGroupIdsRef = useRef<
@@ -1192,7 +1219,7 @@ export function MyListSheet({
 
       setActiveView("list");
       setIsDayLensActive(preference === "day");
-      setIsTagLensActive(preference === "tags");
+      setIsMonumentLensActive(preference === "monuments");
     },
     []
   );
@@ -1231,18 +1258,27 @@ export function MyListSheet({
       ),
     [pinnedGoalRows]
   );
+  const groupablePinnedSourceRows = useMemo(
+    () =>
+      isMonumentLensActive
+        ? [...visiblePinnedGoalRows, ...visiblePinnedSourceRows]
+        : visiblePinnedSourceRows,
+    [isMonumentLensActive, visiblePinnedGoalRows, visiblePinnedSourceRows]
+  );
   const activeManualRows = useMemo(
     () => manualRows.filter((row) => !row.done),
     [manualRows]
   );
   const hasListRows =
     activeVisibleTasks.length > 0 ||
-    visiblePinnedSourceRows.length > 0 ||
+    groupablePinnedSourceRows.length > 0 ||
     activeManualRows.length > 0 ||
+    (isMonumentLensActive &&
+      (monuments?.some((monument) => monument.id.trim()) ?? false)) ||
     open;
   const visibleListRowCount =
     activeVisibleTasks.length +
-    visiblePinnedSourceRows.length +
+    groupablePinnedSourceRows.length +
     activeManualRows.length +
     (open ? 1 : 0);
   const visibleManualRows = useMemo(
@@ -1293,7 +1329,7 @@ export function MyListSheet({
       appendAnchoredManualRows(`task:${task.id}`);
     });
 
-    visiblePinnedSourceRows.forEach((row) => {
+    groupablePinnedSourceRows.forEach((row) => {
       rows.push({ rowType: "pinnedSource", row });
     });
 
@@ -1317,7 +1353,7 @@ export function MyListSheet({
     unanchoredVisibleManualRows,
     visibleManualRows,
     visibleManualRowsByAnchor,
-    visiblePinnedSourceRows,
+    groupablePinnedSourceRows,
     visibleTasks,
   ]);
   const manualReorderItemIds = useMemo(
@@ -1339,7 +1375,7 @@ export function MyListSheet({
       const nextCompletions = { ...currentCompletions };
       let changed = false;
 
-      visiblePinnedSourceRows.forEach((row) => {
+      groupablePinnedSourceRows.forEach((row) => {
         const completionKey = `${row.sourceType}:${row.id}`;
         const nextCompletedAt = row.completedAt ?? null;
         if (nextCompletions[completionKey] !== nextCompletedAt) {
@@ -1350,7 +1386,7 @@ export function MyListSheet({
 
       return changed ? nextCompletions : currentCompletions;
     });
-  }, [visiblePinnedSourceRows]);
+  }, [groupablePinnedSourceRows]);
 
   const activeTodoRows = useMemo(
     () =>
@@ -1433,8 +1469,8 @@ export function MyListSheet({
       LIST_COMPACT_ROW_HEIGHT +
     (isDayLensActive
       ? MY_LIST_DAY_VIEW_BUCKETS.length
-      : isTagLensActive
-        ? MY_LIST_DAY_VIEW_BUCKETS.length + customTags.length
+      : isMonumentLensActive
+        ? (monuments?.length ?? 0) + 1
         : PRIORITY_ORDER.length) *
       LIST_COMPACT_GROUP_HEADER_HEIGHT +
     LIST_COMPACT_NOTES_ALLOWANCE +
@@ -1462,6 +1498,35 @@ export function MyListSheet({
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
+  );
+  const monumentRows = useMemo(
+    () =>
+      (monuments ?? [])
+        .filter((monument) => monument.id.trim())
+        .map((monument) => ({
+          ...monument,
+          id: monument.id.trim(),
+          title: monument.title.trim() || "Untitled Monument",
+          emoji: monument.emoji?.trim() || null,
+          priorityRank:
+            typeof monument.priorityRank === "number" &&
+            Number.isFinite(monument.priorityRank)
+              ? monument.priorityRank
+              : null,
+        })),
+    [monuments]
+  );
+  const monumentById = useMemo(
+    () => new Map(monumentRows.map((monument) => [monument.id, monument])),
+    [monumentRows]
+  );
+  const goalMonumentIdLookup = useMemo(
+    () => new Map(Object.entries(goalMonumentIdsById ?? {})),
+    [goalMonumentIdsById]
+  );
+  const projectGoalIdLookup = useMemo(
+    () => new Map(Object.entries(projectGoalIdsById ?? {})),
+    [projectGoalIdsById]
   );
   const persistManualRows = useCallback(
     (rows: MyListManualRow[]) => {
@@ -1507,85 +1572,6 @@ export function MyListSheet({
 
     applyMyListViewModePreference(storedPreference);
   }, [applyMyListViewModePreference, userId]);
-
-  useEffect(() => {
-    if (!isTagLensActive || !userId) {
-      if (!userId) {
-        setCustomTags([]);
-        setCustomTagIdsByEntityKey(new Map());
-      }
-      return;
-    }
-
-    const entityTargets = [
-      ...tasks.map((task) => ({ entityType: "TASK", entityId: task.id })),
-      ...visiblePinnedSourceRows.map((row) => ({
-        entityType: row.sourceType,
-        entityId: row.id,
-      })),
-    ];
-    const entityIds = [...new Set(entityTargets.map(({ entityId }) => entityId))];
-    let active = true;
-
-    const loadCustomTags = async () => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-
-      const [tagsResult, relationsResult] = await Promise.all([
-        supabase
-          .from("tags")
-          .select("id, name")
-          .eq("user_id", userId)
-          .order("name", { ascending: true }),
-        entityIds.length > 0
-          ? supabase
-              .from("event_tags")
-              .select("tag_id, entity_type, entity_id")
-              .eq("user_id", userId)
-              .in("entity_id", entityIds)
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-
-      if (tagsResult.error) throw tagsResult.error;
-      if (relationsResult.error) throw relationsResult.error;
-      if (!active) return;
-
-      const targetKeys = new Set(
-        entityTargets.map(
-          ({ entityType, entityId }) => `${entityType}:${entityId}`
-        )
-      );
-      const nextTagIdsByEntityKey = new Map<string, string[]>();
-      ((relationsResult.data ?? []) as MyListTagRelation[]).forEach(
-        (relation) => {
-          const entityKey = `${relation.entity_type}:${relation.entity_id}`;
-          if (!targetKeys.has(entityKey)) return;
-          const tagIds = nextTagIdsByEntityKey.get(entityKey) ?? [];
-          if (!tagIds.includes(relation.tag_id)) tagIds.push(relation.tag_id);
-          nextTagIdsByEntityKey.set(entityKey, tagIds);
-        }
-      );
-
-      setCustomTags(
-        ((tagsResult.data ?? []) as MyListCustomTag[]).filter(
-          (tag) => tag.id && tag.name?.trim()
-        )
-      );
-      setCustomTagIdsByEntityKey(nextTagIdsByEntityKey);
-    };
-
-    void loadCustomTags().catch((error) => {
-      console.warn("Failed to load My List custom tags", error);
-      if (active) {
-        setCustomTags([]);
-        setCustomTagIdsByEntityKey(new Map());
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [isTagLensActive, tasks, userId, visiblePinnedSourceRows]);
 
   useEffect(() => {
     let active = true;
@@ -1706,18 +1692,6 @@ export function MyListSheet({
     [defaultPriority.id, resolveTaskPriorityGroupId]
   );
 
-  const resolveVisibleRowCustomTagIds = useCallback(
-    (visibleRow: MyListVisibleTodoRow): string[] => {
-      if (visibleRow.rowType === "manual") return [];
-      const entityKey =
-        visibleRow.rowType === "task"
-          ? `TASK:${visibleRow.task.id}`
-          : `${visibleRow.row.sourceType}:${visibleRow.row.id}`;
-      return customTagIdsByEntityKey.get(entityKey) ?? [];
-    },
-    [customTagIdsByEntityKey]
-  );
-
   const resolveTaskSkillMetadata = useCallback(
     (task: TaskLite) => {
       const override = taskOverrides[task.id];
@@ -1745,6 +1719,87 @@ export function MyListSheet({
     [skillLookup, taskOverrides]
   );
 
+  const resolveProjectMonumentId = useCallback(
+    (projectId?: string | null): string | null => {
+      const goalId = projectId ? projectGoalIdLookup.get(projectId) : null;
+      return goalId ? (goalMonumentIdLookup.get(goalId) ?? null) : null;
+    },
+    [goalMonumentIdLookup, projectGoalIdLookup]
+  );
+
+  const resolveVisibleRowMonumentMetadata = useCallback(
+    (
+      visibleRow: MyListVisibleTodoRow
+    ): { monumentId: string | null; label?: string | null; icon?: string | null } => {
+      if (visibleRow.rowType === "manual") {
+        const skill = visibleRow.row.skillId
+          ? skillLookup.get(visibleRow.row.skillId) ?? null
+          : null;
+        return { monumentId: skill?.monument_id ?? null };
+      }
+
+      if (visibleRow.rowType === "task") {
+        const taskRecord = visibleRow.task as TaskLite & {
+          monument_id?: string | null;
+          monumentId?: string | null;
+        };
+        const directMonumentId =
+          readTrimmedString(taskRecord.monumentId) ??
+          readTrimmedString(taskRecord.monument_id);
+        const goalMonumentId = visibleRow.task.goal_id
+          ? goalMonumentIdLookup.get(visibleRow.task.goal_id) ?? null
+          : null;
+        const projectMonumentId = resolveProjectMonumentId(
+          visibleRow.task.project_id
+        );
+        const skill = visibleRow.task.skill_id
+          ? skillLookup.get(visibleRow.task.skill_id) ?? null
+          : null;
+
+        return {
+          monumentId:
+            directMonumentId ??
+            goalMonumentId ??
+            projectMonumentId ??
+            skill?.monument_id ??
+            visibleRow.task.skill_monument_id ??
+            null,
+        };
+      }
+
+      const row = visibleRow.row;
+      const directMonumentId = row.monumentId ?? null;
+      const goalMonumentId = row.goalId
+        ? goalMonumentIdLookup.get(row.goalId) ?? null
+        : null;
+      const projectMonumentId =
+        row.projectId || row.sourceType === "PROJECT"
+          ? resolveProjectMonumentId(row.projectId ?? row.id)
+          : null;
+      const skill = row.skillId ? skillLookup.get(row.skillId) ?? null : null;
+
+      return {
+        monumentId:
+          directMonumentId ??
+          (row.sourceType === "GOAL"
+            ? goalMonumentIdLookup.get(row.id) ?? null
+            : null) ??
+          goalMonumentId ??
+          projectMonumentId ??
+          row.skillMonumentId ??
+          skill?.monument_id ??
+          null,
+        label: row.monumentName ?? null,
+        icon: row.monumentIcon ?? null,
+      };
+    },
+    [
+      goalMonumentIdLookup,
+      resolveProjectMonumentId,
+      skillLookup,
+    ]
+  );
+
   const resolvePriorityScheduleMetadata = useCallback(
     (priorityId: PriorityBucketId) => {
       const option =
@@ -1761,72 +1816,50 @@ export function MyListSheet({
   );
 
   const visibleTodoGroups = useMemo(() => {
-    if (isTagLensActive) {
-      const builtInTagIdsByName = new Map(
-        MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => [
-          MY_LIST_DAY_LABELS[bucketId].trim().toLocaleLowerCase(),
-          bucketId,
-        ])
-      );
-      const customTagsByName = new Map<
-        string,
-        { id: string; label: string; tagIds: string[] }
-      >();
+    if (isMonumentLensActive) {
+      const groupsByMonumentId = new Map<string, MyListMonumentGroup>();
+      const fallbackGroup: MyListMonumentGroup = {
+        id: MY_LIST_NO_MONUMENT_GROUP_ID,
+        label: MY_LIST_NO_MONUMENT_GROUP_LABEL,
+        rows: [],
+      };
 
-      customTags.forEach((tag) => {
-        const label = tag.name.trim();
-        const normalizedName = label.toLocaleLowerCase();
-        const existing = customTagsByName.get(normalizedName);
-        if (existing) {
-          existing.tagIds.push(tag.id);
-        } else {
-          customTagsByName.set(normalizedName, {
-            id: tag.id,
-            label,
-            tagIds: [tag.id],
-          });
+      monumentRows.forEach((monument) => {
+        groupsByMonumentId.set(monument.id, {
+          id: monument.id,
+          label: monument.title,
+          icon: monument.emoji,
+          rows: [],
+        });
+      });
+
+      activeTodoRows.forEach((visibleRow) => {
+        const metadata = resolveVisibleRowMonumentMetadata(visibleRow);
+        const monumentId = metadata.monumentId;
+        if (!monumentId) {
+          fallbackGroup.rows.push(visibleRow);
+          return;
         }
-      });
 
-      const builtInGroups = MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => {
-        const matchingCustomTagIds =
-          customTagsByName.get(
-            MY_LIST_DAY_LABELS[bucketId].trim().toLocaleLowerCase()
-          )?.tagIds ?? [];
-
-        return {
-          id: `tag:builtin:${bucketId}`,
-          label: MY_LIST_DAY_LABELS[bucketId],
-          rows: activeTodoRows.filter((visibleRow) => {
-            const rowBucketId = resolveVisibleRowDayBucketId(visibleRow);
-            const isInBuiltInBucket =
-              bucketId === "anytime"
-                ? rowBucketId === null
-                : rowBucketId === bucketId;
-            return (
-              isInBuiltInBucket ||
-              resolveVisibleRowCustomTagIds(visibleRow).some((tagId) =>
-                matchingCustomTagIds.includes(tagId)
-              )
-            );
-          }),
+        const monument = monumentById.get(monumentId);
+        const group = groupsByMonumentId.get(monumentId) ?? {
+          id: monumentId,
+          label:
+            monument?.title ??
+            metadata.label?.trim() ??
+            "Untitled Monument",
+          icon: monument?.emoji ?? metadata.icon?.trim() ?? null,
+          rows: [],
         };
-      });
-      const customGroups = [...customTagsByName.entries()]
-        .filter(([normalizedName]) => !builtInTagIdsByName.has(normalizedName))
-        .map(([, tag]) => ({
-          id: `tag:${tag.id}`,
-          label: tag.label,
-          rows: activeTodoRows.filter((visibleRow) =>
-            resolveVisibleRowCustomTagIds(visibleRow).some((tagId) =>
-              tag.tagIds.includes(tagId)
-            )
-          ),
-        }))
-        .filter((group) => group.rows.length > 0)
-        .sort((left, right) => left.label.localeCompare(right.label));
 
-      return [...builtInGroups, ...customGroups];
+        group.rows.push(visibleRow);
+        groupsByMonumentId.set(monumentId, group);
+      });
+
+      return [
+        ...Array.from(groupsByMonumentId.values()),
+        ...(fallbackGroup.rows.length > 0 ? [fallbackGroup] : []),
+      ];
     }
 
     if (isDayLensActive) {
@@ -1852,15 +1885,16 @@ export function MyListSheet({
     })).filter((group) => group.rows.length > 0);
   }, [
     activeTodoRows,
-    customTags,
     isDayLensActive,
-    isTagLensActive,
-    resolveVisibleRowCustomTagIds,
+    isMonumentLensActive,
+    monumentById,
+    monumentRows,
+    resolveVisibleRowMonumentMetadata,
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
   ]);
   const lensGroupLayoutSections = useMemo(() => {
-    if (!isDayLensActive && !isTagLensActive) {
+    if (!isDayLensActive && !isMonumentLensActive) {
       return visibleTodoGroups.map((group) => ({
         sectionType: "group" as const,
         group,
@@ -1880,8 +1914,8 @@ export function MyListSheet({
 
     visibleTodoGroups.forEach((group) => {
       const bucketId = group.id as MyListDayViewBucketId;
-      const collapsedPreference = isTagLensActive
-        ? collapsedTagGroups[group.id]
+      const collapsedPreference = isMonumentLensActive
+        ? collapsedMonumentGroups[group.id]
         : collapsedDayGroups[bucketId];
       const wasCompactWhenManualDragStarted =
         isDayLensActive &&
@@ -1909,9 +1943,9 @@ export function MyListSheet({
   }, [
     activeManualReorderRowId,
     collapsedDayGroups,
-    collapsedTagGroups,
+    collapsedMonumentGroups,
     isDayLensActive,
-    isTagLensActive,
+    isMonumentLensActive,
     visibleTodoGroups,
   ]);
   const todoListSections = useMemo(
@@ -4148,7 +4182,11 @@ export function MyListSheet({
 
                 setShouldInitializeMatrixTodo(false);
                 selectMyListViewModePreference(
-                  isTagLensActive ? "tags" : isDayLensActive ? "day" : "priority"
+                  isMonumentLensActive
+                    ? "monuments"
+                    : isDayLensActive
+                      ? "day"
+                      : "priority"
                 );
               }}
               tabIndex={open ? 0 : -1}
@@ -4178,11 +4216,11 @@ export function MyListSheet({
               <button
                 type="button"
                 aria-label={
-                  isTagLensActive
-                    ? "Hide Tag grouping"
-                    : "Show Tag grouping"
+                  isMonumentLensActive
+                    ? "Hide Monument grouping"
+                    : "Show Monument grouping"
                 }
-                aria-pressed={isTagLensActive}
+                aria-pressed={isMonumentLensActive}
                 onClick={(event) => {
                   event.stopPropagation();
                   setActiveSkillPickerRowKey(null);
@@ -4190,18 +4228,18 @@ export function MyListSheet({
                   setActiveDayPickerRowKey(null);
                   setPendingDeleteRowId(null);
                   selectMyListViewModePreference(
-                    isTagLensActive ? "priority" : "tags"
+                    isMonumentLensActive ? "priority" : "monuments"
                   );
                 }}
                 tabIndex={open ? 0 : -1}
                 className={clsx(
                   "flex h-6 w-6 items-center justify-center rounded-lg border bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35",
-                  isTagLensActive
+                  isMonumentLensActive
                     ? "border-white/[0.08] text-white"
                     : "border-white/[0.08]"
                 )}
               >
-                <Tags
+                <Landmark
                   className="h-3.5 w-3.5"
                   strokeWidth={1.8}
                   aria-hidden="true"
@@ -4274,7 +4312,7 @@ export function MyListSheet({
         >
           {activeView === "list" ? (
             <>
-          {visiblePinnedGoalRows.length > 0 ? (
+          {!isMonumentLensActive && visiblePinnedGoalRows.length > 0 ? (
             <div className="border-b border-white/[0.055] pb-2">
               {visiblePinnedGoalRows.map((goal) => {
                 const expanded = expandedPinnedGoalIds.has(goal.id);
@@ -4442,7 +4480,9 @@ export function MyListSheet({
                         className="flex flex-wrap items-center gap-1.5 px-3 py-1"
                       >
                         {section.groups.map((group) => {
-                          if (isTagLensActive) {
+                          if (isMonumentLensActive) {
+                            const monumentIcon =
+                              "icon" in group ? group.icon : null;
                             return (
                               <button
                                 key={group.id}
@@ -4453,7 +4493,7 @@ export function MyListSheet({
                                 data-my-list-no-upgrade
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setCollapsedTagGroups((current) => ({
+                                  setCollapsedMonumentGroups((current) => ({
                                     ...current,
                                     [group.id]: false,
                                   }));
@@ -4461,11 +4501,20 @@ export function MyListSheet({
                                 tabIndex={open ? 0 : -1}
                                 className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
                               >
-                                <Tags
-                                  className="h-3 w-3"
-                                  strokeWidth={1.9}
-                                  aria-hidden="true"
-                                />
+                                {monumentIcon ? (
+                                  <span
+                                    className="text-[0.72rem] leading-none"
+                                    aria-hidden="true"
+                                  >
+                                    {monumentIcon}
+                                  </span>
+                                ) : (
+                                  <Landmark
+                                    className="h-3 w-3"
+                                    strokeWidth={1.9}
+                                    aria-hidden="true"
+                                  />
+                                )}
                                 <span>{group.label}</span>
                               </button>
                             );
@@ -4621,31 +4670,47 @@ export function MyListSheet({
                             );
                           })()}
                         </div>
-                      ) : isTagLensActive && !isCompletedSection ? (
+                      ) : isMonumentLensActive && !isCompletedSection ? (
                         <div className="px-2 pt-1">
-                          <button
-                            type="button"
-                            aria-expanded={true}
-                            aria-label={`Collapse ${group.label} group`}
-                            data-my-list-no-schedule-drag
-                            data-my-list-no-upgrade
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setCollapsedTagGroups((current) => ({
-                                ...current,
-                                [group.id]: true,
-                              }));
-                            }}
-                            tabIndex={open ? 0 : -1}
-                            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
-                          >
-                            <Tags
-                              className="h-3 w-3"
-                              strokeWidth={1.9}
-                              aria-hidden="true"
-                            />
-                            <span>{group.label}</span>
-                          </button>
+                          {(() => {
+                            const monumentIcon =
+                              "icon" in group ? group.icon : null;
+
+                            return (
+                              <button
+                                type="button"
+                                aria-expanded={true}
+                                aria-label={`Collapse ${group.label} group`}
+                                data-my-list-no-schedule-drag
+                                data-my-list-no-upgrade
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCollapsedMonumentGroups((current) => ({
+                                    ...current,
+                                    [group.id]: true,
+                                  }));
+                                }}
+                                tabIndex={open ? 0 : -1}
+                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
+                              >
+                                {monumentIcon ? (
+                                  <span
+                                    className="text-[0.72rem] leading-none"
+                                    aria-hidden="true"
+                                  >
+                                    {monumentIcon}
+                                  </span>
+                                ) : (
+                                  <Landmark
+                                    className="h-3 w-3"
+                                    strokeWidth={1.9}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                <span>{group.label}</span>
+                              </button>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">

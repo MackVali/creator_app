@@ -172,6 +172,7 @@ import {
   extractFitnessLoggedSetPerformances,
   formatFitnessProgressionSuggestionAction,
   getFitnessExerciseProgressionSummary,
+  type FitnessExerciseProgressionSummary,
 } from "@/lib/fitness/progressiveOverload";
 import { cn } from "@/lib/utils";
 
@@ -1263,6 +1264,39 @@ function getInitialFitnessWorkoutExerciseDetail(
 
 function getFallbackFitnessWorkoutExerciseDetail(): FitnessWorkoutExerciseDetail {
   return { sets: "1", reps: "", duration: "", weight: "", unit: "lb" };
+}
+
+function isFitnessWeightUnit(value: string | null | undefined): value is FitnessWeightUnit {
+  return FITNESS_WEIGHT_UNITS.includes(value as FitnessWeightUnit);
+}
+
+function getFitnessHistoryWeightTarget(
+  summary: FitnessExerciseProgressionSummary | null | undefined,
+): Pick<FitnessWorkoutExerciseDetail, "weight" | "unit"> | null {
+  const suggestedUnit = summary?.suggestedUnit;
+  if (suggestedUnit === "bodyweight") {
+    return { weight: "", unit: "bodyweight" };
+  }
+  if (summary?.suggestedWeight != null && isFitnessWeightUnit(suggestedUnit)) {
+    return { weight: String(summary.suggestedWeight), unit: suggestedUnit };
+  }
+
+  const latestUnit = summary?.latestUnit;
+  if (latestUnit === "bodyweight") {
+    return { weight: "", unit: "bodyweight" };
+  }
+  if (summary?.latestWeight != null && isFitnessWeightUnit(latestUnit)) {
+    return { weight: String(summary.latestWeight), unit: latestUnit };
+  }
+
+  return null;
+}
+
+function isDefaultFitnessWorkoutWeight(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return true;
+  const numericValue = Number(trimmedValue);
+  return Number.isFinite(numericValue) && numericValue === 0;
 }
 
 function getFitnessWorkoutExerciseDetail(
@@ -2844,6 +2878,8 @@ type NutritionRecipeSearchResponse = {
 type NutritionFoodBarcodeLookupResponse = FoodBarcodeLookupResult & {
   error?: string;
 };
+type BarcodeLookupResolutionDetails = NonNullable<FoodBarcodeLookupResult["barcodeResolution"]>;
+type BarcodeLookupProviderDiagnostic = BarcodeLookupResolutionDetails["providerDiagnostics"][number];
 type NutritionMealCreateResponse = {
   meal?: {
     id?: string | null;
@@ -5021,6 +5057,130 @@ function getRecordMetadata(value: unknown): Record<string, unknown> {
 function getTrimmedMetadataString(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+const BARCODE_PROVIDER_LABELS: Record<BarcodeLookupProviderDiagnostic["provider"], string> = {
+  user_food_resource: "Saved food",
+  foods_catalog: "Shared foods",
+  usda_fdc: "USDA",
+  open_food_facts: "Open Food Facts",
+};
+
+const BARCODE_OUTCOME_LABELS: Record<BarcodeLookupProviderDiagnostic["outcome"], string> = {
+  skipped_missing_key: "Key missing",
+  matched: "Exact match",
+  no_results: "No results",
+  no_exact_match: "No exact match",
+  rejected_invalid_provider_barcode: "Invalid provider barcode",
+  timeout: "Timed out",
+  unauthorized: "Unauthorized",
+  rate_limited: "Rate limited",
+  http_error: "HTTP error",
+  parse_error: "Parse error",
+};
+
+const BARCODE_FIELD_LABELS: Record<string, string> = {
+  productName: "name",
+  brand: "brand",
+  container: "container",
+  packageQuantity: "package quantity",
+  netQuantityPerContainer: "package quantity",
+  netQuantityUnit: "package unit",
+  servingSize: "serving size",
+  servingQuantity: "serving size",
+  servingUnit: "serving unit",
+  servingsPerContainer: "servings per container",
+  nutritionBasis: "nutrition basis",
+  calories: "calories",
+  carbohydrates: "carbs",
+  carbs: "carbs",
+  protein: "protein",
+  fat: "fat",
+  nutritionConversion: "nutrition conversion",
+  productNameRequired: "name",
+  containerType: "container",
+  containersAdded: "container count",
+};
+
+function formatBarcodeLookupFields(fields: readonly string[] | undefined) {
+  if (!fields?.length) return "none";
+  return fields.map((field) => BARCODE_FIELD_LABELS[field] ?? field).join(", ");
+}
+
+function formatBarcodeLookupOutcome(diagnostic: BarcodeLookupProviderDiagnostic) {
+  const label = BARCODE_OUTCOME_LABELS[diagnostic.outcome] ?? diagnostic.outcome;
+  return diagnostic.httpStatus ? `${label} (${diagnostic.httpStatus})` : label;
+}
+
+function renderBarcodeLookupProviderDetails(
+  diagnostic: BarcodeLookupProviderDiagnostic,
+  finalMissingFields: string[],
+) {
+  const providerMissingFields = finalMissingFields.filter(
+    (field) => !diagnostic.contributedFields.some((contributed) => contributed === field),
+  );
+  return (
+    <section key={diagnostic.provider} className="space-y-1">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/62">
+        {BARCODE_PROVIDER_LABELS[diagnostic.provider]}
+      </p>
+      <ul className="space-y-0.5 text-[11px] leading-4 text-white/50">
+        {diagnostic.provider === "usda_fdc" ? (
+          <li>Key configured: {diagnostic.configured ? "Yes" : "No"}</li>
+        ) : null}
+        <li>Attempted: {diagnostic.attempted ? "Yes" : "No"}</li>
+        <li>Result: {formatBarcodeLookupOutcome(diagnostic)}</li>
+        {diagnostic.matchedProviderGtin ? <li>GTIN: {diagnostic.matchedProviderGtin}</li> : null}
+        {diagnostic.matchedFdcId ? <li>FDC ID: {diagnostic.matchedFdcId}</li> : null}
+        {diagnostic.returnedProductCode ? <li>Code: {diagnostic.returnedProductCode}</li> : null}
+        {diagnostic.canonicalExactMatchCount !== undefined ? (
+          <li>Exact matches: {diagnostic.canonicalExactMatchCount}</li>
+        ) : null}
+        {diagnostic.queriedBarcodeVariants.length ? (
+          <li>Queried: {diagnostic.queriedBarcodeVariants.join(", ")}</li>
+        ) : null}
+        <li>Contributed: {formatBarcodeLookupFields(diagnostic.contributedFields)}</li>
+        {diagnostic.outcome === "matched" && providerMissingFields.length ? (
+          <li>Missing: {formatBarcodeLookupFields(providerMissingFields)}</li>
+        ) : null}
+        {diagnostic.fieldsPresentButRejected?.length ? (
+          <li>Rejected fields: {formatBarcodeLookupFields(diagnostic.fieldsPresentButRejected)}</li>
+        ) : null}
+        {diagnostic.rejectionReason ? <li>Reason: {diagnostic.rejectionReason}</li> : null}
+      </ul>
+    </section>
+  );
+}
+
+function renderBarcodeLookupDetails(resolution: BarcodeLookupResolutionDetails) {
+  const finalMissingFields = resolution.missingFields ?? [];
+  return (
+    <details className="w-full rounded-lg border border-white/[0.07] bg-white/[0.035]">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-white/68 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16">
+        Lookup details
+      </summary>
+      <div className="space-y-3 border-t border-white/[0.055] px-3 py-2.5">
+        {resolution.providerDiagnostics.map((diagnostic) =>
+          renderBarcodeLookupProviderDetails(diagnostic, finalMissingFields),
+        )}
+        <section className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/62">
+            Final
+          </p>
+          <ul className="space-y-0.5 text-[11px] leading-4 text-white/50">
+            <li>Barcode: {resolution.canonicalBarcode}</li>
+            <li>Complete: {resolution.profileCompleteness === "complete" ? "Yes" : "No"}</li>
+            <li>
+              Incomplete because:{" "}
+              {finalMissingFields.length
+                ? formatBarcodeLookupFields(finalMissingFields)
+                : resolution.notStagedReason ?? "conflict"}
+            </li>
+          </ul>
+        </section>
+      </div>
+    </details>
+  );
 }
 
 function getGroceryScanPackageLine(metadata: Record<string, unknown>) {
@@ -7864,6 +8024,9 @@ export function NoteDatabaseEntrySheet({
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const fitnessWeightEditsByExerciseIdRef = useRef<
+    Record<string, Partial<Record<"weight" | "unit", boolean>>>
+  >({});
   const fitnessLoggedSetPerformances = useMemo(
     () => extractFitnessLoggedSetPerformances(entries),
     [entries],
@@ -7881,6 +8044,56 @@ export function NoteDatabaseEntrySheet({
     ),
     [fitnessLoggedSetPerformances, selectedFitnessWorkoutExercises],
   );
+  useEffect(() => {
+    if (
+      selectedFitnessWorkoutExercises.length === 0 ||
+      fitnessLoggedSetPerformances.length === 0
+    ) {
+      return;
+    }
+
+    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+      let changed = false;
+      const nextDetails = { ...currentDetails };
+
+      selectedFitnessWorkoutExercises.forEach((exercise) => {
+        const exerciseId = getFitnessExerciseId(exercise);
+        const currentDetail =
+          currentDetails[exerciseId] ?? getInitialFitnessWorkoutExerciseDetail(exercise);
+        const edits = fitnessWeightEditsByExerciseIdRef.current[exerciseId];
+
+        if (
+          edits?.weight ||
+          edits?.unit ||
+          !isDefaultFitnessWorkoutWeight(currentDetail.weight) ||
+          currentDetail.unit !== "lb"
+        ) {
+          return;
+        }
+
+        const target = getFitnessHistoryWeightTarget(
+          fitnessProgressionByExerciseId[exerciseId],
+        );
+        if (!target) return;
+
+        if (currentDetail.weight === target.weight && currentDetail.unit === target.unit) {
+          return;
+        }
+
+        nextDetails[exerciseId] = {
+          ...currentDetail,
+          ...target,
+        };
+        changed = true;
+      });
+
+      return changed ? nextDetails : currentDetails;
+    });
+  }, [
+    fitnessLoggedSetPerformances.length,
+    fitnessProgressionByExerciseId,
+    selectedFitnessWorkoutExercises,
+  ]);
   const consumeFitnessWorkoutFocusSessionResult = useCallback(() => {
     if (typeof window === "undefined" || selectedFitnessWorkoutExercises.length === 0) return;
     let rawResult: string | null = null;
@@ -7927,6 +8140,11 @@ export function NoteDatabaseEntrySheet({
         )
           ? (executedLoad.weightUnit as FitnessWeightUnit)
           : "lb";
+        fitnessWeightEditsByExerciseIdRef.current[exerciseId] = {
+          ...fitnessWeightEditsByExerciseIdRef.current[exerciseId],
+          weight: true,
+          unit: true,
+        };
         nextDetails[exerciseId] = {
           ...(nextDetails[exerciseId] ?? getFallbackFitnessWorkoutExerciseDetail()),
           weight: unit === "bodyweight" ? "" : executedLoad.weight ?? "",
@@ -8165,6 +8383,8 @@ export function NoteDatabaseEntrySheet({
   const [nutritionBarcodeLookupError, setNutritionBarcodeLookupError] = useState<
     string | null
   >(null);
+  const [nutritionBarcodeResolutionDetails, setNutritionBarcodeResolutionDetails] =
+    useState<BarcodeLookupResolutionDetails | null>(null);
   const [expandedGroceryInventoryField, setExpandedGroceryInventoryField] = useState<
     "expires" | "location" | null
   >(null);
@@ -9205,6 +9425,7 @@ export function NoteDatabaseEntrySheet({
         delete nextDetails[exerciseId];
         return nextDetails;
       });
+      delete fitnessWeightEditsByExerciseIdRef.current[exerciseId];
       void hapticSnap();
       return;
     }
@@ -9254,6 +9475,7 @@ export function NoteDatabaseEntrySheet({
       delete nextDetails[exerciseId];
       return nextDetails;
     });
+    delete fitnessWeightEditsByExerciseIdRef.current[exerciseId];
     void hapticSnap();
   }
 
@@ -9263,6 +9485,7 @@ export function NoteDatabaseEntrySheet({
     setSelectedFitnessSourceRoutineName(null);
     setSelectedFitnessPlanName(null);
     setFitnessWorkoutExerciseDetailsById({});
+    fitnessWeightEditsByExerciseIdRef.current = {};
     setIsFitnessWorkoutReviewOpen(false);
     void hapticSnap();
   }
@@ -9298,6 +9521,7 @@ export function NoteDatabaseEntrySheet({
 
     setSelectedFitnessWorkoutExercises(routineExercises);
     setFitnessWorkoutExerciseDetailsById(routineDetails);
+    fitnessWeightEditsByExerciseIdRef.current = {};
     setFitnessWorkoutFocusSessionResult(null);
     setSelectedFitnessRoutineName(workoutName);
     setSelectedFitnessSourceRoutineName(routine.title);
@@ -9317,28 +9541,8 @@ export function NoteDatabaseEntrySheet({
         exerciseName: exercise.name,
       },
     );
-    const suggestedUnit = summary?.suggestedUnit;
-
-    if (
-      summary?.suggestedWeight != null &&
-      suggestedUnit &&
-      FITNESS_WEIGHT_UNITS.includes(suggestedUnit as FitnessWeightUnit)
-    ) {
-      return {
-        ...detail,
-        weight: String(summary.suggestedWeight),
-        unit: suggestedUnit as FitnessWeightUnit,
-      };
-    }
-
-    const latestUnit = summary?.latestUnit;
-    if (latestUnit && FITNESS_WEIGHT_UNITS.includes(latestUnit as FitnessWeightUnit)) {
-      return {
-        ...detail,
-        weight: summary.latestWeight == null ? "" : String(summary.latestWeight),
-        unit: latestUnit as FitnessWeightUnit,
-      };
-    }
+    const target = getFitnessHistoryWeightTarget(summary);
+    if (target) return { ...detail, ...target };
 
     return detail;
   }
@@ -9393,6 +9597,12 @@ export function NoteDatabaseEntrySheet({
     value: string,
   ) {
     const exerciseId = getFitnessExerciseId(exercise);
+    if (key === "weight" || key === "unit") {
+      fitnessWeightEditsByExerciseIdRef.current[exerciseId] = {
+        ...fitnessWeightEditsByExerciseIdRef.current[exerciseId],
+        [key]: true,
+      };
+    }
 
     setFitnessWorkoutExerciseDetailsById((currentDetails) => {
       const currentDetail =
@@ -10005,6 +10215,7 @@ export function NoteDatabaseEntrySheet({
       void hapticWarningPattern();
       setNutritionBarcodeLookupStatus("Enter a barcode.");
       setNutritionBarcodeLookupError(null);
+      setNutritionBarcodeResolutionDetails(null);
       return;
     }
 
@@ -10012,6 +10223,7 @@ export function NoteDatabaseEntrySheet({
     setIsNutritionBarcodeLookupLoading(true);
     setNutritionBarcodeLookupStatus(null);
     setNutritionBarcodeLookupError(null);
+    setNutritionBarcodeResolutionDetails(null);
 
     try {
       const params = new URLSearchParams({ barcode: normalizedBarcode });
@@ -10023,6 +10235,7 @@ export function NoteDatabaseEntrySheet({
 
       if (payload.status === "rate_limited") {
         setNutritionBarcodeLookupStatus("Too many barcode lookups. Try again in a bit.");
+        setNutritionBarcodeResolutionDetails(payload.barcodeResolution ?? null);
         return;
       }
 
@@ -10073,6 +10286,7 @@ export function NoteDatabaseEntrySheet({
 
         stageScannedFood(foodForSelection);
         setNutritionBarcodeValue("");
+        setNutritionBarcodeResolutionDetails(null);
         setNutritionBarcodeLookupStatus(
           payload.status === "created"
             ? isGroceryDatabase
@@ -10101,16 +10315,19 @@ export function NoteDatabaseEntrySheet({
         const recognizedName = payload.food?.name?.trim();
         const missing = payload.barcodeResolution?.missingFields ?? [];
         setNutritionBarcodeValue(normalizedBarcode);
+        setNutritionBarcodeResolutionDetails(payload.barcodeResolution ?? null);
         setNutritionBarcodeLookupStatus(
           `${messageByStatus[payload.status]}${recognizedName ? ` · ${recognizedName}` : ""} · ${payload.barcodeResolution?.canonicalBarcode ?? normalizedBarcode}${missing.length ? ` · Missing ${missing.slice(0, 4).join(", ")}` : ""} · Retry lookup`,
         );
         return;
       }
+      setNutritionBarcodeResolutionDetails(null);
       setNutritionBarcodeLookupStatus(messageByStatus[payload.status]);
     } catch (error) {
       console.error("Failed to look up nutrition barcode", { error });
       void hapticErrorPattern();
       setNutritionBarcodeLookupError("Barcode lookup is unavailable right now.");
+      setNutritionBarcodeResolutionDetails(null);
     } finally {
       nutritionBarcodeLookupLoadingRef.current = false;
       setIsNutritionBarcodeLookupLoading(false);
@@ -10129,6 +10346,7 @@ export function NoteDatabaseEntrySheet({
     setIsNutritionBarcodeScannerLoading(true);
     setNutritionBarcodeLookupStatus(null);
     setNutritionBarcodeLookupError(null);
+    setNutritionBarcodeResolutionDetails(null);
 
     try {
       const result: NutritionBarcodeScannerResult = await scanNutritionBarcode();
@@ -14888,6 +15106,7 @@ export function NoteDatabaseEntrySheet({
                     setNutritionBarcodeValue(event.target.value);
                     setNutritionBarcodeLookupStatus(null);
                     setNutritionBarcodeLookupError(null);
+                    setNutritionBarcodeResolutionDetails(null);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -14942,6 +15161,9 @@ export function NoteDatabaseEntrySheet({
                   >
                     Add manually
                   </button>
+                ) : null}
+                {isGroceryMode && nutritionBarcodeResolutionDetails ? (
+                  renderBarcodeLookupDetails(nutritionBarcodeResolutionDetails)
                 ) : null}
               </div>
             ) : null}

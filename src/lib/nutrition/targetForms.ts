@@ -74,7 +74,7 @@ const stringOrEmpty = (value: unknown) => {
 const isFormulaInput = (value: unknown): value is FormulaInput =>
   value === "male" || value === "female" || value === "manual";
 
-const isPreferredUnits = (value: unknown): value is PreferredUnits => value === "metric" || value === "us";
+export const isPreferredUnits = (value: unknown): value is PreferredUnits => value === "metric" || value === "us";
 
 const isGoalType = (value: unknown): value is GoalType =>
   value === "lose" || value === "maintain" || value === "gain" || value === "recomposition";
@@ -135,6 +135,36 @@ export function createInitialTargetForm(overrides: Partial<TargetSetupForm> = {}
     lowCalorieConfirmed: false,
   };
   return normalizeDisplayForUnits({ ...form, ...overrides });
+}
+
+function localeRegion(locale: string) {
+  const trimmed = locale.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new Intl.Locale(trimmed);
+    if (parsed.region) return parsed.region.toUpperCase();
+  } catch {
+    // Fall back to lightweight parsing for older runtimes or malformed tags.
+  }
+  const parts = trimmed.replace("_", "-").split("-");
+  const region = parts.find((part) => /^[A-Za-z]{2}$/.test(part) || /^\d{3}$/.test(part));
+  return region ? region.toUpperCase() : null;
+}
+
+export function inferPreferredUnitsFromLocales(locales: readonly string[] | string | null | undefined): PreferredUnits {
+  const candidates = typeof locales === "string" ? [locales] : locales ?? [];
+  return candidates.some((locale) => localeRegion(locale) === "US") ? "us" : "metric";
+}
+
+export function resolveInitialTargetUnits(input: {
+  profile?: NutritionProfileRow;
+  unsavedForm?: TargetSetupForm | null;
+  localeUnits?: PreferredUnits;
+}): PreferredUnits {
+  const savedUnits = input.profile && typeof input.profile === "object" ? input.profile.preferred_units : null;
+  if (isPreferredUnits(savedUnits)) return savedUnits;
+  if (input.unsavedForm && isPreferredUnits(input.unsavedForm.units)) return input.unsavedForm.units;
+  return input.localeUnits ?? "metric";
 }
 
 export function normalizeDisplayForUnits(form: TargetSetupForm): TargetSetupForm {

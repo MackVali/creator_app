@@ -8037,16 +8037,7 @@ export default function FocusPomo({
                             </div>
                           ) : null}
                           <div className="flex min-w-0 flex-1 items-start gap-1.5 overflow-visible sm:gap-3">
-                            <div
-                              className={
-                                isFitnessWorkoutQueueItem(currentItem) &&
-                                (currentFitnessHasAdjustableWeight ||
-                                  currentFitnessIsBodyweight ||
-                                  currentFitnessHasReps)
-                                  ? "grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3"
-                                  : "min-w-0 flex-1"
-                              }
-                            >
+                            <div className="min-w-0 flex-1">
                               {activeCardLoading ? (
                                 <>
                                   <h2 id={titleId} className="sr-only">
@@ -8081,69 +8072,106 @@ export default function FocusPomo({
                                       })}
                                     </p>
                                   </div>
-                                  {currentFitnessHasAdjustableWeight ? (
-                                    <div className="inline-flex h-8 shrink-0 items-center self-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
-                                      <button
-                                        type="button"
-                                        aria-label={`Decrease weight for ${currentItem.title}`}
-                                        onClick={() =>
-                                          bumpCurrentFitnessWeight(-1)
-                                        }
-                                        className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
-                                      >
-                                        <Minus
-                                          className="size-3.5 sm:size-4"
-                                          aria-hidden="true"
-                                        />
-                                      </button>
-                                      <span className="flex h-full min-w-16 items-center justify-center border-x border-white/[0.07] px-2 text-xs font-semibold tabular-nums text-white sm:min-w-20 sm:px-3 sm:text-sm">
-                                        {currentItem.fitnessWeight?.trim() || "0"}{" "}
-                                        {currentFitnessWeightUnit}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        aria-label={`Increase weight for ${currentItem.title}`}
-                                        onClick={() => bumpCurrentFitnessWeight(1)}
-                                        className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
-                                      >
-                                        <Plus
-                                          className="size-3.5 sm:size-4"
-                                          aria-hidden="true"
-                                        />
-                                      </button>
-                                    </div>
-                                  ) : currentFitnessIsBodyweight ? (
-                                    <span className="shrink-0 self-center whitespace-nowrap rounded-md border border-white/10 bg-black/30 px-2 py-1 text-[10px] font-semibold text-zinc-300 sm:text-xs">
-                                      bodyweight
-                                    </span>
-                                  ) : null}
-                                  {currentFitnessHasReps ? (
-                                    <div className="col-span-2 mt-1 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-2">
-                                      <span className="text-xs font-semibold text-zinc-400 sm:text-sm">
-                                        Actual reps
-                                      </span>
-                                      <div className="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
-                                        <button
-                                          type="button"
-                                          aria-label={`Decrease actual reps for ${currentItem.title}`}
-                                          onClick={() => bumpCurrentFitnessReps(-1)}
-                                          className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
-                                        >
-                                          <Minus className="size-3.5 sm:size-4" aria-hidden="true" />
-                                        </button>
-                                        <span className="flex h-full min-w-12 items-center justify-center border-x border-white/[0.07] px-2 text-xs font-semibold tabular-nums text-white sm:min-w-14 sm:text-sm">
-                                          {currentItem.fitnessCompletedReps ??
-                                            currentItem.fitnessPlannedReps}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          aria-label={`Increase actual reps for ${currentItem.title}`}
-                                          onClick={() => bumpCurrentFitnessReps(1)}
-                                          className="flex size-8 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
-                                        >
-                                          <Plus className="size-3.5 sm:size-4" aria-hidden="true" />
-                                        </button>
-                                      </div>
+                                  {currentFitnessHasReps ||
+                                  currentFitnessHasAdjustableWeight ||
+                                  currentFitnessIsBodyweight ? (
+                                    <div
+                                      className={
+                                        currentFitnessHasReps &&
+                                        (currentFitnessHasAdjustableWeight ||
+                                          currentFitnessIsBodyweight)
+                                          ? "mt-2 grid w-full grid-cols-2 gap-2 sm:mt-3 sm:max-w-md sm:gap-3"
+                                          : "mt-2 grid w-full grid-cols-1 gap-2 sm:mt-3 sm:max-w-56"
+                                      }
+                                    >
+                                      {currentFitnessHasReps ? (
+                                        <div className="min-w-0">
+                                          <span className="mb-1 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-[11px]">
+                                            Actual reps
+                                          </span>
+                                          <div className="inline-flex h-8 w-full min-w-0 items-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
+                                            <button
+                                              type="button"
+                                              aria-label={`Decrease actual reps for ${currentItem.title}`}
+                                              onClick={() =>
+                                                bumpCurrentFitnessReps(-1)
+                                              }
+                                              className="flex size-8 shrink-0 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                            >
+                                              <Minus
+                                                className="size-3.5 sm:size-4"
+                                                aria-hidden="true"
+                                              />
+                                            </button>
+                                            <span className="flex h-full min-w-0 flex-1 items-center justify-center border-x border-white/[0.07] px-1 text-xs font-semibold tabular-nums text-white sm:px-2 sm:text-sm">
+                                              {currentItem.fitnessCompletedReps ??
+                                                currentItem.fitnessPlannedReps}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              aria-label={`Increase actual reps for ${currentItem.title}`}
+                                              onClick={() =>
+                                                bumpCurrentFitnessReps(1)
+                                              }
+                                              className="flex size-8 shrink-0 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                            >
+                                              <Plus
+                                                className="size-3.5 sm:size-4"
+                                                aria-hidden="true"
+                                              />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                      {currentFitnessHasAdjustableWeight ? (
+                                        <div className="min-w-0">
+                                          <span className="mb-1 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-[11px]">
+                                            Weight
+                                          </span>
+                                          <div className="inline-flex h-8 w-full min-w-0 items-center overflow-hidden rounded-lg border border-white/10 bg-black/35 sm:h-9">
+                                            <button
+                                              type="button"
+                                              aria-label={`Decrease weight for ${currentItem.title}`}
+                                              onClick={() =>
+                                                bumpCurrentFitnessWeight(-1)
+                                              }
+                                              className="flex size-8 shrink-0 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                            >
+                                              <Minus
+                                                className="size-3.5 sm:size-4"
+                                                aria-hidden="true"
+                                              />
+                                            </button>
+                                            <span className="flex h-full min-w-0 flex-1 items-center justify-center border-x border-white/[0.07] px-1 text-xs font-semibold tabular-nums text-white sm:px-2 sm:text-sm">
+                                              {currentItem.fitnessWeight?.trim() ||
+                                                "0"}{" "}
+                                              {currentFitnessWeightUnit}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              aria-label={`Increase weight for ${currentItem.title}`}
+                                              onClick={() =>
+                                                bumpCurrentFitnessWeight(1)
+                                              }
+                                              className="flex size-8 shrink-0 items-center justify-center text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:size-9"
+                                            >
+                                              <Plus
+                                                className="size-3.5 sm:size-4"
+                                                aria-hidden="true"
+                                              />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : currentFitnessIsBodyweight ? (
+                                        <div className="min-w-0">
+                                          <span className="mb-1 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-[11px]">
+                                            Weight
+                                          </span>
+                                          <span className="inline-flex h-8 w-full min-w-0 items-center justify-center truncate rounded-lg border border-white/10 bg-black/30 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-300 sm:h-9 sm:text-xs">
+                                            bodyweight
+                                          </span>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   ) : null}
                                 </>
@@ -8177,35 +8205,31 @@ export default function FocusPomo({
                             <div className="h-5 w-36 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:h-7 sm:w-44 sm:rounded-lg" />
                           </div>
                         ) : (
-                          <div
-                            className={
-                              currentMetaDisplay
-                                ? "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
-                                : "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
-                            }
-                          >
-                            <div
-                              className={
-                                cardState.tone === "error"
-                                  ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
-                                  : "inline-flex min-w-0 items-center justify-center rounded-md border border-black/60 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
-                              }
-                            >
-                              <span className="min-w-0 truncate">
-                                {currentItem?.rawTypeLabel ?? cardState.badge}
-                              </span>
-                            </div>
-                            {currentMetaDisplay ? (
-                              <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-black/60 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
-                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                  {currentMetaDisplay.icon}
-                                </span>
-                                <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
-                                  {currentMetaDisplay.name}
+                          !isFitnessWorkoutQueueItem(currentItem) ? (
+                            <div className="mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2">
+                              <div
+                                className={
+                                  cardState.tone === "error"
+                                    ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                                    : "inline-flex min-w-0 items-center justify-center rounded-md border border-black/60 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                                }
+                              >
+                                <span className="min-w-0 truncate">
+                                  {currentItem?.rawTypeLabel ?? cardState.badge}
                                 </span>
                               </div>
-                            ) : null}
-                          </div>
+                              {currentMetaDisplay ? (
+                                <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-black/60 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
+                                  <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                    {currentMetaDisplay.icon}
+                                  </span>
+                                  <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
+                                    {currentMetaDisplay.name}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null
                         )}
 
                         {scopeEmpty ? (
