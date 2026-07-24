@@ -518,3 +518,28 @@ export async function updatePinnedSourceMyListItemMetadata({
 
   if (error) throw error;
 }
+
+export async function updatePinnedSourceMyListItemOrder({
+  userId,
+  rows,
+}: {
+  userId: string;
+  rows: Pick<MyListPinnedSourceStorageItem, "sourceType" | "sourceId">[];
+}) {
+  const client = getClient();
+  if (!client) throw new Error("Supabase client not available");
+
+  await Promise.all(
+    rows.map(async (row, sortOrder) => {
+      const { error } = await client
+        .from("my_list_items")
+        .update({ sort_order: sortOrder })
+        .eq("user_id", userId)
+        .eq("item_kind", "PINNED_SOURCE")
+        .eq("source_type", row.sourceType)
+        .eq("source_id", row.sourceId);
+
+      if (error) throw error;
+    })
+  );
+}

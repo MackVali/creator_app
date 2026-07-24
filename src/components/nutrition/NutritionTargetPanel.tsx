@@ -86,6 +86,11 @@ const gainRates = [
   { value: "0.5", label: "Fast", description: "Upper limit" },
 ];
 
+const wizardPrimaryActionClass = "flex h-11 w-full items-center justify-center rounded-xl border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.12),transparent_44%),linear-gradient(145deg,rgba(42,42,45,0.94)_0%,rgba(18,18,20,0.96)_54%,rgba(5,5,6,0.98)_100%)] px-4 text-sm font-semibold text-white shadow-[0_18px_34px_-26px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-18px_28px_rgba(0,0,0,0.42)] backdrop-blur-sm outline-none transition hover:border-white/22 hover:brightness-110 focus-visible:ring-1 focus-visible:ring-white/26 active:translate-y-px active:brightness-90 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/[0.14] disabled:hover:brightness-100 disabled:active:translate-y-0";
+const wizardSmallPrimaryActionClass = "min-h-10 rounded-lg border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.11),transparent_44%),linear-gradient(145deg,rgba(42,42,45,0.92),rgba(10,10,11,0.97))] px-3 text-[11px] font-semibold text-white shadow-[0_14px_26px_-22px_rgba(0,0,0,0.94),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-14px_22px_rgba(0,0,0,0.38)] backdrop-blur-sm transition hover:border-white/22 hover:brightness-110 active:translate-y-px active:brightness-90";
+const wizardSelectedSegmentClass = "border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.1),transparent_46%),linear-gradient(145deg,rgba(46,46,49,0.92),rgba(19,19,21,0.96))] text-white shadow-[0_8px_18px_-16px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-10px_18px_rgba(0,0,0,0.28)] backdrop-blur-sm";
+const wizardSelectedChoiceClass = "border border-white/[0.16] bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.11),transparent_56%),linear-gradient(145deg,rgba(36,36,39,0.94)_0%,rgba(17,17,19,0.96)_58%,rgba(7,7,8,0.98)_100%)] text-white shadow-[0_14px_28px_-22px_rgba(0,0,0,0.96),0_0_0_1px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-sm";
+
 const numberOrNull = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -190,7 +195,13 @@ function advancedSummary(form: TargetSetupForm) {
   return items.length ? items.join(", ") : "No advanced values";
 }
 
-export function NutritionTargetPanel({ creatorDayDate }: { creatorDayDate?: string | null }) {
+export function NutritionTargetPanel({
+  creatorDayDate,
+  onSetupOpenChange,
+}: {
+  creatorDayDate?: string | null;
+  onSetupOpenChange?: (open: boolean) => void;
+}) {
   const [target, setTarget] = useState<DailyTarget | null>(null);
   const [profile, setProfile] = useState<NutritionProfileRow>(null);
   const [activeGoal, setActiveGoal] = useState<NutritionGoalRow>(null);
@@ -245,6 +256,11 @@ export function NutritionTargetPanel({ creatorDayDate }: { creatorDayDate?: stri
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    onSetupOpenChange?.(setupOpen);
+    return () => onSetupOpenChange?.(false);
+  }, [onSetupOpenChange, setupOpen]);
 
   const goal = (target?.goal ?? activeGoal) as NutritionGoalRow;
   const inputs = useMemo(() => calculationInputs(goal), [goal]);
@@ -441,6 +457,74 @@ export function NutritionTargetPanel({ creatorDayDate }: { creatorDayDate?: stri
     if (ok) setSetupView("result");
   };
 
+  if (setupOpen) {
+    return (
+      <div className="flex max-h-full min-h-0 flex-1 flex-col bg-[#090909]" aria-label="Nutrition target setup">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.055] px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {(setupView !== "wizard" || setupStep > 0) && !profileOnly ? (
+              <button type="button" onClick={goBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/54 outline-none transition hover:bg-white/[0.055] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18" aria-label="Back">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            ) : null}
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium leading-4 text-white/38">{profileOnly ? "Profile only" : setupView === "result" ? "Result" : setupView === "advanced" ? "Adjust target" : `Step ${setupStep + 1} of 4`}</p>
+              <h3 className="truncate text-base font-semibold leading-6 text-white">{profileOnly ? "Edit profile" : setupView === "result" ? "Your target" : setupView === "advanced" ? "Adjust target" : currentStepTitle}</h3>
+            </div>
+          </div>
+          <button type="button" onClick={() => setSetupOpen(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 outline-none transition hover:bg-white/[0.055] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18" aria-label="Close target setup"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+          {profileOnly ? (
+            <EditProfileSurface
+              form={form}
+              updateForm={updateForm}
+              profileSaved={profileSaved}
+              onRecalculate={() => openSetup("update_goal")}
+            />
+          ) : setupView === "result" && preview ? (
+            <ResultSurface
+              preview={preview}
+              showCalculation={showCalculation}
+              setShowCalculation={setShowCalculation}
+            />
+          ) : setupView === "advanced" ? (
+            <AdvancedTargetSurface
+              form={form}
+              updateForm={updateForm}
+              percentageTotal={percentageTotal}
+              percentageDetails={percentageDetails}
+              automaticLoseBlocked={automaticLoseBlocked}
+            />
+          ) : (
+            <WizardStepSurface form={form} step={setupStep} updateForm={updateForm} />
+          )}
+        </div>
+
+        {error ? <p className="shrink-0 px-4 pb-2 text-xs leading-5 text-red-200/76">{error}</p> : null}
+
+        <div className="shrink-0 border-t border-white/[0.055] bg-[#090909]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur">
+          {profileOnly ? (
+            <button type="button" disabled={busy || !formDirty} onClick={() => void saveProfile()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Save profile"}</button>
+          ) : setupView === "result" ? (
+            <div className="grid gap-2">
+              <button type="button" disabled={busy || !preview} onClick={() => void saveGoal()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Use this target"}</button>
+              <button type="button" disabled={busy} onClick={() => setSetupView("advanced")} className="flex h-11 w-full items-center justify-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/64 outline-none transition hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50">Adjust target</button>
+            </div>
+          ) : setupView === "advanced" ? (
+            <div className="grid gap-2">
+              <button type="button" disabled={busy || automaticLoseBlocked} onClick={() => void previewTarget().then((ok) => { if (ok) setSetupView("result"); })} className={wizardPrimaryActionClass}>{busy ? "Updating..." : "Update preview"}</button>
+              <button type="button" disabled={busy} onClick={() => setSetupView(preview ? "result" : "wizard")} className="flex h-11 w-full items-center justify-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/64 outline-none transition hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50">Done</button>
+            </div>
+          ) : (
+            <button type="button" disabled={busy || !canContinue} onClick={() => void continueSetup()} className={wizardPrimaryActionClass}>{busy ? "Loading..." : setupStep === 3 ? "Calculate target" : "Continue"}</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="border-b border-white/[0.055] p-3">
       {!target ? (
@@ -483,74 +567,6 @@ export function NutritionTargetPanel({ creatorDayDate }: { creatorDayDate?: stri
       )}
 
       {error && !setupOpen ? <p className="mt-2 text-xs text-red-200/72">{error}</p> : null}
-
-      {setupOpen ? (
-        <div className="fixed inset-0 z-[130] flex items-end justify-center bg-black/75 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Nutrition target setup">
-          <div className="flex max-h-[92vh] min-h-[560px] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#0b0b0b] sm:rounded-3xl">
-            <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
-              <div className="flex min-w-0 items-center gap-2">
-                {(setupView !== "wizard" || setupStep > 0) && !profileOnly ? (
-                  <button type="button" onClick={goBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-white/5" aria-label="Back">
-                    <ChevronLeft className="h-4 w-4 text-white/58" />
-                  </button>
-                ) : null}
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-white/34">{profileOnly ? "Profile only" : setupView === "result" ? "Result" : setupView === "advanced" ? "Adjust target" : `Step ${setupStep + 1} of 4`}</p>
-                  <h3 className="truncate text-base font-semibold text-white">{profileOnly ? "Edit profile" : setupView === "result" ? "Your target" : setupView === "advanced" ? "Adjust target" : currentStepTitle}</h3>
-                </div>
-              </div>
-              <button type="button" onClick={() => setSetupOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg hover:bg-white/5" aria-label="Close target setup"><X className="h-4 w-4 text-white/50" /></button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-              {profileOnly ? (
-                <EditProfileSurface
-                  form={form}
-                  updateForm={updateForm}
-                  profileSaved={profileSaved}
-                  onRecalculate={() => openSetup("update_goal")}
-                />
-              ) : setupView === "result" && preview ? (
-                <ResultSurface
-                  preview={preview}
-                  showCalculation={showCalculation}
-                  setShowCalculation={setShowCalculation}
-                />
-              ) : setupView === "advanced" ? (
-                <AdvancedTargetSurface
-                  form={form}
-                  updateForm={updateForm}
-                  percentageTotal={percentageTotal}
-                  percentageDetails={percentageDetails}
-                  automaticLoseBlocked={automaticLoseBlocked}
-                />
-              ) : (
-                <WizardStepSurface form={form} step={setupStep} updateForm={updateForm} />
-              )}
-            </div>
-
-            {error && setupOpen ? <p className="px-4 pb-2 text-xs leading-5 text-red-200/76">{error}</p> : null}
-
-            <div className="border-t border-white/[0.06] bg-[#0b0b0b]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 backdrop-blur">
-              {profileOnly ? (
-                <button type="button" disabled={busy || !formDirty} onClick={() => void saveProfile()} className="min-h-11 w-full rounded-xl bg-white px-4 text-xs font-semibold text-black disabled:opacity-50">{busy ? "Saving..." : "Save profile"}</button>
-              ) : setupView === "result" ? (
-                <div className="grid gap-2">
-                  <button type="button" disabled={busy || !preview} onClick={() => void saveGoal()} className="min-h-11 w-full rounded-xl bg-white px-4 text-xs font-semibold text-black disabled:opacity-50">{busy ? "Saving..." : "Use this target"}</button>
-                  <button type="button" disabled={busy} onClick={() => setSetupView("advanced")} className="min-h-11 w-full rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/64 disabled:opacity-50">Adjust target</button>
-                </div>
-              ) : setupView === "advanced" ? (
-                <div className="grid gap-2">
-                  <button type="button" disabled={busy || automaticLoseBlocked} onClick={() => void previewTarget().then((ok) => { if (ok) setSetupView("result"); })} className="min-h-11 w-full rounded-xl bg-white px-4 text-xs font-semibold text-black disabled:opacity-50">{busy ? "Updating..." : "Update preview"}</button>
-                  <button type="button" disabled={busy} onClick={() => setSetupView(preview ? "result" : "wizard")} className="min-h-11 w-full rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/64 disabled:opacity-50">Done</button>
-                </div>
-              ) : (
-                <button type="button" disabled={busy || !canContinue} onClick={() => void continueSetup()} className="min-h-11 w-full rounded-xl bg-white px-4 text-xs font-semibold text-black disabled:opacity-50">{busy ? "Loading..." : setupStep === 3 ? "Calculate target" : "Continue"}</button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {overrideOpen && target ? (
         <div className="fixed inset-0 z-[135] flex items-end justify-center bg-black/75 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Daily override">
@@ -609,9 +625,9 @@ function CalculationDetails({ goal, inputs, target }: { goal?: NutritionGoalRow;
 
 function UnitToggle({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
   return (
-    <div className="flex rounded-xl bg-black p-1">
+    <div className="grid grid-cols-2 rounded-lg bg-black p-0.5">
       {(["us", "metric"] as PreferredUnits[]).map((units) => (
-        <button key={units} type="button" onClick={() => updateForm(setTargetFormUnits(form, units))} className={`min-h-8 flex-1 rounded-lg px-3 text-[11px] font-semibold ${form.units === units ? "bg-white text-black" : "text-white/48"}`}>{units === "us" ? "US" : "Metric"}</button>
+        <button key={units} type="button" onClick={() => updateForm(setTargetFormUnits(form, units))} className={`min-h-7 rounded-md px-2 text-[10px] font-semibold transition ${form.units === units ? wizardSelectedSegmentClass : "border border-transparent text-white/48 hover:bg-white/[0.045] active:bg-white/[0.025]"}`}>{units === "us" ? "US" : "Metric"}</button>
       ))}
     </div>
   );
@@ -627,22 +643,27 @@ function WizardStepSurface({ form, step, updateForm }: { form: TargetSetupForm; 
 function AboutStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
   const visibleSex = form.formulaInput === "female" ? "female" : form.formulaInput === "male" ? "male" : null;
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold text-white/54">Sex</p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {(["male", "female"] as const).map((sex) => (
-              <button key={sex} type="button" onClick={() => updateForm({ ...form, formulaInput: sex })} className={`min-h-12 rounded-xl px-5 text-sm font-semibold ${visibleSex === sex ? "bg-white text-black" : "bg-white/[0.04] text-white/62 hover:bg-white/[0.07]"}`}>{sex === "male" ? "Male" : "Female"}</button>
-            ))}
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white/78">About you</p>
+          <p className="mt-0.5 text-xs text-white/38">Used for the resting estimate.</p>
         </div>
-        <div className="w-36 shrink-0">
+        <div className="w-32 shrink-0">
+          <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">Units</p>
           <UnitToggle form={form} updateForm={updateForm} />
         </div>
       </div>
+      <div>
+        <p className="text-xs font-semibold text-white/54">Sex</p>
+        <div className="mt-2 grid grid-cols-2 rounded-xl bg-black p-1">
+          {(["male", "female"] as const).map((sex) => (
+            <button key={sex} type="button" onClick={() => updateForm({ ...form, formulaInput: sex })} className={`min-h-9 rounded-lg px-3 text-sm font-semibold transition ${visibleSex === sex ? wizardSelectedSegmentClass : "border border-transparent text-white/58 hover:bg-white/[0.055] active:bg-white/[0.03]"}`}>{sex === "male" ? "Male" : "Female"}</button>
+          ))}
+        </div>
+      </div>
       <FormGrid>
-        <Label text="Age" wide><input inputMode="numeric" type="number" min="13" max="120" value={form.age} onChange={(event) => updateForm({ ...form, age: event.target.value })} /></Label>
+        <Label text="Age" wide><input inputMode="numeric" type="text" pattern="[0-9]*" value={form.age} onChange={(event) => updateForm({ ...form, age: event.target.value })} /></Label>
       </FormGrid>
     </div>
   );
@@ -673,9 +694,9 @@ function ActivityStep({ form, updateForm }: { form: TargetSetupForm; updateForm:
       {activityChoices.map((choice) => {
         const selected = form.activityLevel === choice.value;
         return (
-          <button key={choice.value} type="button" onClick={() => updateForm({ ...form, activityLevel: choice.value })} className={`min-h-14 rounded-xl px-3 py-2 text-left transition ${selected ? "bg-white text-black" : "bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>
+          <button key={choice.value} type="button" onClick={() => updateForm({ ...form, activityLevel: choice.value })} className={`min-h-14 rounded-xl px-3 py-2 text-left transition active:translate-y-px ${selected ? wizardSelectedChoiceClass : "border border-transparent bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>
             <span className="block text-sm font-semibold">{choice.label}</span>
-            <span className={`mt-0.5 block text-xs leading-4 ${selected ? "text-black/58" : "text-white/36"}`}>{choice.description}</span>
+            <span className={`mt-0.5 block text-xs leading-4 ${selected ? "text-white/54" : "text-white/36"}`}>{choice.description}</span>
           </button>
         );
       })}
@@ -687,7 +708,7 @@ function GoalStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (fo
   return (
     <div className="grid grid-cols-2 gap-2">
       {(Object.keys(goalLabels) as GoalType[]).map((goalType) => (
-        <button key={goalType} type="button" onClick={() => updateForm({ ...form, goalType, rate: goalType === "lose" ? "0.5" : goalType === "gain" ? "0.25" : "0", goalWeight: goalType === "lose" || goalType === "gain" ? form.goalWeight : "", goalWeightKgCanonical: goalType === "lose" || goalType === "gain" ? form.goalWeightKgCanonical : "" })} className={`min-h-24 rounded-2xl px-3 text-sm font-semibold ${form.goalType === goalType ? "bg-white text-black" : "bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>{goalLabels[goalType]}</button>
+        <button key={goalType} type="button" onClick={() => updateForm({ ...form, goalType, rate: goalType === "lose" ? "0.5" : goalType === "gain" ? "0.25" : "0", goalWeight: goalType === "lose" || goalType === "gain" ? form.goalWeight : "", goalWeightKgCanonical: goalType === "lose" || goalType === "gain" ? form.goalWeightKgCanonical : "" })} className={`min-h-24 rounded-2xl px-3 text-sm font-semibold transition active:translate-y-px ${form.goalType === goalType ? wizardSelectedChoiceClass : "border border-transparent bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>{goalLabels[goalType]}</button>
       ))}
     </div>
   );
@@ -708,7 +729,7 @@ function EditProfileSurface({ form, updateForm, profileSaved, onRecalculate }: {
         <div className="rounded-lg border border-emerald-300/15 bg-emerald-300/[0.06] p-3 text-xs leading-5 text-emerald-100/75">
           <p className="font-semibold">Profile saved. Active target unchanged.</p>
           <p>Your existing daily targets stay the same until you recalculate or update the goal.</p>
-          <button type="button" onClick={onRecalculate} className="mt-2 min-h-10 rounded-lg bg-white px-3 text-[11px] font-semibold text-black">Recalculate goal</button>
+          <button type="button" onClick={onRecalculate} className={`mt-2 ${wizardSmallPrimaryActionClass}`}>Recalculate goal</button>
         </div>
       ) : null}
     </div>
@@ -741,8 +762,8 @@ function AdvancedTargetSurface({
         <div className="rounded-2xl bg-white/[0.018] p-3">
           <p className="text-xs font-semibold text-white/68">Calories</p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => updateForm({ ...form, formulaInput: form.formulaInput === "female" ? "female" : "male" })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${form.formulaInput !== "manual" ? "bg-white text-black" : "bg-white/[0.04] text-white/56"}`}>Suggested</button>
-            <button type="button" onClick={() => updateForm({ ...form, formulaInput: "manual" })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${form.formulaInput === "manual" ? "bg-white text-black" : "bg-white/[0.04] text-white/56"}`}>Manual calories</button>
+            <button type="button" onClick={() => updateForm({ ...form, formulaInput: form.formulaInput === "female" ? "female" : "male" })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold transition active:translate-y-px ${form.formulaInput !== "manual" ? wizardSelectedSegmentClass : "border border-transparent bg-white/[0.04] text-white/56 hover:bg-white/[0.065]"}`}>Suggested</button>
+            <button type="button" onClick={() => updateForm({ ...form, formulaInput: "manual" })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold transition active:translate-y-px ${form.formulaInput === "manual" ? wizardSelectedSegmentClass : "border border-transparent bg-white/[0.04] text-white/56 hover:bg-white/[0.065]"}`}>Manual calories</button>
           </div>
           {form.formulaInput === "manual" ? (
             <FormGrid>
@@ -770,7 +791,7 @@ function MacroCustomization({ form, updateForm, percentageTotal, percentageDetai
   return (
     <div className="mt-3 rounded-xl bg-black/45 p-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {Object.entries(macroModeLabels).map(([mode, label]) => <button key={mode} type="button" onClick={() => updateForm({ ...form, macroMode: mode as MacroMode })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${form.macroMode === mode ? "bg-white text-black" : "bg-white/[0.04] text-white/52"}`}>{label}</button>)}
+        {Object.entries(macroModeLabels).map(([mode, label]) => <button key={mode} type="button" onClick={() => updateForm({ ...form, macroMode: mode as MacroMode })} className={`min-h-10 rounded-lg px-3 text-xs font-semibold transition active:translate-y-px ${form.macroMode === mode ? wizardSelectedSegmentClass : "border border-transparent bg-white/[0.04] text-white/52 hover:bg-white/[0.065]"}`}>{label}</button>)}
       </div>
       <FormGrid>
         {form.macroMode === "suggested_grams" ? <Label text="Protein g/kg" wide><input inputMode="decimal" type="number" step="0.1" placeholder="Suggested" value={form.proteinGPerKg} onChange={(event) => updateForm({ ...form, proteinGPerKg: event.target.value })} /></Label> : null}

@@ -7991,6 +7991,8 @@ export function NoteDatabaseEntrySheet({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
     useState<NutritionFoodActionTabId>("search");
+  const [isNutritionTargetSetupTakeoverOpen, setIsNutritionTargetSetupTakeoverOpen] =
+    useState(false);
   const [openChefCuisineId, setOpenChefCuisineId] = useState<string | null>(null);
   const [openChefDishFamilyKey, setOpenChefDishFamilyKey] = useState<string | null>(null);
   const [selectedChefStyleId, setSelectedChefStyleId] = useState<string | null>(null);
@@ -8540,7 +8542,6 @@ export function NoteDatabaseEntrySheet({
 
     return targets;
   }, [
-    selectedNutritionFoodAction,
     selectedNutritionFoods,
     selectedNutritionMeal,
     selectedNutritionMealSource,
@@ -15057,6 +15058,36 @@ export function NoteDatabaseEntrySheet({
     const isGroceryMode = isGroceryDatabase;
     const searchPlaceholder = isGroceryMode ? "Search groceries..." : "Search foods...";
 
+    if (isDefaultNutritionDatabase && selectedNutritionFoodAction === "meal-plan") {
+      return (
+        <div
+          key={field.id}
+          className={isNutritionTargetSetupTakeoverOpen ? "flex h-full min-h-0 flex-col" : "block"}
+        >
+          {!isNutritionTargetSetupTakeoverOpen ? (
+            <>
+              {renderNutritionDailyProgress()}
+              {isNutritionMealBuilderOpen ? (
+                renderNutritionMealBuilder()
+              ) : isNutritionRecipeBuilderOpen ? (
+                renderNutritionRecipeBuilder()
+              ) : (
+                renderNutritionFoodActionTabs()
+              )}
+            </>
+          ) : null}
+          {!isNutritionMealBuilderOpen && !isNutritionRecipeBuilderOpen ? (
+            <SharedMealPlanPanel
+              key="nutrition-meal-plan-panel"
+              surface="nutrition"
+              creatorDayDate={mealPlanSelectedDate}
+              onNutritionTargetSetupOpenChange={setIsNutritionTargetSetupTakeoverOpen}
+            />
+          ) : null}
+        </div>
+      );
+    }
+
     return (
       <div key={field.id} className="block">
         {renderNutritionDailyProgress()}
@@ -15388,7 +15419,8 @@ export function NoteDatabaseEntrySheet({
       }`}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="note-database-entry-form-title"
+      aria-labelledby={isNutritionTargetSetupTakeoverOpen ? undefined : "note-database-entry-form-title"}
+      aria-label={isNutritionTargetSetupTakeoverOpen ? "Nutrition target setup" : undefined}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           void hapticSnap();
@@ -15397,7 +15429,7 @@ export function NoteDatabaseEntrySheet({
       }}
     >
       <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
-        <div className="relative border-b border-white/[0.04] px-4 py-4">
+        {!isNutritionTargetSetupTakeoverOpen ? <div className="relative border-b border-white/[0.04] px-4 py-4">
           <h2
             id="note-database-entry-form-title"
             className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
@@ -15415,15 +15447,18 @@ export function NoteDatabaseEntrySheet({
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
+        </div> : null}
 
         <div
-          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 ${
-            isDefaultNutritionDatabase || isDefaultFitnessDatabase ? "pt-2" : "pt-4"
-          } [-webkit-overflow-scrolling:touch]`}
+          className={isNutritionTargetSetupTakeoverOpen
+            ? "min-h-0 flex-1 overflow-hidden p-0"
+            : `min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 ${
+                isDefaultNutritionDatabase || isDefaultFitnessDatabase ? "pt-2" : "pt-4"
+              } [-webkit-overflow-scrolling:touch]`
+          }
         >
           {databaseFields.length > 0 ? (
-            <div className="space-y-4">
+            <div className={isNutritionTargetSetupTakeoverOpen ? "h-full min-h-0" : "space-y-4"}>
               {isDefaultFitnessDatabase ? renderFitnessTabContent() : null}
               {editableDatabaseFields.map((field, fieldIndex) => {
                 if (!shouldShowFitnessEntryFields) {
@@ -15458,7 +15493,7 @@ export function NoteDatabaseEntrySheet({
 
                 return renderDatabaseEntryField(field);
               })}
-              {createdAtMetadataTime && shouldShowFitnessEntryFields ? (
+              {createdAtMetadataTime && shouldShowFitnessEntryFields && !isNutritionTargetSetupTakeoverOpen ? (
                 <p className="!mt-1 px-1 text-center text-[10px] font-medium leading-none text-white/36">
                   {createdAtMetadataTime}
                 </p>
@@ -15471,13 +15506,14 @@ export function NoteDatabaseEntrySheet({
           )}
         </div>
 
-        {submitError ? (
+        {submitError && !isNutritionTargetSetupTakeoverOpen ? (
           <p className="border-t border-white/[0.04] px-4 pt-3 text-center text-xs font-medium text-red-200/78">
             {submitError}
           </p>
         ) : null}
 
         {shouldShowEntryFooter &&
+        !isNutritionTargetSetupTakeoverOpen &&
         !(isGroceryDatabase && selectedNutritionFoodAction === "search") ? (
           <div
             className={`border-t border-white/[0.04] p-3 sm:p-4 ${

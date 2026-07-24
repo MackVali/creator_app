@@ -39,6 +39,7 @@ import {
   loadPinnedSourceMyListItems,
   updatePinnedSourceMyListItemCompletion,
   updatePinnedSourceMyListItemMetadata,
+  updatePinnedSourceMyListItemOrder,
   type MyListPinnedSourceStorageItem,
 } from "@/lib/my-list/myListItemsStorage";
 
@@ -879,6 +880,45 @@ export function GlobalMyList({
     [user?.id]
   );
 
+  const handleReorderPinnedSourceRows = useCallback(
+    (orderedRows: MyListPinnedSourceRow[]) => {
+      if (!user?.id) return;
+
+      const orderByKey = new Map(
+        orderedRows.map((row, index) => [`${row.sourceType}:${row.id}`, index])
+      );
+
+      setPinnedSourceRows((currentRows) => {
+        const orderedQueue = orderedRows.filter((row) =>
+          currentRows.some(
+            (currentRow) =>
+              currentRow.sourceType === row.sourceType &&
+              currentRow.id === row.id
+          )
+        );
+        let orderedIndex = 0;
+
+        return currentRows.map((row) => {
+          if (!orderByKey.has(`${row.sourceType}:${row.id}`)) return row;
+          const nextRow = orderedQueue[orderedIndex];
+          orderedIndex += 1;
+          return nextRow ?? row;
+        });
+      });
+
+      void updatePinnedSourceMyListItemOrder({
+        userId: user.id,
+        rows: orderedRows.map((row) => ({
+          sourceType: row.sourceType,
+          sourceId: row.id,
+        })),
+      }).catch((error) => {
+        console.error("Failed to persist pinned My List order", error);
+      });
+    },
+    [user?.id]
+  );
+
   const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
     setTasks((currentTasks) =>
       currentTasks.map((item) =>
@@ -1084,6 +1124,7 @@ export function GlobalMyList({
       onRemovePinnedSource={handleRemovePinnedSource}
       onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
       onUpdatePinnedSourceMetadata={handleUpdatePinnedSourceMetadata}
+      onReorderPinnedSourceRows={handleReorderPinnedSourceRows}
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {
