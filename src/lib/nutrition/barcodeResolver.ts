@@ -137,6 +137,22 @@ function completeNutrition(value: unknown) {
   const item = record(value);
   return ["calories", "carbs_g", "protein_g", "fat_g"].every((key) => number(item[key]) !== null);
 }
+function usdaNutrientValue(food: Record<string, unknown>, labelKey: string, nutrientIds: number[], nutrientNames: RegExp[]) {
+  const labels = record(food.labelNutrients);
+  const labelValue = nutrientValue(labels[labelKey]);
+  if (labelValue !== null) return labelValue;
+  const nutrients = Array.isArray(food.foodNutrients) ? food.foodNutrients : [];
+  for (const item of nutrients) {
+    const nutrient = record(record(item).nutrient);
+    const id = number(nutrient.id ?? record(item).nutrientId ?? record(item).nutrientNumber);
+    const name = text(nutrient.name ?? record(item).nutrientName);
+    if ((id !== null && nutrientIds.includes(id)) || (name && nutrientNames.some((pattern) => pattern.test(name)))) {
+      const value = nutrientValue(record(item).amount ?? record(item).value);
+      if (value !== null) return value;
+    }
+  }
+  return null;
+}
 
 function providerDiagnosticStatus(outcome: ProviderDiagnosticOutcome): ProviderDiagnostic["status"] {
   if (outcome === "matched") return "matched";
@@ -185,16 +201,17 @@ export function providerResultDiagnosticFields(result: BarcodeProviderResult | n
 }
 
 function usdaExactResultDiagnosticFields(food: Record<string, unknown>) {
-  const labels = record(food.labelNutrients);
   return uniqueDiagnosticFields([
     text(food.description) ? "productName" : null,
     text(food.brandName) || text(food.brandOwner) ? "brand" : null,
+    text(food.packageWeight) ? "container" : null,
+    text(food.packageWeight) ? "packageQuantity" : null,
     number(food.servingSize) !== null ? "servingSize" : null,
     text(food.servingSizeUnit) || number(food.servingSize) !== null ? "nutritionBasis" : null,
-    nutrientValue(labels.calories) !== null ? "calories" : null,
-    nutrientValue(labels.carbohydrates) !== null ? "carbohydrates" : null,
-    nutrientValue(labels.protein) !== null ? "protein" : null,
-    nutrientValue(labels.fat) !== null ? "fat" : null,
+    usdaNutrientValue(food, "calories", [1008, 2047, 2048], /\benergy\b|\bcalories\b/i) !== null ? "calories" : null,
+    usdaNutrientValue(food, "carbohydrates", [1005], /\bcarbohydrate\b/i) !== null ? "carbohydrates" : null,
+    usdaNutrientValue(food, "protein", [1003], /\bprotein\b/i) !== null ? "protein" : null,
+    usdaNutrientValue(food, "fat", [1004], /\btotal lipid\b|\bfat\b/i) !== null ? "fat" : null,
   ]);
 }
 
@@ -203,24 +220,61 @@ function openFoodFactsExactResultDiagnosticFields(result: BarcodeProviderResult 
 }
 
 export type UsdaSearchFood = { fdcId?: unknown; gtinUpc?: unknown; publicationDate?: unknown; modifiedDate?: unknown } & Record<string, unknown>;
+type UsdaSearchPayload = {
+  status: number;
+  foods: UsdaSearchFood[];
+  totalSearchResultCount: number;
+  outcome?: ProviderDiagnosticOutcome;
+  warning?: string;
+  rejectionReason?: string;
+};
+function usdaBarcodeSearchVariants(identity: BarcodeIdentity) {
+  return [...identity.variants].sort((left, right) => {
+    const leftRank = left.length === 12 ? 0 : identity.variants.indexOf(left) + 1;
+    const rightRank = right.length === 12 ? 0 : identity.variants.indexOf(right) + 1;
+    return leftRank - rightRank;
+  });
+}
+function usdaRevisionDate(food: UsdaSearchFood) {
+  return String(food.modifiedDate ?? food.publicationDate ?? "");
+}
+function isUsdaBrandedFood(food: UsdaSearchFood) {
+  const dataType = text(food.dataType);
+  return !dataType || dataType.toLowerCase() === "branded";
+}
+export function collectExactUsdaSearchResults(identity: BarcodeIdentity, foods: UsdaSearchFood[]) {
+  const byFdcId = new Map<string, UsdaSearchFood>();
+  for (const food of foods) {
+    const fdcId = identifier(food.fdcId);
+    if (!fdcId || !isUsdaBrandedFood(food) || !barcodesAreExact(food.gtinUpc, identity.canonicalGtin)) continue;
+    const current = byFdcId.get(fdcId);
+    if (!current || usdaRevisionDate(food).localeCompare(usdaRevisionDate(current)) > 0) byFdcId.set(fdcId, food);
+  }
+  return [...byFdcId.values()].sort((a, b) => usdaRevisionDate(b).localeCompare(usdaRevisionDate(a)));
+}
 export function selectExactUsdaSearchResult(identity: BarcodeIdentity, foods: UsdaSearchFood[]) {
-  return foods.filter((food) => barcodesAreExact(food.gtinUpc, identity.canonicalGtin)).sort((a, b) => String(b.modifiedDate ?? b.publicationDate ?? "").localeCompare(String(a.modifiedDate ?? a.publicationDate ?? "")))[0] ?? null;
+  return collectExactUsdaSearchResults(identity, foods)[0] ?? null;
 }
 
 export function normalizeUsdaFood(identity: BarcodeIdentity, food: Record<string, unknown>): BarcodeProviderResult | null {
   if (!barcodesAreExact(food.gtinUpc, identity.canonicalGtin)) return null;
-  const labels = record(food.labelNutrients);
   const nutrition = {
-    calories: nutrientValue(labels.calories), carbs_g: nutrientValue(labels.carbohydrates),
-    protein_g: nutrientValue(labels.protein), fat_g: nutrientValue(labels.fat),
+    calories: usdaNutrientValue(food, "calories", [1008, 2047, 2048], /\benergy\b|\bcalories\b/i),
+    carbs_g: usdaNutrientValue(food, "carbohydrates", [1005], /\bcarbohydrate\b/i),
+    protein_g: usdaNutrientValue(food, "protein", [1003], /\bprotein\b/i),
+    fat_g: usdaNutrientValue(food, "fat", [1004], /\btotal lipid\b|\bfat\b/i),
   };
   const servingSize = number(food.servingSize);
   const servingUnit = text(food.servingSizeUnit)?.toLowerCase() ?? null;
+  const packageWeight = text(food.packageWeight);
   const metadata: Record<string, unknown> = {
     barcode: identity.canonicalGtin, serving_quantity: servingSize, serving_unit: servingUnit,
     serving_grams: servingUnit === "g" ? servingSize : null,
     serving_size_text: text(food.householdServingFullText), nutrition_basis: "per_serving",
     nutrition_per_serving: nutrition,
+    original_package_text: packageWeight,
+    net_weight: packageWeight,
+    quantity: packageWeight,
     provider_ids: { usda_fdc: String(food.fdcId ?? "") },
   };
   const result: FoodSearchResult = {
@@ -228,7 +282,8 @@ export function normalizeUsdaFood(identity: BarcodeIdentity, food: Record<string
     source: "usda_fdc", serving_size: servingSize, serving_unit: servingUnit, serving_grams: servingUnit === "g" ? servingSize : null,
     calories: nutrition.calories, carbs_g: nutrition.carbs_g, protein_g: nutrition.protein_g, fat_g: nutrition.fat_g, metadata: metadata as FoodSearchResult["metadata"],
   };
-  return { provider: "usda_fdc", requestedBarcode: identity.canonicalGtin, matchedBarcode: String(food.gtinUpc), exactMatch: true, providerRecordId: String(food.fdcId ?? "") || null, fetchedAt: new Date().toISOString(), food: result, explicitFields: ["productName", "brandName", "servingQuantity", "servingUnit", ...(completeNutrition(nutrition) ? ["nutritionPerServing"] : [])], warnings: [] };
+  const profile = reconcileFoodPackageProfile({ ...result, barcode: identity.canonicalGtin });
+  return { provider: "usda_fdc", requestedBarcode: identity.canonicalGtin, matchedBarcode: String(food.gtinUpc), exactMatch: true, providerRecordId: String(food.fdcId ?? "") || null, fetchedAt: new Date().toISOString(), food: result, explicitFields: ["productName", "brandName", ...(profile.netQuantityPerContainer ? ["netQuantityPerContainer", "netQuantityUnit"] : []), ...(profile.servingQuantity ? ["servingQuantity", "servingUnit"] : []), ...(profile.servingsPerContainer ? ["servingsPerContainer"] : []), ...(completeNutrition(nutrition) ? ["nutritionPerServing"] : [])], warnings: [] };
 }
 
 export function normalizeOpenFoodFactsFood(identity: BarcodeIdentity, product: OpenFoodFactsProduct): BarcodeProviderResult | null {
@@ -248,23 +303,33 @@ async function fetchJson(url: URL, init: RequestInit, fetchImpl: typeof fetch) {
 }
 
 export async function fetchUsdaExact(identity: BarcodeIdentity, apiKey: string | undefined, fetchImpl: typeof fetch = fetch): Promise<{ result: BarcodeProviderResult | null; diagnostic: ProviderDiagnostic }> {
-  const queriedBarcodeVariants = [identity.digits];
+  const queriedBarcodeVariants: string[] = [];
   if (!apiKey) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: false, attempted: false, outcome: "skipped_missing_key", queriedBarcodeVariants, warning: "USDA key is not configured" }) };
   try {
-    const searchUrl = new URL("https://api.nal.usda.gov/fdc/v1/foods/search"); searchUrl.searchParams.set("api_key", apiKey);
-    const response = await fetchJson(searchUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: identity.digits, dataType: ["Branded"], pageSize: 10 }) }, fetchImpl);
-    if (!response.ok) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: classifyHttpOutcome(response.status), httpStatus: response.status, queriedBarcodeVariants, warning: `USDA search HTTP ${response.status}` }) };
-    let searchPayload: Record<string, unknown>;
-    try {
-      searchPayload = record(await response.json());
-    } catch {
-      return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: "parse_error", httpStatus: response.status, queriedBarcodeVariants, rejectionReason: "USDA search response could not be parsed" }) };
-    }
-    const foods = Array.isArray(searchPayload.foods) ? searchPayload.foods as UsdaSearchFood[] : [];
-    const totalSearchResultCount = number(searchPayload.totalHits) ?? foods.length;
-    const canonicalExactMatchCount = foods.filter((food) => barcodesAreExact(food.gtinUpc, identity.canonicalGtin)).length;
-    const exact = selectExactUsdaSearchResult(identity, foods);
-    if (!exact) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: foods.length ? "no_exact_match" : "no_results", httpStatus: response.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, rejectionReason: foods.length ? "USDA returned branded results, but none matched the canonical barcode exactly" : "USDA returned no branded barcode search results" }) };
+    const searchVariants = usdaBarcodeSearchVariants(identity);
+    queriedBarcodeVariants.push(...searchVariants);
+    const searchPayloads: UsdaSearchPayload[] = await Promise.all(searchVariants.map(async (variant) => {
+      const searchUrl = new URL("https://api.nal.usda.gov/fdc/v1/foods/search"); searchUrl.searchParams.set("api_key", apiKey);
+      const response = await fetchJson(searchUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: variant, dataType: ["Branded"], pageSize: 10 }) }, fetchImpl);
+      if (!response.ok) return { status: response.status, foods: [] as UsdaSearchFood[], totalSearchResultCount: 0, outcome: classifyHttpOutcome(response.status), warning: `USDA search HTTP ${response.status}` };
+      let searchPayload: Record<string, unknown>;
+      try {
+        searchPayload = record(await response.json());
+      } catch {
+        return { status: response.status, foods: [] as UsdaSearchFood[], totalSearchResultCount: 0, outcome: "parse_error" as const, rejectionReason: "USDA search response could not be parsed" };
+      }
+      const foods = Array.isArray(searchPayload.foods) ? searchPayload.foods as UsdaSearchFood[] : [];
+      return { status: response.status, foods, totalSearchResultCount: number(searchPayload.totalHits) ?? foods.length };
+    }));
+    const failedSearch = searchPayloads.find((payload) => payload.outcome);
+    if (failedSearch?.outcome) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: failedSearch.outcome, httpStatus: failedSearch.status, queriedBarcodeVariants, warning: failedSearch.warning, rejectionReason: failedSearch.rejectionReason }) };
+    const allFoods = searchPayloads.flatMap((payload) => payload.foods);
+    const totalSearchResultCount = searchPayloads.reduce((total, payload) => total + payload.totalSearchResultCount, 0);
+    const exactResults = collectExactUsdaSearchResults(identity, allFoods);
+    const canonicalExactMatchCount = exactResults.length;
+    const exact = exactResults[0] ?? null;
+    const httpStatus = searchPayloads.at(-1)?.status;
+    if (!exact) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: totalSearchResultCount ? "no_exact_match" : "no_results", httpStatus, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, rejectionReason: totalSearchResultCount ? "USDA returned branded results, but none matched the canonical barcode exactly" : "USDA returned no branded barcode search results" }) };
     const detailsUrl = new URL(`https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(String(exact.fdcId))}`); detailsUrl.searchParams.set("api_key", apiKey);
     const detailsResponse = await fetchJson(detailsUrl, {}, fetchImpl);
     if (!detailsResponse.ok) return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: classifyHttpOutcome(detailsResponse.status), httpStatus: detailsResponse.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, matchedProviderGtin: identifier(exact.gtinUpc) ?? undefined, matchedFdcId: identifier(exact.fdcId) ?? undefined, warning: `USDA details HTTP ${detailsResponse.status}` }) };
@@ -274,8 +339,9 @@ export async function fetchUsdaExact(identity: BarcodeIdentity, apiKey: string |
     } catch {
       return { result: null, diagnostic: providerDiagnostic({ provider: "usda_fdc", configured: true, attempted: true, outcome: "parse_error", httpStatus: detailsResponse.status, queriedBarcodeVariants, totalSearchResultCount, canonicalExactMatchCount, matchedProviderGtin: identifier(exact.gtinUpc) ?? undefined, matchedFdcId: identifier(exact.fdcId) ?? undefined, rejectionReason: "USDA detail response could not be parsed" }) };
     }
-    const result = normalizeUsdaFood(identity, detailsPayload);
-    const fieldsPresentOnExactResult = result ? providerResultDiagnosticFields(result) : usdaExactResultDiagnosticFields(detailsPayload);
+    const selectedFood = { ...exact, ...detailsPayload, packageWeight: detailsPayload.packageWeight ?? exact.packageWeight };
+    const result = normalizeUsdaFood(identity, selectedFood);
+    const fieldsPresentOnExactResult = result ? providerResultDiagnosticFields(result) : usdaExactResultDiagnosticFields(selectedFood);
     return {
       result,
       diagnostic: providerDiagnostic({
@@ -287,8 +353,8 @@ export async function fetchUsdaExact(identity: BarcodeIdentity, apiKey: string |
         queriedBarcodeVariants,
         totalSearchResultCount,
         canonicalExactMatchCount,
-        matchedProviderGtin: identifier(detailsPayload.gtinUpc) ?? identifier(exact.gtinUpc) ?? undefined,
-        matchedFdcId: identifier(detailsPayload.fdcId) ?? identifier(exact.fdcId) ?? undefined,
+        matchedProviderGtin: identifier(selectedFood.gtinUpc) ?? undefined,
+        matchedFdcId: identifier(selectedFood.fdcId) ?? undefined,
         canonicalExactMatch: result ? true : false,
         fieldsPresentOnExactResult,
         rejectionReason: result ? undefined : "USDA detail barcode was not an exact canonical match",
