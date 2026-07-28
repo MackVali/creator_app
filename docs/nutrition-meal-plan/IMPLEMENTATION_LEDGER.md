@@ -14,7 +14,66 @@ Every future Codex session must read both the PRD and this ledger before editing
 
 # Current Status
 
-`Phase 2A complete with manual SQL pending; authenticated persistence and real-app target setup verification remain post-SQL prerequisites`
+`Phase 2A complete with manual SQL pending; two-screen target setup replacement complete; authenticated persistence and real-app target setup verification remain post-SQL prerequisites`
+
+# Phase 2A.4 Two-Screen Target Setup Replacement (2026-07-28)
+
+## Classification
+
+`Focused UX replacement complete; live iPhone visual approval not performed`
+
+The Nutrition target setup was replaced with two compact input screens followed by the target result. This pass did not change Nutrition formulas, goal-rate semantics, server preview/save endpoints, profile persistence, immutable goal versions, daily target snapshots, daily overrides, Meal Plan persistence, logging, Grocery depletion, or SQL.
+
+## Completed UI changes
+
+- The primary setup path is now `What do you want to change?`, `Tell us where you’re starting`, then `Your daily target`.
+- Goal type, current weight, conditional goal weight, and conditional pace now live together on Direction. Current weight is no longer repeated on Baseline.
+- Maintain and Recomposition hide goal weight and pace, showing restrained explanatory copy instead.
+- Directional goal-weight validation remains intact and is shown only after the user interacts with Direction fields or tries to continue.
+- Unit switching remains one authoritative setup state and continues to convert canonical current and goal weights through the existing helpers.
+- Baseline contains sex, age, height in the selected unit system, and one compact `Daily activity` row.
+- Activity choices expand inline in the current screen and collapse after selection; no nested modal or sheet is opened.
+- Setup actions now sit in normal scroll content flow with safe-area bottom padding instead of a detached sticky footer.
+- The result view uses the server preview values for calories, macros, estimated maintenance, and target-minus-maintenance summary. BMI and the full formula breakdown remain hidden by default behind `View calculation`.
+- Advanced settings remain accessible through `Adjust details`, preserving goal details, goal rate, manual calories, manual maintenance, macro customization, goal weight, body-fat percentage, pregnancy/breastfeeding considerations, and adaptive adjustment settings.
+- The visible Meal Plan calorie/macro budget summary was temporarily suppressed in `SharedMealPlanPanel`; the underlying `calculateMealPlanPlannedTotals` helper and tests remain.
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/targets.spec.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetSql.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts` - passed, 6 files and 60 tests.
+- `pnpm exec eslint src/components/nutrition/NutritionTargetPanel.tsx src/components/nutrition/SharedMealPlanPanel.tsx src/lib/nutrition/targetForms.ts src/lib/nutrition/mealPlans.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts` - passed with no findings.
+- `pnpm exec tsc --noEmit --pretty false` - failed on broad pre-existing repository diagnostics outside this Nutrition target/Meal Plan pass.
+- `rg 'src/components/nutrition/(NutritionTargetPanel|SharedMealPlanPanel)|src/lib/nutrition/(targetForms|mealPlans)|test/lib/nutrition/(targetForms|nutritionTargetUiStatic|mealPlans)|test/app/api/nutrition/meal-plan/log-route' /tmp/premium-app-tsc.log` - no focused diagnostics.
+- `git diff --check` - passed.
+- Real iPhone visual inspection remains required to confirm final spacing, keyboard behavior, and tap ergonomics in the actual takeover container.
+
+# Phase 2A.3 Goal-First Target Wizard Refinement (2026-07-28)
+
+## Classification
+
+`Focused UX refinement complete; live iPhone visual approval not performed`
+
+The Nutrition target setup wizard was refined without changing calculation formulas, activity coefficients, calorie guardrails, macro formulas, server-authoritative preview, goal/profile creation APIs, goal-version persistence, daily targets, Meal Plan behavior, Grocery behavior, takeover ownership, or originating-tab behavior.
+
+## Completed UI changes
+
+- The normal setup path is now goal-first: `What are you building toward?`, `Tell us a little about you`, `What are your measurements?`, `How active are you most days?`, then `Your daily target`.
+- Each primary input screen now presents one plain-language question and focused controls instead of a step label plus section title stack.
+- Goal choices now render as `Lose fat`, `Maintain`, `Build weight`, and `Recomposition`, while preserving the existing engine values `lose`, `maintain`, `gain`, and `recomposition` and the default internal goal rates.
+- The `US` / `Metric` unit control moved out of Basics and appears only on Measurements, labeled `Units`, while continuing to use saved profile preference, unsaved session state, browser locale, then Metric fallback. Existing canonical conversion helpers still convert entered height, weight, and goal weight when switching systems.
+- Activity remains mapped to the existing five activity keys with user-facing rows and no coefficient terminology.
+- The result view now emphasizes `Your daily target`, dominant calories, and one macro row. Maintenance, delta, formula, algorithm version, and explanation remain hidden behind `How it was calculated`.
+- Advanced/manual controls remain behind `Adjust`, including goal rate, manual calories, suggested macros, custom grams, custom percentages, manual maintenance, goal weight, body-fat percentage, pregnancy/breastfeeding considerations, and adaptive adjustment suggestions.
+- The prominent `Step 1 of 4` header copy was replaced with a thin neutral four-segment progress indicator with an accessible `Step n of 4` label.
+- Wizard controls were simplified from decorative glass effects to near-black/charcoal fills, thin neutral borders, muted text, minimal shadow, and restrained selected states. Bright white fills, strong gradients, glow, and per-control blur were removed from the target setup controls.
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/targets.spec.ts test/lib/nutrition/targetForms.spec.ts test/lib/nutrition/nutritionTargetSql.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 4 files and 37 tests.
+- `pnpm exec eslint src/components/nutrition/NutritionTargetPanel.tsx test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with no findings.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/components/nutrition/NutritionTargetPanel|src/lib/nutrition/targetForms|test/lib/nutrition/nutritionTargetUiStatic' || true` - no focused diagnostics. A full repository TypeScript run still reports unrelated pre-existing diagnostics outside the Nutrition target files.
+- `git diff --check` - passed.
+- Real iPhone visual inspection remains required to confirm final spacing, safe-area footer feel, keyboard behavior, and tap ergonomics in the actual takeover container.
 
 # Phase 2A.2 Mobile Target Wizard (2026-07-24)
 

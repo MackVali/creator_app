@@ -95,6 +95,17 @@ export function isValidMyListUuid(value: string) {
   return MY_LIST_VALID_UUID_PATTERN.test(value);
 }
 
+export function normalizeMyListSourceType(
+  value: unknown
+): MyListSourceType | null {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim().toUpperCase();
+  return MY_LIST_SOURCE_TYPES.includes(normalized as MyListSourceType)
+    ? (normalized as MyListSourceType)
+    : null;
+}
+
 function createUuid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -369,11 +380,38 @@ export async function loadPinnedSourceMyListItems({
   localPinnedIds: Record<MyListSourceType, string[]>;
 }): Promise<MyListPinnedSourceStorageItem[]> {
   const existingRows = await fetchPinnedRows(userId);
+  const normalizedLocalPinnedIds = MY_LIST_SOURCE_TYPES.reduce(
+    (ids, sourceType) => ({
+      ...ids,
+      [sourceType]: Array.from(
+        new Set(
+          (localPinnedIds[sourceType] ?? [])
+            .map((sourceId) =>
+              typeof sourceId === "string" ? sourceId.trim() : ""
+            )
+            .filter(Boolean)
+        )
+      ),
+    }),
+    {
+      GOAL: [],
+      PROJECT: [],
+      TASK: [],
+      HABIT: [],
+    } as Record<MyListSourceType, string[]>
+  );
   const existingKeys = new Set(
-    existingRows.map((row) => `${row.source_type ?? ""}:${row.source_id ?? ""}`)
+    existingRows
+      .map((row) => {
+        const sourceType = normalizeMyListSourceType(row.source_type);
+        const sourceId =
+          typeof row.source_id === "string" ? row.source_id.trim() : "";
+        return sourceType && sourceId ? `${sourceType}:${sourceId}` : null;
+      })
+      .filter((key): key is string => Boolean(key))
   );
   const rowsToMigrate = MY_LIST_SOURCE_TYPES.flatMap((sourceType) =>
-    localPinnedIds[sourceType]
+    normalizedLocalPinnedIds[sourceType]
       .filter((sourceId) => sourceId && !existingKeys.has(`${sourceType}:${sourceId}`))
       .map((sourceId, index) =>
         pinnedRowToWrite({
@@ -402,12 +440,21 @@ export async function loadPinnedSourceMyListItems({
   }
 
   const rows = rowsToMigrate.length > 0 ? await fetchPinnedRows(userId) : existingRows;
+  const seenPinnedKeys = new Set<string>();
   return rows
     .map((row) => {
-      if (!row.source_type || !row.source_id) return null;
+      const sourceType = normalizeMyListSourceType(row.source_type);
+      const sourceId =
+        typeof row.source_id === "string" ? row.source_id.trim() : "";
+      if (!sourceType || !sourceId) return null;
+
+      const pinnedKey = `${sourceType}:${sourceId}`;
+      if (seenPinnedKeys.has(pinnedKey)) return null;
+      seenPinnedKeys.add(pinnedKey);
+
       return {
-        sourceType: row.source_type,
-        sourceId: row.source_id,
+        sourceType,
+        sourceId,
         done: Boolean(row.done),
         completedAt: row.done && row.completed_at ? row.completed_at : null,
         priorityId: row.priority_id ?? null,

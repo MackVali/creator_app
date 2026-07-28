@@ -6,6 +6,9 @@ import { defineConfig } from "vitest/config";
 const projectRoot = path.resolve(__dirname);
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",                 // jsdom not needed for this env sanity test
     setupFiles: ["./vitest.setup.ts"],   // loads .env.test
@@ -23,7 +26,16 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      {
+        find: "@/components/ui/FabCreationContext",
+        replacement: path.resolve(projectRoot, "components/ui/FabCreationContext.tsx"),
+      },
+      {
+        find: "@/components/auth/AuthProvider",
+        replacement: path.resolve(projectRoot, "components/auth/AuthProvider.tsx"),
+      },
       { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
+      { find: "@/lib/utils", replacement: path.resolve(projectRoot, "lib/utils.ts") },
       { find: "@/lib/scheduler", replacement: path.resolve(projectRoot, "src/lib/scheduler") },
       { find: "@/lib/supabase/server", replacement: path.resolve(projectRoot, "lib/supabase/server.ts") },
       { find: "@/lib/supabase/admin", replacement: path.resolve(projectRoot, "src/lib/supabase/admin.ts") },

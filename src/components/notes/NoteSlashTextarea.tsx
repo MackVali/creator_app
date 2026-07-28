@@ -51,6 +51,7 @@ import {
   X,
   Table2,
   Tags,
+  Trophy,
   Trash2,
   Type,
   Utensils,
@@ -143,6 +144,10 @@ import {
   DEFAULT_NUTRITION_RECIPE_ICON,
   type NutritionMealDraft,
 } from "@/lib/nutrition/meals";
+import {
+  dispatchNutritionMealSavedEvent,
+  getPendingNutritionLogContext,
+} from "@/lib/nutrition/logEvents";
 import type { Json } from "@/types/supabase";
 import {
   hapticComplete,
@@ -154,10 +159,18 @@ import {
 import {
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
   FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
+  buildFitnessWorkoutFocusSessionFromEntry,
+  getFitnessWorkoutEntryProgress,
+  getNewestInProgressFitnessWorkoutEntry,
   readFitnessWorkoutFocusSessionResultPayload,
+  upsertFitnessWorkoutDatabaseEntry,
   type FitnessWorkoutFocusSessionPayload,
   type FitnessWorkoutFocusSessionResultPayload,
 } from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
+  updateFitnessWorkoutDatabaseEntryInNote,
+  upsertFitnessWorkoutDatabaseEntryInNote,
+} from "@/lib/notesStorage";
 import {
   FITNESS_ROUTINE_GROUPS,
   routinePrescriptionToWorkoutDetail,
@@ -169,11 +182,26 @@ import {
   type FitnessPlanTemplate,
 } from "@/lib/fitness/planTemplates";
 import {
+  DEFAULT_FITNESS_ACTION_TAB_ID,
+  FITNESS_ACTION_TAB_SPECS,
+  type FitnessActionTabId,
+} from "@/lib/fitness/actionTabs";
+import {
+  getFitnessMuscleGroupStats,
+  type FitnessMuscleGroupStat,
+} from "@/lib/fitness/muscleStats";
+import {
   extractFitnessLoggedSetPerformances,
   formatFitnessProgressionSuggestionAction,
   getFitnessExerciseProgressionSummary,
   type FitnessExerciseProgressionSummary,
 } from "@/lib/fitness/progressiveOverload";
+import {
+  getFitnessExerciseHistory,
+  getFitnessExerciseHistories,
+  getFitnessPrHighlights,
+  type FitnessExerciseHistory,
+} from "@/lib/fitness/exerciseHistory";
 import { cn } from "@/lib/utils";
 
 type SlashCommandId =
@@ -380,18 +408,19 @@ const GROCERY_EXTRA_FOOD_ACTION_TABS = [
   label: string;
   icon: LucideIcon;
 }>;
-const FITNESS_ACTION_TABS = [
-  { id: "start", label: "Workout", icon: Dumbbell },
-  { id: "exercises", label: "Exercises", icon: ListChecks },
-  { id: "favorites", label: "Favorites", icon: Star },
-  { id: "workout-routines", label: "Routines", icon: Calendar },
-  { id: "plans", label: "Plans", icon: List },
-  { id: "custom", label: "Custom", icon: PencilLine },
-] as const satisfies ReadonlyArray<{
-  id: string;
-  label: string;
-  icon: LucideIcon;
-}>;
+const FITNESS_ACTION_TAB_ICONS: Record<FitnessActionTabId, LucideIcon> = {
+  start: Dumbbell,
+  exercises: ListChecks,
+  favorites: Star,
+  "workout-routines": Calendar,
+  plans: List,
+  custom: PencilLine,
+  me: Eye,
+};
+const FITNESS_ACTION_TABS = FITNESS_ACTION_TAB_SPECS.map((tab) => ({
+  ...tab,
+  icon: FITNESS_ACTION_TAB_ICONS[tab.id],
+}));
 type FitnessExerciseSample = {
   name: string;
   movementType: string;
@@ -423,6 +452,14 @@ type FitnessPlanSetup = {
   equipment: string;
   daysPerWeek: number;
   sessionLength: FitnessPlanSessionLength;
+};
+type FitnessWorkoutEntryContext = {
+  sessionId: string;
+  entryId: string;
+  noteId?: string;
+  databaseId?: string;
+  startedAt: string;
+  createdAt: string;
 };
 type FitnessMovementGroupSample = {
   label: string;
@@ -1220,6 +1257,13 @@ const FITNESS_MOVEMENT_GROUP_SAMPLES: FitnessMovementGroupSample[] = [
 const FITNESS_EXERCISE_SAMPLE_BY_NAME = new Map(
   FITNESS_EXERCISE_SAMPLES.map((exercise) => [exercise.name, exercise]),
 );
+const FITNESS_EXERCISE_HISTORY_CATALOG = FITNESS_EXERCISE_SAMPLES.map((exercise) => ({
+  exerciseId: getFitnessExerciseId(exercise),
+  exerciseName: exercise.name,
+  primaryMuscleGroup: exercise.primaryArea,
+  movementType: exercise.movementType,
+  equipment: exercise.equipment,
+}));
 function getFitnessExerciseId(exercise: Pick<FitnessExerciseSample, "name">) {
   return exercise.name;
 }
@@ -2262,6 +2306,22 @@ function buildClientDatabaseEntryId() {
   );
 }
 
+function readCurrentNoteDatabaseRouteContext(databaseId: string) {
+  if (typeof window === "undefined") return { databaseId };
+
+  const pathname = window.location.pathname;
+  const match = pathname.match(
+    /^\/(?:skills|monuments)\/[^/]+\/notes\/([^/]+)(?:\/databases\/([^/]+))?/,
+  );
+  const noteId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  const routeDatabaseId = match?.[2] ? decodeURIComponent(match[2]) : undefined;
+
+  return {
+    noteId,
+    databaseId: routeDatabaseId || databaseId,
+  };
+}
+
 function getDatabaseDisplayTitle(title: string | null | undefined) {
   const trimmedTitle = title?.trim() ?? "";
   return trimmedTitle.length === 0 || trimmedTitle === NOTE_DATABASE_TITLE_FALLBACK
@@ -2690,7 +2750,6 @@ type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId =
   | (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"]
   | (typeof GROCERY_EXTRA_FOOD_ACTION_TABS)[number]["id"];
-type FitnessActionTabId = (typeof FITNESS_ACTION_TABS)[number]["id"];
 type NutritionFavoriteItemType = "food" | "recipe" | "meal_template";
 type NutritionFavoriteTarget = {
   itemType: NutritionFavoriteItemType;
@@ -5921,12 +5980,29 @@ function buildNutritionMealDraft({
 }
 
 async function createNutritionMeal(draft: NutritionMealDraft) {
+  const pendingLogContext = getPendingNutritionLogContext();
+  const contextualDraft: NutritionMealDraft = pendingLogContext
+    ? {
+        ...draft,
+        occurredAt: pendingLogContext.startUtc || draft.occurredAt,
+        timezone: pendingLogContext.timeZone || draft.timezone,
+        name: draft.name?.trim() || pendingLogContext.mealName,
+        metadata: {
+          ...((draft.metadata &&
+          typeof draft.metadata === "object" &&
+          !Array.isArray(draft.metadata)
+            ? draft.metadata
+            : {}) as Record<string, unknown>),
+          matrixInferredMeal: pendingLogContext,
+        } as Json,
+      }
+    : draft;
   const response = await fetch("/api/nutrition/meals", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(draft),
+    body: JSON.stringify(contextualDraft),
   });
   const payload = (await response.json()) as NutritionMealCreateResponse;
 
@@ -5938,6 +6014,13 @@ async function createNutritionMeal(draft: NutritionMealDraft) {
   if (!mealId) {
     throw new Error("Nutrition meal API did not return a meal id.");
   }
+
+  dispatchNutritionMealSavedEvent({
+    mealId,
+    occurredAt: payload.meal?.occurred_at ?? contextualDraft.occurredAt,
+    metadata: payload.meal?.metadata ?? contextualDraft.metadata ?? null,
+    context: pendingLogContext,
+  });
 
   return mealId;
 }
@@ -6243,6 +6326,42 @@ function getPositiveFitnessMetadataNumber(value: unknown) {
 
 function formatFitnessMetadataDuration(seconds: number) {
   return seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`;
+}
+
+function startOfLocalDate(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatFitnessMuscleLastTrained(lastTrainedAt: string | null, now = new Date()) {
+  if (!lastTrainedAt) return "not yet";
+  const lastTrainedDate = new Date(lastTrainedAt);
+  if (Number.isNaN(lastTrainedDate.getTime())) return "not yet";
+
+  const daysAgo = Math.floor(
+    (startOfLocalDate(now).getTime() - startOfLocalDate(lastTrainedDate).getTime()) /
+      86_400_000,
+  );
+
+  if (daysAgo <= 0) return "today";
+  if (daysAgo === 1) return "yesterday";
+  if (daysAgo <= 6) return `${daysAgo} days ago`;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(lastTrainedDate);
+}
+
+function formatFitnessExerciseHistoryDate(value: string | null) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Never";
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
 }
 
 function getFitnessWorkoutLogPreview(
@@ -8001,7 +8120,7 @@ export function NoteDatabaseEntrySheet({
   const [chefAvailableRevealLevel, setChefAvailableRevealLevel] = useState<0 | 1 | 2>(0);
   const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
-    useState<FitnessActionTabId>("start");
+    useState<FitnessActionTabId>(DEFAULT_FITNESS_ACTION_TAB_ID);
   const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
     FitnessExerciseSample[]
   >([]);
@@ -8022,10 +8141,18 @@ export function NoteDatabaseEntrySheet({
   >({});
   const [fitnessWorkoutFocusSessionResult, setFitnessWorkoutFocusSessionResult] =
     useState<FitnessWorkoutFocusSessionResultPayload | null>(null);
+  const [fitnessWorkoutEntryContext, setFitnessWorkoutEntryContext] =
+    useState<FitnessWorkoutEntryContext | null>(null);
+  const [isFitnessWorkoutStarting, setIsFitnessWorkoutStarting] = useState(false);
   const [isFitnessWorkoutReviewOpen, setIsFitnessWorkoutReviewOpen] = useState(false);
+  const [fitnessExerciseDetailTarget, setFitnessExerciseDetailTarget] = useState<{
+    exerciseId: string;
+    exerciseName: string;
+  } | null>(null);
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const fitnessWorkoutStartingRef = useRef(false);
   const fitnessWeightEditsByExerciseIdRef = useRef<
     Record<string, Partial<Record<"weight" | "unit", boolean>>>
   >({});
@@ -8033,6 +8160,26 @@ export function NoteDatabaseEntrySheet({
     () => extractFitnessLoggedSetPerformances(entries),
     [entries],
   );
+  const fitnessMuscleGroupStats = useMemo(
+    () => getFitnessMuscleGroupStats(entries),
+    [entries],
+  );
+  const fitnessExerciseHistories = useMemo(
+    () => getFitnessExerciseHistories(entries, FITNESS_EXERCISE_HISTORY_CATALOG),
+    [entries],
+  );
+  const fitnessPrHighlights = useMemo(
+    () => getFitnessPrHighlights(fitnessExerciseHistories, 3),
+    [fitnessExerciseHistories],
+  );
+  const fitnessExerciseDetailHistory = useMemo(() => {
+    if (!fitnessExerciseDetailTarget) return null;
+    return getFitnessExerciseHistory(
+      entries,
+      fitnessExerciseDetailTarget,
+      FITNESS_EXERCISE_HISTORY_CATALOG,
+    );
+  }, [entries, fitnessExerciseDetailTarget]);
   const fitnessProgressionByExerciseId = useMemo(
     () => Object.fromEntries(
       selectedFitnessWorkoutExercises.flatMap((exercise) => {
@@ -8096,6 +8243,19 @@ export function NoteDatabaseEntrySheet({
     fitnessProgressionByExerciseId,
     selectedFitnessWorkoutExercises,
   ]);
+  useEffect(() => {
+    if (!fitnessExerciseDetailTarget) return;
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        void hapticSnap();
+        setFitnessExerciseDetailTarget(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [fitnessExerciseDetailTarget]);
   const consumeFitnessWorkoutFocusSessionResult = useCallback(() => {
     if (typeof window === "undefined" || selectedFitnessWorkoutExercises.length === 0) return;
     let rawResult: string | null = null;
@@ -8126,6 +8286,16 @@ export function NoteDatabaseEntrySheet({
     if (!result || matchingSets.length === 0) return;
 
     setFitnessWorkoutFocusSessionResult({ ...result, sets: matchingSets });
+    if (result.sessionId && result.entryId) {
+      setFitnessWorkoutEntryContext({
+        sessionId: result.sessionId,
+        entryId: result.entryId,
+        noteId: result.noteId,
+        databaseId: result.databaseId,
+        startedAt: result.startedAt || result.sessionCreatedAt,
+        createdAt: result.sessionCreatedAt,
+      });
+    }
     setFitnessWorkoutExerciseDetailsById((currentDetails) => {
       const nextDetails = { ...currentDetails };
       selectedFitnessWorkoutExercises.forEach((exercise) => {
@@ -9328,17 +9498,30 @@ export function NoteDatabaseEntrySheet({
   function buildFitnessWorkoutLogMetadata(
     workoutName: string,
     detailsByExerciseId: Record<string, FitnessWorkoutLogExerciseDetail>,
+    options?: {
+      sessionId?: string;
+      status?: "in_progress" | "completed" | "abandoned";
+      startedAt?: string;
+      updatedAt?: string;
+      completedAt?: string | null;
+    },
   ) {
     const sourcePlanName = FITNESS_PLAN_TEMPLATES.find(
       (plan) => plan.id === selectedFitnessPlanName,
     )?.title;
+    const now = options?.updatedAt ?? new Date().toISOString();
 
     return {
       version: 1,
+      sessionId: options?.sessionId,
+      status: options?.status,
       workoutName,
       sourceRoutineName: selectedFitnessSourceRoutineName,
       sourcePlanName: sourcePlanName ?? null,
-      loggedAt: new Date().toISOString(),
+      startedAt: options?.startedAt,
+      updatedAt: now,
+      completedAt: options?.completedAt,
+      loggedAt: options?.status === "completed" || !options?.status ? now : undefined,
       exercises: selectedFitnessWorkoutExercises.map((exercise) => {
         const exerciseId = getFitnessExerciseId(exercise);
         const detail = detailsByExerciseId[exerciseId] ?? buildFitnessWorkoutLogDetail(exercise);
@@ -9385,6 +9568,11 @@ export function NoteDatabaseEntrySheet({
                   weight: setUnit === "bodyweight" ? null : setWeight,
                   unit: setUnit,
                   completionStatus: set.status ?? null,
+                  status: set.status ?? "pending",
+                  completedAt:
+                    set.status === "completed" || set.status === "dismissed"
+                      ? set.completedAt ?? now
+                      : null,
                   isWarmup: false,
                   rpe: null,
                 };
@@ -9397,6 +9585,11 @@ export function NoteDatabaseEntrySheet({
                 completedDurationSeconds: plannedDurationSeconds,
                 weight,
                 unit,
+                status: options?.status === "in_progress" ? "pending" : "completed",
+                completionStatus:
+                  options?.status === "in_progress" ? "pending" : "completed",
+                completedAt:
+                  options?.status === "in_progress" ? null : options?.completedAt ?? now,
                 isWarmup: false,
                 rpe: null,
               })),
@@ -9701,14 +9894,36 @@ export function NoteDatabaseEntrySheet({
     void hapticSoftTick();
   }
 
-  function startSelectedFitnessWorkout() {
-    if (selectedFitnessWorkoutExercises.length === 0) return;
+  async function startSelectedFitnessWorkout() {
+    if (
+      selectedFitnessWorkoutExercises.length === 0 ||
+      isFitnessWorkoutStarting ||
+      fitnessWorkoutStartingRef.current
+    ) {
+      return;
+    }
 
+    fitnessWorkoutStartingRef.current = true;
+    setIsFitnessWorkoutStarting(true);
     setFitnessWorkoutFocusSessionResult(null);
+    const now = new Date().toISOString();
+    const sessionId = buildClientDatabaseEntryId();
+    const entryId = buildClientDatabaseEntryId();
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+    const workoutName = getCurrentFitnessWorkoutName();
     const payload: FitnessWorkoutFocusSessionPayload = {
       source: "fitness",
-      workoutName: getCurrentFitnessWorkoutName(),
-      createdAt: new Date().toISOString(),
+      sessionId,
+      entryId,
+      noteId: routeContext.noteId,
+      databaseId: routeContext.databaseId,
+      workoutName,
+      createdAt: now,
+      startedAt: now,
+      sourceRoutineName: selectedFitnessSourceRoutineName,
+      sourcePlanName:
+        FITNESS_PLAN_TEMPLATES.find((plan) => plan.id === selectedFitnessPlanName)?.title ??
+        null,
       exercises: selectedFitnessWorkoutExercises.map((exercise) => {
         const detail = getFitnessWorkoutExerciseDetail(
           exercise,
@@ -9729,6 +9944,40 @@ export function NoteDatabaseEntrySheet({
         };
       }),
     };
+    const nextDetailsByExerciseId = selectedFitnessWorkoutExercises.reduce<
+      Record<string, FitnessWorkoutLogExerciseDetail>
+    >((nextDetails, exercise) => {
+      const exerciseId = getFitnessExerciseId(exercise);
+      nextDetails[exerciseId] = getFitnessWorkoutLogDetail(exercise);
+      return nextDetails;
+    }, {});
+    const nextValues = buildFitnessWorkoutEntryValues(workoutName, nextDetailsByExerciseId);
+    const existingMetadata =
+      entryFormValues.metadata &&
+      typeof entryFormValues.metadata === "object" &&
+      !Array.isArray(entryFormValues.metadata)
+        ? (entryFormValues.metadata as Record<string, unknown>)
+        : {};
+    nextValues.metadata = {
+      ...existingMetadata,
+      fitnessWorkoutLog: buildFitnessWorkoutLogMetadata(
+        workoutName,
+        nextDetailsByExerciseId,
+        {
+          sessionId,
+          status: "in_progress",
+          startedAt: now,
+          updatedAt: now,
+          completedAt: null,
+        },
+      ),
+    };
+    const nextEntry: NoteDatabaseEntry = {
+      id: entryId,
+      createdAt: now,
+      updatedAt: now,
+      values: nextValues,
+    };
 
     try {
       window.sessionStorage.setItem(
@@ -9739,14 +9988,34 @@ export function NoteDatabaseEntrySheet({
       // Route navigation still opens Focus Pomo when sessionStorage is unavailable.
     }
 
-    void hapticSoftTick();
-    router.push("/focus-pomo");
+    try {
+      await onSaveEntry(nextEntry);
+      if (routeContext.noteId) {
+        const persisted = await upsertFitnessWorkoutDatabaseEntryInNote({
+          noteId: routeContext.noteId,
+          databaseId: routeContext.databaseId,
+          entry: nextEntry,
+          sessionId,
+        });
+        if (!persisted.success) {
+          console.error("Failed to persist started Fitness workout", persisted.error);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to start Fitness workout entry", { error });
+    } finally {
+      fitnessWorkoutStartingRef.current = false;
+      setIsFitnessWorkoutStarting(false);
+      void hapticSoftTick();
+      router.push("/focus-pomo");
+    }
   }
 
-  function logReviewedFitnessWorkout() {
+  async function logReviewedFitnessWorkout() {
     if (selectedFitnessWorkoutExercises.length === 0) return;
 
     const workoutName = getCurrentFitnessWorkoutName();
+    const completedAt = new Date().toISOString();
     const nextDetailsByExerciseId = selectedFitnessWorkoutExercises.reduce<
       Record<string, FitnessWorkoutLogExerciseDetail>
     >((nextDetails, exercise) => {
@@ -9769,15 +10038,50 @@ export function NoteDatabaseEntrySheet({
       fitnessWorkoutLog: buildFitnessWorkoutLogMetadata(
         workoutName,
         nextDetailsByExerciseId,
+        {
+          sessionId: fitnessWorkoutEntryContext?.sessionId,
+          status: "completed",
+          startedAt: fitnessWorkoutEntryContext?.startedAt,
+          updatedAt: completedAt,
+          completedAt,
+        },
       ),
     };
     setFitnessWorkoutFocusSessionResult(null);
+    setFitnessWorkoutEntryContext(null);
 
     if (Object.keys(nextValues).length > 0) {
       const nextFormValues = { ...entryFormValues, ...nextValues };
       setEntryFormValues(nextFormValues);
       setSubmitError(null);
-      void saveDatabaseEntry(nextFormValues);
+      await saveDatabaseEntry(nextFormValues, {
+        entryId: fitnessWorkoutEntryContext?.entryId,
+        createdAt: fitnessWorkoutEntryContext?.createdAt,
+      });
+      if (
+        fitnessWorkoutEntryContext?.noteId &&
+        fitnessWorkoutEntryContext.databaseId &&
+        fitnessWorkoutEntryContext.entryId
+      ) {
+        await updateFitnessWorkoutDatabaseEntryInNote({
+          noteId: fitnessWorkoutEntryContext.noteId,
+          databaseId: fitnessWorkoutEntryContext.databaseId,
+          entryId: fitnessWorkoutEntryContext.entryId,
+          sessionId: fitnessWorkoutEntryContext.sessionId,
+          getNextEntry: (entry) => ({
+            ...entry,
+            updatedAt: completedAt,
+            values: {
+              ...entry.values,
+              ...nextValues,
+              metadata: {
+                ...getRecordMetadata(entry.values.metadata),
+                ...getRecordMetadata(nextValues.metadata),
+              },
+            },
+          }),
+        });
+      }
     }
   }
 
@@ -10544,6 +10848,157 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function openFitnessExerciseDetail(exercise: { exerciseId: string; exerciseName: string }) {
+    void hapticSnap();
+    setFitnessExerciseDetailTarget(exercise);
+  }
+
+  function renderFitnessExerciseDetailSheet() {
+    if (!fitnessExerciseDetailTarget) return null;
+
+    const sample = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(
+      fitnessExerciseDetailTarget.exerciseName,
+    );
+    const history: FitnessExerciseHistory =
+      fitnessExerciseDetailHistory ?? {
+        exerciseId: fitnessExerciseDetailTarget.exerciseId,
+        exerciseName: fitnessExerciseDetailTarget.exerciseName,
+        primaryMuscleGroup: sample?.primaryArea ?? "Other",
+        movementType: sample?.movementType ?? null,
+        equipment: sample?.equipment ?? null,
+        lastTrainedAt: null,
+        latestPerformance: null,
+        suggestedTarget: null,
+        progressionReason: "No completed history yet.",
+        records: [],
+        recentSessions: [],
+      };
+    const heaviestRecord = history.records.find(
+      (record) => record.type === "heaviest_weight",
+    );
+    const summaryMetrics = [
+      { label: "Latest", value: history.latestPerformance ?? "No completed history" },
+      { label: "Next", value: history.suggestedTarget ?? "No automatic target" },
+      { label: "Heaviest", value: heaviestRecord?.valueLabel ?? "No weighted record" },
+      { label: "Last trained", value: formatFitnessExerciseHistoryDate(history.lastTrainedAt) },
+    ];
+    const metadataLine = [history.movementType, history.equipment]
+      .filter((value): value is string => Boolean(value))
+      .join(" · ");
+
+    return (
+      <div
+        className="fixed inset-0 z-[85] flex items-end justify-center overflow-hidden overscroll-contain bg-black/62 backdrop-blur-sm sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fitness-exercise-detail-title"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            void hapticSnap();
+            setFitnessExerciseDetailTarget(null);
+          }
+        }}
+      >
+        <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/[0.055] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:rounded-[28px] sm:border-b">
+          <div className="relative border-b border-white/[0.045] px-4 pb-4 pt-3">
+            <div className="mx-auto h-1 w-11 rounded-full bg-white/20" aria-hidden="true" />
+            <div className="mt-4 pr-10">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/36">
+                {history.primaryMuscleGroup}
+              </p>
+              <h2
+                id="fitness-exercise-detail-title"
+                className="mt-1 truncate text-lg font-semibold leading-6 text-white/92"
+              >
+                {history.exerciseName}
+              </h2>
+              {metadataLine ? (
+                <p className="mt-1 truncate text-xs font-medium text-white/42">
+                  {metadataLine}
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              aria-label="Close exercise detail"
+              onClick={() => {
+                void hapticSnap();
+                setFitnessExerciseDetailTarget(null);
+              }}
+              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+            <div className="grid grid-cols-2 gap-2">
+              {summaryMetrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  className="min-h-[74px] rounded-xl border border-white/[0.055] bg-white/[0.035] px-3 py-2.5"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
+                    {metric.label}
+                  </p>
+                  <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 text-white/82">
+                    {metric.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/34 px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/34">
+                Progression
+              </p>
+              <p className="mt-2 text-sm font-medium leading-5 text-white/68">
+                {history.progressionReason}
+              </p>
+            </div>
+
+            <section className="mt-4 space-y-2">
+              <div className="flex items-end justify-between gap-3 px-1">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white/82">Recent Performances</p>
+                  <p className="mt-0.5 text-xs font-medium text-white/38">
+                    Newest completed sessions
+                  </p>
+                </div>
+              </div>
+              {history.recentSessions.length > 0 ? (
+                <div className="space-y-1.5">
+                  {history.recentSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className="rounded-xl border border-white/[0.05] bg-white/[0.026] px-3 py-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-semibold text-white/78">
+                          {session.workoutName}
+                        </p>
+                        <p className="shrink-0 text-xs font-medium text-white/36">
+                          {formatFitnessExerciseHistoryDate(session.loggedAt)}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs font-medium leading-5 text-white/48">
+                        {session.setResultSummary}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/[0.07] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
+                  No completed sessions for this exercise yet.
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderFitnessActionTabs() {
     return (
       <div className="relative -mx-1">
@@ -10796,21 +11251,32 @@ export function NoteDatabaseEntrySheet({
                                           />
                                         </button>
                                         <div className="min-w-0 flex-1">
-                                          <span className="flex min-w-0 items-center gap-1.5">
-                                            {isSelected ? (
-                                              <Check
-                                                className="h-3.5 w-3.5 shrink-0 text-white/68"
-                                                aria-hidden="true"
-                                              />
-                                            ) : null}
-                                            <span className="block truncate text-sm font-semibold text-white/84">
-                                              {exercise.name}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openFitnessExerciseDetail({
+                                                exerciseId: getFitnessExerciseId(exercise),
+                                                exerciseName: exercise.name,
+                                              })
+                                            }
+                                            className="block w-full min-w-0 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/16"
+                                          >
+                                            <span className="flex min-w-0 items-center gap-1.5">
+                                              {isSelected ? (
+                                                <Check
+                                                  className="h-3.5 w-3.5 shrink-0 text-white/68"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : null}
+                                              <span className="block truncate text-sm font-semibold text-white/84">
+                                                {exercise.name}
+                                              </span>
                                             </span>
-                                          </span>
-                                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                            {exercise.movementType} · {exercise.equipment} ·{" "}
-                                            {exercise.primaryArea}
-                                          </span>
+                                            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                              {exercise.movementType} · {exercise.equipment} ·{" "}
+                                              {exercise.primaryArea}
+                                            </span>
+                                          </button>
                                           {isSelected
                                             ? renderFitnessWorkoutDetailControls(exercise)
                                             : null}
@@ -10900,12 +11366,23 @@ export function NoteDatabaseEntrySheet({
                     <Star className="h-4 w-4 fill-current" aria-hidden="true" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white/84">
-                      {exercise.name}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs font-medium text-white/40">
-                      {exercise.movementType} · {exercise.equipment} · {exercise.primaryArea}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openFitnessExerciseDetail({
+                          exerciseId: getFitnessExerciseId(exercise),
+                          exerciseName: exercise.name,
+                        })
+                      }
+                      className="block w-full min-w-0 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/16"
+                    >
+                      <p className="truncate text-sm font-semibold text-white/84">
+                        {exercise.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs font-medium text-white/40">
+                        {exercise.movementType} · {exercise.equipment} · {exercise.primaryArea}
+                      </p>
+                    </button>
                     {isSelected ? renderFitnessWorkoutDetailControls(exercise) : null}
                   </div>
                   <button
@@ -11511,7 +11988,7 @@ export function NoteDatabaseEntrySheet({
 
         <button
           type="button"
-          onClick={logReviewedFitnessWorkout}
+          onClick={() => void logReviewedFitnessWorkout()}
           disabled={isSubmitting || selectedFitnessWorkoutExercises.length === 0}
           className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.13] px-3 text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
         >
@@ -11580,7 +12057,16 @@ export function NoteDatabaseEntrySheet({
                     className="rounded-lg border border-white/[0.045] bg-white/[0.035] px-2.5 py-2"
                   >
                     <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                      <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openFitnessExerciseDetail({
+                            exerciseId: getFitnessExerciseId(exercise),
+                            exerciseName: exercise.name,
+                          })
+                        }
+                        className="min-w-0 flex-1 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/16"
+                      >
                         <p className="truncate text-xs font-semibold text-white/78">
                           {exercise.name}
                         </p>
@@ -11597,7 +12083,7 @@ export function NoteDatabaseEntrySheet({
                               : ""}
                           </p>
                         ) : null}
-                      </div>
+                      </button>
                       <div className="flex shrink-0 items-center gap-1">
                         {renderFitnessWorkoutWeightControl(exercise)}
                         <button
@@ -11650,12 +12136,12 @@ export function NoteDatabaseEntrySheet({
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={startSelectedFitnessWorkout}
-              disabled={!hasSelectedWorkoutExercises}
+              onClick={() => void startSelectedFitnessWorkout()}
+              disabled={!hasSelectedWorkoutExercises || isFitnessWorkoutStarting}
               className="flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/[0.42] bg-white/70 px-2 text-xs font-semibold text-zinc-900 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none backdrop-blur-xl transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black active:bg-white/65 focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
             >
               <Dumbbell className="h-4 w-4" aria-hidden="true" />
-              Start
+              {isFitnessWorkoutStarting ? "Starting..." : "Start"}
             </button>
             <button
               type="button"
@@ -11672,11 +12158,368 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function openFitnessWorkoutReviewFromEntry(
+    entry: NoteDatabaseEntry,
+    context: FitnessWorkoutEntryContext,
+  ) {
+    const { log } = getFitnessWorkoutEntryProgress(entry);
+    if (!log?.exercises) return;
+
+    const nextExercises = log.exercises.flatMap((exerciseValue) => {
+      const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
+      const sample = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName);
+      return sample ? [sample] : [];
+    });
+    const nextDetails = log.exercises.reduce<Record<string, FitnessWorkoutExerciseDetail>>(
+      (details, exerciseValue) => {
+        const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
+        const exerciseId =
+          typeof exerciseValue.exerciseId === "string" ? exerciseValue.exerciseId : exerciseName;
+        const firstSet = Array.isArray(exerciseValue.sets) ? exerciseValue.sets[0] : null;
+        details[exerciseId] = {
+          sets: String(Math.max(1, exerciseValue.sets?.length ?? 1)),
+          reps:
+            typeof firstSet?.plannedReps === "number"
+              ? String(firstSet.plannedReps)
+              : "",
+          duration:
+            typeof firstSet?.plannedDurationSeconds === "number"
+              ? `${firstSet.plannedDurationSeconds} seconds`
+              : "",
+          weight:
+            firstSet?.unit === "bodyweight" || typeof firstSet?.weight !== "number"
+              ? ""
+              : String(firstSet.weight),
+          unit: isFitnessWeightUnit(firstSet?.unit) ? firstSet.unit : "lb",
+        };
+        return details;
+      },
+      {},
+    );
+    const resultSets: FitnessWorkoutFocusSessionResultPayload["sets"] =
+      log.exercises.flatMap((exerciseValue) => {
+      const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
+      const exerciseId =
+        typeof exerciseValue.exerciseId === "string" ? exerciseValue.exerciseId : exerciseName;
+      return (exerciseValue.sets ?? []).map((set, index) => ({
+        exerciseId,
+        exerciseName,
+        setNumber: set.setNumber ?? index + 1,
+        totalSets: set.totalSets ?? exerciseValue.sets?.length ?? 1,
+        plannedReps: set.plannedReps == null ? "" : String(set.plannedReps),
+        plannedDurationSeconds: set.plannedDurationSeconds ?? null,
+        completedReps: set.completedReps ?? null,
+        completedDurationSeconds: set.completedDurationSeconds ?? null,
+        weight: set.unit === "bodyweight" || set.weight == null ? "" : String(set.weight),
+        weightUnit: typeof set.unit === "string" ? set.unit : "",
+        status:
+          set.status === "dismissed" || set.completionStatus === "dismissed"
+            ? "dismissed"
+            : set.status === "completed" || set.completionStatus === "completed"
+              ? "completed"
+              : "pending",
+        completedAt: set.completedAt ?? null,
+      }));
+    });
+
+    setSelectedFitnessWorkoutExercises(nextExercises);
+    setFitnessWorkoutExerciseDetailsById(nextDetails);
+    setSelectedFitnessRoutineName(log.workoutName ?? "Workout");
+    setSelectedFitnessSourceRoutineName(log.sourceRoutineName ?? null);
+    setFitnessWorkoutEntryContext(context);
+    setFitnessWorkoutFocusSessionResult({
+      source: "fitness",
+      sessionId: context.sessionId,
+      entryId: context.entryId,
+      noteId: context.noteId,
+      databaseId: context.databaseId,
+      workoutName: log.workoutName ?? "Workout",
+      sessionCreatedAt: context.createdAt,
+      startedAt: context.startedAt,
+      updatedAt: log.updatedAt ?? new Date().toISOString(),
+      sets: resultSets,
+    });
+    setIsFitnessWorkoutReviewOpen(true);
+    selectFitnessAction("start");
+  }
+
+  async function resumeFitnessWorkoutEntry(entry: NoteDatabaseEntry) {
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+    const session = buildFitnessWorkoutFocusSessionFromEntry({
+      entry,
+      noteId: routeContext.noteId,
+      databaseId: routeContext.databaseId,
+    });
+    if (!session.payload?.sessionId) return;
+
+    const context: FitnessWorkoutEntryContext = {
+      sessionId: session.payload.sessionId,
+      entryId: entry.id,
+      noteId: routeContext.noteId,
+      databaseId: routeContext.databaseId,
+      startedAt: session.payload.startedAt ?? entry.createdAt,
+      createdAt: entry.createdAt,
+    };
+
+    if (session.resolvedSetCount >= session.totalSetCount) {
+      openFitnessWorkoutReviewFromEntry(entry, context);
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(
+        FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+        JSON.stringify(session.payload),
+      );
+    } catch {
+      // Route navigation still opens Focus Pomo when sessionStorage is unavailable.
+    }
+    void hapticSoftTick();
+    router.push("/focus-pomo");
+  }
+
+  async function discardFitnessWorkoutEntry(entry: NoteDatabaseEntry) {
+    if (typeof window !== "undefined" && !window.confirm("Discard this workout?")) {
+      return;
+    }
+    const { log } = getFitnessWorkoutEntryProgress(entry);
+    if (!log) return;
+
+    const now = new Date().toISOString();
+    const nextEntry: NoteDatabaseEntry = {
+      ...entry,
+      updatedAt: now,
+      values: {
+        ...entry.values,
+        metadata: {
+          ...getRecordMetadata(entry.values.metadata),
+          fitnessWorkoutLog: {
+            ...log,
+            status: "abandoned",
+            updatedAt: now,
+          },
+        },
+      },
+    };
+    await onSaveEntry(nextEntry);
+
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+    if (routeContext.noteId) {
+      await updateFitnessWorkoutDatabaseEntryInNote({
+        noteId: routeContext.noteId,
+        databaseId: routeContext.databaseId,
+        entryId: entry.id,
+        sessionId: log.sessionId,
+        getNextEntry: () => nextEntry,
+      });
+    }
+    void hapticSnap();
+  }
+
+  function renderFitnessMeContent() {
+    const inProgressEntry = getNewestInProgressFitnessWorkoutEntry(entries);
+    const progress = inProgressEntry ? getFitnessWorkoutEntryProgress(inProgressEntry) : null;
+    const log = progress?.log ?? null;
+    const renderedAt = new Date();
+    const completedSetCount =
+      log?.exercises?.reduce(
+        (count, exercise) =>
+          count +
+          (exercise.sets ?? []).filter(
+            (set) => set.status === "completed" || set.completionStatus === "completed",
+          ).length,
+        0,
+      ) ?? 0;
+    const startedAt = log?.startedAt
+      ? new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(log.startedAt))
+      : null;
+    const sourceLine = [log?.sourcePlanName, log?.sourceRoutineName]
+      .filter((value): value is string => Boolean(value))
+      .join(" · ");
+    const renderMuscleGroupStat = (stat: FitnessMuscleGroupStat) => {
+      const hasSets = stat.completedSetCount > 0;
+      const barWidth = `${Math.max(0, Math.min(100, stat.workloadPercentage))}%`;
+
+      return (
+        <div
+          key={stat.id}
+          className={`rounded-xl border px-3 py-2.5 ${
+            hasSets
+              ? "border-white/[0.07] bg-black/32"
+              : "border-white/[0.045] bg-white/[0.018]"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p
+                className={`truncate text-sm font-semibold ${
+                  hasSets ? "text-white/86" : "text-white/42"
+                }`}
+              >
+                {stat.label}
+              </p>
+              <p
+                className={`mt-0.5 truncate text-xs font-medium ${
+                  hasSets ? "text-white/48" : "text-white/28"
+                }`}
+              >
+                {stat.completedSetCount} {stat.completedSetCount === 1 ? "set" : "sets"} · Last trained{" "}
+                {formatFitnessMuscleLastTrained(stat.lastTrainedAt, renderedAt)}
+              </p>
+            </div>
+            <p
+              className={`shrink-0 text-xs font-semibold tabular-nums ${
+                hasSets ? "text-white/58" : "text-white/28"
+              }`}
+            >
+              {stat.workloadPercentage}%
+            </p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.055]">
+            <div
+              className={`h-full rounded-full transition-[width] ${
+                hasSets ? "bg-white/54" : "bg-white/[0.12]"
+              }`}
+              style={{ width: hasSets ? barWidth : "0%" }}
+            />
+          </div>
+        </div>
+      );
+    };
+    const renderPrHighlight = (
+      highlight: ReturnType<typeof getFitnessPrHighlights>[number],
+    ) => (
+      <button
+        key={highlight.record.id}
+        type="button"
+        onClick={() =>
+          openFitnessExerciseDetail({
+            exerciseId: highlight.history.exerciseId,
+            exerciseName: highlight.history.exerciseName,
+          })
+        }
+        className="min-h-[104px] rounded-xl border border-white/[0.07] bg-black/34 px-3 py-3 text-left outline-none transition hover:border-white/[0.12] hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="min-w-0 truncate text-sm font-semibold text-white/82">
+            {highlight.record.exerciseName}
+          </p>
+          <Trophy className="h-3.5 w-3.5 shrink-0 text-white/38" aria-hidden="true" />
+        </div>
+        <p className="mt-3 truncate text-xl font-semibold leading-6 text-white/92">
+          {highlight.record.valueLabel}
+        </p>
+        <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-white/34">
+          {highlight.record.typeLabel}
+        </p>
+      </button>
+    );
+
+    return (
+      <div className="mt-3 space-y-3">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.035] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/42">
+            Training status
+          </p>
+          <p className="mt-2 text-base font-semibold text-white/88">
+            Manual / Untracked
+          </p>
+          <p className="mt-1 text-sm leading-5 text-white/50">
+            Select a routine or build workouts manually. Loading a routine does not start a tracked plan.
+          </p>
+        </div>
+
+        {inProgressEntry && log ? (
+          <div className="rounded-xl border border-white/[0.07] bg-black/28 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/42">
+                  Workout in progress
+                </p>
+                <p className="mt-2 truncate text-base font-semibold text-white/90">
+                  {log.workoutName ?? "Workout"}
+                </p>
+                {sourceLine ? (
+                  <p className="mt-1 truncate text-xs font-medium text-white/44">
+                    {sourceLine}
+                  </p>
+                ) : null}
+              </div>
+              <p className="shrink-0 text-right text-xs font-semibold text-white/52">
+                {completedSetCount}/{progress?.totalSetCount ?? 0} sets
+              </p>
+            </div>
+            {startedAt ? (
+              <p className="mt-2 text-xs font-medium text-white/38">
+                Started {startedAt}
+              </p>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void resumeFitnessWorkoutEntry(inProgressEntry)}
+                className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.11] px-3 text-xs font-semibold text-white/88 outline-none transition hover:bg-white/[0.15] focus-visible:ring-1 focus-visible:ring-white/22"
+              >
+                Resume workout
+              </button>
+              <button
+                type="button"
+                onClick={() => void discardFitnessWorkoutEntry(inProgressEntry)}
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-red-200/15 bg-red-500/[0.08] px-3 text-xs font-semibold text-red-100/78 outline-none transition hover:bg-red-500/[0.12] focus-visible:ring-1 focus-visible:ring-red-100/24"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <section className="space-y-2">
+          <div className="flex items-end justify-between gap-3 px-1">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white/82">Muscle Groups</p>
+              <p className="mt-0.5 text-xs font-medium text-white/38">
+                Working sets from the trailing 7 days
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            {fitnessMuscleGroupStats.map(renderMuscleGroupStat)}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-end justify-between gap-3 px-1">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white/82">PR Highlights</p>
+              <p className="mt-0.5 text-xs font-medium text-white/38">
+                Completed working-set records
+              </p>
+            </div>
+          </div>
+          {fitnessPrHighlights.length > 0 ? (
+            <div className="grid gap-1.5 sm:grid-cols-3">
+              {fitnessPrHighlights.map(renderPrHighlight)}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/[0.08] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
+              No completed PR highlights yet.
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
   function renderFitnessTabContent() {
     return (
       <div>
         {renderFitnessActionTabs()}
-        {selectedFitnessAction === "start" ? (
+        {selectedFitnessAction === "me" ? (
+          renderFitnessMeContent()
+        ) : selectedFitnessAction === "start" ? (
           renderFitnessStartContent()
         ) : selectedFitnessAction === "exercises" ? (
           renderFitnessExerciseBrowser()
@@ -11689,6 +12532,7 @@ export function NoteDatabaseEntrySheet({
         ) : selectedFitnessAction === "plans" ? (
           renderFitnessPlanBrowser()
         ) : null}
+        {renderFitnessExerciseDetailSheet()}
       </div>
     );
   }
@@ -15248,13 +16092,20 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  async function saveDatabaseEntry(formValuesOverride?: Record<string, unknown>) {
+  async function saveDatabaseEntry(
+    formValuesOverride?: Record<string, unknown>,
+    options?: {
+      entryId?: string;
+      createdAt?: string;
+      closeOnSuccess?: boolean;
+    },
+  ) {
     if (isSubmitting || isDatabaseEntrySubmittingRef.current) return;
     isDatabaseEntrySubmittingRef.current = true;
 
     const formValues = formValuesOverride ?? entryFormValues;
     const now = new Date().toISOString();
-    const entryId = initialEntry?.id ?? buildClientDatabaseEntryId();
+    const entryId = options?.entryId ?? initialEntry?.id ?? buildClientDatabaseEntryId();
     const values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
         const rawFieldValue = formValues[field.id];
@@ -15328,7 +16179,7 @@ export function NoteDatabaseEntrySheet({
 
     const nextEntry: NoteDatabaseEntry = {
       id: entryId,
-      createdAt: initialEntry?.createdAt ?? now,
+      createdAt: options?.createdAt ?? initialEntry?.createdAt ?? now,
       updatedAt: now,
       values,
     };
@@ -15401,7 +16252,9 @@ export function NoteDatabaseEntrySheet({
 
       await onSaveEntry(entryToSave);
       void hapticComplete();
-      onClose();
+      if (options?.closeOnSuccess !== false) {
+        onClose();
+      }
     } catch (error) {
       console.error("Failed to save database entry", { error, databaseId: databaseDefinition.id });
       void hapticErrorPattern();
@@ -16021,10 +16874,13 @@ export function NoteDatabaseFocusedView({
 
     const currentEntries = databaseEntries ?? {};
 
-    onDatabaseEntriesChange?.({
-      ...currentEntries,
-      [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), nextEntry],
-    });
+    onDatabaseEntriesChange?.(
+      upsertFitnessWorkoutDatabaseEntry(
+        currentEntries,
+        databaseDefinition.id,
+        nextEntry,
+      ) as NoteDatabaseEntries,
+    );
 
     if (isDefaultNutritionDatabase) {
       setNutritionDailyProgressRefreshKey((currentKey) => currentKey + 1);
@@ -17548,13 +18404,13 @@ function NoteSlashTextarea({
 
     const currentEntries = databaseEntries ?? {};
 
-    onDatabaseEntriesChange?.({
-      ...currentEntries,
-      [activeEntryDatabaseDefinition.id]: [
-        ...(currentEntries[activeEntryDatabaseDefinition.id] ?? []),
+    onDatabaseEntriesChange?.(
+      upsertFitnessWorkoutDatabaseEntry(
+        currentEntries,
+        activeEntryDatabaseDefinition.id,
         nextEntry,
-      ],
-    });
+      ) as NoteDatabaseEntries,
+    );
     void hapticComplete();
   }
 

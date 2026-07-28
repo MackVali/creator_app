@@ -46,14 +46,14 @@ describe("nutrition target v1", () => {
   });
 
   it("calculates loss rate and applies the 20% deficit cap", () => {
-    const result = calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 1 });
+    const result = calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 1, goalWeightKg: 75 });
     expect(result.provisionalCalorieDeltaKcal).toBeCloseTo(880, 8);
     expect(result.acceptedCalorieDeltaKcal).toBeCloseTo(569.6, 8);
     expect(result.calorieTargetKcal).toBe(2280);
   });
 
   it("calculates gain rate and applies the 15% surplus cap", () => {
-    const result = calculateNutritionTarget({ ...base, goalType: "gain", goalRatePctPerWeek: 0.5 });
+    const result = calculateNutritionTarget({ ...base, goalType: "gain", goalRatePctPerWeek: 0.5, goalWeightKg: 85 });
     expect(result.provisionalCalorieDeltaKcal).toBeCloseTo(440, 8);
     expect(result.acceptedCalorieDeltaKcal).toBeCloseTo(427.2, 8);
     expect(result.calorieTargetKcal).toBe(3280);
@@ -65,7 +65,7 @@ describe("nutrition target v1", () => {
     ["gain", 128, 69],
     ["recomposition", 144, 64],
   ] as const)("uses the %s default macro strategy", (goalType, protein, fat) => {
-    const result = calculateNutritionTarget({ ...base, goalType });
+    const result = calculateNutritionTarget({ ...base, goalType, ...(goalType === "lose" ? { goalWeightKg: 75 } : goalType === "gain" ? { goalWeightKg: 85 } : {}) });
     expect(result.proteinTargetG).toBe(protein);
     expect(result.fatTargetG).toBe(fat);
     expect(result.carbTargetG).toBeGreaterThan(0);
@@ -86,7 +86,7 @@ describe("nutrition target v1", () => {
   });
 
   it("uses manual maintenance as the goal-delta basis while preserving the resting estimate", () => {
-    const result = calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5, manualMaintenanceKcal: 2400 });
+    const result = calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5, goalWeightKg: 75, manualMaintenanceKcal: 2400 });
     expect(result.rawRestingEstimateKcal).toBe(1780);
     expect(result.rawEstimatedMaintenanceKcal).toBe(2400);
     expect(result.estimatedMaintenanceKcal).toBe(2400);
@@ -113,12 +113,12 @@ describe("nutrition target v1", () => {
 
   it("requires manual targets for unsupported automatic paths", () => {
     expect(() => calculateNutritionTarget({ ...base, ageYears: 17 })).toThrow(/under 18/);
-    expect(() => calculateNutritionTarget({ ...base, formulaInput: "female", goalType: "lose", pregnancyStatus: "pregnant" })).toThrow(/pregnancy/);
+    expect(() => calculateNutritionTarget({ ...base, formulaInput: "female", goalType: "lose", goalWeightKg: 75, pregnancyStatus: "pregnant" })).toThrow(/pregnancy/);
     expect(calculateNutritionTarget({ ...base, ageYears: 17, formulaInput: "manual", manualCalorieTargetKcal: 2000 }).isManual).toBe(true);
   });
 
   it("enforces low-calorie confirmation and automatic floors", () => {
-    const lowBase = { ...base, formulaInput: "female" as const, heightCm: 150, weightKg: 45, activityLevel: "sedentary" as const, goalType: "lose" as const, goalRatePctPerWeek: 1 };
+    const lowBase = { ...base, formulaInput: "female" as const, heightCm: 150, weightKg: 45, activityLevel: "sedentary" as const, goalType: "lose" as const, goalRatePctPerWeek: 1, goalWeightKg: 42 };
     expect(() => calculateNutritionTarget(lowBase)).toThrow(/below 1,500|1,200/);
     const manual = calculateNutritionTarget({ ...base, formulaInput: "manual", manualCalorieTargetKcal: 1000, macroMode: "custom_grams", customProteinG: 100, customCarbG: 100, customFatG: 22 });
     expect(manual.warnings).toHaveLength(1);
@@ -127,5 +127,11 @@ describe("nutrition target v1", () => {
   it("is deterministic when timestamp is supplied", () => {
     expect(calculateNutritionTarget(base)).toEqual(calculateNutritionTarget(base));
     expect(calculateNutritionTarget(base).algorithmVersion).toBe(NUTRITION_TARGET_ALGORITHM_VERSION);
+  });
+
+  it("requires directional goal weight for loss and gain targets", () => {
+    expect(() => calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5 })).toThrow(/Goal weight is required/);
+    expect(() => calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5, goalWeightKg: 80 })).toThrow(/below your current weight/);
+    expect(() => calculateNutritionTarget({ ...base, goalType: "gain", goalRatePctPerWeek: 0.25, goalWeightKg: 80 })).toThrow(/above your current weight/);
   });
 });

@@ -272,10 +272,11 @@ type MyListRowKey =
   | `manual:${string}`
   | `task:${string}`
   | MyListPinnedSourceRowKey;
-type MyListSortableTodoRowKey = `manual:${string}` | MyListPinnedSourceRowKey;
+type MyListSortableTodoRowKey = MyListRowKey;
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
 type MyListViewModePreference = (typeof MY_LIST_VIEW_MODE_PREFERENCES)[number];
+const MY_LIST_STANDALONE_PINNED_SOURCE_ROW_KIND = "PINNED_SOURCE" as const;
 
 export type MyListMonumentRow = {
   id: string;
@@ -464,6 +465,10 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
     stage: typeof record.stage === "string" ? record.stage : null,
     goalId: typeof record.goalId === "string" ? record.goalId : null,
     projectId: readTrimmedString(record.projectId),
+    rowKind:
+      record.rowKind === MY_LIST_STANDALONE_PINNED_SOURCE_ROW_KIND
+        ? MY_LIST_STANDALONE_PINNED_SOURCE_ROW_KIND
+        : undefined,
     isPinned: record.isPinned !== false,
     completedAt:
       typeof record.completedAt === "string" && record.completedAt.trim()
@@ -680,6 +685,7 @@ type MyListTaskOverride = {
 export type MyListPinnedSourceRow = {
   id: string;
   sourceType: MyListPinnableSourceType;
+  rowKind?: typeof MY_LIST_STANDALONE_PINNED_SOURCE_ROW_KIND;
   title: string;
   icon?: string | null;
   goalIcon?: string | null;
@@ -703,6 +709,8 @@ export type MyListPinnedSourceRow = {
 export type MyListPinnedGoalRow = MyListPinnedSourceRow & {
   sourceType: "GOAL";
   projects: MyListPinnedSourceRow[];
+  tasks?: MyListPinnedSourceRow[];
+  habits?: MyListPinnedSourceRow[];
 };
 
 type MyListVisibleTodoRow =
@@ -767,9 +775,53 @@ type MyListSortableManualTodoHandleProps = {
   setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
   isDragging: boolean;
 };
+function MyListTodoDragHandle({
+  attributes,
+  listeners,
+  setActivatorNodeRef,
+}: Pick<
+  MyListSortableManualTodoHandleProps,
+  "attributes" | "listeners" | "setActivatorNodeRef"
+>) {
+  return (
+    <span
+      aria-label="Reorder to-do"
+      title="Reorder to-do"
+      ref={setActivatorNodeRef}
+      data-my-list-no-upgrade
+      {...attributes}
+      {...listeners}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        listeners?.onPointerDown?.(event);
+      }}
+      onTouchStart={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onMouseDown={(event) => {
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
+    >
+      <GripVertical
+        className="h-3.5 w-3.5 translate-x-[5px]"
+        strokeWidth={2.3}
+      />
+    </span>
+  );
+}
 type MyListSortableManualTodoRowProps = {
   rowKey: MyListSortableTodoRowKey;
-  rowType: "manual" | "pinnedSource";
+  rowType: MyListVisibleTodoRow["rowType"];
   disabled: boolean;
   reorderGroup: MyListManualReorderGroup | null;
   children: (props: MyListSortableManualTodoHandleProps) => ReactNode;
@@ -780,7 +832,7 @@ type MyListManualReorderGroup =
 type MyListManualReorderOverData =
   | {
       type: "manual-row";
-      rowType: "manual" | "pinnedSource";
+      rowType: MyListVisibleTodoRow["rowType"];
       group: MyListManualReorderGroup | null;
     }
   | { type: "manual-group"; group: MyListManualReorderGroup };
@@ -805,7 +857,11 @@ function readManualReorderOverData(
   const record = value as Record<string, unknown>;
   const type = record.type;
   const rowType =
-    record.rowType === "pinnedSource" ? "pinnedSource" : "manual";
+    record.rowType === "pinnedSource"
+      ? "pinnedSource"
+      : record.rowType === "task"
+        ? "task"
+        : "manual";
   const groupValue = record.group;
   const group =
     groupValue && typeof groupValue === "object"
@@ -868,10 +924,11 @@ function getSortableTodoRowKey(
       : `manual:${visibleRow.row.id}`;
   }
 
-  if (
-    visibleRow.rowType === "pinnedSource" &&
-    visibleRow.row.sourceType !== "GOAL"
-  ) {
+  if (visibleRow.rowType === "task") {
+    return `task:${visibleRow.task.id}`;
+  }
+
+  if (visibleRow.rowType === "pinnedSource") {
     return buildPinnedSourceRowKey(visibleRow.row.sourceType, visibleRow.row.id);
   }
 
@@ -892,6 +949,9 @@ function readManualReorderActiveRowKey(
   const rowKey = typeof active.id === "string" ? active.id.trim() : "";
   const manualRowId = readManualRowIdFromSortableKey(rowKey);
   const pinnedSourceKeyParts = readPinnedSourceRowKeyParts(rowKey);
+  const taskRowId = rowKey.startsWith("task:")
+    ? rowKey.slice("task:".length).trim()
+    : null;
 
   if (
     !rowKey ||
@@ -903,9 +963,14 @@ function readManualReorderActiveRowKey(
           (visibleRow) =>
             visibleRow.rowType === "manual" && visibleRow.row.id === manualRowId
         ))) ||
+    (activeData.rowType === "task" &&
+      (!taskRowId ||
+        !rows.some(
+          (visibleRow) =>
+            visibleRow.rowType === "task" && visibleRow.task.id === taskRowId
+        ))) ||
     (activeData.rowType === "pinnedSource" &&
       (!pinnedSourceKeyParts ||
-        pinnedSourceKeyParts.sourceType === "GOAL" ||
         !rows.some(
           (visibleRow) =>
             visibleRow.rowType === "pinnedSource" &&
@@ -1096,7 +1161,7 @@ function reorderPinnedSourceRowsForDestination(
   fallbackPriorityId: PriorityBucketId
 ) {
   const draggedKeyParts = readPinnedSourceRowKeyParts(draggedRowKey);
-  if (!draggedKeyParts || draggedKeyParts.sourceType === "GOAL") {
+  if (!draggedKeyParts) {
     return currentRows;
   }
 
@@ -1466,11 +1531,8 @@ export function MyListSheet({
     [pinnedGoalRows]
   );
   const groupablePinnedSourceRows = useMemo(
-    () =>
-      isMonumentLensActive
-        ? [...visiblePinnedGoalRows, ...visiblePinnedSourceRows]
-        : visiblePinnedSourceRows,
-    [isMonumentLensActive, visiblePinnedGoalRows, visiblePinnedSourceRows]
+    () => visiblePinnedSourceRows,
+    [visiblePinnedSourceRows]
   );
   const activeManualRows = useMemo(
     () => manualRows.filter((row) => !row.done),
@@ -3138,8 +3200,11 @@ export function MyListSheet({
 
       if (rowKey.startsWith("manual:")) {
         persistManualRowForReorder(rowKey, destination);
-      } else {
+      } else if (rowKey.startsWith("pinnedSource:")) {
         persistPinnedSourceRowsForReorder(rowKey, destination);
+      } else {
+        restoreManualReorderOrigin();
+        return;
       }
       if (
         destination.group?.kind === "day" &&
@@ -4639,10 +4704,15 @@ export function MyListSheet({
         >
           {activeView === "list" ? (
             <>
-          {!isMonumentLensActive && visiblePinnedGoalRows.length > 0 ? (
+          {visiblePinnedGoalRows.length > 0 ? (
             <div className="border-b border-white/[0.055] pb-2">
               {visiblePinnedGoalRows.map((goal) => {
                 const expanded = expandedPinnedGoalIds.has(goal.id);
+                const descendantRows = [
+                  ...goal.projects,
+                  ...(goal.tasks ?? []),
+                  ...(goal.habits ?? []),
+                ];
                 return (
                   <div
                     key={`pinned-goal:${goal.id}`}
@@ -4690,18 +4760,19 @@ export function MyListSheet({
                         id={`pinned-goal-projects:${goal.id}`}
                         className="pb-1"
                       >
-                        {goal.projects.length > 0 ? (
-                          goal.projects.map((project) => {
-                            const completionKey = `PROJECT:${project.id}`;
+                        {descendantRows.length > 0 ? (
+                          descendantRows.map((descendant) => {
+                            const completionKey = `${descendant.sourceType}:${descendant.id}`;
                             const completedAt =
                               pinnedSourceCompletions[completionKey] ?? null;
                             const done = Boolean(completedAt);
-                            const canToggleCompletion = project.isPinned === true;
-                            const checkboxId = `my-list-goal-project-${project.id}`;
+                            const canToggleCompletion =
+                              descendant.isPinned === true;
+                            const checkboxId = `my-list-goal-${descendant.sourceType.toLowerCase()}-${descendant.id}`;
 
                             return (
                               <div
-                                key={project.id}
+                                key={`${descendant.sourceType}:${descendant.id}`}
                                 className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg py-1 pl-5 pr-2 text-sm transition-colors hover:bg-white/[0.025]"
                               >
                                 <input
@@ -4719,7 +4790,7 @@ export function MyListSheet({
                                       [completionKey]: nextCompletedAt,
                                     }));
                                     onTogglePinnedSourceCompletion?.(
-                                      project,
+                                      descendant,
                                       nextCompletedAt
                                     );
                                   }}
@@ -4731,9 +4802,9 @@ export function MyListSheet({
                                   aria-label={
                                     canToggleCompletion
                                       ? done
-                                        ? "Mark Project incomplete"
-                                        : "Mark Project complete"
-                                      : "Project completion is unavailable"
+                                        ? `Mark ${descendant.sourceType.toLowerCase()} incomplete`
+                                        : `Mark ${descendant.sourceType.toLowerCase()} complete`
+                                      : `${descendant.sourceType.toLowerCase()} completion is unavailable`
                                   }
                                   className={clsx(
                                     "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
@@ -4756,7 +4827,7 @@ export function MyListSheet({
                                   className="flex h-4 w-4 shrink-0 items-center justify-center text-[0.72rem] text-white/56"
                                   aria-hidden="true"
                                 >
-                                  {resolvePinnedProjectIcon(project)}
+                                  {resolvePinnedSourceIcon(descendant)}
                                 </span>
                                 <span
                                   className={clsx(
@@ -4764,14 +4835,14 @@ export function MyListSheet({
                                     done && "text-white/38 line-through"
                                   )}
                                 >
-                                  {project.title}
+                                  {descendant.title}
                                 </span>
                               </div>
                             );
                           })
                         ) : (
                           <div className="py-1.5 pl-11 text-[0.68rem] text-white/34">
-                            No linked Projects.
+                            No linked items.
                           </div>
                         )}
                       </div>
@@ -5085,6 +5156,12 @@ export function MyListSheet({
                       )
                     ) : null}
                     {group.rows.map((visibleRow) => {
+                  const sortableRowKey = getSortableTodoRowKey(visibleRow);
+                  const renderTopLevelTodoRow = (
+                    sortableProps?: MyListSortableManualTodoHandleProps
+                  ) => {
+                    const isDragging = sortableProps?.isDragging ?? false;
+
                   if (visibleRow.rowType === "task") {
                     const task = visibleRow.task;
                     const taskCompletionOverride = taskOverrides[task.id];
@@ -5389,19 +5466,6 @@ export function MyListSheet({
                     const isGoalRow = row.sourceType === "GOAL";
 
                     return (
-                      <MyListSortableManualTodoRow
-                        key={rowKey}
-                        rowKey={rowKey}
-                        rowType="pinnedSource"
-                        reorderGroup={manualReorderGroup}
-                        disabled={!open || activeView !== "list" || isGoalRow}
-                      >
-                        {({
-                          attributes,
-                          listeners,
-                          setActivatorNodeRef,
-                          isDragging,
-                        }) => (
                       <div
                         data-creator-xp-source="my-list-todo"
                         data-creator-xp-kind="todo"
@@ -5415,41 +5479,6 @@ export function MyListSheet({
                         )}
                         style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                       >
-                        {!isGoalRow ? (
-                          <span
-                            aria-label="Reorder event"
-                            title="Reorder event"
-                            ref={setActivatorNodeRef}
-                            data-my-list-no-upgrade
-                            {...attributes}
-                            {...listeners}
-                            onPointerDown={(event) => {
-                              event.stopPropagation();
-                              listeners?.onPointerDown?.(event);
-                            }}
-                            onTouchStart={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                            }}
-                            onMouseDown={(event) => {
-                              event.stopPropagation();
-                            }}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                            }}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                            }}
-                            className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
-                          >
-                            <GripVertical
-                              className="h-3.5 w-3.5 translate-x-[5px]"
-                              strokeWidth={2.3}
-                            />
-                          </span>
-                        ) : null}
                         <input
                           id={checkboxId}
                           type="checkbox"
@@ -5598,32 +5627,14 @@ export function MyListSheet({
                           {renderDeleteRowButton(row.id, "pinnedSource", row)}
                         </div>
                       </div>
-                        )}
-                      </MyListSortableManualTodoRow>
                     );
                   }
 
                   const row = visibleRow.row;
                   const rowKey = `manual:${row.id}` as const;
                   return (
-                    <MyListSortableManualTodoRow
-                      key={rowKey}
-                      rowKey={rowKey}
-                      rowType="manual"
-                      reorderGroup={manualReorderGroup}
-                      disabled={
-                        !open ||
-                        activeView !== "list" ||
-                        row.id === EMPTY_DRAFT_MANUAL_ROW_ID
-                      }
-                    >
-                      {({
-                        attributes,
-                        listeners,
-                        setActivatorNodeRef,
-                        isDragging,
-                      }) => (
                     <div
+                      key={rowKey}
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-manual-upgrade-row="true"
@@ -5663,39 +5674,6 @@ export function MyListSheet({
                       )}
                       style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     >
-                      <span
-                        aria-label="Reorder to-do"
-                        title="Reorder to-do"
-                        ref={setActivatorNodeRef}
-                        data-my-list-no-upgrade
-                        {...attributes}
-                        {...listeners}
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                          listeners?.onPointerDown?.(event);
-                        }}
-                        onTouchStart={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onMouseDown={(event) => {
-                          event.stopPropagation();
-                        }}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
-                      >
-                        <GripVertical
-                          className="h-3.5 w-3.5 translate-x-[5px]"
-                          strokeWidth={2.3}
-                        />
-                      </span>
                     <input
                       id={`my-list-${row.id}`}
                       type="checkbox"
@@ -5907,6 +5885,35 @@ export function MyListSheet({
                       })()}
                     </div>
                     </div>
+                  );
+                  };
+
+                  if (!sortableRowKey) {
+                    return renderTopLevelTodoRow();
+                  }
+
+                  return (
+                    <MyListSortableManualTodoRow
+                      key={sortableRowKey}
+                      rowKey={sortableRowKey}
+                      rowType={visibleRow.rowType}
+                      reorderGroup={manualReorderGroup}
+                      disabled={!open || activeView !== "list"}
+                    >
+                      {({ attributes, listeners, setActivatorNodeRef, isDragging }) => (
+                        <>
+                          <MyListTodoDragHandle
+                            attributes={attributes}
+                            listeners={listeners}
+                            setActivatorNodeRef={setActivatorNodeRef}
+                          />
+                          {renderTopLevelTodoRow({
+                            attributes,
+                            listeners,
+                            setActivatorNodeRef,
+                            isDragging,
+                          })}
+                        </>
                       )}
                     </MyListSortableManualTodoRow>
                   );
@@ -6018,8 +6025,4 @@ function resolvePinnedSourceIcon(row: MyListPinnedSourceRow) {
   if (explicitIcon) return explicitIcon;
 
   return "•";
-}
-
-function resolvePinnedProjectIcon(row: MyListPinnedSourceRow) {
-  return row.skillIcon?.trim() || row.icon?.trim() || "•";
 }

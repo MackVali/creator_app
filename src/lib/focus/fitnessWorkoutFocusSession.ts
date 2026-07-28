@@ -2,6 +2,13 @@ export const FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY =
   "creator:fitness-workout-focus-session";
 export const FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY =
   "creator:fitness-workout-focus-session-result";
+export const FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY =
+  "creator:fitness-workout-focus-session-outbox";
+
+export type FitnessWorkoutSessionNoteContext = {
+  noteId?: string;
+  databaseId?: string;
+};
 
 export type FitnessWorkoutFocusSessionExercise = {
   id: string;
@@ -15,9 +22,17 @@ export type FitnessWorkoutFocusSessionExercise = {
 
 export type FitnessWorkoutFocusSessionPayload = {
   source: "fitness";
+  sessionId?: string;
+  entryId?: string;
+  noteId?: string;
+  databaseId?: string;
   workoutName: string;
   createdAt: string;
+  startedAt?: string;
+  sourceRoutineName?: string | null;
+  sourcePlanName?: string | null;
   exercises: FitnessWorkoutFocusSessionExercise[];
+  sets?: FitnessWorkoutFocusSessionSet[];
 };
 
 export type FitnessWorkoutFocusSessionSet = {
@@ -63,15 +78,69 @@ export type FitnessWorkoutFocusSessionSetResult = {
   weight?: string;
   weightUnit?: string;
   status?: "pending" | "completed" | "dismissed";
+  completedAt?: string | null;
 };
 
 export type FitnessWorkoutFocusSessionResultPayload = {
   source: "fitness";
+  sessionId?: string;
+  entryId?: string;
+  noteId?: string;
+  databaseId?: string;
   workoutName: string;
   sessionCreatedAt: string;
+  startedAt?: string;
   updatedAt: string;
   sets: FitnessWorkoutFocusSessionSetResult[];
 };
+
+export type FitnessWorkoutLogStatus = "in_progress" | "completed" | "abandoned";
+
+export type FitnessWorkoutLogMetadata = {
+  version: 1;
+  sessionId?: string;
+  status?: FitnessWorkoutLogStatus;
+  workoutName?: string;
+  sourceRoutineName?: string | null;
+  sourcePlanName?: string | null;
+  startedAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+  loggedAt?: string;
+  exercises?: Array<{
+    exerciseId?: string;
+    name?: string;
+    sets?: Array<{
+      exerciseId?: string;
+      exerciseName?: string;
+      setNumber?: number;
+      totalSets?: number;
+      plannedReps?: number | null;
+      plannedDurationSeconds?: number | null;
+      completedReps?: number | null;
+      completedDurationSeconds?: number | null;
+      weight?: number | null;
+      unit?: string | null;
+      status?: "pending" | "completed" | "dismissed";
+      completionStatus?: "pending" | "completed" | "dismissed" | null;
+      completedAt?: string | null;
+      isWarmup?: boolean;
+      rpe?: number | null;
+    }>;
+  }>;
+};
+
+export type FitnessWorkoutDatabaseEntry = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  values: Record<string, unknown>;
+};
+
+export type FitnessWorkoutDatabaseEntries = Record<
+  string,
+  FitnessWorkoutDatabaseEntry[]
+>;
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -119,9 +188,44 @@ export function readFitnessWorkoutFocusSessionPayload(
 
   const record = value as Record<string, unknown>;
   const source = readString(record.source);
+  const sessionId = readString(record.sessionId);
+  const entryId = readString(record.entryId);
+  const noteId = readString(record.noteId);
+  const databaseId = readString(record.databaseId);
   const workoutName = readString(record.workoutName);
   const createdAt = readString(record.createdAt);
+  const startedAt = readString(record.startedAt);
+  const sourceRoutineName = readString(record.sourceRoutineName);
+  const sourcePlanName = readString(record.sourcePlanName);
   const exercises = Array.isArray(record.exercises) ? record.exercises : [];
+  const sets = Array.isArray(record.sets)
+    ? record.sets.flatMap((setValue): FitnessWorkoutFocusSessionSet[] => {
+        if (!setValue || typeof setValue !== "object") return [];
+        const set = setValue as Record<string, unknown>;
+        const exerciseId = readString(set.exerciseId);
+        const exerciseName = readString(set.exerciseName);
+        const setNumber = Number(set.setNumber);
+        const totalSets = Number(set.totalSets);
+        if ((!exerciseId && !exerciseName) || !Number.isFinite(setNumber) || !Number.isFinite(totalSets)) {
+          return [];
+        }
+        return [{
+          id: readString(set.id) || `fitness-workout-${sessionId || createdAt}-${exerciseId || exerciseName}-set-${setNumber}`,
+          exerciseId: exerciseId || exerciseName,
+          exerciseName: exerciseName || exerciseId,
+          setNumber,
+          totalSets,
+          reps: readString(set.reps),
+          duration: readString(set.duration),
+          plannedReps: optionalNumber(set.plannedReps),
+          completedReps: optionalNumber(set.completedReps),
+          plannedDurationSeconds: optionalNumber(set.plannedDurationSeconds),
+          completedDurationSeconds: optionalNumber(set.completedDurationSeconds),
+          weight: readString(set.weight),
+          weightUnit: readString(set.weightUnit),
+        }];
+      })
+    : undefined;
 
   if (source !== "fitness" || !workoutName || exercises.length === 0) return null;
 
@@ -155,9 +259,17 @@ export function readFitnessWorkoutFocusSessionPayload(
 
   return {
     source: "fitness",
+    ...(sessionId ? { sessionId } : {}),
+    ...(entryId ? { entryId } : {}),
+    ...(noteId ? { noteId } : {}),
+    ...(databaseId ? { databaseId } : {}),
     workoutName,
     createdAt: createdAt || new Date().toISOString(),
+    startedAt: startedAt || createdAt || new Date().toISOString(),
+    sourceRoutineName: sourceRoutineName || null,
+    sourcePlanName: sourcePlanName || null,
     exercises: sanitizedExercises,
+    ...(sets && sets.length > 0 ? { sets } : {}),
   };
 }
 
@@ -166,6 +278,10 @@ export function readFitnessWorkoutFocusSessionResultPayload(
 ): FitnessWorkoutFocusSessionResultPayload | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
+  const sessionId = readString(record.sessionId);
+  const entryId = readString(record.entryId);
+  const noteId = readString(record.noteId);
+  const databaseId = readString(record.databaseId);
   const workoutName = readString(record.workoutName);
   const sessionCreatedAt = readString(record.sessionCreatedAt);
   if (record.source !== "fitness" || !workoutName || !sessionCreatedAt || !Array.isArray(record.sets)) {
@@ -197,14 +313,20 @@ export function readFitnessWorkoutFocusSessionResultPayload(
       weight: readString(set.weight),
       weightUnit: readString(set.weightUnit),
       status,
+      completedAt: readString(set.completedAt) || null,
     } satisfies FitnessWorkoutFocusSessionSetResult];
   });
 
   if (sets.length === 0) return null;
   return {
     source: "fitness",
+    ...(sessionId ? { sessionId } : {}),
+    ...(entryId ? { entryId } : {}),
+    ...(noteId ? { noteId } : {}),
+    ...(databaseId ? { databaseId } : {}),
     workoutName,
     sessionCreatedAt,
+    startedAt: readString(record.startedAt) || sessionCreatedAt,
     updatedAt: readString(record.updatedAt) || new Date().toISOString(),
     sets,
   };
@@ -213,6 +335,8 @@ export function readFitnessWorkoutFocusSessionResultPayload(
 export function expandFitnessWorkoutFocusSessionSets(
   session: FitnessWorkoutFocusSessionPayload,
 ): FitnessWorkoutFocusSessionSet[] {
+  if (session.sets && session.sets.length > 0) return session.sets;
+
   const createdAtMs = Date.parse(session.createdAt);
   const sessionKey = Number.isFinite(createdAtMs)
     ? String(createdAtMs)
@@ -239,4 +363,263 @@ export function expandFitnessWorkoutFocusSessionSets(
       weightUnit: exercise.weightUnit,
     }));
   });
+}
+
+function optionalNumber(input: unknown) {
+  return typeof input === "number" && Number.isFinite(input) ? input : null;
+}
+
+function getEntryFitnessWorkoutLog(entry: FitnessWorkoutDatabaseEntry) {
+  const metadata =
+    entry.values.metadata && typeof entry.values.metadata === "object" && !Array.isArray(entry.values.metadata)
+      ? (entry.values.metadata as Record<string, unknown>)
+      : {};
+  const log =
+    metadata.fitnessWorkoutLog &&
+    typeof metadata.fitnessWorkoutLog === "object" &&
+    !Array.isArray(metadata.fitnessWorkoutLog)
+      ? (metadata.fitnessWorkoutLog as FitnessWorkoutLogMetadata)
+      : null;
+
+  return log?.version === 1 ? log : null;
+}
+
+export function isCompletedFitnessWorkoutLog(log: FitnessWorkoutLogMetadata | null) {
+  return Boolean(log && log.version === 1 && (log.status == null || log.status === "completed"));
+}
+
+export function isInProgressFitnessWorkoutLog(log: FitnessWorkoutLogMetadata | null) {
+  return Boolean(log && log.version === 1 && log.status === "in_progress");
+}
+
+export function findFitnessWorkoutEntryIndex(
+  entries: readonly FitnessWorkoutDatabaseEntry[],
+  match: { entryId?: string | null; sessionId?: string | null },
+) {
+  const entryId = match.entryId?.trim();
+  const sessionId = match.sessionId?.trim();
+  if (entryId) {
+    const entryIndex = entries.findIndex((entry) => entry.id === entryId);
+    if (entryIndex >= 0) return entryIndex;
+  }
+  if (!sessionId) return -1;
+
+  return entries.findIndex(
+    (entry) => getEntryFitnessWorkoutLog(entry)?.sessionId === sessionId,
+  );
+}
+
+export function upsertFitnessWorkoutDatabaseEntry(
+  databaseEntries: FitnessWorkoutDatabaseEntries,
+  databaseId: string,
+  nextEntry: FitnessWorkoutDatabaseEntry,
+) {
+  const currentEntries = databaseEntries[databaseId] ?? [];
+  const nextLog = getEntryFitnessWorkoutLog(nextEntry);
+  const matchingIndex = findFitnessWorkoutEntryIndex(currentEntries, {
+    entryId: nextEntry.id,
+    sessionId: nextLog?.sessionId,
+  });
+  const nextDatabaseEntries: FitnessWorkoutDatabaseEntries = { ...databaseEntries };
+
+  nextDatabaseEntries[databaseId] =
+    matchingIndex >= 0
+      ? currentEntries.map((entry, index) => (index === matchingIndex ? nextEntry : entry))
+      : [...currentEntries, nextEntry];
+
+  return nextDatabaseEntries;
+}
+
+export function getNewestInProgressFitnessWorkoutEntry(
+  entries: readonly FitnessWorkoutDatabaseEntry[],
+) {
+  return [...entries]
+    .filter((entry) => isInProgressFitnessWorkoutLog(getEntryFitnessWorkoutLog(entry)))
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null;
+}
+
+export function getFitnessWorkoutEntryProgress(entry: FitnessWorkoutDatabaseEntry) {
+  const log = getEntryFitnessWorkoutLog(entry);
+  const sets = log?.exercises?.flatMap((exercise) => exercise.sets ?? []) ?? [];
+  const resolved = sets.filter(
+    (set) =>
+      set.status === "completed" ||
+      set.status === "dismissed" ||
+      set.completionStatus === "completed" ||
+      set.completionStatus === "dismissed",
+  );
+
+  return {
+    log,
+    completedSetCount: resolved.length,
+    totalSetCount: sets.length,
+  };
+}
+
+export function mergeFitnessWorkoutLogSetResults(
+  log: FitnessWorkoutLogMetadata,
+  results: readonly FitnessWorkoutFocusSessionSetResult[],
+  options: {
+    updatedAt?: string;
+    status?: FitnessWorkoutLogStatus;
+    completedAt?: string | null;
+  } = {},
+): FitnessWorkoutLogMetadata {
+  const resultBySetKey = new Map(
+    results.map((result) => [
+      `${result.exerciseId || result.exerciseName}\u001F${result.setNumber}`,
+      result,
+    ]),
+  );
+  const updatedAt = options.updatedAt ?? new Date().toISOString();
+
+  return {
+    ...log,
+    status: options.status ?? log.status,
+    updatedAt,
+    completedAt:
+      options.completedAt !== undefined ? options.completedAt : log.completedAt,
+    loggedAt: options.status === "completed" ? updatedAt : log.loggedAt,
+    exercises: (log.exercises ?? []).map((exercise) => {
+      const exerciseId = exercise.exerciseId ?? exercise.name ?? "";
+      const exerciseName = exercise.name ?? exerciseId;
+      return {
+        ...exercise,
+        sets: (exercise.sets ?? []).map((set, index) => {
+          const setNumber = set.setNumber ?? index + 1;
+          const result =
+            resultBySetKey.get(`${exerciseId}\u001F${setNumber}`) ??
+            resultBySetKey.get(`${exerciseName}\u001F${setNumber}`);
+          if (!result) return set;
+
+          const rawWeight = result.weight?.trim();
+          const parsedWeight = rawWeight ? Number(rawWeight) : null;
+          return {
+            ...set,
+            exerciseId,
+            exerciseName,
+            totalSets: result.totalSets,
+            plannedReps:
+              result.plannedReps != null && result.plannedReps.trim()
+                ? Number(result.plannedReps)
+                : set.plannedReps ?? null,
+            plannedDurationSeconds:
+              result.plannedDurationSeconds ?? set.plannedDurationSeconds ?? null,
+            completedReps: result.completedReps ?? set.completedReps ?? null,
+            completedDurationSeconds:
+              result.completedDurationSeconds ?? set.completedDurationSeconds ?? null,
+            weight:
+              result.weightUnit === "bodyweight"
+                ? null
+                : Number.isFinite(parsedWeight)
+                  ? parsedWeight
+                  : set.weight ?? null,
+            unit: result.weightUnit || set.unit || null,
+            status: result.status ?? set.status ?? "pending",
+            completionStatus: result.status ?? set.completionStatus ?? "pending",
+            completedAt: result.completedAt ?? set.completedAt ?? null,
+          };
+        }),
+      };
+    }),
+  };
+}
+
+export function buildFitnessWorkoutFocusSessionFromEntry({
+  entry,
+  databaseId,
+  noteId,
+}: {
+  entry: FitnessWorkoutDatabaseEntry;
+  databaseId?: string;
+  noteId?: string;
+}): {
+  payload: FitnessWorkoutFocusSessionPayload | null;
+  resolvedSetCount: number;
+  totalSetCount: number;
+} {
+  const log = getEntryFitnessWorkoutLog(entry);
+  if (!log || !isInProgressFitnessWorkoutLog(log)) {
+    return { payload: null, resolvedSetCount: 0, totalSetCount: 0 };
+  }
+
+  const pendingSets: FitnessWorkoutFocusSessionSet[] = [];
+  let resolvedSetCount = 0;
+  let totalSetCount = 0;
+  const exercises: FitnessWorkoutFocusSessionExercise[] = [];
+
+  (log.exercises ?? []).forEach((exercise, exerciseIndex) => {
+    const exerciseId = exercise.exerciseId || exercise.name || `exercise-${exerciseIndex + 1}`;
+    const exerciseName = exercise.name || exerciseId;
+    const sets = exercise.sets ?? [];
+    const firstSet = sets[0];
+    exercises.push({
+      id: exerciseId,
+      name: exerciseName,
+      sets: String(Math.max(1, sets.length)),
+      reps: firstSet?.plannedReps == null ? "" : String(firstSet.plannedReps),
+      duration:
+        firstSet?.plannedDurationSeconds == null
+          ? ""
+          : `${firstSet.plannedDurationSeconds} seconds`,
+      weight:
+        firstSet?.unit === "bodyweight" || firstSet?.weight == null
+          ? ""
+          : String(firstSet.weight),
+      weightUnit: firstSet?.unit ?? "",
+    });
+
+    sets.forEach((set, setIndex) => {
+      totalSetCount += 1;
+      const setNumber = set.setNumber ?? setIndex + 1;
+      const totalSets = set.totalSets ?? sets.length;
+      const setStatus = set.status ?? set.completionStatus ?? "pending";
+      if (setStatus === "completed" || setStatus === "dismissed") {
+        resolvedSetCount += 1;
+        return;
+      }
+
+      pendingSets.push({
+        id: `fitness-workout-${log.sessionId || entry.id}-${exerciseIndex + 1}-${encodeURIComponent(exerciseId)}-set-${setNumber}`,
+        exerciseId,
+        exerciseName,
+        setNumber,
+        totalSets,
+        reps: set.plannedReps == null ? "" : String(set.plannedReps),
+        duration:
+          set.plannedDurationSeconds == null
+            ? ""
+            : `${set.plannedDurationSeconds} seconds`,
+        plannedReps: set.plannedReps ?? null,
+        completedReps: set.completedReps ?? set.plannedReps ?? null,
+        plannedDurationSeconds: set.plannedDurationSeconds ?? null,
+        completedDurationSeconds: set.completedDurationSeconds ?? null,
+        weight: set.unit === "bodyweight" || set.weight == null ? "" : String(set.weight),
+        weightUnit: set.unit ?? "",
+      });
+    });
+  });
+
+  if (exercises.length === 0) {
+    return { payload: null, resolvedSetCount, totalSetCount };
+  }
+
+  return {
+    payload: {
+      source: "fitness",
+      sessionId: log.sessionId,
+      entryId: entry.id,
+      noteId,
+      databaseId,
+      workoutName: log.workoutName || "Workout",
+      createdAt: entry.createdAt,
+      startedAt: log.startedAt || entry.createdAt,
+      sourceRoutineName: log.sourceRoutineName ?? null,
+      sourcePlanName: log.sourcePlanName ?? null,
+      exercises,
+      sets: pendingSets,
+    },
+    resolvedSetCount,
+    totalSetCount,
+  };
 }

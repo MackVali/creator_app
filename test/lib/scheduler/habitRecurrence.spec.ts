@@ -113,6 +113,22 @@ describe("evaluateHabitDueOnDate", () => {
       expect(result2.debugTag).toBe("DUE_OVERDUE");
     });
 
+    it("does not make a completed weekly habit due again on the next Creator day", () => {
+      const habit = createHabit({
+        recurrence: "weekly",
+        lastCompletedAt: "2024-01-08T15:30:00.000Z",
+      });
+
+      const result = evaluateHabitDueOnDate({
+        habit,
+        date: new Date("2024-01-09T15:30:00.000Z"),
+        timeZone: "America/Chicago",
+      });
+
+      expect(result.isDue).toBe(false);
+      expect(result.debugTag).toBe("INTERVAL_NOT_REACHED");
+    });
+
     it("allows overdue non-daily habit to remain due on days after scheduling", () => {
       const habit = createHabit({
         recurrence: "weekly",

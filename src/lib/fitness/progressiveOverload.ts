@@ -71,6 +71,15 @@ export function normalizeFitnessExerciseName(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function getSetStatus(set: Record<string, unknown>) {
+  const status = text(set.status);
+  const completionStatus = text(set.completionStatus);
+  if (status === "dismissed" || completionStatus === "dismissed") return "dismissed";
+  if (status === "pending" || completionStatus === "pending") return "pending";
+  if (status === "completed" || completionStatus === "completed") return "completed";
+  return null;
+}
+
 export function extractFitnessLoggedSetPerformances(
   entries: readonly FitnessHistoryEntry[],
 ): FitnessLoggedSetPerformance[] {
@@ -78,6 +87,8 @@ export function extractFitnessLoggedSetPerformances(
     const metadata = record(record(entry.values).metadata);
     const log = record(metadata.fitnessWorkoutLog);
     if (log.version !== 1 || !Array.isArray(log.exercises)) return [];
+    if (log.status === "in_progress" || log.status === "abandoned") return [];
+    if (log.status && log.status !== "completed") return [];
 
     const loggedAt = text(log.loggedAt) || text(entry.createdAt);
     if (!loggedAt) return [];
@@ -92,10 +103,19 @@ export function extractFitnessLoggedSetPerformances(
       return exercise.sets.flatMap((setValue, index) => {
         const set = record(setValue);
         if (set.isWarmup === true) return [];
+        const status = getSetStatus(set);
+        if (status === "pending" || status === "dismissed") return [];
+        if (status && status !== "completed") return [];
         const rawUnit = text(set.unit);
         const unit = FITNESS_UNITS.has(rawUnit)
           ? (rawUnit as FitnessLoggedSetPerformance["unit"])
           : null;
+        const completedReps = positiveNumber(set.completedReps);
+        const completedDurationSeconds = positiveNumber(set.completedDurationSeconds);
+        const weight = positiveNumber(set.weight);
+        if (completedReps == null && completedDurationSeconds == null && weight == null) {
+          return [];
+        }
 
         return [{
           loggedAt,
@@ -104,9 +124,9 @@ export function extractFitnessLoggedSetPerformances(
           exerciseName,
           setNumber: positiveNumber(set.setNumber) ?? index + 1,
           plannedReps: positiveNumber(set.plannedReps),
-          completedReps: positiveNumber(set.completedReps),
-          completedDurationSeconds: positiveNumber(set.completedDurationSeconds),
-          weight: positiveNumber(set.weight),
+          completedReps,
+          completedDurationSeconds,
+          weight,
           unit,
         }];
       });

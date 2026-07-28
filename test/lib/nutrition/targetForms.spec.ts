@@ -7,6 +7,7 @@ import {
   macroPercentTotal,
   prefillTargetSetupForm,
   resolveInitialTargetUnits,
+  setGoalWeightDisplay,
   setTargetFormUnits,
   setWeightDisplay,
 } from "@/lib/nutrition/targetForms";
@@ -58,19 +59,24 @@ describe("Nutrition target setup form helpers", () => {
     expect(form.bodyFatPct).toBe("");
   });
 
-  it("keeps canonical metric state when switching units repeatedly", () => {
+  it("keeps canonical current and goal weight state when switching units repeatedly", () => {
     let form = createInitialTargetForm();
     form = setWeightDisplay(form, "80");
+    form = setGoalWeightDisplay({ ...form, goalType: "lose" }, "72");
     expect(form.weightKgCanonical).toBe("80");
+    expect(form.goalWeightKgCanonical).toBe("72");
 
     form = setTargetFormUnits(form, "us");
     expect(form.weight).toBe("176.4");
+    expect(form.goalWeight).toBe("158.7");
 
     form = setTargetFormUnits(form, "metric");
     expect(form.weight).toBe("80");
+    expect(form.goalWeight).toBe("72");
 
     form = setTargetFormUnits(form, "us");
     expect(form.weight).toBe("176.4");
+    expect(form.goalWeight).toBe("158.7");
   });
 
   it("resolves saved unit preference before unsaved state or locale", () => {

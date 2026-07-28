@@ -35,7 +35,8 @@ type DailyTarget = Record<string, unknown> & { goal?: NutritionGoalRow };
 type ProfileResponse = { profile: NutritionProfileRow; activeGoal: NutritionGoalRow };
 type OverrideForm = { calories: string; protein: string; carbs: string; fat: string; reason: string; confirmMismatch: boolean };
 type SetupView = "wizard" | "result" | "advanced";
-type SetupStep = 0 | 1 | 2 | 3;
+type SetupStep = 0 | 1;
+type PaceGoalType = Extract<GoalType, "lose" | "gain">;
 
 const goalLabels: Record<GoalType, string> = {
   lose: "Lose weight",
@@ -51,7 +52,10 @@ const targetSummaryGoalLabels: Record<GoalType, string> = {
   recomposition: "Recomposition",
 };
 
-const wizardStepTitles = ["About you", "Your body", "Your activity", "Your goal"] as const;
+const wizardStepQuestions = [
+  "What do you want to change?",
+  "Tell us where you’re starting",
+] as const;
 
 const activityChoices: Array<{ value: ActivityLevel; label: string; description: string }> = [
   { value: "sedentary", label: "Mostly seated", description: "Little exercise or daily movement" },
@@ -73,23 +77,24 @@ const pregnancyLabels: Record<PregnancyStatus, string> = {
   breastfeeding: "Breastfeeding",
 };
 
-const lossRates = [
-  { value: "0.25", label: "Easy", description: "Small deficit" },
-  { value: "0.5", label: "Steady", description: "Moderate deficit" },
-  { value: "0.75", label: "Assertive", description: "Larger deficit" },
-  { value: "1", label: "Maximum", description: "Upper limit" },
-];
+const paceOptions: Record<PaceGoalType, Array<{ value: string; label: "Slow" | "Steady" | "Fast"; description: string }>> = {
+  lose: [
+    { value: "0.25", label: "Slow", description: "Conservative deficit" },
+    { value: "0.5", label: "Steady", description: "Moderate deficit" },
+    { value: "0.75", label: "Fast", description: "Aggressive deficit" },
+  ],
+  gain: [
+    { value: "0.1", label: "Slow", description: "Conservative surplus" },
+    { value: "0.25", label: "Steady", description: "Moderate surplus" },
+    { value: "0.5", label: "Fast", description: "Aggressive surplus" },
+  ],
+};
 
-const gainRates = [
-  { value: "0.1", label: "Lean", description: "Slow gain" },
-  { value: "0.25", label: "Steady", description: "Moderate surplus" },
-  { value: "0.5", label: "Fast", description: "Upper limit" },
-];
-
-const wizardPrimaryActionClass = "flex h-11 w-full items-center justify-center rounded-xl border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.12),transparent_44%),linear-gradient(145deg,rgba(42,42,45,0.94)_0%,rgba(18,18,20,0.96)_54%,rgba(5,5,6,0.98)_100%)] px-4 text-sm font-semibold text-white shadow-[0_18px_34px_-26px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-18px_28px_rgba(0,0,0,0.42)] backdrop-blur-sm outline-none transition hover:border-white/22 hover:brightness-110 focus-visible:ring-1 focus-visible:ring-white/26 active:translate-y-px active:brightness-90 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/[0.14] disabled:hover:brightness-100 disabled:active:translate-y-0";
-const wizardSmallPrimaryActionClass = "min-h-10 rounded-lg border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.11),transparent_44%),linear-gradient(145deg,rgba(42,42,45,0.92),rgba(10,10,11,0.97))] px-3 text-[11px] font-semibold text-white shadow-[0_14px_26px_-22px_rgba(0,0,0,0.94),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-14px_22px_rgba(0,0,0,0.38)] backdrop-blur-sm transition hover:border-white/22 hover:brightness-110 active:translate-y-px active:brightness-90";
-const wizardSelectedSegmentClass = "border border-white/[0.14] bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.1),transparent_46%),linear-gradient(145deg,rgba(46,46,49,0.92),rgba(19,19,21,0.96))] text-white shadow-[0_8px_18px_-16px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-10px_18px_rgba(0,0,0,0.28)] backdrop-blur-sm";
-const wizardSelectedChoiceClass = "border border-white/[0.16] bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.11),transparent_56%),linear-gradient(145deg,rgba(36,36,39,0.94)_0%,rgba(17,17,19,0.96)_58%,rgba(7,7,8,0.98)_100%)] text-white shadow-[0_14px_28px_-22px_rgba(0,0,0,0.96),0_0_0_1px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-sm";
+const wizardPrimaryActionClass = "flex h-11 w-full items-center justify-center rounded-xl border border-white/[0.16] bg-[#242426] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_-20px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.08)] outline-none transition hover:border-white/24 hover:bg-[#2b2b2e] focus-visible:ring-1 focus-visible:ring-white/24 active:translate-y-px active:bg-[#1c1c1e] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/[0.16] disabled:hover:bg-[#242426] disabled:active:translate-y-0";
+const wizardSmallPrimaryActionClass = "min-h-10 rounded-lg border border-white/[0.14] bg-[#242426] px-3 text-[11px] font-semibold text-white shadow-[0_8px_18px_-18px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.07)] transition hover:border-white/22 hover:bg-[#2b2b2e] active:translate-y-px active:bg-[#1c1c1e]";
+const wizardSelectedSegmentClass = "border border-white/[0.18] bg-[#2a2a2d] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
+const wizardSelectedChoiceClass = "border border-white/[0.18] bg-[#242427] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
+const wizardTextActionClass = "flex min-h-9 items-center justify-center rounded-lg px-3 text-xs font-semibold text-white/58 outline-none transition hover:bg-white/[0.045] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50";
 
 const numberOrNull = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -104,6 +109,16 @@ const formatNumber = (value: unknown, suffix = "") => {
   const parsed = numberOrNull(value);
   return parsed === null ? "Not set" : `${Math.round(parsed).toLocaleString()}${suffix}`;
 };
+
+const formatDecimal = (value: number, decimals = 1) => Number(value.toFixed(decimals)).toLocaleString();
+
+const displayWeightFromKg = (weightKg: number, units: PreferredUnits) => (
+  units === "metric"
+    ? `${formatDecimal(weightKg, 1)} kg`
+    : `${formatDecimal(weightKg * 2.2046226218, 1)} lb`
+);
+
+const formatSignedCalories = (value: number) => `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString()} kcal/day`;
 
 const calculationInputs = (goal?: NutritionGoalRow): Record<string, unknown> => {
   const value = goal?.calculation_inputs;
@@ -150,8 +165,7 @@ function isMacroMismatch(values: OverrideForm) {
 
 function hasAdvancedValues(form: TargetSetupForm) {
   return Boolean(
-    form.goalWeight.trim() ||
-    form.goalWeightKgCanonical.trim() ||
+    ((form.goalType === "lose" || form.goalType === "gain") && (form.goalWeight.trim() || form.goalWeightKgCanonical.trim())) ||
     form.manualMaintenance.trim() ||
     form.bodyFatPct.trim() ||
     form.pregnancyStatus !== "none" ||
@@ -169,16 +183,58 @@ function bodyBasicsSummary(form: TargetSetupForm) {
   return `${form.age || "?"} yrs · ${height} · ${weight} · ${sex}`;
 }
 
+function unitsFromInputs(inputs: Record<string, unknown>): PreferredUnits {
+  return inputs.preferredUnits === "us" ? "us" : "metric";
+}
+
+function goalRateSummary(goal?: NutritionGoalRow, inputs: Record<string, unknown> = {}) {
+  const goalType = goal?.goal_type;
+  if (goalType !== "lose" && goalType !== "gain") return null;
+  const rate = numberOrNull(goal?.target_rate_pct_per_week ?? inputs.goalRatePctPerWeek);
+  const weightKg = numberOrNull(inputs.weightKg);
+  if (rate === null || weightKg === null) return null;
+  return `${displayWeightFromKg(weightKg * rate / 100, unitsFromInputs(inputs))} per week`;
+}
+
+function goalWeightSummary(goal?: NutritionGoalRow, inputs: Record<string, unknown> = {}) {
+  const goalWeightKg = numberOrNull(goal?.goal_weight_kg ?? inputs.goalWeightKg);
+  return goalWeightKg === null ? null : displayWeightFromKg(goalWeightKg, unitsFromInputs(inputs));
+}
+
+function paceLabel(goalType: GoalType, rate: number) {
+  if (goalType !== "lose" && goalType !== "gain") return null;
+  return paceOptions[goalType].find((option) => Number(option.value) === rate)?.label ?? null;
+}
+
 function numericInRange(value: string, min: number, max: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max;
 }
 
+function goalDefinitionIssue(form: TargetSetupForm) {
+  if (form.goalType === "maintain" || form.goalType === "recomposition") return null;
+  const currentWeight = numberOrNull(form.weightKgCanonical);
+  const goalWeight = numberOrNull(form.goalWeightKgCanonical);
+  if (currentWeight === null) return "Enter your current weight first.";
+  if (goalWeight === null) return "Goal weight is required.";
+  if (form.goalType === "lose" && goalWeight >= currentWeight - 0.1) return "Choose a goal weight below your current weight.";
+  if (form.goalType === "gain" && goalWeight <= currentWeight + 0.1) return "Choose a goal weight above your current weight.";
+  if (!paceOptions[form.goalType].some((option) => option.value === form.rate)) return "Choose a pace.";
+  return null;
+}
+
+function directionIssue(form: TargetSetupForm) {
+  const currentWeight = numberOrNull(form.weightKgCanonical);
+  if (currentWeight === null || currentWeight < 25 || currentWeight > 500) return "Enter your current weight.";
+  return goalDefinitionIssue(form);
+}
+
 function canContinueSetupStep(form: TargetSetupForm, step: SetupStep) {
-  if (step === 0) return numericInRange(form.age, 13, 120) && ["male", "female", "manual"].includes(form.formulaInput);
-  if (step === 1) return numericInRange(form.heightCmCanonical, 100, 260) && numericInRange(form.weightKgCanonical, 25, 500);
-  if (step === 2) return activityChoices.some((choice) => choice.value === form.activityLevel);
-  return Boolean(form.goalType);
+  if (step === 0) return directionIssue(form) === null;
+  return numericInRange(form.age, 13, 120)
+    && (form.formulaInput === "male" || form.formulaInput === "female")
+    && numericInRange(form.heightCmCanonical, 100, 260)
+    && activityChoices.some((choice) => choice.value === form.activityLevel);
 }
 
 function advancedSummary(form: TargetSetupForm) {
@@ -213,6 +269,9 @@ export function NutritionTargetPanel({
   const [setupStep, setSetupStep] = useState<SetupStep>(0);
   const [setupView, setSetupView] = useState<SetupView>("wizard");
   const [setupSessionStarted, setSetupSessionStarted] = useState(false);
+  const [setupAttempted, setSetupAttempted] = useState(false);
+  const [directionTouched, setDirectionTouched] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const [form, setForm] = useState<TargetSetupForm>(() => createInitialTargetForm());
   const [formDirty, setFormDirty] = useState(false);
   const [preview, setPreview] = useState<NutritionTargetResult | null>(null);
@@ -275,9 +334,13 @@ export function NutritionTargetPanel({
     setFormDirty(false);
     setPreview(null);
     setProfileSaved(false);
+    setShowCalculation(false);
     setError(null);
     setSetupStep(0);
     setSetupView("wizard");
+    setSetupAttempted(false);
+    setDirectionTouched(false);
+    setActivityExpanded(false);
     setSetupSessionStarted(true);
     setSetupMode(mode);
     setSetupOpen(true);
@@ -304,7 +367,6 @@ export function NutritionTargetPanel({
       setPreview(body.preview);
       return true;
     } catch (reason) {
-      if (hasAdvancedValues(form)) setSetupView("advanced");
       setError(reason instanceof Error ? reason.message : "Unable to preview target.");
       return false;
     } finally {
@@ -429,11 +491,14 @@ export function NutritionTargetPanel({
 
   const targetSource = sourceLabel(target, goal);
   const goalType = goal?.goal_type && typeof goal.goal_type === "string" ? goal.goal_type as GoalType : null;
+  const activeGoalRate = goalRateSummary(goal, inputs);
+  const activeGoalWeight = goalWeightSummary(goal, inputs);
   const percentageDetails = derivePercentageMacroDetails(form, preview?.calorieTargetKcal ?? null);
   const percentageTotal = macroPercentTotal(form);
   const automaticLoseBlocked = form.goalType === "lose" && form.formulaInput !== "manual" && form.pregnancyStatus !== "none";
+  const setupGoalIssue = goalDefinitionIssue(form);
+  const setupDirectionIssue = directionIssue(form);
   const profileOnly = setupMode === "edit_profile";
-  const currentStepTitle = wizardStepTitles[setupStep];
   const canContinue = canContinueSetupStep(form, setupStep) && !automaticLoseBlocked;
   const goBack = () => {
     if (setupView === "advanced") {
@@ -442,15 +507,23 @@ export function NutritionTargetPanel({
     }
     if (setupView === "result") {
       setSetupView("wizard");
-      setSetupStep(3);
+      setSetupStep(1);
       return;
     }
+    setSetupAttempted(false);
     setSetupStep((step) => Math.max(0, step - 1) as SetupStep);
   };
   const continueSetup = async () => {
-    if (!canContinue) return;
-    if (setupStep < 3) {
-      setSetupStep((step) => Math.min(3, step + 1) as SetupStep);
+    setError(null);
+    if (!canContinue) {
+      setSetupAttempted(true);
+      if (setupStep === 1) setError(automaticLoseBlocked ? "Automatic deficit calculation is unavailable for the selected nutrition consideration. Use Maintain or a manual target instead." : "Complete the baseline details before previewing your target.");
+      return;
+    }
+    if (setupStep < 1) {
+      setSetupAttempted(false);
+      setActivityExpanded(false);
+      setSetupStep(1);
       return;
     }
     const ok = await previewTarget();
@@ -458,6 +531,7 @@ export function NutritionTargetPanel({
   };
 
   if (setupOpen) {
+    const headerLabel = profileOnly ? "Edit profile" : setupView === "wizard" ? `${setupStep + 1} of 2` : setupView === "result" ? "Target result" : "Advanced";
     return (
       <div className="flex max-h-full min-h-0 flex-1 flex-col bg-[#090909]" aria-label="Nutrition target setup">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.055] px-4 py-3">
@@ -467,15 +541,12 @@ export function NutritionTargetPanel({
                 <ChevronLeft className="h-4 w-4" />
               </button>
             ) : null}
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium leading-4 text-white/38">{profileOnly ? "Profile only" : setupView === "result" ? "Result" : setupView === "advanced" ? "Adjust target" : `Step ${setupStep + 1} of 4`}</p>
-              <h3 className="truncate text-base font-semibold leading-6 text-white">{profileOnly ? "Edit profile" : setupView === "result" ? "Your target" : setupView === "advanced" ? "Adjust target" : currentStepTitle}</h3>
-            </div>
+            <p className="text-xs font-semibold text-white/42">{headerLabel}</p>
           </div>
           <button type="button" onClick={() => setSetupOpen(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 outline-none transition hover:bg-white/[0.055] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18" aria-label="Close target setup"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 [-webkit-overflow-scrolling:touch] sm:px-6">
           {profileOnly ? (
             <EditProfileSurface
               form={form}
@@ -487,7 +558,6 @@ export function NutritionTargetPanel({
             <ResultSurface
               preview={preview}
               showCalculation={showCalculation}
-              setShowCalculation={setShowCalculation}
             />
           ) : setupView === "advanced" ? (
             <AdvancedTargetSurface
@@ -498,28 +568,40 @@ export function NutritionTargetPanel({
               automaticLoseBlocked={automaticLoseBlocked}
             />
           ) : (
-            <WizardStepSurface form={form} step={setupStep} updateForm={updateForm} />
+            <WizardStepSurface
+              form={form}
+              step={setupStep}
+              updateForm={updateForm}
+              showDirectionIssue={setupAttempted || directionTouched}
+              directionIssue={setupDirectionIssue}
+              onDirectionInteract={() => setDirectionTouched(true)}
+              activityExpanded={activityExpanded}
+              setActivityExpanded={setActivityExpanded}
+            />
           )}
-        </div>
 
-        {error ? <p className="shrink-0 px-4 pb-2 text-xs leading-5 text-red-200/76">{error}</p> : null}
+          {error ? <p className="mt-4 rounded-lg border border-red-300/15 bg-red-300/[0.055] p-3 text-xs leading-5 text-red-100/78">{error}</p> : null}
 
-        <div className="shrink-0 border-t border-white/[0.055] bg-[#090909]/95 px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur">
-          {profileOnly ? (
-            <button type="button" disabled={busy || !formDirty} onClick={() => void saveProfile()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Save profile"}</button>
-          ) : setupView === "result" ? (
-            <div className="grid gap-2">
-              <button type="button" disabled={busy || !preview} onClick={() => void saveGoal()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Use this target"}</button>
-              <button type="button" disabled={busy} onClick={() => setSetupView("advanced")} className="flex h-11 w-full items-center justify-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/64 outline-none transition hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50">Adjust target</button>
-            </div>
-          ) : setupView === "advanced" ? (
-            <div className="grid gap-2">
-              <button type="button" disabled={busy || automaticLoseBlocked} onClick={() => void previewTarget().then((ok) => { if (ok) setSetupView("result"); })} className={wizardPrimaryActionClass}>{busy ? "Updating..." : "Update preview"}</button>
-              <button type="button" disabled={busy} onClick={() => setSetupView(preview ? "result" : "wizard")} className="flex h-11 w-full items-center justify-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/64 outline-none transition hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50">Done</button>
-            </div>
-          ) : (
-            <button type="button" disabled={busy || !canContinue} onClick={() => void continueSetup()} className={wizardPrimaryActionClass}>{busy ? "Loading..." : setupStep === 3 ? "Calculate target" : "Continue"}</button>
-          )}
+          <div className="mt-6">
+            {profileOnly ? (
+              <button type="button" disabled={busy || !formDirty} onClick={() => void saveProfile()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Save profile"}</button>
+            ) : setupView === "result" ? (
+              <div className="grid gap-2">
+                <button type="button" disabled={busy || !preview} onClick={() => void saveGoal()} className={wizardPrimaryActionClass}>{busy ? "Saving..." : "Use target"}</button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={busy} onClick={() => setSetupView("advanced")} className={wizardTextActionClass}>Adjust details</button>
+                  <button type="button" disabled={busy} onClick={() => setShowCalculation(!showCalculation)} className={wizardTextActionClass}>View calculation</button>
+                </div>
+              </div>
+            ) : setupView === "advanced" ? (
+              <div className="grid gap-2">
+                <button type="button" disabled={busy || automaticLoseBlocked || Boolean(setupGoalIssue)} onClick={() => void previewTarget().then((ok) => { if (ok) setSetupView("result"); })} className={wizardPrimaryActionClass}>{busy ? "Updating..." : "Update preview"}</button>
+                <button type="button" disabled={busy} onClick={() => setSetupView(preview ? "result" : "wizard")} className="flex h-11 w-full items-center justify-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/64 outline-none transition hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50">Done</button>
+              </div>
+            ) : (
+              <button type="button" disabled={busy} onClick={() => void continueSetup()} className={wizardPrimaryActionClass}>{busy ? "Checking..." : setupStep === 1 ? "See my target" : "Continue"}</button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -533,14 +615,14 @@ export function NutritionTargetPanel({
             <h4 className="text-sm font-semibold text-white/82">Set your daily target</h4>
             <p className="mt-1 text-xs leading-5 text-white/44">Get a calorie and macro target for your meal plan.</p>
           </div>
-          <button type="button" onClick={() => openSetup("new_goal")} className="min-h-10 shrink-0 rounded-lg bg-white px-3 text-xs font-semibold text-black">Set target</button>
+          <button type="button" onClick={() => openSetup("new_goal")} className="min-h-10 shrink-0 rounded-lg border border-white/[0.14] bg-[#242426] px-3 text-xs font-semibold text-white">Set target</button>
         </div>
       ) : (
         <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-2xl font-semibold text-white">{formatNumber(target.calorie_target_kcal, " kcal")}</p>
-              <p className="mt-1 text-xs text-white/46">{goalType ? targetSummaryGoalLabels[goalType] : "Daily target"}{goal?.target_rate_pct_per_week ? ` · ${Number(goal.target_rate_pct_per_week)}% / week` : ""} · {targetSource}</p>
+              <p className="mt-1 text-xs text-white/46">{goalType ? targetSummaryGoalLabels[goalType] : "Daily target"}{activeGoalRate ? ` · ${activeGoalRate}` : ""} · {targetSource}</p>
               <p className="mt-1 text-[11px] text-white/36">Creator day {selectedDay}</p>
             </div>
             <button type="button" onClick={() => openSetup("update_goal")} className="min-h-10 rounded-lg border border-white/10 px-3 text-[11px] font-semibold text-white/68">Update goal</button>
@@ -552,7 +634,7 @@ export function NutritionTargetPanel({
           </div>
           <div className="mt-2 grid gap-1 text-[11px] text-white/38 sm:grid-cols-2">
             <p>Estimated maintenance {formatNumber(goal?.estimated_maintenance_kcal, " kcal")}</p>
-            {goal?.goal_weight_kg ? <p>Goal weight {Number(goal.goal_weight_kg).toFixed(1)} kg</p> : null}
+            {activeGoalWeight ? <p>Goal weight {activeGoalWeight}</p> : null}
             <p>Last updated {new Date(String(goal?.created_at ?? target.updated_at ?? target.created_at)).toLocaleDateString()}</p>
             <p>Source {targetSource}</p>
           </div>
@@ -592,7 +674,7 @@ export function NutritionTargetPanel({
               {target.is_daily_override ? <button type="button" disabled={busy} onClick={() => void resetOverride()} className="min-h-11 rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/64 disabled:opacity-50">Restore goal target</button> : <span />}
               <div className="flex gap-2">
                 <button type="button" onClick={() => setOverrideOpen(false)} className="min-h-11 rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/64">Cancel</button>
-                <button type="button" disabled={busy} onClick={() => void saveOverride()} className="min-h-11 rounded-xl bg-white px-4 text-xs font-semibold text-black disabled:opacity-50">{busy ? "Saving..." : "Save override"}</button>
+                <button type="button" disabled={busy} onClick={() => void saveOverride()} className="min-h-11 rounded-xl border border-white/[0.14] bg-[#242426] px-4 text-xs font-semibold text-white disabled:opacity-50">{busy ? "Saving..." : "Save override"}</button>
               </div>
             </div>
           </div>
@@ -605,6 +687,9 @@ export function NutritionTargetPanel({
 function CalculationDetails({ goal, inputs, target }: { goal?: NutritionGoalRow; inputs: Record<string, unknown>; target: DailyTarget }) {
   const result = inputs.result && typeof inputs.result === "object" ? inputs.result as Record<string, unknown> : {};
   const warnings = Array.isArray(result.warnings) ? result.warnings.filter((value): value is string => typeof value === "string") : [];
+  const targetCalories = numberOrNull(target.calorie_target_kcal);
+  const maintenanceCalories = numberOrNull(goal?.estimated_maintenance_kcal);
+  const signedAdjustment = targetCalories !== null && maintenanceCalories !== null ? targetCalories - Math.round(maintenanceCalories) : null;
   return (
     <div className="mt-3 rounded-lg bg-black/30 p-3 text-[11px] leading-5 text-white/46">
       <p>Algorithm {String(goal?.algorithm_version ?? result.algorithmVersion ?? "nutrition-target-v1")}</p>
@@ -612,9 +697,9 @@ function CalculationDetails({ goal, inputs, target }: { goal?: NutritionGoalRow;
       <p>Resting estimate {goal?.bmr_kcal ? formatNumber(goal.bmr_kcal, " kcal") : "Manual"}</p>
       <p>Estimated maintenance {formatNumber(goal?.estimated_maintenance_kcal, " kcal")} {inputs.maintenanceSource === "manual_estimate" ? "(manual estimate)" : "(activity calculation)"}</p>
       <p>Provisional goal delta {formatNumber(result.provisionalCalorieDeltaKcal ?? 0, " kcal/day")}</p>
-      <p>Accepted capped delta {formatNumber(goal?.calorie_delta_kcal ?? result.acceptedCalorieDeltaKcal ?? 0, " kcal/day")}</p>
+      <p>Target minus maintenance {signedAdjustment === null ? "Not set" : formatSignedCalories(signedAdjustment)}</p>
       <p>Calculation source {target.is_daily_override ? "Daily override" : goal?.is_manual ? "Manual" : "Suggested"}</p>
-      {goal?.goal_weight_kg ? <p>Goal weight {Number(goal.goal_weight_kg).toFixed(1)} kg</p> : null}
+      {goalWeightSummary(goal, inputs) ? <p>Goal weight {goalWeightSummary(goal, inputs)}</p> : null}
       {inputs.manualMaintenanceKcal ? <p>Manual maintenance estimate {formatNumber(inputs.manualMaintenanceKcal, " kcal")}</p> : null}
       {inputs.manualCalorieTargetKcal ? <p>Manual calorie target {formatNumber(inputs.manualCalorieTargetKcal, " kcal")}</p> : null}
       {warnings.map((warning) => <p key={warning} className="text-amber-100/75">{warning}</p>)}
@@ -625,7 +710,7 @@ function CalculationDetails({ goal, inputs, target }: { goal?: NutritionGoalRow;
 
 function UnitToggle({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
   return (
-    <div className="grid grid-cols-2 rounded-lg bg-black p-0.5">
+    <div className="grid grid-cols-2 rounded-lg border border-white/[0.06] bg-[#101011] p-0.5">
       {(["us", "metric"] as PreferredUnits[]).map((units) => (
         <button key={units} type="button" onClick={() => updateForm(setTargetFormUnits(form, units))} className={`min-h-7 rounded-md px-2 text-[10px] font-semibold transition ${form.units === units ? wizardSelectedSegmentClass : "border border-transparent text-white/48 hover:bg-white/[0.045] active:bg-white/[0.025]"}`}>{units === "us" ? "US" : "Metric"}</button>
       ))}
@@ -633,30 +718,209 @@ function UnitToggle({ form, updateForm }: { form: TargetSetupForm; updateForm: (
   );
 }
 
-function WizardStepSurface({ form, step, updateForm }: { form: TargetSetupForm; step: SetupStep; updateForm: (form: TargetSetupForm) => void }) {
-  if (step === 0) return <AboutStep form={form} updateForm={updateForm} />;
-  if (step === 1) return <BodyStep form={form} updateForm={updateForm} />;
-  if (step === 2) return <ActivityStep form={form} updateForm={updateForm} />;
-  return <GoalStep form={form} updateForm={updateForm} />;
+function WizardStepSurface({
+  form,
+  step,
+  updateForm,
+  showDirectionIssue,
+  directionIssue: issue,
+  onDirectionInteract,
+  activityExpanded,
+  setActivityExpanded,
+}: {
+  form: TargetSetupForm;
+  step: SetupStep;
+  updateForm: (form: TargetSetupForm) => void;
+  showDirectionIssue: boolean;
+  directionIssue: string | null;
+  onDirectionInteract: () => void;
+  activityExpanded: boolean;
+  setActivityExpanded: (expanded: boolean) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <h3 className="text-[1.7rem] font-semibold leading-8 text-white">{wizardStepQuestions[step]}</h3>
+      {step === 0 ? (
+        <DirectionStep
+          form={form}
+          updateForm={updateForm}
+          showIssue={showDirectionIssue}
+          issue={issue}
+          onInteract={onDirectionInteract}
+        />
+      ) : null}
+      {step === 1 ? (
+        <BaselineStep
+          form={form}
+          updateForm={updateForm}
+          activityExpanded={activityExpanded}
+          setActivityExpanded={setActivityExpanded}
+        />
+      ) : null}
+    </div>
+  );
 }
 
-function AboutStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
+function DirectionStep({
+  form,
+  updateForm,
+  showIssue,
+  issue,
+  onInteract,
+}: {
+  form: TargetSetupForm;
+  updateForm: (form: TargetSetupForm) => void;
+  showIssue: boolean;
+  issue: string | null;
+  onInteract: () => void;
+}) {
+  const setGoalType = (goalType: GoalType) => {
+    const nextRate = goalType === "lose"
+      ? paceOptions.lose.some((option) => option.value === form.rate) ? form.rate : "0.5"
+      : goalType === "gain"
+        ? paceOptions.gain.some((option) => option.value === form.rate) ? form.rate : "0.25"
+        : "0";
+    updateForm({ ...form, goalType, rate: nextRate });
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 gap-2">
+        {(Object.keys(goalLabels) as GoalType[]).map((goalType) => (
+          <button key={goalType} type="button" onClick={() => setGoalType(goalType)} className={`min-h-[4.25rem] rounded-xl px-3 text-sm font-semibold transition active:translate-y-px ${form.goalType === goalType ? wizardSelectedChoiceClass : "border border-white/[0.075] bg-[#141416] text-white/58 hover:border-white/[0.12] hover:bg-[#19191b]"}`}>{goalLabels[goalType]}</button>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-white/54">Weight</p>
+          <div className="w-32">
+            <UnitToggle form={form} updateForm={(next) => { onInteract(); updateForm(next); }} />
+          </div>
+        </div>
+        <div className={`grid gap-3 ${(form.goalType === "lose" || form.goalType === "gain") ? "sm:grid-cols-2" : ""}`}>
+          <Label text={`Current weight (${form.units === "metric" ? "kg" : "lb"})`} wide={form.goalType !== "lose" && form.goalType !== "gain"}>
+            <input inputMode="decimal" type="text" value={form.weight} onChange={(event) => { onInteract(); updateForm(setWeightDisplay(form, event.target.value)); }} />
+          </Label>
+          {form.goalType === "lose" || form.goalType === "gain" ? (
+            <Label text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`}>
+              <input inputMode="decimal" type="text" value={form.goalWeight} onChange={(event) => { onInteract(); updateForm(setGoalWeightDisplay(form, event.target.value)); }} />
+            </Label>
+          ) : null}
+        </div>
+      </div>
+
+      {form.goalType === "lose" || form.goalType === "gain" ? (
+        <DirectionPaceSelector form={form} updateForm={updateForm} onInteract={onInteract} />
+      ) : (
+        <p className="text-sm leading-6 text-white/46">
+          {form.goalType === "maintain" ? "Keep your daily target near estimated maintenance." : "Stay near maintenance while prioritizing protein."}
+        </p>
+      )}
+
+      {showIssue && issue ? <p className="rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/75">{issue}</p> : null}
+    </div>
+  );
+}
+
+function DirectionPaceSelector({ form, updateForm, onInteract }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void; onInteract: () => void }) {
+  if (form.goalType !== "lose" && form.goalType !== "gain") return null;
+  return (
+    <div>
+      <p className="text-xs font-semibold text-white/54">Pace</p>
+      <div className="mt-2 grid grid-cols-3 rounded-xl border border-white/[0.07] bg-[#101011] p-1">
+        {paceOptions[form.goalType].map((option) => {
+          const selected = form.rate === option.value;
+          return (
+            <button key={option.value} type="button" onClick={() => { onInteract(); updateForm({ ...form, rate: option.value }); }} className={`min-h-12 rounded-lg px-2 text-center text-xs font-semibold transition active:translate-y-px ${selected ? wizardSelectedSegmentClass : "border border-transparent text-white/50 hover:bg-white/[0.045]"}`}>
+              <span className="block">{option.label}</span>
+              {selected ? <span className="mt-0.5 block text-[10px] font-medium leading-3 text-white/48">{weeklyRateLabel(form, option.value)}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BaselineStep({
+  form,
+  updateForm,
+  activityExpanded,
+  setActivityExpanded,
+}: {
+  form: TargetSetupForm;
+  updateForm: (form: TargetSetupForm) => void;
+  activityExpanded: boolean;
+  setActivityExpanded: (expanded: boolean) => void;
+}) {
+  const visibleSex = form.formulaInput === "female" ? "female" : form.formulaInput === "male" ? "male" : null;
+  const selectedActivity = activityChoices.find((choice) => choice.value === form.activityLevel) ?? activityChoices[2];
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3">
+        <div>
+          <p className="text-xs font-semibold text-white/54">Sex</p>
+          <div className="mt-2 grid grid-cols-2 rounded-xl border border-white/[0.07] bg-[#101011] p-1">
+            {(["male", "female"] as const).map((sex) => (
+              <button key={sex} type="button" onClick={() => updateForm({ ...form, formulaInput: sex })} className={`min-h-10 rounded-lg px-3 text-sm font-semibold transition ${visibleSex === sex ? wizardSelectedSegmentClass : "border border-transparent text-white/58 hover:bg-white/[0.055] active:bg-white/[0.03]"}`}>{sex === "male" ? "Male" : "Female"}</button>
+            ))}
+          </div>
+        </div>
+        <Label text="Age">
+          <input inputMode="numeric" type="text" pattern="[0-9]*" value={form.age} onChange={(event) => updateForm({ ...form, age: event.target.value })} />
+        </Label>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-white/54">Height</p>
+          <button type="button" onClick={() => updateForm(setTargetFormUnits(form, form.units === "metric" ? "us" : "metric"))} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-white/40 transition hover:bg-white/[0.045] hover:text-white/66">{form.units === "metric" ? "Metric" : "US"}</button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {form.units === "metric" ? (
+            <Label text="Centimeters" wide><input inputMode="decimal" type="text" value={form.heightCm} onChange={(event) => updateForm(setHeightMetric(form, event.target.value))} /><span className="field-unit">cm</span></Label>
+          ) : (
+            <>
+              <Label text="Feet"><input inputMode="numeric" type="text" value={form.heightFeet} onChange={(event) => updateForm(setHeightUs(form, "heightFeet", event.target.value))} /><span className="field-unit">ft</span></Label>
+              <Label text="Inches"><input inputMode="decimal" type="text" value={form.heightInches} onChange={(event) => updateForm(setHeightUs(form, "heightInches", event.target.value))} /><span className="field-unit">in</span></Label>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <button type="button" onClick={() => setActivityExpanded(!activityExpanded)} aria-expanded={activityExpanded} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-white/[0.075] bg-[#141416] px-3 text-left transition hover:border-white/[0.12] hover:bg-[#19191b]">
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs font-medium text-white/38">Daily activity</span>
+            <span className="mt-0.5 block text-sm font-semibold text-white/82">{selectedActivity.label}</span>
+            <span className="mt-0.5 block truncate text-xs text-white/38">{selectedActivity.description}</span>
+          </span>
+          <span className={`text-2xl leading-none text-white/34 transition ${activityExpanded ? "rotate-90" : ""}`}>›</span>
+        </button>
+        {activityExpanded ? (
+          <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.07] bg-[#101011]">
+            {activityChoices.map((choice) => (
+              <button key={choice.value} type="button" onClick={() => { updateForm({ ...form, activityLevel: choice.value }); setActivityExpanded(false); }} className={`block w-full border-b border-white/[0.055] px-3 py-3 text-left last:border-b-0 ${form.activityLevel === choice.value ? "bg-[#242427]" : "hover:bg-white/[0.045]"}`}>
+                <span className="block text-sm font-semibold text-white/76">{choice.label}</span>
+                <span className="mt-0.5 block text-xs leading-5 text-white/40">{choice.description}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function BasicsStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
   const visibleSex = form.formulaInput === "female" ? "female" : form.formulaInput === "male" ? "male" : null;
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-white/78">About you</p>
-          <p className="mt-0.5 text-xs text-white/38">Used for the resting estimate.</p>
-        </div>
-        <div className="w-32 shrink-0">
-          <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">Units</p>
-          <UnitToggle form={form} updateForm={updateForm} />
-        </div>
-      </div>
       <div>
         <p className="text-xs font-semibold text-white/54">Sex</p>
-        <div className="mt-2 grid grid-cols-2 rounded-xl bg-black p-1">
+        <div className="mt-2 grid grid-cols-2 rounded-xl border border-white/[0.06] bg-[#101011] p-1">
           {(["male", "female"] as const).map((sex) => (
             <button key={sex} type="button" onClick={() => updateForm({ ...form, formulaInput: sex })} className={`min-h-9 rounded-lg px-3 text-sm font-semibold transition ${visibleSex === sex ? wizardSelectedSegmentClass : "border border-transparent text-white/58 hover:bg-white/[0.055] active:bg-white/[0.03]"}`}>{sex === "male" ? "Male" : "Female"}</button>
           ))}
@@ -669,21 +933,26 @@ function AboutStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (f
   );
 }
 
-function BodyStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
+function MeasurementsStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <div className="w-32">
+          <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">Units</p>
+          <UnitToggle form={form} updateForm={updateForm} />
+        </div>
+      </div>
       <FormGrid>
         {form.units === "metric" ? (
-          <Label text="Height" wide><input inputMode="decimal" type="number" step="0.1" value={form.heightCm} onChange={(event) => updateForm(setHeightMetric(form, event.target.value))} /><span className="field-unit">cm</span></Label>
+          <Label text="Height" wide><input inputMode="decimal" type="text" value={form.heightCm} onChange={(event) => updateForm(setHeightMetric(form, event.target.value))} /><span className="field-unit">cm</span></Label>
         ) : (
           <>
-            <Label text="Height"><input inputMode="numeric" type="number" value={form.heightFeet} onChange={(event) => updateForm(setHeightUs(form, "heightFeet", event.target.value))} /><span className="field-unit">ft</span></Label>
-            <Label text="Height"><input inputMode="decimal" type="number" step="0.1" value={form.heightInches} onChange={(event) => updateForm(setHeightUs(form, "heightInches", event.target.value))} /><span className="field-unit">in</span></Label>
+            <Label text="Height"><input inputMode="numeric" type="text" value={form.heightFeet} onChange={(event) => updateForm(setHeightUs(form, "heightFeet", event.target.value))} /><span className="field-unit">ft</span></Label>
+            <Label text="Height"><input inputMode="decimal" type="text" value={form.heightInches} onChange={(event) => updateForm(setHeightUs(form, "heightInches", event.target.value))} /><span className="field-unit">in</span></Label>
           </>
         )}
-        <Label text="Weight" wide><input inputMode="decimal" type="number" step="0.1" value={form.weight} onChange={(event) => updateForm(setWeightDisplay(form, event.target.value))} /><span className="field-unit">{form.units === "metric" ? "kg" : "lb"}</span></Label>
+        <Label text="Weight" wide><input inputMode="decimal" type="text" value={form.weight} onChange={(event) => updateForm(setWeightDisplay(form, event.target.value))} /><span className="field-unit">{form.units === "metric" ? "kg" : "lb"}</span></Label>
       </FormGrid>
-      <UnitToggle form={form} updateForm={updateForm} />
     </div>
   );
 }
@@ -704,12 +973,70 @@ function ActivityStep({ form, updateForm }: { form: TargetSetupForm; updateForm:
   );
 }
 
-function GoalStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
+function weeklyRateLabel(form: TargetSetupForm, rate: string) {
+  const currentWeightKg = numberOrNull(form.weightKgCanonical);
+  const parsedRate = Number(rate);
+  if (currentWeightKg === null || !Number.isFinite(parsedRate)) return `About ${rate}% body weight per week`;
+  return `About ${displayWeightFromKg(currentWeightKg * parsedRate / 100, form.units)} per week`;
+}
+
+function currentWeightLabel(form: TargetSetupForm) {
+  const currentWeightKg = numberOrNull(form.weightKgCanonical);
+  return currentWeightKg === null ? "Current weight not set" : displayWeightFromKg(currentWeightKg, form.units);
+}
+
+function PaceSelector({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
+  if (form.goalType !== "lose" && form.goalType !== "gain") return null;
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {(Object.keys(goalLabels) as GoalType[]).map((goalType) => (
-        <button key={goalType} type="button" onClick={() => updateForm({ ...form, goalType, rate: goalType === "lose" ? "0.5" : goalType === "gain" ? "0.25" : "0", goalWeight: goalType === "lose" || goalType === "gain" ? form.goalWeight : "", goalWeightKgCanonical: goalType === "lose" || goalType === "gain" ? form.goalWeightKgCanonical : "" })} className={`min-h-24 rounded-2xl px-3 text-sm font-semibold transition active:translate-y-px ${form.goalType === goalType ? wizardSelectedChoiceClass : "border border-transparent bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>{goalLabels[goalType]}</button>
-      ))}
+    <div>
+      <p className="text-xs font-semibold text-white/54">Pace</p>
+      <div className="mt-2 grid gap-2">
+        {paceOptions[form.goalType].map((option) => {
+          const selected = form.rate === option.value;
+          return (
+            <button key={option.value} type="button" onClick={() => updateForm({ ...form, rate: option.value })} className={`min-h-14 rounded-xl px-3 py-2 text-left transition active:translate-y-px ${selected ? wizardSelectedChoiceClass : "border border-transparent bg-white/[0.035] text-white/62 hover:bg-white/[0.07]"}`}>
+              <span className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold">{option.label}</span>
+                <span className={`text-[11px] font-medium ${selected ? "text-white/56" : "text-white/36"}`}>{weeklyRateLabel(form, option.value)}</span>
+              </span>
+              <span className={`mt-0.5 block text-xs leading-4 ${selected ? "text-white/48" : "text-white/32"}`}>{option.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DefineGoalStep({ form, updateForm }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void }) {
+  const issue = goalDefinitionIssue(form);
+  if (form.goalType === "maintain") {
+    return (
+      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 text-sm leading-6 text-white/62">
+        <p className="font-semibold text-white/82">Maintain near {currentWeightLabel(form)}</p>
+        <p className="mt-1 text-xs leading-5 text-white/42">CREATOR will design this target to keep you near your current weight with a zero goal rate.</p>
+      </div>
+    );
+  }
+  if (form.goalType === "recomposition") {
+    return (
+      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 text-sm leading-6 text-white/62">
+        <p className="font-semibold text-white/82">Stay near maintenance</p>
+        <p className="mt-1 text-xs leading-5 text-white/42">CREATOR will keep calories near estimated maintenance while using the existing recomposition macro behavior, with protein prioritized.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/34">Current weight</p>
+        <p className="mt-1 text-lg font-semibold text-white/84">{currentWeightLabel(form)}</p>
+      </div>
+      <FormGrid>
+        <Label text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`} wide><input inputMode="decimal" type="number" step="0.1" value={form.goalWeight} onChange={(event) => updateForm(setGoalWeightDisplay(form, event.target.value))} /></Label>
+      </FormGrid>
+      <PaceSelector form={form} updateForm={updateForm} />
+      {issue ? <p className="rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/75">{issue}</p> : null}
     </div>
   );
 }
@@ -718,8 +1045,8 @@ function EditProfileSurface({ form, updateForm, profileSaved, onRecalculate }: {
   return (
     <div className="space-y-4">
       <Section title="Body basics" summary={bodyBasicsSummary(form)}>
-        <AboutStep form={form} updateForm={updateForm} />
-        <div className="mt-4"><BodyStep form={form} updateForm={updateForm} /></div>
+        <BasicsStep form={form} updateForm={updateForm} />
+        <div className="mt-4"><MeasurementsStep form={form} updateForm={updateForm} /></div>
       </Section>
       <Section title="Activity" summary={activityChoices.find((choice) => choice.value === form.activityLevel)?.label}>
         <ActivityStep form={form} updateForm={updateForm} />
@@ -772,9 +1099,12 @@ function AdvancedTargetSurface({
           ) : null}
         </div>
       ) : null}
+      {!profileOnly ? (
+        <Section title="Goal details" summary={form.goalType === "lose" || form.goalType === "gain" ? `${form.goalWeight || "Goal weight"} ${form.units === "metric" ? "kg" : "lb"} · ${weeklyRateLabel(form, form.rate)}` : goalLabels[form.goalType]}>
+          <DefineGoalStep form={form} updateForm={updateForm} />
+        </Section>
+      ) : null}
       <FormGrid>
-        {!profileOnly && (form.goalType === "lose" || form.goalType === "gain") ? <Label text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`} wide><input inputMode="decimal" type="number" step="0.1" placeholder="Optional" value={form.goalWeight} onChange={(event) => updateForm(setGoalWeightDisplay(form, event.target.value))} /></Label> : null}
-        {!profileOnly ? <Label text="Goal rate" wide><select value={form.rate} onChange={(event) => updateForm({ ...form, rate: event.target.value })}>{(form.goalType === "lose" ? lossRates : form.goalType === "gain" ? gainRates : [{ value: "0", label: "None", description: "No change" }]).map((rate) => <option key={rate.value} value={rate.value}>{rate.label} - {rate.description}</option>)}</select></Label> : null}
         {!profileOnly ? <Label text="Manual maintenance" wide><input inputMode="numeric" type="number" placeholder="Optional" value={form.manualMaintenance} onChange={(event) => updateForm({ ...form, manualMaintenance: event.target.value })} /></Label> : null}
         <Label text="Body-fat percentage"><input inputMode="decimal" type="number" step="0.1" placeholder="Optional" value={form.bodyFatPct} onChange={(event) => updateForm({ ...form, bodyFatPct: event.target.value })} /></Label>
         <Label text="Nutrition considerations"><select value={form.pregnancyStatus} onChange={(event) => updateForm({ ...form, pregnancyStatus: event.target.value as PregnancyStatus })}>{Object.entries(pregnancyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Label>
@@ -815,30 +1145,46 @@ function MacroCustomization({ form, updateForm, percentageTotal, percentageDetai
   );
 }
 
-function ResultSurface({ preview, showCalculation, setShowCalculation }: { preview: NutritionTargetResult; showCalculation: boolean; setShowCalculation: (show: boolean) => void }) {
+function ResultSurface({ preview, showCalculation }: { preview: NutritionTargetResult; showCalculation: boolean }) {
+  const calorieAdjustment = preview.calorieTargetKcal - preview.estimatedMaintenanceKcal;
+  const currentWeight = displayWeightFromKg(preview.weightKg, preview.preferredUnits);
+  const goalWeight = preview.goalWeightKg === null ? null : displayWeightFromKg(preview.goalWeightKg, preview.preferredUnits);
+  const selectedPace = paceLabel(preview.goalType, preview.goalRatePctPerWeek);
+  const goalLine = preview.goalType === "lose" || preview.goalType === "gain"
+    ? `${currentWeight}${goalWeight ? ` → ${goalWeight}` : ""} · ${selectedPace ?? "Selected pace"} · ${formatSignedCalories(calorieAdjustment)}`
+    : preview.goalType === "maintain"
+      ? "Targeted near maintenance"
+      : "Maintenance calories with protein prioritized";
   return (
     <div className="space-y-5">
-      <div className="py-4 text-center">
-        <p className="text-6xl font-semibold tracking-normal text-white">{preview.calorieTargetKcal.toLocaleString()}</p>
-        <p className="mt-2 text-sm font-medium text-white/46">calories per day</p>
+      <div className="pt-2">
+        <h3 className="text-2xl font-semibold leading-8 text-white">Your daily target</h3>
+        <div className="mt-8 text-center">
+          <p className="text-6xl font-semibold tracking-normal text-white">{preview.calorieTargetKcal.toLocaleString()}</p>
+          <p className="mt-2 text-sm font-medium text-white/48">calories per day</p>
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2 rounded-2xl bg-white/[0.035] p-3 text-center text-xs text-white/52">
-        <p>Protein<br /><span className="text-base font-semibold text-white">{preview.proteinTargetG}g</span></p>
-        <p>Carbs<br /><span className="text-base font-semibold text-white">{preview.carbTargetG}g</span></p>
-        <p>Fat<br /><span className="text-base font-semibold text-white">{preview.fatTargetG}g</span></p>
+      <div className="grid grid-cols-3 gap-2 border-y border-white/[0.07] py-3 text-center text-xs text-white/48">
+        <p>Protein<br /><span className="text-base font-semibold text-white">{preview.proteinTargetG} g</span></p>
+        <p>Carbs<br /><span className="text-base font-semibold text-white">{preview.carbTargetG} g</span></p>
+        <p>Fat<br /><span className="text-base font-semibold text-white">{preview.fatTargetG} g</span></p>
       </div>
-      <div className="rounded-xl bg-white/[0.025] p-3 text-[11px] leading-5 text-white/46">
-        <p>Estimated maintenance {preview.estimatedMaintenanceKcal.toLocaleString()} kcal{preview.calculationInputs.maintenanceSource === "manual_estimate" ? " · manual estimate" : ""}</p>
-        <p>Goal adjustment {Math.round(preview.acceptedCalorieDeltaKcal).toLocaleString()} kcal/day</p>
+      <div className="space-y-1 text-xs leading-5 text-white/46">
+        <p><span className="text-white/68">Estimated maintenance</span> · {preview.estimatedMaintenanceKcal.toLocaleString()} kcal</p>
+        <p>{goalLine}</p>
+      </div>
+      {preview.warnings.length ? (
+        <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-5 text-amber-100/75">
         {preview.warnings.map((warning) => <p key={warning} className="text-amber-200/75">{warning}</p>)}
-      </div>
-      <button type="button" onClick={() => setShowCalculation(!showCalculation)} className="min-h-10 w-full rounded-xl border border-white/[0.07] px-3 text-xs font-semibold text-white/58">How was this calculated?</button>
+        </div>
+      ) : null}
       {showCalculation ? (
-        <div className="rounded-xl bg-white/[0.025] p-3 text-[11px] leading-5 text-white/42">
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 text-[11px] leading-5 text-white/42">
+          <p>Estimated maintenance {preview.estimatedMaintenanceKcal.toLocaleString()} kcal{preview.calculationInputs.maintenanceSource === "manual_estimate" ? " · manual estimate" : ""}</p>
           <p>Resting estimate {preview.restingEstimateDisplayKcal ?? "Manual"} kcal</p>
-          <p>Goal adjustment {Math.round(preview.acceptedCalorieDeltaKcal)} kcal/day</p>
+          <p>Goal adjustment {formatSignedCalories(calorieAdjustment)}</p>
           <p>Method {preview.formulaName} · {preview.algorithmVersion}</p>
-          {preview.goalWeightKg ? <p>Goal weight {preview.goalWeightKg.toFixed(1)} kg</p> : null}
+          {goalWeight ? <p>Goal weight {goalWeight}</p> : null}
           {preview.explanation.map((line) => <p key={line}>{line}</p>)}
         </div>
       ) : null}
@@ -855,5 +1201,5 @@ function FormGrid({ children }: { children: React.ReactNode }) {
 }
 
 function Label({ text, wide, children }: { text: string; wide?: boolean; children: React.ReactNode }) {
-  return <label className={`${wide ? "col-span-2" : ""} min-w-0 text-[11px] font-medium text-white/48`}>{text}{children}</label>;
+  return <label className={`${wide ? "col-span-2" : ""} min-w-0 text-[11px] font-medium text-white/48 [&_.field-unit]:mt-1 [&_.field-unit]:block [&_.field-unit]:text-[10px] [&_.field-unit]:font-normal [&_.field-unit]:text-white/30 [&_input]:mt-1 [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-white/[0.075] [&_input]:bg-[#101011] [&_input]:px-3 [&_input]:text-white [&_input]:outline-none [&_input]:transition [&_input]:focus:border-white/[0.18] [&_select]:mt-1 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-white/[0.075] [&_select]:bg-[#101011] [&_select]:px-3 [&_select]:text-xs [&_select]:text-white [&_select]:outline-none`}>{text}{children}</label>;
 }

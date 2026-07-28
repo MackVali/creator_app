@@ -94,6 +94,13 @@ export type MealPlanDay = {
 
 export type MealPlanResponse = { plan: MealPlanDay | null; error?: string };
 
+export type MealPlanPlannedTotals = {
+  calories: number;
+  carbs_g: number;
+  protein_g: number;
+  fat_g: number;
+};
+
 const statuses = new Set<MealPlanStatus>(["planned", "logged", "partially_logged", "skipped"]);
 export function parseMealPlanStatus(value: unknown): MealPlanStatus | null {
   return typeof value === "string" && statuses.has(value as MealPlanStatus)
@@ -103,6 +110,19 @@ export function parseMealPlanStatus(value: unknown): MealPlanStatus | null {
 
 export function statusLabel(status: MealPlanStatus) {
   return { planned: "Planned", logged: "Logged", partially_logged: "Partially Logged", skipped: "Skipped" }[status];
+}
+
+export function calculateMealPlanPlannedTotals(plan: MealPlanDay | null): MealPlanPlannedTotals {
+  return (plan?.items ?? []).reduce<MealPlanPlannedTotals>((totals, item) => {
+    if (item.status === "skipped" || !item.nutrition_snapshot.loggable) return totals;
+    const servings = Number.isFinite(item.servings) && item.servings > 0 ? item.servings : 1;
+    return {
+      calories: totals.calories + item.nutrition_snapshot.calories * servings,
+      carbs_g: totals.carbs_g + item.nutrition_snapshot.carbs_g * servings,
+      protein_g: totals.protein_g + item.nutrition_snapshot.protein_g * servings,
+      fat_g: totals.fat_g + item.nutrition_snapshot.fat_g * servings,
+    };
+  }, { calories: 0, carbs_g: 0, protein_g: 0, fat_g: 0 });
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
