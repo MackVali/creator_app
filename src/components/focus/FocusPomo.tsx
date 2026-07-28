@@ -100,10 +100,15 @@ import {
 import {
   expandFitnessWorkoutFocusSessionSets,
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+  FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY,
   FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
+  mergeFitnessWorkoutLogSetResults,
   readFitnessWorkoutFocusSessionPayload,
+  type FitnessWorkoutLogMetadata,
   type FitnessWorkoutFocusSessionPayload,
+  type FitnessWorkoutFocusSessionResultPayload,
 } from "@/lib/focus/fitnessWorkoutFocusSession";
+import { updateFitnessWorkoutDatabaseEntryInNote } from "@/lib/notesStorage";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -3860,6 +3865,64 @@ function readPendingFitnessWorkoutFocusSession(): {
   }
 }
 
+function readFitnessWorkoutCheckpointOutbox() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const rawPayload = window.localStorage.getItem(
+      FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY,
+    );
+    if (!rawPayload) return [];
+    const parsed = JSON.parse(rawPayload);
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is FitnessWorkoutFocusSessionResultPayload =>
+            item?.source === "fitness" &&
+            typeof item.sessionId === "string" &&
+            typeof item.entryId === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFitnessWorkoutCheckpointOutbox(
+  items: readonly FitnessWorkoutFocusSessionResultPayload[],
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (items.length === 0) {
+      window.localStorage.removeItem(FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY,
+      JSON.stringify(items),
+    );
+  } catch {
+    // The in-route result payload remains the immediate review fallback.
+  }
+}
+
+function queueFitnessWorkoutCheckpointRetry(
+  payload: FitnessWorkoutFocusSessionResultPayload,
+) {
+  const outbox = readFitnessWorkoutCheckpointOutbox();
+  const nextOutbox = [
+    ...outbox.filter((item) => item.sessionId !== payload.sessionId),
+    payload,
+  ];
+  writeFitnessWorkoutCheckpointOutbox(nextOutbox);
+}
+
+function getFitnessRecordMetadata(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 type SortableFocusQueueItemProps = {
   item: FocusPomoQueueItem;
   position: number;
@@ -5444,12 +5507,105 @@ export default function FocusPomo({
       currentItem.fitnessPlannedReps != null,
   );
 
+  async function persistFitnessWorkoutCheckpointPayload(
+    payload: FitnessWorkoutFocusSessionResultPayload,
+  ) {
+    if (!payload.noteId || !payload.databaseId || !payload.entryId || !payload.sessionId) {
+      queueFitnessWorkoutCheckpointRetry(payload);
+      return;
+    }
+
+    const result = await updateFitnessWorkoutDatabaseEntryInNote({
+      noteId: payload.noteId,
+      databaseId: payload.databaseId,
+      entryId: payload.entryId,
+      sessionId: payload.sessionId,
+      getNextEntry: (entry) => {
+        const metadata = getFitnessRecordMetadata(entry.values.metadata);
+        const log = getFitnessRecordMetadata(metadata.fitnessWorkoutLog);
+        if (log.version !== 1) return entry;
+
+        return {
+          ...entry,
+          updatedAt: payload.updatedAt,
+          values: {
+            ...entry.values,
+            metadata: {
+              ...metadata,
+              fitnessWorkoutLog: mergeFitnessWorkoutLogSetResults(
+                log as FitnessWorkoutLogMetadata,
+                payload.sets,
+                {
+                  status: "in_progress",
+                  updatedAt: payload.updatedAt,
+                  completedAt: null,
+                },
+              ),
+            },
+          },
+        };
+      },
+    });
+
+    if (!result.success) {
+      queueFitnessWorkoutCheckpointRetry(payload);
+    }
+  }
+
+  async function retryFitnessWorkoutCheckpointOutbox() {
+    const outbox = readFitnessWorkoutCheckpointOutbox();
+    if (outbox.length === 0) return;
+
+    const remaining: FitnessWorkoutFocusSessionResultPayload[] = [];
+    for (const payload of outbox) {
+      if (!payload.noteId || !payload.databaseId || !payload.entryId || !payload.sessionId) {
+        remaining.push(payload);
+        continue;
+      }
+      const result = await updateFitnessWorkoutDatabaseEntryInNote({
+        noteId: payload.noteId,
+        databaseId: payload.databaseId,
+        entryId: payload.entryId,
+        sessionId: payload.sessionId,
+        getNextEntry: (entry) => {
+          const metadata = getFitnessRecordMetadata(entry.values.metadata);
+          const log = getFitnessRecordMetadata(metadata.fitnessWorkoutLog);
+          if (log.version !== 1) return entry;
+          return {
+            ...entry,
+            updatedAt: payload.updatedAt,
+            values: {
+              ...entry.values,
+              metadata: {
+                ...metadata,
+                fitnessWorkoutLog: mergeFitnessWorkoutLogSetResults(
+                  log as FitnessWorkoutLogMetadata,
+                  payload.sets,
+                  {
+                    status: "in_progress",
+                    updatedAt: payload.updatedAt,
+                    completedAt: null,
+                  },
+                ),
+              },
+            },
+          };
+        },
+      });
+      if (!result.success) remaining.push(payload);
+    }
+
+    writeFitnessWorkoutCheckpointOutbox(remaining);
+  }
+
   function writeFitnessWorkoutSessionResult(
     resultQueue: FocusPomoQueueItem[] = queue,
     action?: {
       itemKey: string;
       status: "completed" | "dismissed";
       actualMs?: number;
+      completedAt?: string;
+      persist?: boolean;
     },
   ) {
     if (!activeFitnessWorkoutSession || typeof window === "undefined") return;
@@ -5497,24 +5653,46 @@ export default function FocusPomo({
         weight: item.fitnessWeight,
         weightUnit: item.fitnessWeightUnit,
         status,
+        completedAt:
+          status === "completed" || status === "dismissed"
+            ? action?.itemKey === itemKey
+              ? action.completedAt ?? new Date().toISOString()
+              : history?.completedAt ?? null
+            : null,
       }];
     });
+    const payload: FitnessWorkoutFocusSessionResultPayload = {
+      source: "fitness",
+      sessionId: activeFitnessWorkoutSession.sessionId,
+      entryId: activeFitnessWorkoutSession.entryId,
+      noteId: activeFitnessWorkoutSession.noteId,
+      databaseId: activeFitnessWorkoutSession.databaseId,
+      workoutName: activeFitnessWorkoutSession.workoutName,
+      sessionCreatedAt: activeFitnessWorkoutSession.createdAt,
+      startedAt: activeFitnessWorkoutSession.startedAt,
+      updatedAt: new Date().toISOString(),
+      sets,
+    };
 
     try {
       window.sessionStorage.setItem(
         FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
-        JSON.stringify({
-          source: "fitness",
-          workoutName: activeFitnessWorkoutSession.workoutName,
-          sessionCreatedAt: activeFitnessWorkoutSession.createdAt,
-          updatedAt: new Date().toISOString(),
-          sets,
-        }),
+        JSON.stringify(payload),
       );
     } catch {
       // The execution queue remains usable when temporary storage is unavailable.
     }
+
+    if (action?.persist) {
+      void retryFitnessWorkoutCheckpointOutbox().finally(() => {
+        void persistFitnessWorkoutCheckpointPayload(payload);
+      });
+    }
   }
+
+  useEffect(() => {
+    void retryFitnessWorkoutCheckpointOutbox();
+  }, []);
 
   function bumpCurrentFitnessWeight(offset: -1 | 1) {
     if (!currentItem || !currentFitnessHasAdjustableWeight) return;
@@ -6712,6 +6890,7 @@ export default function FocusPomo({
     void hapticPress();
     setIsRunning(false);
     writeFitnessWorkoutSessionResult();
+    void retryFitnessWorkoutCheckpointOutbox();
     onClose();
   };
 
@@ -7158,6 +7337,8 @@ export default function FocusPomo({
       itemKey,
       status: "dismissed",
       actualMs,
+      completedAt,
+      persist: true,
     });
 
     setHasRunStarted(true);
@@ -7223,6 +7404,8 @@ export default function FocusPomo({
       itemKey,
       status: "completed",
       actualMs,
+      completedAt,
+      persist: true,
     });
 
     setHasRunStarted(true);

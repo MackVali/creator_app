@@ -172,6 +172,9 @@ export function GlobalMyList({
   const [pinnedSourceRows, setPinnedSourceRows] = useState<
     MyListPinnedSourceRow[]
   >([]);
+  const [pinnedGoalRows, setPinnedGoalRows] = useState<MyListPinnedGoalRow[]>(
+    []
+  );
   const [monuments, setMonuments] = useState<MyListMonumentRow[]>([]);
   const [goalMonumentIdsById, setGoalMonumentIdsById] = useState<
     Record<string, string | null>
@@ -193,6 +196,7 @@ export function GlobalMyList({
     if (!ready || !user?.id) {
       setTasks([]);
       setPinnedSourceRows([]);
+      setPinnedGoalRows([]);
       setMonuments([]);
       setGoalMonumentIdsById({});
       setProjectGoalIdsById({});
@@ -214,7 +218,10 @@ export function GlobalMyList({
         projectGoalIdById: Map<string, string | null>;
         monumentById: Map<string, MyListMonumentRow>;
       }
-    ): Promise<MyListPinnedSourceRow[]> => {
+    ): Promise<{
+      topLevelRows: MyListPinnedSourceRow[];
+      pinnedGoalRows: MyListPinnedGoalRow[];
+    }> => {
       const pinnedIds = pinnedItems.reduce(
         (ids, item) => ({
           ...ids,
@@ -262,65 +269,134 @@ export function GlobalMyList({
             Boolean(entry[0] && entry[1])
           )
       );
-      const loadProjects = () => {
-        const query = supabase
-          .from("projects")
-          .select("id, name, priority, energy, stage, goal_id")
-          .eq("user_id", user.id);
-
-        return pinnedIds.GOAL.length > 0
-          ? query
-          : query.in("id", pinnedIds.PROJECT);
-      };
-      const [goalsResult, projectsResult, tasksResult, habitsResult] =
-        await Promise.all([
-          pinnedIds.GOAL.length > 0
-            ? supabase
-                .from("goals")
-                .select(
-                  "id, name, emoji, priority, energy, status, monument_id, roadmap_id, monument:monuments(id, title, emoji)"
-                )
-                .eq("user_id", user.id)
-                .in("id", pinnedIds.GOAL)
-            : Promise.resolve({ data: [], error: null }),
-          pinnedIds.PROJECT.length > 0 || pinnedIds.GOAL.length > 0
-            ? loadProjects()
-            : Promise.resolve({ data: [], error: null }),
-          pinnedIds.TASK.length > 0
-            ? supabase
-                .from("tasks")
-                .select(
-                  "id, name, priority, energy, stage, goal_id, project_id, skill_id, skill:skills(icon, monument_id)"
-                )
-                .eq("user_id", user.id)
-                .in("id", pinnedIds.TASK)
-            : Promise.resolve({ data: [], error: null }),
-          pinnedIds.HABIT.length > 0
-            ? supabase
-                .from("habits")
-                .select(
-                  "id, name, energy, habit_type, goal_id, skill_id, skill:skills(icon, monument_id)"
-                )
-                .eq("user_id", user.id)
-                .in("id", pinnedIds.HABIT)
-            : Promise.resolve({ data: [], error: null }),
-        ]);
+      const projectSelect = "id, name, priority, energy, stage, goal_id";
+      const taskSelect =
+        "id, name, priority, energy, stage, goal_id, project_id, skill_id, skill:skills(icon, monument_id)";
+      const habitSelect =
+        "id, name, energy, habit_type, goal_id, skill_id, skill:skills(icon, monument_id)";
+      const emptyResult = { data: [], error: null };
+      const [
+        goalsResult,
+        independentProjectsResult,
+        goalProjectsResult,
+        independentTasksResult,
+        goalTasksResult,
+        independentHabitsResult,
+        goalHabitsResult,
+      ] = await Promise.all([
+        pinnedIds.GOAL.length > 0
+          ? supabase
+              .from("goals")
+              .select(
+                "id, name, emoji, priority, energy, status, monument_id, roadmap_id, monument:monuments(id, title, emoji)"
+              )
+              .eq("user_id", user.id)
+              .in("id", pinnedIds.GOAL)
+          : Promise.resolve(emptyResult),
+        pinnedIds.PROJECT.length > 0
+          ? supabase
+              .from("projects")
+              .select(projectSelect)
+              .eq("user_id", user.id)
+              .in("id", pinnedIds.PROJECT)
+          : Promise.resolve(emptyResult),
+        pinnedIds.GOAL.length > 0
+          ? supabase
+              .from("projects")
+              .select(projectSelect)
+              .eq("user_id", user.id)
+              .in("goal_id", pinnedIds.GOAL)
+          : Promise.resolve(emptyResult),
+        pinnedIds.TASK.length > 0
+          ? supabase
+              .from("tasks")
+              .select(taskSelect)
+              .eq("user_id", user.id)
+              .in("id", pinnedIds.TASK)
+          : Promise.resolve(emptyResult),
+        pinnedIds.GOAL.length > 0
+          ? supabase
+              .from("tasks")
+              .select(taskSelect)
+              .eq("user_id", user.id)
+              .in("goal_id", pinnedIds.GOAL)
+          : Promise.resolve(emptyResult),
+        pinnedIds.HABIT.length > 0
+          ? supabase
+              .from("habits")
+              .select(habitSelect)
+              .eq("user_id", user.id)
+              .in("id", pinnedIds.HABIT)
+          : Promise.resolve(emptyResult),
+        pinnedIds.GOAL.length > 0
+          ? supabase
+              .from("habits")
+              .select(habitSelect)
+              .eq("user_id", user.id)
+              .in("goal_id", pinnedIds.GOAL)
+          : Promise.resolve(emptyResult),
+      ]);
 
       const firstError =
         goalsResult.error ||
-        projectsResult.error ||
-        tasksResult.error ||
-        habitsResult.error;
+        independentProjectsResult.error ||
+        goalProjectsResult.error ||
+        independentTasksResult.error ||
+        goalTasksResult.error ||
+        independentHabitsResult.error ||
+        goalHabitsResult.error;
       if (firstError) throw firstError;
 
-      const projectRows = (projectsResult.data ?? []) as {
+      type ProjectSourceRecord = {
         id: string;
         name: string | null;
         priority: string | null;
         energy: string | null;
         stage: string | null;
         goal_id?: string | null;
-      }[];
+      };
+      type TaskSourceRecord = {
+        id: string;
+        name: string | null;
+        priority: string | null;
+        energy: string | null;
+        stage: string | null;
+        goal_id?: string | null;
+        project_id?: string | null;
+        skill_id?: string | null;
+        skill?:
+          | { icon?: string | null; monument_id?: string | null }
+          | { icon?: string | null; monument_id?: string | null }[]
+          | null;
+      };
+      type HabitSourceRecord = {
+        id: string;
+        name: string | null;
+        energy: string | null;
+        habit_type: string | null;
+        goal_id?: string | null;
+        skill_id?: string | null;
+        skill?:
+          | { icon?: string | null; monument_id?: string | null }
+          | { icon?: string | null; monument_id?: string | null }[]
+          | null;
+      };
+      const independentProjectRows =
+        (independentProjectsResult.data ?? []) as ProjectSourceRecord[];
+      const goalProjectRows =
+        (goalProjectsResult.data ?? []) as ProjectSourceRecord[];
+      const independentTaskRows =
+        (independentTasksResult.data ?? []) as TaskSourceRecord[];
+      const goalTaskRows = (goalTasksResult.data ?? []) as TaskSourceRecord[];
+      const independentHabitRows =
+        (independentHabitsResult.data ?? []) as HabitSourceRecord[];
+      const goalHabitRows =
+        (goalHabitsResult.data ?? []) as HabitSourceRecord[];
+      const projectRowsById = new Map<string, ProjectSourceRecord>();
+      [...independentProjectRows, ...goalProjectRows].forEach((project) => {
+        if (project.id) projectRowsById.set(project.id, project);
+      });
+      const projectRows = Array.from(projectRowsById.values());
       const projectIds = projectRows
         .map((project) => project.id)
         .filter((projectId): projectId is string => Boolean(projectId));
@@ -372,8 +448,109 @@ export function GlobalMyList({
         return goalId ? (hierarchy.goalMonumentIdById.get(goalId) ?? null) : null;
       };
 
-      return [
-        ...((goalsResult.data ?? []) as {
+      const buildProjectRow = (
+        project: ProjectSourceRecord,
+        options?: {
+          isPinned?: boolean;
+          rowKind?: MyListPinnedSourceRow["rowKind"];
+        }
+      ): MyListPinnedSourceRow => {
+        const monumentId = resolveProjectMonumentId(project.id, project.goal_id);
+        return {
+          id: project.id,
+          sourceType: "PROJECT" as const,
+          rowKind: options?.rowKind,
+          title: project.name ?? "Untitled Project",
+          icon: projectIconById.get(project.id) ?? null,
+          skillIcon: projectIconById.get(project.id) ?? null,
+          monumentId,
+          ...resolveMonumentMetadata(monumentId),
+          priority: project.priority,
+          priorityId: metadataByKey.get(`PROJECT:${project.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`PROJECT:${project.id}`)?.dayBucketId ?? null,
+          energy: project.energy,
+          stage: project.stage,
+          goalId: project.goal_id ?? null,
+          isPinned: options?.isPinned ?? pinnedIds.PROJECT.includes(project.id),
+          completedAt: completionByKey.get(`PROJECT:${project.id}`) ?? null,
+        };
+      };
+
+      const buildTaskRow = (
+        task: TaskSourceRecord,
+        options?: {
+          isPinned?: boolean;
+          rowKind?: MyListPinnedSourceRow["rowKind"];
+        }
+      ): MyListPinnedSourceRow => {
+        const skill = Array.isArray(task.skill) ? task.skill[0] : task.skill;
+        const goalMonumentId = task.goal_id
+          ? hierarchy.goalMonumentIdById.get(task.goal_id) ?? null
+          : null;
+        const projectMonumentId = resolveProjectMonumentId(task.project_id);
+        const skillMonumentId = readCleanId(skill?.monument_id);
+        const monumentId = goalMonumentId ?? projectMonumentId ?? skillMonumentId;
+        return {
+          id: task.id,
+          sourceType: "TASK" as const,
+          rowKind: options?.rowKind,
+          title: task.name ?? "Untitled Task",
+          icon:
+            skill?.icon ??
+            (task.skill_id ? skillIconById.get(task.skill_id) ?? null : null),
+          skillId: task.skill_id ?? null,
+          skillMonumentId,
+          goalId: task.goal_id ?? null,
+          projectId: task.project_id ?? null,
+          monumentId,
+          ...resolveMonumentMetadata(monumentId),
+          priority: task.priority,
+          priorityId: metadataByKey.get(`TASK:${task.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`TASK:${task.id}`)?.dayBucketId ?? null,
+          energy: task.energy,
+          stage: task.stage,
+          isPinned: options?.isPinned ?? pinnedIds.TASK.includes(task.id),
+          completedAt: completionByKey.get(`TASK:${task.id}`) ?? null,
+        };
+      };
+
+      const buildHabitRow = (
+        habit: HabitSourceRecord,
+        options?: {
+          isPinned?: boolean;
+          rowKind?: MyListPinnedSourceRow["rowKind"];
+        }
+      ): MyListPinnedSourceRow => {
+        const skill = Array.isArray(habit.skill) ? habit.skill[0] : habit.skill;
+        const goalMonumentId = habit.goal_id
+          ? hierarchy.goalMonumentIdById.get(habit.goal_id) ?? null
+          : null;
+        const skillMonumentId = readCleanId(skill?.monument_id);
+        const monumentId = goalMonumentId ?? skillMonumentId;
+        return {
+          id: habit.id,
+          sourceType: "HABIT" as const,
+          rowKind: options?.rowKind,
+          title: habit.name ?? "Untitled Habit",
+          icon:
+            skill?.icon ??
+            (habit.skill_id ? skillIconById.get(habit.skill_id) ?? null : null),
+          skillId: habit.skill_id ?? null,
+          skillMonumentId,
+          goalId: habit.goal_id ?? null,
+          monumentId,
+          ...resolveMonumentMetadata(monumentId),
+          priority: "MEDIUM",
+          priorityId: metadataByKey.get(`HABIT:${habit.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`HABIT:${habit.id}`)?.dayBucketId ?? null,
+          energy: habit.energy,
+          stage: habit.habit_type,
+          isPinned: options?.isPinned ?? pinnedIds.HABIT.includes(habit.id),
+          completedAt: completionByKey.get(`HABIT:${habit.id}`) ?? null,
+        };
+      };
+
+      const goalRows = ((goalsResult.data ?? []) as {
           id: string;
           name: string | null;
           emoji?: string | null;
@@ -386,7 +563,7 @@ export function GlobalMyList({
             | { id?: string | null; title?: string | null; emoji?: string | null }
             | { id?: string | null; title?: string | null; emoji?: string | null }[]
             | null;
-        }[]).map((goal) => {
+        }[]).map((goal): MyListPinnedGoalRow => {
           const resolvedMonumentId =
             hierarchy.goalMonumentIdById.get(goal.id) ??
             readCleanId(goal.monument_id);
@@ -407,117 +584,48 @@ export function GlobalMyList({
             energy: goal.energy,
             stage: goal.status,
             completedAt: completionByKey.get(`GOAL:${goal.id}`) ?? null,
+            projects: goalProjectRows
+              .filter((project) => project.goal_id === goal.id)
+              .map((project) => buildProjectRow(project)),
+            tasks: goalTaskRows
+              .filter((task) => task.goal_id === goal.id)
+              .map((task) => buildTaskRow(task)),
+            habits: goalHabitRows
+              .filter((habit) => habit.goal_id === goal.id)
+              .map((habit) => buildHabitRow(habit)),
           };
-        }),
-        ...projectRows.map((project) => {
-          const monumentId = resolveProjectMonumentId(project.id, project.goal_id);
-          return {
-            id: project.id,
-            sourceType: "PROJECT" as const,
-            title: project.name ?? "Untitled Project",
-            icon: projectIconById.get(project.id) ?? null,
-            skillIcon: projectIconById.get(project.id) ?? null,
-            monumentId,
-            ...resolveMonumentMetadata(monumentId),
-            priority: project.priority,
-            priorityId:
-              metadataByKey.get(`PROJECT:${project.id}`)?.priorityId ?? null,
-            dayBucketId:
-              metadataByKey.get(`PROJECT:${project.id}`)?.dayBucketId ?? null,
-            energy: project.energy,
-            stage: project.stage,
-            goalId: project.goal_id ?? null,
-            isPinned: pinnedIds.PROJECT.includes(project.id),
-            completedAt: completionByKey.get(`PROJECT:${project.id}`) ?? null,
-          };
-        }),
-        ...((tasksResult.data ?? []) as {
-          id: string;
-          name: string | null;
-          priority: string | null;
-          energy: string | null;
-          stage: string | null;
-          goal_id?: string | null;
-          project_id?: string | null;
-          skill_id?: string | null;
-          skill?:
-            | { icon?: string | null; monument_id?: string | null }
-            | { icon?: string | null; monument_id?: string | null }[]
-            | null;
-        }[]).map((task) => {
-          const skill = Array.isArray(task.skill) ? task.skill[0] : task.skill;
-          const goalMonumentId = task.goal_id
-            ? hierarchy.goalMonumentIdById.get(task.goal_id) ?? null
-            : null;
-          const projectMonumentId = resolveProjectMonumentId(task.project_id);
-          const skillMonumentId = readCleanId(skill?.monument_id);
-          const monumentId = goalMonumentId ?? projectMonumentId ?? skillMonumentId;
-          return {
-            id: task.id,
-            sourceType: "TASK" as const,
-            title: task.name ?? "Untitled Task",
-            icon:
-              skill?.icon ??
-              (task.skill_id ? skillIconById.get(task.skill_id) ?? null : null),
-            skillId: task.skill_id ?? null,
-            skillMonumentId,
-            goalId: task.goal_id ?? null,
-            projectId: task.project_id ?? null,
-            monumentId,
-            ...resolveMonumentMetadata(monumentId),
-            priority: task.priority,
-            priorityId: metadataByKey.get(`TASK:${task.id}`)?.priorityId ?? null,
-            dayBucketId: metadataByKey.get(`TASK:${task.id}`)?.dayBucketId ?? null,
-            energy: task.energy,
-            stage: task.stage,
-            completedAt: completionByKey.get(`TASK:${task.id}`) ?? null,
-          };
-        }),
-        ...((habitsResult.data ?? []) as {
-          id: string;
-          name: string | null;
-          energy: string | null;
-          habit_type: string | null;
-          goal_id?: string | null;
-          skill_id?: string | null;
-          skill?:
-            | { icon?: string | null; monument_id?: string | null }
-            | { icon?: string | null; monument_id?: string | null }[]
-            | null;
-        }[]).map((habit) => {
-          const skill = Array.isArray(habit.skill) ? habit.skill[0] : habit.skill;
-          const goalMonumentId = habit.goal_id
-            ? hierarchy.goalMonumentIdById.get(habit.goal_id) ?? null
-            : null;
-          const skillMonumentId = readCleanId(skill?.monument_id);
-          const monumentId = goalMonumentId ?? skillMonumentId;
-          return {
-            id: habit.id,
-            sourceType: "HABIT" as const,
-            title: habit.name ?? "Untitled Habit",
-            icon:
-              skill?.icon ??
-              (habit.skill_id
-                ? skillIconById.get(habit.skill_id) ?? null
-                : null),
-            skillId: habit.skill_id ?? null,
-            skillMonumentId,
-            goalId: habit.goal_id ?? null,
-            monumentId,
-            ...resolveMonumentMetadata(monumentId),
-            priority: "MEDIUM",
-            priorityId: metadataByKey.get(`HABIT:${habit.id}`)?.priorityId ?? null,
-            dayBucketId: metadataByKey.get(`HABIT:${habit.id}`)?.dayBucketId ?? null,
-            energy: habit.energy,
-            stage: habit.habit_type,
-            completedAt: completionByKey.get(`HABIT:${habit.id}`) ?? null,
-          };
-        }),
+        }).sort(
+          (left, right) =>
+            (orderByKey.get(`${left.sourceType}:${left.id}`) ?? 0) -
+            (orderByKey.get(`${right.sourceType}:${right.id}`) ?? 0)
+        );
+
+      const topLevelRows = [
+        ...independentProjectRows.map((project) =>
+          buildProjectRow(project, {
+            isPinned: true,
+            rowKind: "PINNED_SOURCE",
+          })
+        ),
+        ...independentTaskRows.map((task) =>
+          buildTaskRow(task, {
+            isPinned: true,
+            rowKind: "PINNED_SOURCE",
+          })
+        ),
+        ...independentHabitRows.map((habit) =>
+          buildHabitRow(habit, {
+            isPinned: true,
+            rowKind: "PINNED_SOURCE",
+          })
+        ),
       ].sort(
         (left, right) =>
           (orderByKey.get(`${left.sourceType}:${left.id}`) ?? 0) -
           (orderByKey.get(`${right.sourceType}:${right.id}`) ?? 0)
       );
+
+      return { topLevelRows, pinnedGoalRows: goalRows };
     };
 
     const loadMyListData = async () => {
@@ -676,18 +784,19 @@ export function GlobalMyList({
         ),
         { notify: false }
       );
-      const pinnedRows = await loadPinnedSourceRows(skillRows, pinnedItems, {
+      const pinnedRowsResult = await loadPinnedSourceRows(skillRows, pinnedItems, {
         goalMonumentIdById,
         projectGoalIdById,
         monumentById,
       }).catch((error) => {
         console.error("Failed to load My List pinned source rows", error);
-        return [];
+        return { topLevelRows: [], pinnedGoalRows: [] };
       });
       if (!active) return;
 
       setTasks(taskRows);
-      setPinnedSourceRows(pinnedRows);
+      setPinnedSourceRows(pinnedRowsResult.topLevelRows);
+      setPinnedGoalRows(pinnedRowsResult.pinnedGoalRows);
       setMonuments(loadedMonuments);
       setGoalMonumentIdsById(Object.fromEntries(goalMonumentIdById));
       setProjectGoalIdsById(Object.fromEntries(projectGoalIdById));
@@ -710,6 +819,7 @@ export function GlobalMyList({
       if (!active) return;
       setTasks([]);
       setPinnedSourceRows([]);
+      setPinnedGoalRows([]);
       setSkills([]);
       setSkillCategories([]);
       setScheduledTaskIds(new Set());
@@ -719,12 +829,14 @@ export function GlobalMyList({
       void loadMyListData().catch(() => {
         if (!active) return;
         setPinnedSourceRows([]);
+        setPinnedGoalRows([]);
       });
     };
     const handleCreatorEntitySaved = () => {
       void loadMyListData().catch(() => {
         if (!active) return;
         setPinnedSourceRows([]);
+        setPinnedGoalRows([]);
       });
     };
     window.addEventListener(
@@ -781,23 +893,6 @@ export function GlobalMyList({
       }),
     [pinnedSourceRows, scheduledTaskIds],
   );
-  const pinnedGoalRows = useMemo<MyListPinnedGoalRow[]>(
-    () => {
-      const goalRows = visiblePinnedSourceRows.filter(
-        (row): row is MyListPinnedSourceRow & { sourceType: "GOAL" } =>
-          row.sourceType === "GOAL"
-      );
-      const projects = pinnedSourceRows.filter(
-        (row) => row.sourceType === "PROJECT" && row.goalId
-      );
-
-      return goalRows.map((goal) => ({
-        ...goal,
-        projects: projects.filter((project) => project.goalId === goal.id),
-      }));
-    },
-    [pinnedSourceRows, visiblePinnedSourceRows]
-  );
   const visibleTodoPinnedSourceRows = useMemo(
     () =>
       visiblePinnedSourceRows.filter(
@@ -820,6 +915,30 @@ export function GlobalMyList({
             currentRow.sourceType !== row.sourceType || currentRow.id !== row.id
         )
       );
+      setPinnedGoalRows((currentRows) => {
+        if (row.sourceType === "GOAL") {
+          return currentRows.filter((currentRow) => currentRow.id !== row.id);
+        }
+
+        return currentRows.map((goal) => ({
+          ...goal,
+          projects: goal.projects.map((project) =>
+            project.sourceType === row.sourceType && project.id === row.id
+              ? { ...project, isPinned: false, completedAt: null }
+              : project
+          ),
+          tasks: goal.tasks?.map((task) =>
+            task.sourceType === row.sourceType && task.id === row.id
+              ? { ...task, isPinned: false, completedAt: null }
+              : task
+          ),
+          habits: goal.habits?.map((habit) =>
+            habit.sourceType === row.sourceType && habit.id === row.id
+              ? { ...habit, isPinned: false, completedAt: null }
+              : habit
+          ),
+        }));
+      });
     },
     [user?.id]
   );
@@ -834,6 +953,26 @@ export function GlobalMyList({
             ? { ...currentRow, completedAt }
             : currentRow
         )
+      );
+      setPinnedGoalRows((currentRows) =>
+        currentRows.map((goal) => ({
+          ...goal,
+          projects: goal.projects.map((project) =>
+            project.sourceType === row.sourceType && project.id === row.id
+              ? { ...project, completedAt }
+              : project
+          ),
+          tasks: goal.tasks?.map((task) =>
+            task.sourceType === row.sourceType && task.id === row.id
+              ? { ...task, completedAt }
+              : task
+          ),
+          habits: goal.habits?.map((habit) =>
+            habit.sourceType === row.sourceType && habit.id === row.id
+              ? { ...habit, completedAt }
+              : habit
+          ),
+        }))
       );
 
       void updatePinnedSourceMyListItemCompletion({
@@ -865,6 +1004,26 @@ export function GlobalMyList({
             ? { ...currentRow, ...updates }
             : currentRow
         )
+      );
+      setPinnedGoalRows((currentRows) =>
+        currentRows.map((goal) => ({
+          ...goal,
+          projects: goal.projects.map((project) =>
+            project.sourceType === row.sourceType && project.id === row.id
+              ? { ...project, ...updates }
+              : project
+          ),
+          tasks: goal.tasks?.map((task) =>
+            task.sourceType === row.sourceType && task.id === row.id
+              ? { ...task, ...updates }
+              : task
+          ),
+          habits: goal.habits?.map((habit) =>
+            habit.sourceType === row.sourceType && habit.id === row.id
+              ? { ...habit, ...updates }
+              : habit
+          ),
+        }))
       );
 
       void updatePinnedSourceMyListItemMetadata({

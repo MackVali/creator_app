@@ -117,6 +117,19 @@ function validateRate(goalType: GoalType, rate: number) {
   if ((goalType === "lose" || goalType === "gain") && (rate <= 0 || rate > max)) throw new NutritionTargetError(`${goalType === "lose" ? "Loss" : "Gain"} rate must be above 0% and no more than ${max.toFixed(2)}% per week.`);
 }
 
+function validateGoalWeight(goalType: GoalType, currentWeightKg: number, goalWeightKg?: number) {
+  if (goalType !== "lose" && goalType !== "gain") return null;
+  if (goalWeightKg === undefined) throw new NutritionTargetError("Goal weight is required for Lose fat and Build weight targets.");
+  const minimumMeaningfulChangeKg = 0.1;
+  if (goalType === "lose" && goalWeightKg >= currentWeightKg - minimumMeaningfulChangeKg) {
+    throw new NutritionTargetError("Goal weight must be below your current weight for a Lose fat target.");
+  }
+  if (goalType === "gain" && goalWeightKg <= currentWeightKg + minimumMeaningfulChangeKg) {
+    throw new NutritionTargetError("Goal weight must be above your current weight for a Build weight target.");
+  }
+  return goalWeightKg;
+}
+
 function macroCalories(protein: number, carbs: number, fat: number) {
   return protein * 4 + carbs * 4 + fat * 9;
 }
@@ -173,6 +186,7 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
   if (input.formulaInput === "manual" && input.manualCalorieTargetKcal === undefined) throw new NutritionTargetError("Manual calories are required when Use manual calories is selected.");
   const rate = input.goalRatePctPerWeek ?? defaultRate(input.goalType);
   validateRate(input.goalType, rate);
+  const goalWeightKg = validateGoalWeight(input.goalType, input.weightKg, input.goalWeightKg);
   const activity = ACTIVITY_LEVELS[input.activityLevel];
   const rawResting = input.formulaInput === "manual" ? null : mifflinStJeor(input.weightKg, input.heightCm, input.ageYears, input.formulaInput);
   const rawMaintenance = input.manualMaintenanceKcal ?? (rawResting === null ? input.manualCalorieTargetKcal! : rawResting * activity.coefficient);
@@ -204,7 +218,7 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
     preferredUnits: input.preferredUnits, activityLevel: input.activityLevel, activityLabel: activity.label, activityCoefficient: activity.coefficient,
     rawRestingEstimateKcal: rawResting, restingEstimateDisplayKcal: rawResting === null ? null : Math.round(rawResting),
     rawEstimatedMaintenanceKcal: rawMaintenance, estimatedMaintenanceKcal: roundToNearestTen(rawMaintenance),
-    goalType: input.goalType, goalRatePctPerWeek: rate, goalWeightKg: input.goalWeightKg ?? null,
+    goalType: input.goalType, goalRatePctPerWeek: rate, goalWeightKg,
     provisionalCalorieDeltaKcal: provisionalDelta, acceptedCalorieDeltaKcal: acceptedDelta, calorieTargetKcal: calorieTarget,
     macroMode: input.macroMode, proteinStrategy: macros.proteinStrategy, proteinTargetG: macros.protein,
     carbStrategy: macros.carbStrategy, carbTargetG: macros.carbs, fatStrategy: macros.fatStrategy, fatTargetG: macros.fat,
@@ -225,7 +239,7 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
       activityCoefficient: activity.coefficient,
       goalType: input.goalType,
       goalRatePctPerWeek: rate,
-      goalWeightKg: input.goalWeightKg ?? null,
+      goalWeightKg,
       maintenanceSource: input.manualMaintenanceKcal === undefined ? "activity_calculation" : "manual_estimate",
       manualMaintenanceKcal: input.manualMaintenanceKcal ?? null,
       manualCalorieTargetKcal: input.manualCalorieTargetKcal ?? null,

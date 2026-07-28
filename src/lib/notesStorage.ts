@@ -9,6 +9,11 @@ import type {
   NoteDatabaseEntry,
 } from "@/components/notes/NoteSlashTextarea";
 import {
+  findFitnessWorkoutEntryIndex,
+  upsertFitnessWorkoutDatabaseEntry,
+  type FitnessWorkoutDatabaseEntry,
+} from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
   DEFAULT_MEMO_DATABASE_TARGETS,
   getDefaultMemoDatabaseTarget,
   isLegacyHydrationDatabase,
@@ -42,6 +47,27 @@ type CreateMemoDatabaseEntryResult = {
   success: boolean;
   error: string | null;
   noteId: string | null;
+};
+
+type UpsertFitnessWorkoutDatabaseEntryInput = {
+  noteId: string;
+  databaseId: string;
+  entry: NoteDatabaseEntry;
+  sessionId?: string | null;
+};
+
+type UpsertFitnessWorkoutDatabaseEntryResult = {
+  success: boolean;
+  error: string | null;
+  entry: NoteDatabaseEntry | null;
+};
+
+type UpdateFitnessWorkoutDatabaseEntryInput = {
+  noteId: string;
+  databaseId: string;
+  entryId?: string | null;
+  sessionId?: string | null;
+  getNextEntry: (entry: NoteDatabaseEntry) => NoteDatabaseEntry;
 };
 
 export type NoteWithChildren = {
@@ -662,6 +688,142 @@ export async function createMemoDatabaseEntryForHabit(
   }
 
   return { success: true, error: null, noteId };
+}
+
+export async function upsertFitnessWorkoutDatabaseEntryInNote({
+  noteId,
+  databaseId,
+  entry,
+  sessionId,
+}: UpsertFitnessWorkoutDatabaseEntryInput): Promise<UpsertFitnessWorkoutDatabaseEntryResult> {
+  return updateFitnessWorkoutDatabaseEntryInNote({
+    noteId,
+    databaseId,
+    entryId: entry.id,
+    sessionId,
+    getNextEntry: (currentEntry) => ({
+      ...entry,
+      createdAt: currentEntry.createdAt || entry.createdAt,
+    }),
+  }, entry);
+}
+
+export async function updateFitnessWorkoutDatabaseEntryInNote(
+  input: UpdateFitnessWorkoutDatabaseEntryInput,
+  fallbackEntry?: NoteDatabaseEntry,
+): Promise<UpsertFitnessWorkoutDatabaseEntryResult> {
+  const { noteId, databaseId, entryId, sessionId, getNextEntry } = input;
+  if (!noteId || !databaseId) {
+    return {
+      success: false,
+      error: "Missing Fitness note database context.",
+      entry: null,
+    };
+  }
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { success: false, error: "Supabase client unavailable.", entry: null };
+  }
+
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return { success: false, error: "You must be signed in.", entry: null };
+  }
+
+  const { data: note, error: readError } = await supabase
+    .from(NOTES_TABLE)
+    .select("id,title,content,metadata")
+    .eq("user_id", userId)
+    .eq("id", noteId)
+    .maybeSingle();
+
+  if (readError || !note) {
+    console.error("Failed to load Fitness database note", {
+      error: readError,
+      noteId,
+      databaseId,
+      entryId,
+      sessionId,
+    });
+    return { success: false, error: "Unable to load the Fitness database note.", entry: null };
+  }
+
+  const metadata = isRecord(note.metadata) ? { ...note.metadata } : {};
+  const currentDatabaseEntries = isRecord(metadata.databaseEntries)
+    ? ({ ...metadata.databaseEntries } as NoteDatabaseEntries)
+    : {};
+  const currentEntries = currentDatabaseEntries[databaseId] ?? [];
+  const matchingIndex = findFitnessWorkoutEntryIndex(
+    currentEntries as FitnessWorkoutDatabaseEntry[],
+    { entryId, sessionId },
+  );
+
+  if (matchingIndex < 0 && !fallbackEntry) {
+    return {
+      success: false,
+      error: "Unable to find the in-progress workout entry.",
+      entry: null,
+    };
+  }
+
+  const baseEntry = matchingIndex >= 0 ? currentEntries[matchingIndex] : fallbackEntry;
+  if (!baseEntry) {
+    return {
+      success: false,
+      error: "Unable to find the in-progress workout entry.",
+      entry: null,
+    };
+  }
+
+  const nextEntry = getNextEntry(baseEntry);
+  const nextDatabaseEntries = upsertFitnessWorkoutDatabaseEntry(
+    currentDatabaseEntries as Record<string, FitnessWorkoutDatabaseEntry[]>,
+    databaseId,
+    nextEntry,
+  ) as NoteDatabaseEntries;
+  const nextMetadata = {
+    ...metadata,
+    databaseEntries: nextDatabaseEntries,
+  };
+  const now = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from(NOTES_TABLE)
+    .update({
+      title: note.title ?? "Untitled",
+      content: note.content ?? "",
+      metadata: nextMetadata,
+      updated_at: now,
+    } as never)
+    .eq("user_id", userId)
+    .eq("id", noteId);
+
+  if (updateError) {
+    console.error("Failed to update Fitness workout database entry", {
+      error: updateError,
+      noteId,
+      databaseId,
+      entryId,
+      sessionId,
+    });
+    return {
+      success: false,
+      error: "Unable to save the Fitness workout entry right now.",
+      entry: null,
+    };
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+    window.dispatchEvent(
+      new CustomEvent("creator:skill-notes-changed", {
+        detail: { noteId },
+      }),
+    );
+  }
+
+  return { success: true, error: null, entry: nextEntry };
 }
 
 function sortNotesForHierarchy(notes: Note[]): Note[] {

@@ -56,6 +56,13 @@ import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
+import { recordMatrixScheduledHabitCompletion } from "@/lib/schedule/matrixScheduledHabitCompletion";
+import {
+  CREATOR_NUTRITION_MEAL_SAVED_EVENT,
+  CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT,
+  dispatchOpenNutritionLogEvent,
+  type CreatorNutritionMealSavedDetail,
+} from "@/lib/nutrition/logEvents";
 import {
   addDaysInTimeZone,
   formatDateKeyInTimeZone,
@@ -75,6 +82,15 @@ import {
   type CreatorXpBurstSourceOrigin,
 } from "@/lib/effects/creatorXpBurstBus";
 import { cn } from "@/lib/utils";
+import {
+  buildMatrixInferredMealEvents,
+  buildMatrixInferredMealNutritionLogContext,
+  claimMatrixInferredMealLogOpen,
+  releaseMatrixInferredMealLogOpen,
+  type MatrixInferredMealEventData,
+  type MatrixMealTimeBlockWindow,
+  type MatrixNutritionMealCompletionRow,
+} from "./matrixInferredMealEvents";
 import { compareMatrixTimeBlockStarts } from "./matrixTimeBlockOrder";
 
 type ScheduleInstance =
@@ -165,6 +181,7 @@ type MatrixEvent = {
   goal: Goal | null;
   habit: MatrixHabit | null;
   routine: MatrixRoutine | null;
+  inferredMeal: MatrixInferredMealEventData | null;
 };
 
 type MatrixHabit = HabitRow & {
@@ -566,6 +583,7 @@ function findMatrixEventInState(
             goal: null,
             habit: routineHabit.sourceHabit,
             routine: null,
+            inferredMeal: null,
           };
         }
       }
@@ -1458,6 +1476,7 @@ function buildMatrixEvents({
         goal: null,
         habit: null,
         routine: null,
+        inferredMeal: null,
       };
       return [event];
     }
@@ -1484,6 +1503,7 @@ function buildMatrixEvents({
         goal: projectGoal,
         habit: null,
         routine: null,
+        inferredMeal: null,
       };
       return [event];
     }
@@ -1523,8 +1543,75 @@ function buildMatrixEvents({
           }
         : null,
       routine: null,
+      inferredMeal: null,
     };
     return [event];
+  });
+}
+
+function buildMatrixInferredMealMatrixEvents({
+  inferredMeals,
+  userId,
+}: {
+  inferredMeals: MatrixInferredMealEventData[];
+  userId: string;
+}): MatrixEvent[] {
+  const nowIso = new Date().toISOString();
+
+  return inferredMeals.map((inferredMeal) => {
+    const instance: ScheduleInstance = {
+      id: inferredMeal.syntheticEventId,
+      user_id: userId,
+      source_id: inferredMeal.syntheticEventId,
+      source_type: "EVENT",
+      start_utc: inferredMeal.startUtc,
+      end_utc: inferredMeal.endUtc,
+      duration_min: inferredMeal.durationMinutes,
+      status: inferredMeal.completed ? "completed" : "scheduled",
+      weight_snapshot: 0,
+      energy_resolved: "NO",
+      event_name: inferredMeal.title,
+      time_block_id: inferredMeal.timeBlockId,
+      day_type_time_block_id: inferredMeal.dayTypeTimeBlockId,
+      window_id: inferredMeal.windowId,
+      overlay_window_id: null,
+      practice_context_monument_id: null,
+      metadata: {
+        matrixInferredMeal: {
+          source: "matrix-inferred-meal",
+          syntheticEventId: inferredMeal.syntheticEventId,
+          dateKey: inferredMeal.dateKey,
+          timeBlockId: inferredMeal.timeBlockId,
+          dayTypeTimeBlockId: inferredMeal.dayTypeTimeBlockId,
+          startUtc: inferredMeal.startUtc,
+          endUtc: inferredMeal.endUtc,
+          startLocal: inferredMeal.startLocal,
+          endLocal: inferredMeal.endLocal,
+        },
+      },
+      completed_at: inferredMeal.completedAt,
+      canceled_reason: null,
+      locked: true,
+      missed_reason: null,
+      notes: null,
+      placement_source: "manual",
+      project_name: null,
+      scheduled_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    return {
+      instance,
+      title: inferredMeal.title,
+      monumentId: null,
+      skillIds: [],
+      skillResolverSource: null,
+      glyph: "🍽️",
+      goal: null,
+      habit: null,
+      routine: null,
+      inferredMeal,
+    };
   });
 }
 
@@ -1658,6 +1745,7 @@ function buildMatrixScheduledEvents({
       goal: null,
       habit: null,
       routine: routineItem,
+      inferredMeal: null,
     });
   }
 
@@ -5053,6 +5141,10 @@ export function MatrixContent({
   const matrixStateRef = useRef<MatrixState>(initialState);
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
   const pendingScheduledCompletionIdsRef = useRef<Set<string>>(new Set());
+  const pendingInferredMealLogIdsRef = useRef<Set<string>>(new Set());
+  const pendingInferredMealReleaseTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
   const matrixReorderHoldTimeoutsRef = useRef<
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
@@ -5437,11 +5529,16 @@ export function MatrixContent({
 
   useEffect(() => {
     const holdTimeouts = matrixReorderHoldTimeoutsRef.current;
+    const inferredMealReleaseTimers = pendingInferredMealReleaseTimersRef.current;
     return () => {
       for (const timer of holdTimeouts.values()) {
         clearTimeout(timer);
       }
       holdTimeouts.clear();
+      for (const timer of inferredMealReleaseTimers.values()) {
+        clearTimeout(timer);
+      }
+      inferredMealReleaseTimers.clear();
     };
   }, []);
 
@@ -5758,6 +5855,13 @@ export function MatrixContent({
         }
         const completedAt =
           persistedStatus === "completed" ? new Date().toISOString() : null;
+        const previousStatus =
+          eventBeforeCompletion?.instance.status === "completed" ||
+          eventBeforeCompletion?.instance.status === "canceled"
+            ? eventBeforeCompletion.instance.status
+            : "scheduled";
+        const previousCompletedAt =
+          eventBeforeCompletion?.instance.completed_at ?? null;
         const result = await updateInstanceStatus(
           instanceId,
           persistedStatus,
@@ -5775,6 +5879,39 @@ export function MatrixContent({
 
         const heldItemIds = getScheduledCompletionHoldIds(instanceId);
         if (persistedStatus === "completed" && completedAt) {
+          const habitCompletionResult =
+            await recordMatrixScheduledHabitCompletion({
+              instance: eventBeforeCompletion?.instance ?? null,
+              nextStatus: persistedStatus,
+              completedAt,
+              timeZone,
+            });
+          if (!habitCompletionResult.ok) {
+            console.error(
+              "Failed to persist Matrix scheduled Habit completion",
+              habitCompletionResult.reason
+            );
+            const rollback = await updateInstanceStatus(
+              instanceId,
+              previousStatus,
+              previousStatus === "completed"
+                ? {
+                    completedAtUTC:
+                      previousCompletedAt ?? new Date().toISOString(),
+                  }
+                : undefined,
+              supabase as unknown as Parameters<typeof updateInstanceStatus>[3]
+            );
+            if (rollback.error) {
+              console.error(
+                "Failed to rollback scheduled Matrix Habit completion",
+                rollback.error
+              );
+            }
+            void hapticWarningPattern();
+            return false;
+          }
+
           dispatchCreatorXpBurstStatus("XP: matrix completion");
           const xpResult = await dispatchMatrixScheduledXpReward(
             eventBeforeCompletion,
@@ -5951,6 +6088,7 @@ export function MatrixContent({
       releaseMatrixReorderHold,
       reverseMatrixXpOccurrence,
       setMatrixXpDiagnostic,
+      timeZone,
       user?.id,
     ]
   );
@@ -6040,6 +6178,7 @@ export function MatrixContent({
                 goal: null,
                 habit: routineHabit.sourceHabit,
                 routine: null,
+                inferredMeal: null,
               };
             }
           }
@@ -6055,6 +6194,97 @@ export function MatrixContent({
     ]
   );
 
+  const markInferredMealEventCompleted = useCallback(
+    ({
+      syntheticEventId,
+      completedAt,
+      mealId,
+    }: {
+      syntheticEventId: string;
+      completedAt: string | null;
+      mealId: string | null;
+    }) => {
+      const updateScheduledEventGroups = (
+        groups: MonumentGroup<MatrixEvent>[]
+      ) =>
+        groups.map((group) => ({
+          ...group,
+          items: group.items.map((event) => {
+            if (event.instance.id !== syntheticEventId || !event.inferredMeal) {
+              return event;
+            }
+
+            return {
+              ...event,
+              instance: {
+                ...event.instance,
+                status: "completed",
+                completed_at: completedAt,
+              },
+              inferredMeal: {
+                ...event.inferredMeal,
+                completed: true,
+                completedAt,
+                completedMealId: mealId,
+              },
+            };
+          }),
+        }));
+
+      setState((current) => ({
+        ...current,
+        eventGroups: updateScheduledEventGroups(current.eventGroups),
+        skillEventGroups: updateScheduledEventGroups(current.skillEventGroups),
+        blockEventGroups: updateScheduledEventGroups(current.blockEventGroups),
+        typeEventGroups: updateScheduledEventGroups(current.typeEventGroups),
+      }));
+    },
+    []
+  );
+
+  const openInferredMealNutritionLog = useCallback(
+    (event: MatrixEvent) => {
+      const inferredMeal = event.inferredMeal;
+      if (!inferredMeal || inferredMeal.completed) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      const syntheticEventId = inferredMeal.syntheticEventId;
+      if (
+        !claimMatrixInferredMealLogOpen(
+          pendingInferredMealLogIdsRef.current,
+          syntheticEventId
+        )
+      ) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      const existingTimer =
+        pendingInferredMealReleaseTimersRef.current.get(syntheticEventId);
+      if (existingTimer) clearTimeout(existingTimer);
+      pendingInferredMealReleaseTimersRef.current.set(
+        syntheticEventId,
+        setTimeout(() => {
+          releaseMatrixInferredMealLogOpen(
+            pendingInferredMealLogIdsRef.current,
+            syntheticEventId
+          );
+          pendingInferredMealReleaseTimersRef.current.delete(syntheticEventId);
+        }, 30_000)
+      );
+
+      dispatchOpenNutritionLogEvent(
+        buildMatrixInferredMealNutritionLogContext({
+          inferredMeal,
+          timeZone,
+        })
+      );
+    },
+    [timeZone]
+  );
+
   const handleCompleteScheduledEvent = useCallback(
     (
       instanceId: string,
@@ -6062,6 +6292,10 @@ export function MatrixContent({
       options?: MatrixScheduledCompletionOptions
     ) => {
       const event = findMatrixEvent(instanceId);
+      if (event?.inferredMeal) {
+        openInferredMealNutritionLog(event);
+        return;
+      }
       if (
         nextStatus === "completed" &&
         event?.habit &&
@@ -6079,7 +6313,7 @@ export function MatrixContent({
       }
       void commitScheduledEventCompletion(instanceId, nextStatus, options);
     },
-    [commitScheduledEventCompletion, findMatrixEvent]
+    [commitScheduledEventCompletion, findMatrixEvent, openInferredMealNutritionLog]
   );
 
   const dispatchMatrixDueHabitXpReward = useCallback(
@@ -6685,7 +6919,7 @@ export function MatrixContent({
         const { data: instanceData, error: instanceError } = await supabase
           .from("schedule_instances")
           .select(
-            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, energy_resolved, metadata"
+            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata"
           )
           .eq("user_id", userId)
           .in("source_type", ["PROJECT", "HABIT", "EVENT"])
@@ -6697,6 +6931,44 @@ export function MatrixContent({
         if (instanceError) throw instanceError;
 
         const instances = (instanceData ?? []) as ScheduleInstance[];
+        const dayKey = formatDateKeyInTimeZone(today, timeZone);
+        const windowsForDatePromise = (async () => {
+          const params = new URLSearchParams();
+          params.set("dayKey", dayKey);
+          params.set("timeZone", timeZone);
+          const response = await fetch(`/api/windows/for-date?${params.toString()}`, {
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to fetch Matrix Time Blocks (${response.status})`);
+          }
+          const payload = (await response.json().catch(() => null)) as {
+            windows?: MatrixMealTimeBlockWindow[];
+          } | null;
+          return payload?.windows ?? [];
+        })().catch((error) => {
+          console.error("Failed to load Matrix Time Blocks", error);
+          return [] as MatrixMealTimeBlockWindow[];
+        });
+        const nutritionMealsPromise = (async () => {
+          const params = new URLSearchParams();
+          params.set("start", dayStart.toISOString());
+          params.set("end", dayEnd.toISOString());
+          params.set("limit", "100");
+          const response = await fetch(`/api/nutrition/meals?${params.toString()}`, {
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to fetch Matrix Nutrition meals (${response.status})`);
+          }
+          const payload = (await response.json().catch(() => null)) as {
+            meals?: MatrixNutritionMealCompletionRow[];
+          } | null;
+          return payload?.meals ?? [];
+        })().catch((error) => {
+          console.error("Failed to load Matrix Nutrition meals", error);
+          return [] as MatrixNutritionMealCompletionRow[];
+        });
         const projectIds = instances
           .filter((item) => item.source_type === "PROJECT")
           .map((item) => item.source_id);
@@ -6736,6 +7008,8 @@ export function MatrixContent({
           dayTypeTimeBlockByBlockResult,
           matrixTags,
           monuments,
+          matrixWindowsForDate,
+          nutritionMeals,
         ] =
           await Promise.all([
             scheduledHabitIds.size
@@ -6786,6 +7060,8 @@ export function MatrixContent({
               : Promise.resolve({ data: [], error: null }),
             loadMatrixTags(supabase, userId),
             monumentsPromise,
+            windowsForDatePromise,
+            nutritionMealsPromise,
           ]);
 
         if (habitResult.error) throw habitResult.error;
@@ -6886,11 +7162,39 @@ export function MatrixContent({
             block,
           ])
         );
+        for (const window of matrixWindowsForDate) {
+          const timeBlockId =
+            window.timeBlockId ??
+            window.time_block_id ??
+            window.sourceWindowId ??
+            window.id;
+          if (!timeBlockId || timeBlockMap.has(timeBlockId)) continue;
+          timeBlockMap.set(timeBlockId, {
+            id: timeBlockId,
+            label: window.label ?? "Meal",
+            start_local: window.start_local ?? null,
+            end_local: window.end_local ?? null,
+          });
+        }
         const dayTypeTimeBlockRows = [
           ...((dayTypeTimeBlockByIdResult.data ?? []) as DayTypeTimeBlockRow[]),
           ...((dayTypeTimeBlockByBlockResult.data ??
             []) as DayTypeTimeBlockRow[]),
         ];
+        for (const window of matrixWindowsForDate) {
+          const dayTypeTimeBlockId =
+            window.dayTypeTimeBlockId ?? window.day_type_time_block_id ?? null;
+          if (!dayTypeTimeBlockId) continue;
+          dayTypeTimeBlockRows.push({
+            id: dayTypeTimeBlockId,
+            time_block_id:
+              window.timeBlockId ??
+              window.time_block_id ??
+              window.sourceWindowId ??
+              window.id,
+            energy: null,
+          });
+        }
         const dayTypeTimeBlockById = new Map<string, DayTypeTimeBlockRow>();
         const dayTypeTimeBlockByTimeBlockId = new Map<
           string,
@@ -6920,8 +7224,21 @@ export function MatrixContent({
           events: rawEvents,
           routines: routineMap,
         });
+        const inferredMealEvents = buildMatrixInferredMealMatrixEvents({
+          inferredMeals: buildMatrixInferredMealEvents({
+            windows: matrixWindowsForDate,
+            instances,
+            meals: nutritionMeals,
+            dateKey: dayKey,
+          }),
+          userId,
+        });
+        const scheduledEvents = sortMatrixScheduledItems([
+          ...events,
+          ...inferredMealEvents,
+        ]);
         const scheduledTodayHabitIds = new Set(scheduledHabitIds);
-        for (const event of events) {
+        for (const event of scheduledEvents) {
           const habitId = normalizeMatrixSourceId(event.habit?.id ?? event.instance.source_id);
           if (event.instance.source_type === "HABIT" && habitId) {
             scheduledTodayHabitIds.add(habitId);
@@ -6986,13 +7303,13 @@ export function MatrixContent({
             loading: false,
             error: null,
             matrixTags,
-            eventGroups: groupByMonument({ items: events, monuments }),
+            eventGroups: groupByMonument({ items: scheduledEvents, monuments }),
             unscheduledDueHabitGroups: groupByMonument({
               items: unscheduledDueItems,
               monuments,
             }),
             skillEventGroups: groupBySkill({
-              items: events,
+              items: scheduledEvents,
               skills: skillLookup,
             }),
             skillUnscheduledDueHabitGroups: groupBySkill({
@@ -7000,7 +7317,7 @@ export function MatrixContent({
               skills: skillLookup,
             }),
             blockEventGroups: groupEventsByBlock({
-              items: events,
+              items: scheduledEvents,
               timeBlocks: timeBlockMap,
               dayTypeTimeBlockById,
               dayTypeTimeBlockByTimeBlockId,
@@ -7008,7 +7325,7 @@ export function MatrixContent({
             blockUnscheduledDueHabitGroups:
               groupUnscheduledDueHabitsByNoBlock(unscheduledDueItems),
             typeEventGroups: groupByType({
-              items: events,
+              items: scheduledEvents,
               skills: skillLookup,
               getTypeGroupKey: getMatrixEventTypeGroupKey,
               sortItems: sortMatrixScheduledItems,
