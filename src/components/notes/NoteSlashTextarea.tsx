@@ -182,6 +182,19 @@ import {
   type FitnessPlanTemplate,
 } from "@/lib/fitness/planTemplates";
 import {
+  FITNESS_ACTIVE_PLAN_WEEKDAYS,
+  buildFitnessActivePlan,
+  buildFitnessActivePlanEntry,
+  getFitnessActivePlanEntry,
+  getFitnessActivePlanFromEntries,
+  getFitnessPlanFitReasons,
+  getFitnessPlanMatchLabel,
+  getFitnessPlanTargetDaysPerWeek,
+  type FitnessActivePlan,
+  type FitnessActivePlanScheduleMode,
+  type FitnessActivePlanWeekday,
+} from "@/lib/fitness/activePlan";
+import {
   DEFAULT_FITNESS_ACTION_TAB_ID,
   FITNESS_ACTION_TAB_SPECS,
   type FitnessActionTabId,
@@ -210,6 +223,29 @@ import {
   getFitnessPrHighlights,
   type FitnessExerciseHistory,
 } from "@/lib/fitness/exerciseHistory";
+import {
+  FITNESS_PROFILE_ANATOMY_DISPLAYS,
+  FITNESS_PROFILE_EQUIPMENT_OPTIONS,
+  FITNESS_PROFILE_EXPERIENCE_LEVELS,
+  FITNESS_PROFILE_PRIMARY_GOALS,
+  FITNESS_PROFILE_SESSION_DURATIONS,
+  FITNESS_PROFILE_WEIGHT_UNITS,
+  buildFitnessProfileEntry,
+  buildFitnessProfileFromDraft,
+  formatFitnessProfileSessionDuration,
+  getFitnessProfileEntry,
+  getFitnessProfileFromEntries,
+  isFitnessProfileDraftComplete,
+  isFitnessProfileEntry,
+  type FitnessProfile,
+  type FitnessProfileAnatomyDisplay,
+  type FitnessProfileDraft,
+  type FitnessProfileEquipment,
+  type FitnessProfileExperienceLevel,
+  type FitnessProfilePrimaryGoal,
+  type FitnessProfileSessionDuration,
+  type FitnessProfileWeightUnit,
+} from "@/lib/fitness/profile";
 import { cn } from "@/lib/utils";
 
 type SlashCommandId =
@@ -453,13 +489,16 @@ const FITNESS_WEIGHT_UNITS: readonly FitnessWeightUnit[] = [
   "assisted",
   "machine",
 ];
-type FitnessPlanSessionLength = number;
-type FitnessPlanSetup = {
-  goal: string;
-  level: string;
-  equipment: string;
-  daysPerWeek: number;
-  sessionLength: FitnessPlanSessionLength;
+type FitnessPlanSheetStep = "preview" | "schedule" | "confirm" | "replace";
+type FitnessActivePlanSummary = {
+  activePlan: FitnessActivePlan;
+  planName: string;
+  nextRoutineName?: string | null;
+  scheduleSummary?: string | null;
+  weeklyCompletion?: {
+    completed: number;
+    total: number;
+  } | null;
 };
 type FitnessWorkoutEntryContext = {
   sessionId: string;
@@ -3537,6 +3576,7 @@ const NUTRITION_VOLUME_UNIT_ML: Record<(typeof NUTRITION_VOLUME_UNITS)[number], 
   "fl oz": 14.7868 * 2,
 };
 const GRAMS_PER_OUNCE = 28.3495;
+const GRAMS_PER_POUND = 453.59237;
 
 function normalizeGroceryInventoryUnit(value: unknown): GroceryInventoryUnit {
   if (typeof value !== "string") return "package";
@@ -3587,6 +3627,12 @@ function convertGrocerySearchQuantity(
 function formatGrocerySearchQuantity(quantity: number) {
   if (!Number.isFinite(quantity) || quantity <= 0) return "";
   return String(Number(quantity.toFixed(3)));
+}
+
+function formatNutritionServingInputAmount(value: number) {
+  const normalizedValue = normalizeNutritionQuantity(value);
+
+  return String(Number(normalizedValue.toFixed(2)));
 }
 
 function parseGroceryInventoryNumber(value: unknown) {
@@ -4414,13 +4460,13 @@ function getNutritionServingMultiplier({
 
   if (unitKey === "oz") {
     return defaultServingGrams
-      ? (normalizedAmount * 28.3495) / defaultServingGrams
+      ? (normalizedAmount * GRAMS_PER_OUNCE) / defaultServingGrams
       : normalizedAmount;
   }
 
   if (unitKey === "lb") {
     return defaultServingGrams
-      ? (normalizedAmount * 453.59237) / defaultServingGrams
+      ? (normalizedAmount * GRAMS_PER_POUND) / defaultServingGrams
       : normalizedAmount;
   }
 
@@ -4441,6 +4487,88 @@ function getNutritionServingMultiplier({
   }
 
   return normalizedAmount;
+}
+
+function getNutritionMassUnitGrams(unit: NutritionServingUnit) {
+  const unitKey = getNutritionServingUnitKey(unit);
+
+  if (unitKey === "g") return 1;
+  if (unitKey === "oz") return GRAMS_PER_OUNCE;
+  if (unitKey === "lb") return GRAMS_PER_POUND;
+  return null;
+}
+
+function getNutritionServingAmountGramEquivalent(
+  food: FoodSearchResult,
+  amount: number,
+  unit: NutritionServingUnit,
+) {
+  const normalizedAmount = normalizeNutritionQuantity(amount);
+  const safeUnit = getSafeFoodServingUnit(food, unit);
+  const massUnitGrams = getNutritionMassUnitGrams(safeUnit);
+
+  if (massUnitGrams !== null) return normalizedAmount * massUnitGrams;
+
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  if (!servingGrams) return null;
+
+  if (safeUnit === "serving") return normalizedAmount * servingGrams;
+
+  const volumeUnit = getNutritionServingUnitKey(safeUnit);
+  const volumeAnchor = getFoodVolumeAnchor(food);
+  if (isNutritionVolumeUnit(volumeUnit) && volumeAnchor) {
+    return (
+      normalizedAmount *
+      NUTRITION_VOLUME_UNIT_ML[volumeUnit] *
+      volumeAnchor.gramsPerMl
+    );
+  }
+
+  return null;
+}
+
+function getNutritionServingAmountFromGrams(
+  food: FoodSearchResult,
+  grams: number,
+  unit: NutritionServingUnit,
+) {
+  if (!Number.isFinite(grams) || grams <= 0) return null;
+
+  const safeUnit = getSafeFoodServingUnit(food, unit);
+  const massUnitGrams = getNutritionMassUnitGrams(safeUnit);
+  if (massUnitGrams !== null) return grams / massUnitGrams;
+
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  if (!servingGrams) return null;
+
+  if (safeUnit === "serving") return grams / servingGrams;
+
+  const volumeUnit = getNutritionServingUnitKey(safeUnit);
+  const volumeAnchor = getFoodVolumeAnchor(food);
+  if (isNutritionVolumeUnit(volumeUnit) && volumeAnchor) {
+    return grams / (NUTRITION_VOLUME_UNIT_ML[volumeUnit] * volumeAnchor.gramsPerMl);
+  }
+
+  return null;
+}
+
+function convertNutritionFoodServingAmount(
+  food: FoodSearchResult,
+  amount: number,
+  fromUnit: NutritionServingUnit,
+  toUnit: NutritionServingUnit,
+) {
+  const safeFromUnit = getSafeFoodServingUnit(food, fromUnit);
+  const safeToUnit = getSafeFoodServingUnit(food, toUnit);
+  if (safeFromUnit === safeToUnit) return normalizeNutritionQuantity(amount);
+
+  const grams = getNutritionServingAmountGramEquivalent(food, amount, safeFromUnit);
+  if (grams === null) return normalizeNutritionQuantity(amount);
+
+  const convertedAmount = getNutritionServingAmountFromGrams(food, grams, safeToUnit);
+  if (convertedAmount === null) return normalizeNutritionQuantity(amount);
+
+  return normalizeNutritionQuantity(convertedAmount);
 }
 
 function getFoodServingMultiplier(item: NutritionSelectedFoodItem | NutritionMealBuilderItem) {
@@ -4725,7 +4853,7 @@ function getResolvedFoodNutritionLineValue(
 }
 
 function formatNutritionServingAmount(value: number) {
-  return formatFoodNutritionNumber(normalizeNutritionQuantity(value)) ?? "1";
+  return formatNutritionServingInputAmount(value);
 }
 
 function formatNutritionServingLabel(amount: number, unit: NutritionServingUnit) {
@@ -8164,9 +8292,17 @@ export function NoteDatabaseEntrySheet({
   const [selectedFitnessPlanName, setSelectedFitnessPlanName] = useState<string | null>(
     null,
   );
-  const [selectedFitnessPlanSetup, setSelectedFitnessPlanSetup] = useState<
-    Partial<FitnessPlanSetup>
-  >({});
+  const [fitnessPlanPreviewId, setFitnessPlanPreviewId] = useState<string | null>(null);
+  const [fitnessPlanSheetStep, setFitnessPlanSheetStep] =
+    useState<FitnessPlanSheetStep>("preview");
+  const [fitnessPlanScheduleMode, setFitnessPlanScheduleMode] =
+    useState<FitnessActivePlanScheduleMode>("flexible");
+  const [fitnessPlanWeekdays, setFitnessPlanWeekdays] = useState<
+    FitnessActivePlanWeekday[]
+  >([]);
+  const [isFitnessActivePlanSaving, setIsFitnessActivePlanSaving] = useState(false);
+  const [fitnessActivePlanOverride, setFitnessActivePlanOverride] =
+    useState<FitnessActivePlan | null>(null);
   const [fitnessWorkoutExerciseDetailsById, setFitnessWorkoutExerciseDetailsById] = useState<
     Record<string, FitnessWorkoutExerciseDetail>
   >({});
@@ -8187,10 +8323,34 @@ export function NoteDatabaseEntrySheet({
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [isFitnessProfileSheetOpen, setIsFitnessProfileSheetOpen] = useState(false);
+  const [fitnessProfileDraft, setFitnessProfileDraft] = useState<FitnessProfileDraft>({});
+  const [isFitnessProfileSaving, setIsFitnessProfileSaving] = useState(false);
+  const [fitnessProfileOverride, setFitnessProfileOverride] = useState<FitnessProfile | null>(
+    null,
+  );
   const fitnessWorkoutStartingRef = useRef(false);
   const fitnessWeightEditsByExerciseIdRef = useRef<
     Record<string, Partial<Record<"weight" | "unit", boolean>>>
   >({});
+  const fitnessProfileEntry = useMemo(() => getFitnessProfileEntry(entries), [entries]);
+  const fitnessProfile = useMemo(() => getFitnessProfileFromEntries(entries), [entries]);
+  const activeFitnessProfile = fitnessProfileOverride ?? fitnessProfile;
+  const persistedFitnessActivePlan = useMemo(
+    () => getFitnessActivePlanFromEntries(entries),
+    [entries],
+  );
+  const activeFitnessPlan = fitnessActivePlanOverride ?? persistedFitnessActivePlan;
+  const fitnessActivePlanEntry = useMemo(
+    () => getFitnessActivePlanEntry(entries),
+    [entries],
+  );
+  useEffect(() => {
+    if (fitnessProfile) setFitnessProfileOverride(null);
+  }, [fitnessProfile]);
+  useEffect(() => {
+    if (persistedFitnessActivePlan) setFitnessActivePlanOverride(null);
+  }, [persistedFitnessActivePlan]);
   const fitnessLoggedSetPerformances = useMemo(
     () => extractFitnessLoggedSetPerformances(entries),
     [entries],
@@ -8599,6 +8759,9 @@ export function NoteDatabaseEntrySheet({
     top: number;
     right: number;
   } | null>(null);
+  const [nutritionServingAmountDrafts, setNutritionServingAmountDrafts] = useState<
+    Record<string, string>
+  >({});
   const nutritionFoodActionTabRefs = useRef<
     Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
   >({});
@@ -9422,6 +9585,89 @@ export function NoteDatabaseEntrySheet({
     });
   }
 
+  function getFitnessProfileDraftFromProfile(
+    profile: FitnessProfile | null,
+  ): FitnessProfileDraft {
+    if (!profile) return {};
+
+    return {
+      primaryGoal: profile.primaryGoal,
+      experienceLevel: profile.experienceLevel,
+      equipment: profile.equipment,
+      trainingDaysPerWeek: profile.trainingDaysPerWeek,
+      sessionDurationMinutes: profile.sessionDurationMinutes,
+      preferredWeightUnit: profile.preferredWeightUnit,
+      anatomyDisplay: profile.anatomyDisplay,
+    };
+  }
+
+  function openFitnessProfileSheet() {
+    setFitnessProfileDraft(getFitnessProfileDraftFromProfile(activeFitnessProfile));
+    setIsFitnessProfileSheetOpen(true);
+    void hapticSoftTick();
+  }
+
+  function updateFitnessProfileDraft<T extends keyof FitnessProfileDraft>(
+    key: T,
+    value: FitnessProfileDraft[T],
+  ) {
+    setFitnessProfileDraft((currentDraft) => ({
+      ...currentDraft,
+      [key]: value,
+    }));
+    setSubmitError(null);
+    void hapticSoftTick();
+  }
+
+  async function saveFitnessProfile() {
+    if (isFitnessProfileSaving || !isFitnessProfileDraftComplete(fitnessProfileDraft)) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const nextProfile = buildFitnessProfileFromDraft(fitnessProfileDraft, {
+      existingProfile: activeFitnessProfile,
+      now,
+    });
+    if (!nextProfile) return;
+
+    const nextEntry = buildFitnessProfileEntry({
+      databaseId: databaseDefinition.id,
+      existingEntry: fitnessProfileEntry ?? fitnessActivePlanEntry,
+      profile: nextProfile,
+      now,
+    });
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+
+    setIsFitnessProfileSaving(true);
+    setSubmitError(null);
+    try {
+      await onSaveEntry(nextEntry);
+      if (routeContext.noteId) {
+        const persisted = await upsertFitnessWorkoutDatabaseEntryInNote({
+          noteId: routeContext.noteId,
+          databaseId: routeContext.databaseId,
+          entry: nextEntry,
+        });
+        if (!persisted.success) {
+          console.error("Failed to persist Fitness profile", persisted.error);
+        }
+      }
+      setFitnessProfileOverride(nextProfile);
+      setIsFitnessProfileSheetOpen(false);
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to save Fitness profile", {
+        error,
+        databaseId: databaseDefinition.id,
+      });
+      setSubmitError("Unable to save Fitness profile right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessProfileSaving(false);
+    }
+  }
+
   function selectFitnessActionByOffset(offset: -1 | 1) {
     const currentIndex = FITNESS_ACTION_TABS.findIndex(
       (tab) => tab.id === selectedFitnessAction,
@@ -9785,43 +10031,186 @@ export function NoteDatabaseEntrySheet({
     loadFitnessRoutineTemplate(routine);
   }
 
-  function startFitnessPlan(plan: FitnessPlanTemplate) {
-    setSelectedFitnessPlanName(plan.id);
-    setSelectedFitnessPlanSetup({});
+  function getFitnessPlanById(planId: string | null) {
+    if (!planId) return null;
+    return FITNESS_PLAN_TEMPLATES.find((plan) => plan.id === planId) ?? null;
+  }
+
+  function getFitnessPlanDaysLabel(daysPerWeek: readonly number[]) {
+    const firstDay = daysPerWeek[0];
+    const lastDay = daysPerWeek[daysPerWeek.length - 1];
+
+    if (!firstDay) return "Days/week";
+    if (firstDay === lastDay) return `${firstDay} days/week`;
+
+    return `${firstDay}-${lastDay} days/week`;
+  }
+
+  function getFitnessPlanSessionLengthLabel(sessionLengths: readonly number[]) {
+    const firstLength = sessionLengths[0];
+    const lastLength = sessionLengths[sessionLengths.length - 1];
+
+    if (!firstLength) return "Duration varies";
+    if (firstLength === lastLength) return `${firstLength} min`;
+
+    return `${firstLength}-${lastLength} min`;
+  }
+
+  function getFitnessPlanFirstRoutine(plan: FitnessPlanTemplate) {
+    return resolveFitnessPlanRoutineSequence(plan)[0] ?? null;
+  }
+
+  function getFitnessActivePlanNextRoutine(plan: FitnessActivePlan) {
+    const template = getFitnessPlanById(plan.planTemplateId);
+    if (!template) return null;
+
+    const routines = resolveFitnessPlanRoutineSequence(template);
+    if (routines.length === 0) return null;
+
+    return routines[plan.currentRoutineIndex % routines.length] ?? routines[0] ?? null;
+  }
+
+  function openFitnessPlanPreview(plan: FitnessPlanTemplate) {
+    setFitnessPlanPreviewId(plan.id);
+    setFitnessPlanSheetStep("preview");
+    setFitnessPlanScheduleMode("flexible");
+    setFitnessPlanWeekdays([]);
     void hapticSoftTick();
   }
 
-  function updateSelectedFitnessPlanSetup<T extends keyof FitnessPlanSetup>(
-    key: T,
-    value: FitnessPlanSetup[T],
-  ) {
-    setSelectedFitnessPlanSetup((currentSetup) => ({
-      ...currentSetup,
-      [key]: value,
-    }));
+  function closeFitnessPlanSheet() {
+    setFitnessPlanPreviewId(null);
+    setFitnessPlanSheetStep("preview");
+    setFitnessPlanScheduleMode("flexible");
+    setFitnessPlanWeekdays([]);
+    setSubmitError(null);
+    void hapticSnap();
+  }
+
+  function startFitnessPlanActivation(plan: FitnessPlanTemplate) {
+    if (activeFitnessPlan && activeFitnessPlan.planTemplateId !== plan.id) {
+      setFitnessPlanSheetStep("replace");
+      void hapticWarningPattern();
+      return;
+    }
+
+    setFitnessPlanSheetStep("schedule");
+    setFitnessPlanScheduleMode("flexible");
+    setFitnessPlanWeekdays([]);
     void hapticSoftTick();
   }
 
-  function isFitnessPlanSetupReady(
-    setup: Partial<FitnessPlanSetup>,
-  ): setup is FitnessPlanSetup {
-    return Boolean(
-      setup.goal &&
-        setup.level &&
-        setup.equipment &&
-        setup.daysPerWeek &&
-        setup.sessionLength,
-    );
+  function toggleFitnessPlanWeekday(weekday: FitnessActivePlanWeekday) {
+    setFitnessPlanWeekdays((currentWeekdays) => {
+      if (currentWeekdays.includes(weekday)) {
+        return currentWeekdays.filter((currentWeekday) => currentWeekday !== weekday);
+      }
+
+      return [...currentWeekdays, weekday].sort(
+        (a, b) =>
+          FITNESS_ACTIVE_PLAN_WEEKDAYS.indexOf(a) -
+          FITNESS_ACTIVE_PLAN_WEEKDAYS.indexOf(b),
+      );
+    });
+    setSubmitError(null);
+    void hapticSoftTick();
   }
 
   function loadFirstFitnessPlanWorkout(plan: FitnessPlanTemplate) {
-    if (!isFitnessPlanSetupReady(selectedFitnessPlanSetup)) return;
-
     const firstRoutine = resolveFitnessPlanRoutineSequence(plan)[0];
 
     if (!firstRoutine) return;
 
+    setSelectedFitnessPlanName(plan.id);
+    setFitnessPlanPreviewId(null);
     loadFitnessRoutineTemplate(firstRoutine, `${plan.title} · ${firstRoutine.title}`);
+  }
+
+  function loadNextFitnessActivePlanWorkout(plan: FitnessActivePlan) {
+    const nextRoutine = getFitnessActivePlanNextRoutine(plan);
+
+    if (!nextRoutine) return;
+
+    setSelectedFitnessPlanName(plan.planTemplateId);
+    loadFitnessRoutineTemplate(nextRoutine, `${plan.planTitle} · ${nextRoutine.title}`);
+  }
+
+  function confirmFitnessPlanSchedule(plan: FitnessPlanTemplate) {
+    const targetDaysPerWeek = getFitnessPlanTargetDaysPerWeek(plan, activeFitnessProfile);
+
+    if (
+      fitnessPlanScheduleMode === "weekly" &&
+      fitnessPlanWeekdays.length !== targetDaysPerWeek
+    ) {
+      setSubmitError(`Select exactly ${targetDaysPerWeek} weekdays for this plan.`);
+      void hapticErrorPattern();
+      return;
+    }
+
+    setSubmitError(null);
+    setFitnessPlanSheetStep("confirm");
+    void hapticSoftTick();
+  }
+
+  async function activateFitnessPlan(plan: FitnessPlanTemplate) {
+    if (isFitnessActivePlanSaving) return;
+
+    const targetDaysPerWeek = getFitnessPlanTargetDaysPerWeek(plan, activeFitnessProfile);
+    if (
+      fitnessPlanScheduleMode === "weekly" &&
+      fitnessPlanWeekdays.length !== targetDaysPerWeek
+    ) {
+      setSubmitError(`Select exactly ${targetDaysPerWeek} weekdays for this plan.`);
+      void hapticErrorPattern();
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const nextActivePlan = buildFitnessActivePlan({
+      plan,
+      scheduleMode: fitnessPlanScheduleMode,
+      targetDaysPerWeek,
+      weekdays: fitnessPlanWeekdays,
+      now,
+    });
+    const existingEntry = fitnessProfileEntry ?? fitnessActivePlanEntry;
+    const nextEntry = buildFitnessActivePlanEntry({
+      databaseId: databaseDefinition.id,
+      existingEntry,
+      activePlan: nextActivePlan,
+      now,
+    });
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+
+    setIsFitnessActivePlanSaving(true);
+    setSubmitError(null);
+    try {
+      await onSaveEntry(nextEntry);
+      if (routeContext.noteId) {
+        const persisted = await upsertFitnessWorkoutDatabaseEntryInNote({
+          noteId: routeContext.noteId,
+          databaseId: routeContext.databaseId,
+          entry: nextEntry,
+        });
+        if (!persisted.success) {
+          console.error("Failed to persist Fitness active plan", persisted.error);
+        }
+      }
+      setFitnessActivePlanOverride(nextActivePlan);
+      closeFitnessPlanSheet();
+      selectFitnessAction("plans");
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to activate Fitness plan", {
+        error,
+        databaseId: databaseDefinition.id,
+        planId: plan.id,
+      });
+      setSubmitError("Unable to activate this plan right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessActivePlanSaving(false);
+    }
   }
 
   function updateFitnessWorkoutExerciseDetail(
@@ -11613,239 +12002,512 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessPlanBrowser() {
-    const selectedFitnessPlan = FITNESS_PLAN_TEMPLATES.find(
-      (plan) => plan.id === selectedFitnessPlanName,
-    );
-    const isSelectedFitnessPlanReady = isFitnessPlanSetupReady(selectedFitnessPlanSetup);
-    const selectedFitnessPlanSessions =
-      selectedFitnessPlan && isSelectedFitnessPlanReady
-        ? resolveFitnessPlanRoutineSequence(selectedFitnessPlan)
-        : [];
-
-    function formatFitnessPlanLabel(value: string) {
-      return value
-        .split(" ")
-        .map((word) => (word === "/" ? word : `${word.charAt(0).toUpperCase()}${word.slice(1)}`))
-        .join(" ");
-    }
-
-    function getFitnessPlanDaysLabel(daysPerWeek: number[]) {
-      const firstDay = daysPerWeek[0];
-      const lastDay = daysPerWeek[daysPerWeek.length - 1];
-
-      if (!firstDay) return "Days/week";
-      if (firstDay === lastDay) return `${firstDay} days/week`;
-
-      return `${firstDay}-${lastDay} days/week`;
-    }
-
-    function renderFitnessPlanOptionButton<T extends string | number>(
-      label: string,
-      value: T,
-      selectedValue: T | undefined,
-      onSelect: (value: T) => void,
-    ) {
-      const isSelected = selectedValue === value;
-
-      return (
-        <button
-          key={String(value)}
-          type="button"
-          onClick={() => onSelect(value)}
-          className={cn(
-            "flex h-8 items-center justify-center rounded-lg border px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-white/18",
-            isSelected
-              ? "border-emerald-200/[0.26] bg-emerald-200/[0.14] text-emerald-50/88"
-              : "border-white/[0.06] bg-black/24 text-white/52 hover:border-white/[0.11] hover:bg-white/[0.055] hover:text-white/78",
-          )}
-        >
-          {label}
-        </button>
-      );
-    }
-
-    function renderFitnessPlanOptionGroup(children: ReactNode, label: string) {
-      return (
-        <div>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/38">
-            {label}
-          </p>
-          <div className="flex flex-wrap gap-1.5">{children}</div>
-        </div>
-      );
-    }
+    const activePlanRoutine = activeFitnessPlan
+      ? getFitnessActivePlanNextRoutine(activeFitnessPlan)
+      : null;
 
     return (
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-3">
         <div className="px-1">
           <p className="text-sm font-semibold text-white/82">Plans</p>
           <p className="mt-0.5 text-xs font-medium text-white/38">
-            Indefinite training systems personalized into local workout cycles.
+            Compact training systems. Open a preview before activating one.
           </p>
         </div>
-        {selectedFitnessPlan ? (
-          <div className="rounded-xl border border-emerald-300/[0.18] bg-emerald-300/[0.07] p-3">
+        {activeFitnessPlan ? (
+          <section className="rounded-xl border border-white/[0.07] bg-white/[0.04] p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-100/48">
-                  Plan setup
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+                  Active Plan
                 </p>
                 <p className="mt-1 text-sm font-semibold text-white/88">
-                  {selectedFitnessPlan.title}
+                  {activeFitnessPlan.planTitle}
                 </p>
-                <p className="mt-1 text-xs font-medium text-white/46">
-                  {selectedFitnessPlan.description}
+                <p className="mt-0.5 text-xs font-medium text-white/46">
+                  Next: {activePlanRoutine?.title ?? "Routine unavailable"}
                 </p>
               </div>
-              {isSelectedFitnessPlanReady ? (
-                <span className="shrink-0 rounded-full border border-emerald-200/[0.16] bg-emerald-200/[0.1] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50/58">
-                  Ready
-                </span>
-              ) : null}
+              <span className="shrink-0 rounded-full border border-white/[0.07] bg-black/24 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/48">
+                {activeFitnessPlan.scheduleMode === "weekly" ? "Weekly" : "Flexible"}
+              </span>
             </div>
-            <div className="mt-3 space-y-3">
-              {renderFitnessPlanOptionGroup(
-                [selectedFitnessPlan.goal].map((goal) =>
-                  renderFitnessPlanOptionButton(
-                    formatFitnessPlanLabel(goal),
-                    goal,
-                    selectedFitnessPlanSetup.goal,
-                    (value) => updateSelectedFitnessPlanSetup("goal", value),
-                  ),
-                ),
-                "Goal",
-              )}
-              {renderFitnessPlanOptionGroup(
-                [selectedFitnessPlan.level].map((level) =>
-                  renderFitnessPlanOptionButton(
-                    formatFitnessPlanLabel(level),
-                    level,
-                    selectedFitnessPlanSetup.level,
-                    (value) => updateSelectedFitnessPlanSetup("level", value),
-                  ),
-                ),
-                "Level",
-              )}
-              {renderFitnessPlanOptionGroup(
-                [selectedFitnessPlan.equipment].map((equipment) =>
-                  renderFitnessPlanOptionButton(
-                    formatFitnessPlanLabel(equipment),
-                    equipment,
-                    selectedFitnessPlanSetup.equipment,
-                    (value) => updateSelectedFitnessPlanSetup("equipment", value),
-                  ),
-                ),
-                "Equipment",
-              )}
-              {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.daysPerWeekOptions.map((daysPerWeek) =>
-                  renderFitnessPlanOptionButton(
-                    `${daysPerWeek} days/week`,
-                    daysPerWeek,
-                    selectedFitnessPlanSetup.daysPerWeek,
-                    (value) => updateSelectedFitnessPlanSetup("daysPerWeek", value),
-                  ),
-                ),
-                "Days/week",
-              )}
-              {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.sessionLengthOptions.map((sessionLength) =>
-                  renderFitnessPlanOptionButton(
-                    `${sessionLength} min`,
-                    sessionLength,
-                    selectedFitnessPlanSetup.sessionLength,
-                    (value) => updateSelectedFitnessPlanSetup("sessionLength", value),
-                  ),
-                ),
-                "Session length",
-              )}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => loadNextFitnessActivePlanWorkout(activeFitnessPlan)}
+                disabled={!activePlanRoutine}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/[0.42] bg-white/70 px-2 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+              >
+                <Dumbbell className="h-3.5 w-3.5" aria-hidden="true" />
+                Load next workout
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const template = getFitnessPlanById(activeFitnessPlan.planTemplateId);
+                  if (template) openFitnessPlanPreview(template);
+                }}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/[0.09] bg-black/24 px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.15] hover:bg-white/[0.06] hover:text-white/88 focus-visible:ring-1 focus-visible:ring-white/18"
+              >
+                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Manage plan
+              </button>
             </div>
-            <p className="mt-3 rounded-lg border border-white/[0.055] bg-black/18 px-2.5 py-2 text-[11px] font-medium leading-5 text-white/44">
-              Routines repeat in order as the plan&apos;s workout cycle.
-            </p>
-            {isSelectedFitnessPlanReady ? (
-              <div className="mt-3 rounded-lg border border-white/[0.055] bg-black/24 p-2.5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white/82">
-                      {selectedFitnessPlan.title}
-                    </p>
-                    <p className="mt-1 text-[11px] font-medium leading-5 text-white/42">
-                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.goal)} ·{" "}
-                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.level)} ·{" "}
-                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.equipment)} ·{" "}
-                      {selectedFitnessPlanSetup.daysPerWeek} days/week ·{" "}
-                      {selectedFitnessPlanSetup.sessionLength} min
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => loadFirstFitnessPlanWorkout(selectedFitnessPlan)}
-                    className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-200/[0.18] bg-emerald-200/[0.12] px-2.5 text-xs font-semibold text-emerald-50/82 outline-none transition hover:border-emerald-100/[0.28] hover:bg-emerald-200/[0.17] hover:text-white focus-visible:ring-1 focus-visible:ring-emerald-100/24"
-                  >
-                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                    Load first workout
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  {selectedFitnessPlanSessions.map((routine, sessionIndex) => (
-                    <div
-                      key={`${selectedFitnessPlan.id}-${routine.id}-${sessionIndex}`}
-                      className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.03] px-2.5 py-2"
-                    >
-                      <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px] font-semibold text-white/58">
-                        {sessionIndex + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-white/66">
-                          Session {sessionIndex + 1}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] font-medium text-white/34">
-                          {routine.title}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          </section>
+        ) : null}
+        {activeFitnessPlan ? (
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/34">
+            Other Plans
+          </p>
         ) : null}
         <div className="space-y-2">
-          {FITNESS_PLAN_TEMPLATES.map((plan) => (
-            <div
-              key={plan.id}
-              className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
-            >
+          {FITNESS_PLAN_TEMPLATES.map((plan) => {
+            const matchLabel = getFitnessPlanMatchLabel(plan, activeFitnessProfile);
+
+            return (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => openFitnessPlanPreview(plan)}
+                className="w-full rounded-xl border border-white/[0.055] bg-black/42 p-3 text-left outline-none transition hover:border-white/[0.1] hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18"
+              >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white/86">{plan.title}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-sm font-semibold text-white/86">{plan.title}</p>
+                    {matchLabel ? (
+                      <span className="rounded-full border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-white/48">
+                        {matchLabel}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="mt-1 text-xs font-medium text-white/42">
                     {plan.description}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => startFitnessPlan(plan)}
-                  className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
-                >
-                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                  Start Plan
-                </button>
+                <span className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72">
+                  View plan
+                </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {formatFitnessPlanLabel(plan.equipment)}
+                  {getFitnessPlanDaysLabel(plan.daysPerWeekOptions)}
                 </span>
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {formatFitnessPlanLabel(plan.level)}
+                  {plan.equipment}
                 </span>
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {getFitnessPlanDaysLabel([...plan.daysPerWeekOptions])}
+                  {getFitnessPlanSessionLengthLabel(plan.sessionLengthOptions)}
+                </span>
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
+                  {plan.goal}
                 </span>
               </div>
-            </div>
-          ))}
+            </button>
+            );
+          })}
+        </div>
+        {renderFitnessPlanSheet()}
+      </div>
+    );
+  }
+
+  function renderFitnessPlanSheet() {
+    const plan = getFitnessPlanById(fitnessPlanPreviewId);
+    if (!plan) return null;
+
+    const routines = resolveFitnessPlanRoutineSequence(plan);
+    const targetDaysPerWeek = getFitnessPlanTargetDaysPerWeek(plan, activeFitnessProfile);
+    const checkInAfterCompletedWorkouts = targetDaysPerWeek * 4;
+    const firstRoutine = getFitnessPlanFirstRoutine(plan);
+    const fitReasons = getFitnessPlanFitReasons(plan, activeFitnessProfile);
+    const hasWeeklyWeekdayError =
+      fitnessPlanScheduleMode === "weekly" &&
+      fitnessPlanWeekdays.length !== targetDaysPerWeek;
+    const startDate = new Date().toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    return (
+      <div
+        className="fixed inset-0 z-[90] flex items-end justify-center overflow-hidden overscroll-contain bg-black/64 backdrop-blur-sm sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${plan.title} plan preview`}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeFitnessPlanSheet();
+        }}
+      >
+        <div className="animate-in slide-in-from-bottom-5 fade-in-0 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[26px] border border-white/[0.055] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:rounded-[26px] sm:border-b">
+          <div className="relative border-b border-white/[0.045] px-4 py-3">
+            <div className="mx-auto h-1 w-10 rounded-full bg-white/18 sm:hidden" />
+            <h3 className="mt-3 truncate text-center text-sm font-semibold text-white/88 sm:mt-0">
+              {fitnessPlanSheetStep === "preview"
+                ? "Plan Preview"
+                : fitnessPlanSheetStep === "replace"
+                  ? "Replace Active Plan"
+                  : "Activate Plan"}
+            </h3>
+            <button
+              type="button"
+              aria-label="Close plan preview"
+              onClick={closeFitnessPlanSheet}
+              className="absolute right-3 top-2.5 flex h-8 w-8 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 [-webkit-overflow-scrolling:touch]">
+            {fitnessPlanSheetStep === "replace" ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                    Current Plan
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white/88">
+                    {activeFitnessPlan?.planTitle ?? "Active plan"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                    Proposed Replacement
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white/88">{plan.title}</p>
+                </div>
+                <p className="text-xs font-medium leading-5 text-white/46">
+                  Version one stores one active plan. Replacing it will keep your Fitness
+                  Profile and unrelated note metadata.
+                </p>
+              </div>
+            ) : fitnessPlanSheetStep === "schedule" ? (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-white/88">{plan.title}</p>
+                  <p className="mt-1 text-xs font-medium text-white/44">
+                    Choose how this {targetDaysPerWeek}-day rotation fits your calendar.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  {(["flexible", "weekly"] as const).map((mode) => {
+                    const isSelected = fitnessPlanScheduleMode === mode;
+                    return (
+                      <label
+                        key={mode}
+                        className={cn(
+                          "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition",
+                          isSelected
+                            ? "border-white/[0.2] bg-white/[0.09]"
+                            : "border-white/[0.06] bg-black/24 hover:border-white/[0.12] hover:bg-white/[0.045]",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="fitness-plan-schedule-mode"
+                          value={mode}
+                          checked={isSelected}
+                          onChange={() => {
+                            setFitnessPlanScheduleMode(mode);
+                            if (mode === "flexible") setFitnessPlanWeekdays([]);
+                            setSubmitError(null);
+                            void hapticSoftTick();
+                          }}
+                          className="mt-1 h-4 w-4 accent-white"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-white/84">
+                            {mode === "flexible" ? "Flexible rotation" : "Weekly schedule"}
+                          </span>
+                          <span className="mt-1 block text-xs font-medium leading-5 text-white/44">
+                            {mode === "flexible"
+                              ? "Complete the next workout whenever you train. No assigned weekdays."
+                              : "Assign workouts to specific weekdays and track weekly completion."}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {fitnessPlanScheduleMode === "weekly" ? (
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                      Select {targetDaysPerWeek} weekdays
+                    </p>
+                    <div className="grid grid-cols-7 gap-1">
+                      {FITNESS_ACTIVE_PLAN_WEEKDAYS.map((weekday) => {
+                        const isSelected = fitnessPlanWeekdays.includes(weekday);
+                        return (
+                          <label
+                            key={weekday}
+                            className={cn(
+                              "flex min-h-10 cursor-pointer items-center justify-center rounded-lg border text-[11px] font-semibold transition",
+                              isSelected
+                                ? "border-white/[0.22] bg-white/[0.13] text-white/88"
+                                : "border-white/[0.06] bg-black/24 text-white/48 hover:border-white/[0.12] hover:bg-white/[0.055]",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleFitnessPlanWeekday(weekday)}
+                              className="sr-only"
+                            />
+                            {weekday}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {hasWeeklyWeekdayError ? (
+                      <p className="mt-2 text-xs font-medium text-red-200/78">
+                        Select exactly {targetDaysPerWeek} weekdays. You selected{" "}
+                        {fitnessPlanWeekdays.length}.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : fitnessPlanSheetStep === "confirm" ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-3">
+                  <p className="text-sm font-semibold text-white/88">{plan.title}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <dt className="font-semibold text-white/34">Schedule</dt>
+                      <dd className="mt-0.5 text-white/72">
+                        {fitnessPlanScheduleMode === "weekly"
+                          ? "Weekly schedule"
+                          : "Flexible rotation"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-semibold text-white/34">Target</dt>
+                      <dd className="mt-0.5 text-white/72">
+                        {targetDaysPerWeek} days/week
+                      </dd>
+                    </div>
+                    {fitnessPlanScheduleMode === "weekly" ? (
+                      <div className="col-span-2">
+                        <dt className="font-semibold text-white/34">Weekdays</dt>
+                        <dd className="mt-0.5 text-white/72">
+                          {fitnessPlanWeekdays.join(", ")}
+                        </dd>
+                      </div>
+                    ) : null}
+                    <div>
+                      <dt className="font-semibold text-white/34">Start date</dt>
+                      <dd className="mt-0.5 text-white/72">{startDate}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-semibold text-white/34">First routine</dt>
+                      <dd className="mt-0.5 text-white/72">
+                        {firstRoutine?.title ?? "Routine unavailable"}
+                      </dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="font-semibold text-white/34">Check-in</dt>
+                      <dd className="mt-0.5 text-white/72">
+                        Plan review after {checkInAfterCompletedWorkouts} completed workouts
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <section>
+                  <p className="text-lg font-semibold text-white/90">{plan.title}</p>
+                  <p className="mt-1 text-sm font-medium leading-5 text-white/48">
+                    {plan.description}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                    {[
+                      ["Goal", plan.goal],
+                      ["Level", plan.level],
+                      ["Equipment", plan.equipment],
+                      ["Days/week", getFitnessPlanDaysLabel(plan.daysPerWeekOptions)],
+                      ["Duration", getFitnessPlanSessionLengthLabel(plan.sessionLengthOptions)],
+                      ["Plan length", "Ongoing"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-lg border border-white/[0.055] bg-white/[0.03] px-2.5 py-2"
+                      >
+                        <p className="font-semibold text-white/34">{label}</p>
+                        <p className="mt-0.5 font-semibold text-white/72">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {activeFitnessProfile ? (
+                  fitReasons.length > 0 ? (
+                    <section>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                        Why it fits
+                      </p>
+                      <ul className="mt-2 space-y-1.5">
+                        {fitReasons.map((reason) => (
+                          <li key={reason} className="text-xs font-medium leading-5 text-white/52">
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openFitnessProfileSheet}
+                    className="flex min-h-10 w-full items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.045] px-3 text-xs font-semibold text-white/68 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white/88 focus-visible:ring-1 focus-visible:ring-white/18"
+                  >
+                    Set up your Fitness profile for personalized matching
+                  </button>
+                )}
+
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                    Plan structure
+                  </p>
+                  <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055]">
+                    {routines.map((routine, routineIndex) => (
+                      <div
+                        key={`${plan.id}-${routine.id}-${routineIndex}`}
+                        className={cn(
+                          "flex items-center gap-3 bg-black/24 px-3 py-2",
+                          routineIndex > 0 ? "border-t border-white/[0.045]" : "",
+                        )}
+                      >
+                        <span className="w-7 shrink-0 text-xs font-semibold tabular-nums text-white/36">
+                          {String(routineIndex + 1).padStart(2, "0")}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-white/78">
+                            {routine.title}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs font-medium text-white/38">
+                            {routine.goal} · {routine.durationMinutes} min
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="border-t border-white/[0.045] bg-white/[0.025] px-3 py-2 text-xs font-semibold text-white/42">
+                      Repeat
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-2">
+                  <div className="rounded-xl border border-white/[0.055] bg-white/[0.03] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                      Progression
+                    </p>
+                    <p className="mt-1 text-xs font-medium leading-5 text-white/50">
+                      Increase after all target working sets are completed. Hold after missed
+                      target reps. Bodyweight and assisted exercise semantics stay preserved.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.055] bg-white/[0.03] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+                      Review cadence
+                    </p>
+                    <p className="mt-1 text-xs font-medium leading-5 text-white/50">
+                      Plan review after {checkInAfterCompletedWorkouts} completed workouts.
+                    </p>
+                  </div>
+                </section>
+              </div>
+            )}
+            {submitError ? (
+              <p className="rounded-xl border border-red-300/15 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-100/82">
+                {submitError}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 border-t border-white/[0.045] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {fitnessPlanSheetStep === "replace" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={closeFitnessPlanSheet}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFitnessPlanSheetStep("schedule");
+                    setFitnessPlanScheduleMode("flexible");
+                    setFitnessPlanWeekdays([]);
+                    setSubmitError(null);
+                  }}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.42] bg-white/70 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50"
+                >
+                  Replace current plan
+                </button>
+              </>
+            ) : fitnessPlanSheetStep === "schedule" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFitnessPlanSheetStep("preview");
+                    setSubmitError(null);
+                  }}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmFitnessPlanSchedule(plan)}
+                  disabled={hasWeeklyWeekdayError}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.42] bg-white/70 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+                >
+                  Continue
+                </button>
+              </>
+            ) : fitnessPlanSheetStep === "confirm" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setFitnessPlanSheetStep("schedule")}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void activateFitnessPlan(plan)}
+                  disabled={isFitnessActivePlanSaving}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.42] bg-white/70 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+                >
+                  {isFitnessActivePlanSaving ? "Activating..." : "Activate plan"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => loadFirstFitnessPlanWorkout(plan)}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+                >
+                  Preview first workout
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startFitnessPlanActivation(plan)}
+                  className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.42] bg-white/70 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50"
+                >
+                  Start this plan
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -12480,6 +13142,344 @@ export function NoteDatabaseEntrySheet({
     void hapticSnap();
   }
 
+  function renderFitnessProfileOptionButton<T extends string | number>({
+    label,
+    value,
+    selectedValue,
+    onSelect,
+  }: {
+    label: string;
+    value: T;
+    selectedValue: T | undefined;
+    onSelect: (value: T) => void;
+  }) {
+    const isSelected = selectedValue === value;
+
+    return (
+      <button
+        key={String(value)}
+        type="button"
+        aria-pressed={isSelected}
+        onClick={() => onSelect(value)}
+        className={cn(
+          "flex min-h-9 items-center justify-center rounded-lg border px-2 text-center text-[11px] font-semibold leading-4 outline-none transition focus-visible:ring-1 focus-visible:ring-white/18",
+          isSelected
+            ? "border-white/[0.22] bg-white/[0.14] text-white/90"
+            : "border-white/[0.06] bg-black/24 text-white/50 hover:border-white/[0.11] hover:bg-white/[0.055] hover:text-white/76",
+        )}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  function renderFitnessProfileOptionGroup(children: ReactNode, label: string) {
+    return (
+      <div>
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">
+          {label}
+        </p>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{children}</div>
+      </div>
+    );
+  }
+
+  function renderFitnessProfileSetupSheet() {
+    if (!isFitnessProfileSheetOpen) return null;
+
+    const canSaveFitnessProfile = isFitnessProfileDraftComplete(fitnessProfileDraft);
+
+    return (
+      <div
+        className="fixed inset-0 z-[90] flex items-end justify-center overflow-hidden overscroll-contain bg-black/64 backdrop-blur-sm sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Fitness profile setup"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            void hapticSnap();
+            setIsFitnessProfileSheetOpen(false);
+          }
+        }}
+      >
+        <div className="animate-in slide-in-from-bottom-5 fade-in-0 flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[26px] border border-white/[0.055] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:rounded-[26px] sm:border-b">
+          <div className="relative border-b border-white/[0.045] px-4 py-3">
+            <div className="mx-auto h-1 w-10 rounded-full bg-white/18 sm:hidden" />
+            <h3 className="mt-3 text-center text-sm font-semibold text-white/88 sm:mt-0">
+              Fitness Profile
+            </h3>
+            <button
+              type="button"
+              aria-label="Close Fitness profile setup"
+              onClick={() => {
+                void hapticSnap();
+                setIsFitnessProfileSheetOpen(false);
+              }}
+              className="absolute right-3 top-2.5 flex h-8 w-8 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 [-webkit-overflow-scrolling:touch]">
+            {renderFitnessProfileOptionGroup(
+              FITNESS_PROFILE_PRIMARY_GOALS.map((goal) =>
+                renderFitnessProfileOptionButton<FitnessProfilePrimaryGoal>({
+                  label: goal,
+                  value: goal,
+                  selectedValue: fitnessProfileDraft.primaryGoal,
+                  onSelect: (value) => updateFitnessProfileDraft("primaryGoal", value),
+                }),
+              ),
+              "Primary goal",
+            )}
+            {renderFitnessProfileOptionGroup(
+              FITNESS_PROFILE_EXPERIENCE_LEVELS.map((level) =>
+                renderFitnessProfileOptionButton<FitnessProfileExperienceLevel>({
+                  label: level,
+                  value: level,
+                  selectedValue: fitnessProfileDraft.experienceLevel,
+                  onSelect: (value) => updateFitnessProfileDraft("experienceLevel", value),
+                }),
+              ),
+              "Experience",
+            )}
+            {renderFitnessProfileOptionGroup(
+              FITNESS_PROFILE_EQUIPMENT_OPTIONS.map((equipment) =>
+                renderFitnessProfileOptionButton<FitnessProfileEquipment>({
+                  label: equipment,
+                  value: equipment,
+                  selectedValue: fitnessProfileDraft.equipment,
+                  onSelect: (value) => updateFitnessProfileDraft("equipment", value),
+                }),
+              ),
+              "Equipment",
+            )}
+            {renderFitnessProfileOptionGroup(
+              [1, 2, 3, 4, 5, 6, 7].map((days) =>
+                renderFitnessProfileOptionButton<number>({
+                  label: `${days} ${days === 1 ? "day" : "days"}`,
+                  value: days,
+                  selectedValue: fitnessProfileDraft.trainingDaysPerWeek,
+                  onSelect: (value) =>
+                    updateFitnessProfileDraft("trainingDaysPerWeek", value),
+                }),
+              ),
+              "Training days per week",
+            )}
+            {renderFitnessProfileOptionGroup(
+              FITNESS_PROFILE_SESSION_DURATIONS.map((duration) =>
+                renderFitnessProfileOptionButton<FitnessProfileSessionDuration>({
+                  label: duration === 75 ? "75+ minutes" : `${duration} minutes`,
+                  value: duration,
+                  selectedValue: fitnessProfileDraft.sessionDurationMinutes,
+                  onSelect: (value) =>
+                    updateFitnessProfileDraft("sessionDurationMinutes", value),
+                }),
+              ),
+              "Session duration",
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {renderFitnessProfileOptionGroup(
+                FITNESS_PROFILE_WEIGHT_UNITS.map((unit) =>
+                  renderFitnessProfileOptionButton<FitnessProfileWeightUnit>({
+                    label: unit,
+                    value: unit,
+                    selectedValue: fitnessProfileDraft.preferredWeightUnit,
+                    onSelect: (value) =>
+                      updateFitnessProfileDraft("preferredWeightUnit", value),
+                  }),
+                ),
+                "Weight unit",
+              )}
+              {renderFitnessProfileOptionGroup(
+                FITNESS_PROFILE_ANATOMY_DISPLAYS.map((display) =>
+                  renderFitnessProfileOptionButton<FitnessProfileAnatomyDisplay>({
+                    label: display,
+                    value: display,
+                    selectedValue: fitnessProfileDraft.anatomyDisplay,
+                    onSelect: (value) => updateFitnessProfileDraft("anatomyDisplay", value),
+                  }),
+                ),
+                "Anatomy display",
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-white/[0.045] p-3">
+            <button
+              type="button"
+              onClick={() => {
+                void hapticSnap();
+                setIsFitnessProfileSheetOpen(false);
+              }}
+              className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveFitnessProfile()}
+              disabled={!canSaveFitnessProfile || isFitnessProfileSaving}
+              className="flex h-10 items-center justify-center rounded-2xl border border-white/[0.42] bg-white/70 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+            >
+              {isFitnessProfileSaving ? "Saving..." : "Save profile"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessMyHeaderAction({
+    label,
+    onClick,
+    variant = "secondary",
+  }: {
+    label: string;
+    onClick: () => void;
+    variant?: "primary" | "secondary";
+  }) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex h-10 min-w-0 items-center justify-center rounded-2xl border px-2 text-xs font-semibold outline-none transition focus-visible:ring-1",
+          variant === "primary"
+            ? "border-white/[0.42] bg-white/70 text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-white/50"
+            : "border-white/[0.11] bg-zinc-800/72 text-white/82 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.11),inset_0_-1px_0_rgba(0,0,0,0.32)] hover:border-white/[0.17] hover:bg-zinc-700/78 hover:text-white focus-visible:ring-white/24",
+        )}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  function getActiveFitnessPlanSummary(): FitnessActivePlanSummary | null {
+    if (!activeFitnessPlan) return null;
+
+    const nextRoutine = getFitnessActivePlanNextRoutine(activeFitnessPlan);
+    const scheduleSummary =
+      activeFitnessPlan.scheduleMode === "weekly"
+        ? activeFitnessPlan.weekdays.join(", ")
+        : "Flexible rotation";
+
+    return {
+      activePlan: activeFitnessPlan,
+      planName: activeFitnessPlan.planTitle,
+      nextRoutineName: nextRoutine?.title ?? null,
+      scheduleSummary,
+      weeklyCompletion: null,
+    };
+  }
+
+  function renderFitnessMyHeader() {
+    const activePlan = getActiveFitnessPlanSummary();
+
+    if (activePlan) {
+      return (
+        <section className="rounded-xl border border-white/[0.06] bg-white/[0.035] px-3 py-2.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+                My Fitness
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-white/88">
+                {activePlan.planName}
+              </p>
+              {activePlan.nextRoutineName ? (
+                <p className="mt-0.5 truncate text-xs font-medium text-white/46">
+                  Next: {activePlan.nextRoutineName}
+                </p>
+              ) : null}
+              {activePlan.scheduleSummary ? (
+                <p className="mt-0.5 truncate text-xs font-medium text-white/38">
+                  {activePlan.scheduleSummary}
+                </p>
+              ) : null}
+            </div>
+            {activePlan.weeklyCompletion ? (
+              <p className="shrink-0 text-xs font-semibold text-white/52">
+                {activePlan.weeklyCompletion.completed}/{activePlan.weeklyCompletion.total}
+              </p>
+            ) : null}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {renderFitnessMyHeaderAction({
+              label: "Load next workout",
+              onClick: () => loadNextFitnessActivePlanWorkout(activePlan.activePlan),
+              variant: "primary",
+            })}
+            {renderFitnessMyHeaderAction({
+              label: "Edit profile",
+              onClick: openFitnessProfileSheet,
+            })}
+            {renderFitnessMyHeaderAction({
+              label: "Change plan",
+              onClick: () => selectFitnessAction("plans"),
+            })}
+          </div>
+        </section>
+      );
+    }
+
+    if (activeFitnessProfile) {
+      return (
+        <section className="rounded-xl border border-white/[0.06] bg-white/[0.035] px-3 py-2.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+                My Fitness
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-white/88">
+                {activeFitnessProfile.primaryGoal} · {activeFitnessProfile.experienceLevel}
+              </p>
+              <p className="mt-0.5 truncate text-xs font-medium text-white/46">
+                {activeFitnessProfile.equipment} · {activeFitnessProfile.trainingDaysPerWeek}{" "}
+                {activeFitnessProfile.trainingDaysPerWeek === 1 ? "day" : "days"}/week ·{" "}
+                {formatFitnessProfileSessionDuration(
+                  activeFitnessProfile.sessionDurationMinutes,
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {renderFitnessMyHeaderAction({
+              label: "Edit profile",
+              onClick: openFitnessProfileSheet,
+              variant: "primary",
+            })}
+            {renderFitnessMyHeaderAction({
+              label: "Choose a plan",
+              onClick: () => selectFitnessAction("plans"),
+            })}
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section className="rounded-xl border border-white/[0.06] bg-white/[0.035] px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+            My Fitness
+          </p>
+          <p className="shrink-0 text-xs font-semibold text-white/46">Not set up</p>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {renderFitnessMyHeaderAction({
+            label: "Set up profile",
+            onClick: openFitnessProfileSheet,
+            variant: "primary",
+          })}
+          {renderFitnessMyHeaderAction({
+            label: "Choose a plan",
+            onClick: () => selectFitnessAction("plans"),
+          })}
+        </div>
+      </section>
+    );
+  }
+
   function renderFitnessMeContent() {
     const inProgressEntry = getNewestInProgressFitnessWorkoutEntry(entries);
     const progress = inProgressEntry ? getFitnessWorkoutEntryProgress(inProgressEntry) : null;
@@ -12584,17 +13584,7 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div className="mt-3 space-y-3">
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.035] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/42">
-            Training status
-          </p>
-          <p className="mt-2 text-base font-semibold text-white/88">
-            Manual / Untracked
-          </p>
-          <p className="mt-1 text-sm leading-5 text-white/50">
-            Select a routine or build workouts manually. Loading a routine does not start a tracked plan.
-          </p>
-        </div>
+        {renderFitnessMyHeader()}
 
         {inProgressEntry && log ? (
           <div className="rounded-xl border border-white/[0.07] bg-black/28 p-3">
@@ -12696,6 +13686,7 @@ export function NoteDatabaseEntrySheet({
         ) : selectedFitnessAction === "plans" ? (
           renderFitnessPlanBrowser()
         ) : null}
+        {renderFitnessProfileSetupSheet()}
         {renderFitnessExerciseDetailSheet()}
       </div>
     );
@@ -12722,6 +13713,7 @@ export function NoteDatabaseEntrySheet({
     unit,
     options,
     onChange,
+    getAmountForUnitChange,
     compact = false,
     stopPropagation = false,
   }: {
@@ -12731,12 +13723,17 @@ export function NoteDatabaseEntrySheet({
     unit: NutritionServingUnit;
     options: NutritionServingOption[];
     onChange: (nextAmount: number, nextUnit: NutritionServingUnit) => void;
+    getAmountForUnitChange?: (
+      currentAmount: number,
+      currentUnit: NutritionServingUnit,
+      nextUnit: NutritionServingUnit,
+    ) => number;
     compact?: boolean;
     stopPropagation?: boolean;
   }) {
     const heightClassName = "h-8";
     const buttonSizeClassName = "h-8 w-7";
-    const amountWidthClassName = compact ? "w-8" : "w-9";
+    const amountWidthClassName = compact ? "w-11" : "w-12";
     const safeOptions =
       options.length > 0 ? options : [{ value: "serving", label: "serving" }];
     const requestedUnit = normalizeNutritionServingUnit(unit);
@@ -12746,11 +13743,49 @@ export function NoteDatabaseEntrySheet({
     const menuId = `nutrition-serving-unit-${id}`;
     const isUnitMenuOpen = openNutritionServingUnitMenu?.id === menuId;
     const unitMenuPosition = isUnitMenuOpen ? openNutritionServingUnitMenu : null;
+    const amountDraft = nutritionServingAmountDrafts[id];
+    const displayAmount = amountDraft ?? formatNutritionServingAmount(amount);
+    const setAmountDraft = (value: string) => {
+      setNutritionServingAmountDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [id]: value,
+      }));
+    };
+    const clearAmountDraft = () => {
+      setNutritionServingAmountDrafts((currentDrafts) => {
+        if (!(id in currentDrafts)) return currentDrafts;
+        const nextDrafts = { ...currentDrafts };
+        delete nextDrafts[id];
+        return nextDrafts;
+      });
+    };
+    const commitAmountDraft = () => {
+      if (amountDraft === undefined) return;
+
+      const parsedAmount = Number(amountDraft.trim());
+      if (Number.isFinite(parsedAmount) && parsedAmount > 0) {
+        onChange(parsedAmount, normalizedUnit);
+      }
+      clearAmountDraft();
+    };
+    const commitAmountChange = (
+      nextAmount: number,
+      nextUnit: NutritionServingUnit,
+    ) => {
+      clearAmountDraft();
+      onChange(nextAmount, nextUnit);
+    };
+    const getCommittableAmount = () => {
+      if (amountDraft === undefined) return amount;
+
+      const parsedAmount = Number(amountDraft.trim());
+      return Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : amount;
+    };
 
     return (
       <div
         data-nutrition-serving-picker
-        className="relative flex max-w-[8.75rem] shrink-0 items-center rounded-lg border border-white/[0.07] bg-black/34 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+        className="relative flex max-w-[9.5rem] shrink-0 items-center rounded-lg border border-white/[0.07] bg-black/34 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
         onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
       >
         <button
@@ -12758,7 +13793,7 @@ export function NoteDatabaseEntrySheet({
           aria-label={`Decrease ${label} amount`}
           onClick={(event) => {
             if (stopPropagation) event.stopPropagation();
-            onChange(getNextWholeNutritionQuantity(amount, -1), normalizedUnit);
+            commitAmountChange(getNextWholeNutritionQuantity(amount, -1), normalizedUnit);
           }}
           className={`flex ${buttonSizeClassName} items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white`}
         >
@@ -12767,9 +13802,15 @@ export function NoteDatabaseEntrySheet({
         <input
           type="text"
           inputMode="decimal"
-          value={formatNutritionServingAmount(amount)}
+          value={displayAmount}
           onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
-          onChange={(event) => onChange(Number(event.target.value), normalizedUnit)}
+          onChange={(event) => setAmountDraft(event.target.value)}
+          onBlur={commitAmountDraft}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
           aria-label={`${label} amount`}
           className={`${heightClassName} ${amountWidthClassName} border-x border-white/[0.055] bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-white/84 outline-none`}
         />
@@ -12827,7 +13868,11 @@ export function NoteDatabaseEntrySheet({
                       aria-checked={isSelected}
                       onClick={(event) => {
                         if (stopPropagation) event.stopPropagation();
-                        onChange(amount, option.value);
+                        const currentAmount = getCommittableAmount();
+                        const nextAmount = getAmountForUnitChange
+                          ? getAmountForUnitChange(currentAmount, normalizedUnit, option.value)
+                          : currentAmount;
+                        commitAmountChange(nextAmount, option.value);
                         setOpenNutritionServingUnitMenu(null);
                       }}
                       className={`flex h-8 w-full items-center justify-between gap-2 px-2.5 text-left text-xs font-semibold outline-none transition ${
@@ -12852,7 +13897,7 @@ export function NoteDatabaseEntrySheet({
           aria-label={`Increase ${label} amount`}
           onClick={(event) => {
             if (stopPropagation) event.stopPropagation();
-            onChange(getNextWholeNutritionQuantity(amount, 1), normalizedUnit);
+            commitAmountChange(getNextWholeNutritionQuantity(amount, 1), normalizedUnit);
           }}
           className={`flex ${buttonSizeClassName} items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white`}
         >
@@ -12871,6 +13916,8 @@ export function NoteDatabaseEntrySheet({
       options: getFoodServingOptions(item.food),
       onChange: (amount, servingUnit) =>
         updateNutritionSelectedFoodServing(item.food, amount, servingUnit),
+      getAmountForUnitChange: (amount, currentUnit, nextUnit) =>
+        convertNutritionFoodServingAmount(item.food, amount, currentUnit, nextUnit),
       compact: true,
       stopPropagation: true,
     });
@@ -13277,34 +14324,46 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderNutritionMealBuilderQuantityControl(item: NutritionMealBuilderItem) {
+    const food = item.type === "food" ? item.food : undefined;
+
     return renderNutritionServingSelector({
       id: `meal-builder-${item.id}`,
       label: getNutritionMealBuilderItemName(item),
       amount: item.quantity,
       unit: getNutritionMealBuilderItemUnit(item),
       options:
-        item.type === "food" && item.food
-          ? getFoodServingOptions(item.food)
+        food
+          ? getFoodServingOptions(food)
           : item.recipe
             ? getRecipeServingOptions(item.recipe)
             : [{ value: "serving", label: "serving" }],
       onChange: (amount, servingUnit) =>
         updateNutritionMealBuilderItemServing(item.id, amount, servingUnit),
+      getAmountForUnitChange: food
+        ? (amount, currentUnit, nextUnit) =>
+            convertNutritionFoodServingAmount(food, amount, currentUnit, nextUnit)
+        : undefined,
       compact: true,
     });
   }
 
   function renderNutritionRecipeBuilderQuantityControl(item: NutritionMealBuilderItem) {
+    const food = item.food;
+
     return renderNutritionServingSelector({
       id: `recipe-builder-${item.id}`,
       label: getNutritionMealBuilderItemName(item),
       amount: item.quantity,
       unit: getNutritionMealBuilderItemUnit(item),
-      options: item.food
-        ? getFoodServingOptions(item.food)
+      options: food
+        ? getFoodServingOptions(food)
         : [{ value: "serving", label: "serving" }],
       onChange: (amount, servingUnit) =>
         updateNutritionRecipeBuilderItemServing(item.id, amount, servingUnit),
+      getAmountForUnitChange: food
+        ? (amount, currentUnit, nextUnit) =>
+            convertNutritionFoodServingAmount(food, amount, currentUnit, nextUnit)
+        : undefined,
       compact: true,
     });
   }
@@ -16450,7 +17509,7 @@ export function NoteDatabaseEntrySheet({
       <div
         className={`animate-in fade-in-0 zoom-in-95 flex w-full max-w-xl flex-col overflow-hidden border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200 ${
           isNutritionTargetSetupTakeoverOpen
-            ? "h-[100dvh] max-h-[100dvh] min-h-0 rounded-none sm:h-[min(88dvh,720px)] sm:max-h-[88dvh] sm:rounded-[30px]"
+            ? "h-full max-h-full min-h-0 rounded-none sm:h-[min(88dvh,720px)] sm:max-h-[88dvh] sm:rounded-[30px]"
             : "max-h-[88vh] rounded-[30px]"
         }`}
       >
@@ -16483,7 +17542,7 @@ export function NoteDatabaseEntrySheet({
           }
         >
           {databaseFields.length > 0 ? (
-            <div className={isNutritionTargetSetupTakeoverOpen ? "h-full min-h-0" : "space-y-4"}>
+            <div className={isNutritionTargetSetupTakeoverOpen ? "flex h-full min-h-0 flex-col" : "space-y-4"}>
               {isDefaultFitnessDatabase ? renderFitnessTabContent() : null}
               {editableDatabaseFields.map((field, fieldIndex) => {
                 if (!shouldShowFitnessEntryFields) {
@@ -16683,11 +17742,18 @@ export function NoteDatabaseFocusedView({
   const isDefaultNutritionDatabase = databaseDefinition
     ? isDefaultNutritionDatabaseDefinition(databaseDefinition)
     : false;
+  const isDefaultFitnessDatabase = databaseDefinition
+    ? isDefaultFitnessDatabaseDefinition(databaseDefinition)
+    : false;
   const isOnHandDatabase = databaseDefinition
     ? isOnHandDatabaseDefinition(databaseDefinition)
     : false;
   const storedEntries = databaseEntries?.[databaseId] ?? [];
   const entries = isOnHandDatabase ? externalDatabaseEntries : storedEntries;
+  const visibleEntries =
+    isDefaultFitnessDatabase && !isOnHandDatabase
+      ? entries.filter((entry) => !isFitnessProfileEntry(entry))
+      : entries;
   const shouldRenderNutritionDailyProgress =
     isDefaultNutritionDatabase && Boolean(activeDatabaseView);
   const nutritionLocalDayWindow = useMemo(() => getNutritionLocalDayWindow(), []);
@@ -17262,7 +18328,7 @@ export function NoteDatabaseFocusedView({
         <NoteDatabaseEntriesView
           activeView={activeDatabaseView}
           definition={databaseDefinition}
-          entries={entries}
+          entries={visibleEntries}
           onAddField={isStarterDatabaseSchemaLocked ? undefined : openNewDatabaseFieldSheet}
           onArchiveEntry={isOnHandDatabase ? archiveDatabaseEntry : undefined}
           onEditEntry={isOnHandDatabase ? editDatabaseEntry : undefined}
@@ -19214,9 +20280,14 @@ function NoteSlashTextarea({
               const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(definition);
               const canOpenDatabase = !isStarterDatabaseSchemaLocked || Boolean(onOpenDatabase);
               const isOnHandDatabase = isOnHandDatabaseDefinition(definition);
+              const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(definition);
               const entries = isOnHandDatabase
                 ? externalDatabaseEntries
                 : databaseEntries?.[segment.databaseId] ?? [];
+              const visibleEntries =
+                isDefaultFitnessDatabase && !isOnHandDatabase
+                  ? entries.filter((entry) => !isFitnessProfileEntry(entry))
+                  : entries;
               const activeView = getActiveDatabaseView(definition);
               const visibleFields = getVisibleDatabaseFields(definition);
               const titleField = getDatabaseTitleField(definition);
@@ -19287,7 +20358,7 @@ function NoteSlashTextarea({
                     <NoteDatabaseEntriesView
                       activeView={activeView}
                       definition={definition}
-                      entries={entries}
+                      entries={visibleEntries}
                       titleField={titleField}
                       visibleFields={visibleFields}
                     />

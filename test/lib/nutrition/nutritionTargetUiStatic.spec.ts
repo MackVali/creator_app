@@ -73,16 +73,41 @@ describe("Nutrition target setup UI static contracts", () => {
 
   it("places goal type, current weight, conditional goal weight, and conditional pace on Direction", () => {
     const direction = functionBlock("DirectionStep");
+    const weightPicker = functionBlock("WeightPicker");
     expect(panel).toContain('lose: "Lose weight"');
     expect(panel).toContain('gain: "Gain weight"');
     expect(direction).toContain("goalLabels");
-    expect(direction).toContain("Current weight");
-    expect(direction).toContain("Goal weight");
+    expect(direction).toContain('field="current"');
+    expect(direction).toContain('field="goal"');
+    expect(weightPicker).toContain("Current weight");
+    expect(weightPicker).toContain("Goal weight");
     expect(direction).toContain("<DirectionPaceSelector");
     expect(direction).toContain('form.goalType === "lose" || form.goalType === "gain"');
     expect(direction).toContain("Keep your daily target near estimated maintenance.");
     expect(direction).toContain("Stay near maintenance while prioritizing protein.");
     expect(functionBlock("DirectionPaceSelector")).toContain("weeklyRateLabel");
+  });
+
+  it("renders Direction weights as editable inline picker controls", () => {
+    const direction = functionBlock("DirectionStep");
+    const weightPicker = functionBlock("WeightPicker");
+
+    expect(direction).toContain("<WeightPicker");
+    expect(weightPicker).toContain('type="button"');
+    expect(weightPicker).toContain('aria-label={field === "current" ? "Decrease current weight" : "Decrease goal weight"}');
+    expect(weightPicker).toContain('aria-label={field === "current" ? "Increase current weight" : "Increase goal weight"}');
+    expect(weightPicker).toContain('aria-label={label}');
+    expect(weightPicker).toContain('inputMode="decimal"');
+    expect(weightPicker).toContain('type="text"');
+    expect(weightPicker).toContain("event.currentTarget.select()");
+    expect(weightPicker).toContain('event.key !== "Enter"');
+    expect(functionBlock("updateWeightFieldDisplay")).toContain("setWeightDisplay");
+    expect(functionBlock("updateWeightFieldDisplay")).toContain("setGoalWeightDisplay");
+    expect(weightPicker).toContain("poundsToKilograms(1)");
+    expect(weightPicker).toContain("0.5");
+    expect(functionBlock("clampWeightKg")).toContain("weightMinKg");
+    expect(functionBlock("clampWeightKg")).toContain("weightMaxKg");
+    expect(weightPicker).not.toContain('type="number"');
   });
 
   it("does not render current weight again on Baseline", () => {
@@ -146,17 +171,18 @@ describe("Nutrition target setup UI static contracts", () => {
 
   it("renders quiet field-level Direction errors with reserved layout lines", () => {
     const direction = functionBlock("DirectionStep");
+    const weightPicker = functionBlock("WeightPicker");
     const validationLine = functionBlock("ValidationLine");
 
     expect(direction).toContain("currentWeightIssue");
     expect(direction).toContain("goalWeightIssue");
     expect(direction).toContain("paceIssue");
-    expect(direction).toContain("validationId={directionErrorIds.currentWeight}");
-    expect(direction).toContain("validationId={directionErrorIds.goalWeight}");
-    expect(direction).toContain("aria-describedby={currentWeightIssue ? directionErrorIds.currentWeight : undefined}");
-    expect(direction).toContain("aria-describedby={goalWeightIssue ? directionErrorIds.goalWeight : undefined}");
-    expect(direction).toContain("aria-invalid={currentWeightIssue ? true : undefined}");
-    expect(direction).toContain("aria-invalid={goalWeightIssue ? true : undefined}");
+    expect(direction).toContain("issue={currentWeightIssue}");
+    expect(direction).toContain("issue={goalWeightIssue}");
+    expect(weightPicker).toContain("directionErrorIds.currentWeight");
+    expect(weightPicker).toContain("directionErrorIds.goalWeight");
+    expect(weightPicker).toContain("aria-describedby={issue ? errorId : undefined}");
+    expect(weightPicker).toContain("aria-invalid={issue ? true : undefined}");
     expect(validationLine).toContain("min-h-3");
     expect(validationLine).toContain("text-[11px]");
     expect(validationLine).toContain("leading-3");
@@ -167,13 +193,15 @@ describe("Nutrition target setup UI static contracts", () => {
   it("assigns Direction validation to the field it belongs to", () => {
     const issues = functionBlock("directionFieldIssues");
     const direction = functionBlock("DirectionStep");
+    const weightPicker = functionBlock("WeightPicker");
 
     expect(issues).toContain('issues.currentWeight = "Enter your current weight."');
     expect(issues).toContain('issues.goalWeight = "Goal weight is required."');
     expect(issues).toContain('issues.goalWeight = "Choose a goal weight below your current weight."');
     expect(issues).toContain('issues.goalWeight = "Choose a goal weight above your current weight."');
     expect(issues).toContain('issues.pace = "Choose a pace."');
-    expect(direction.indexOf("validationMessage={goalWeightIssue}")).toBeLessThan(direction.indexOf("value={form.goalWeight}"));
+    expect(direction.indexOf("field=\"goal\"")).toBeLessThan(direction.indexOf("issue={goalWeightIssue}"));
+    expect(weightPicker.indexOf("directionErrorIds.goalWeight")).toBeLessThan(weightPicker.indexOf("aria-describedby={issue ? errorId : undefined}"));
   });
 
   it("removes the old amber Direction validation presentation", () => {
@@ -190,10 +218,12 @@ describe("Nutrition target setup UI static contracts", () => {
 
     expect(setupTakeover.match(/overflow-y-auto/g) ?? []).toHaveLength(1);
     expect(setupTakeover).toContain("flex h-full max-h-full min-h-0 flex-1 touch-pan-y flex-col overflow-hidden");
+    expect(setupTakeover).toContain("pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:py-3");
     expect(setupTakeover).toContain("min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain");
     expect(setupTakeover).toContain("pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]");
-    expect(noteSlashTextarea).toContain('"h-full min-h-0"');
-    expect(noteSlashTextarea).toContain("h-[100dvh] max-h-[100dvh] min-h-0");
+    expect(noteSlashTextarea).toContain('"flex h-full min-h-0 flex-col"');
+    expect(noteSlashTextarea).toContain("h-full max-h-full min-h-0 rounded-none");
+    expect(noteSlashTextarea).not.toContain("h-[100dvh] max-h-[100dvh] min-h-0");
     expect(noteSlashTextarea).toContain("items-stretch justify-center p-0");
     expect(noteSlashTextarea).toContain('? "min-h-0 flex-1 overflow-hidden p-0"');
   });
