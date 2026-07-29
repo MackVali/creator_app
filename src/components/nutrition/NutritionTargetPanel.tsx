@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, LoaderCircle, Minus, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import {
   poundsToKilograms,
+  calculateGoalTimelineEstimate,
   type ActivityLevel,
+  type GoalTimelineEstimate,
   type GoalType,
   type MacroMode,
   type NutritionTargetResult,
@@ -32,8 +34,9 @@ import {
   type TargetSetupForm,
   type TargetSetupMode,
 } from "@/lib/nutrition/targetForms";
+import { useActiveNutritionTarget, type ActiveNutritionTarget } from "@/hooks/useActiveNutritionTarget";
 
-type DailyTarget = Record<string, unknown> & { goal?: NutritionGoalRow };
+type DailyTarget = ActiveNutritionTarget & { goal?: NutritionGoalRow };
 type ProfileResponse = { profile: NutritionProfileRow; activeGoal: NutritionGoalRow };
 type OverrideForm = { calories: string; protein: string; carbs: string; fat: string; reason: string; confirmMismatch: boolean };
 type SetupView = "wizard" | "result" | "advanced";
@@ -139,6 +142,12 @@ const displayWeightFromKg = (weightKg: number, units: PreferredUnits) => (
 
 const formatSignedCalories = (value: number) => `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString()} kcal/day`;
 
+const formatTimelineText = (timeline: GoalTimelineEstimate, includeDate = false) => {
+  const weekLabel = `About ${timeline.weeks.toLocaleString()} ${timeline.weeks === 1 ? "week" : "weeks"}`;
+  if (!includeDate) return weekLabel;
+  return `${weekLabel} · around ${timeline.completionDate.toLocaleDateString(undefined, { month: "long", day: "numeric" })}`;
+};
+
 const calculationInputs = (goal?: NutritionGoalRow): Record<string, unknown> => {
   const value = goal?.calculation_inputs;
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -213,6 +222,37 @@ function goalRateSummary(goal?: NutritionGoalRow, inputs: Record<string, unknown
   const weightKg = numberOrNull(inputs.weightKg);
   if (rate === null || weightKg === null) return null;
   return `${displayWeightFromKg(weightKg * rate / 100, unitsFromInputs(inputs))} per week`;
+}
+
+function timelineFromForm(form: TargetSetupForm) {
+  const currentWeightKg = numberOrNull(form.weightKgCanonical);
+  const goalWeightKg = numberOrNull(form.goalWeightKgCanonical);
+  const selectedRatePct = numberOrNull(form.rate);
+  const selectedRateKgPerWeek = currentWeightKg !== null && selectedRatePct !== null
+    ? currentWeightKg * selectedRatePct / 100
+    : null;
+  return calculateGoalTimelineEstimate({
+    goalType: form.goalType,
+    currentWeightKg,
+    goalWeightKg,
+    selectedRateKgPerWeek,
+  });
+}
+
+function timelineFromGoal(goal?: NutritionGoalRow, inputs: Record<string, unknown> = {}) {
+  const goalType = goal?.goal_type as GoalType | undefined;
+  if (goalType !== "lose" && goalType !== "gain") return null;
+  const currentWeightKg = numberOrNull(inputs.weightKg);
+  const goalWeightKg = numberOrNull(goal?.goal_weight_kg ?? inputs.goalWeightKg);
+  const effectiveRateKgPerWeek = numberOrNull(inputs.effectiveGoalRateKgPerWeek);
+  const selectedRateKgPerWeek = numberOrNull(inputs.selectedGoalRateKgPerWeek);
+  return calculateGoalTimelineEstimate({
+    goalType,
+    currentWeightKg,
+    goalWeightKg,
+    effectiveRateKgPerWeek,
+    selectedRateKgPerWeek,
+  });
 }
 
 function goalWeightSummary(goal?: NutritionGoalRow, inputs: Record<string, unknown> = {}) {
@@ -299,14 +339,17 @@ function advancedSummary(form: TargetSetupForm) {
 export function NutritionTargetPanel({
   creatorDayDate,
   onSetupOpenChange,
+  presentation = "full",
 }: {
   creatorDayDate?: string | null;
   onSetupOpenChange?: (open: boolean) => void;
+  presentation?: "full" | "compact";
 }) {
-  const [target, setTarget] = useState<DailyTarget | null>(null);
+  const targetQuery = useActiveNutritionTarget(creatorDayDate);
+  const target = targetQuery.target as DailyTarget | null;
   const [profile, setProfile] = useState<NutritionProfileRow>(null);
   const [activeGoal, setActiveGoal] = useState<NutritionGoalRow>(null);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -325,40 +368,25 @@ export function NutritionTargetPanel({
   const [overrideForm, setOverrideForm] = useState<OverrideForm>({ calories: "", protein: "", carbs: "", fat: "", reason: "", confirmMismatch: false });
   const [overrideError, setOverrideError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadProfile = useCallback(async () => {
+    setProfileLoading(true);
     setError(null);
     try {
-      const query = new URLSearchParams({
-        ...(creatorDayDate ? { creator_day_date: creatorDayDate } : {}),
-        ...(deviceTimezone() ? { device_timezone: deviceTimezone()! } : {}),
-      });
-      const [targetResponse, profileResponse] = await Promise.all([
-        fetch(`/api/nutrition/targets?${query}`),
-        fetch("/api/nutrition/profile"),
-      ]);
-      const targetBody = await targetResponse.json();
+      const profileResponse = await fetch("/api/nutrition/profile");
       const profileBody = await profileResponse.json() as ProfileResponse & { error?: string };
       if (!profileResponse.ok) throw new Error(profileBody.error || "Unable to load Nutrition profile.");
       setProfile(profileBody.profile ?? null);
       setActiveGoal(profileBody.activeGoal ?? null);
-      if (targetResponse.ok) {
-        setTarget(targetBody.target ?? null);
-      } else if (targetBody.setupRequired) {
-        setTarget(null);
-      } else {
-        throw new Error(targetBody.error || "Unable to load daily target.");
-      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load Nutrition targets.");
     } finally {
-      setLoading(false);
+      setProfileLoading(false);
     }
-  }, [creatorDayDate]);
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadProfile();
+  }, [loadProfile]);
 
   useEffect(() => {
     onSetupOpenChange?.(setupOpen);
@@ -428,9 +456,11 @@ export function NutritionTargetPanel({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.issues?.join(" ") || body.error || "Unable to save target.");
+      targetQuery.setTargetInCache(body.target);
+      if (body.goal) setActiveGoal(body.goal);
       setSetupOpen(false);
       setPreview(null);
-      await load();
+      await Promise.all([targetQuery.invalidate(), loadProfile()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save target.");
     } finally {
@@ -496,9 +526,9 @@ export function NutritionTargetPanel({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.issues?.join(" ") || body.error || "Unable to save daily override.");
-      setTarget(body.target);
+      targetQuery.setTargetInCache(body.target);
       setOverrideOpen(false);
-      await load();
+      await targetQuery.invalidate();
     } catch (reason) {
       setOverrideError(reason instanceof Error ? reason.message : "Unable to save daily override.");
     } finally {
@@ -518,15 +548,18 @@ export function NutritionTargetPanel({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Unable to reset daily override.");
-      setTarget(body.target);
+      targetQuery.setTargetInCache(body.target);
       setOverrideOpen(false);
-      await load();
+      await targetQuery.invalidate();
     } catch (reason) {
       setOverrideError(reason instanceof Error ? reason.message : "Unable to reset daily override.");
     } finally {
       setBusy(false);
     }
   };
+
+  const loading = presentation === "compact" ? targetQuery.isLoading : profileLoading || targetQuery.isLoading;
+  const visibleError = error ?? targetQuery.error;
 
   if (loading) {
     return <div className="flex items-center gap-2 border-b border-white/[0.055] p-4 text-xs text-white/42"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading daily target...</div>;
@@ -536,6 +569,7 @@ export function NutritionTargetPanel({
   const goalType = goal?.goal_type && typeof goal.goal_type === "string" ? goal.goal_type as GoalType : null;
   const activeGoalRate = goalRateSummary(goal, inputs);
   const activeGoalWeight = goalWeightSummary(goal, inputs);
+  const activeTimeline = timelineFromGoal(goal, inputs);
   const percentageDetails = derivePercentageMacroDetails(form, preview?.calorieTargetKcal ?? null);
   const percentageTotal = macroPercentTotal(form);
   const automaticLoseBlocked = form.goalType === "lose" && form.formulaInput !== "manual" && form.pregnancyStatus !== "none";
@@ -639,7 +673,7 @@ export function NutritionTargetPanel({
             />
           )}
 
-          {error ? <p className="mt-4 rounded-lg border border-red-300/15 bg-red-300/[0.055] p-3 text-xs leading-5 text-red-100/78">{error}</p> : null}
+          {visibleError ? <p className="mt-4 rounded-lg border border-red-300/15 bg-red-300/[0.055] p-3 text-xs leading-5 text-red-100/78">{visibleError}</p> : null}
 
           <div className="mt-6">
             {profileOnly ? (
@@ -676,12 +710,26 @@ export function NutritionTargetPanel({
           </div>
           <button type="button" onClick={() => openSetup("new_goal")} className="min-h-10 shrink-0 rounded-lg border border-white/[0.14] bg-[#242426] px-3 text-xs font-semibold text-white">Set target</button>
         </div>
+      ) : presentation === "compact" ? (
+        <button type="button" onClick={() => openSetup("update_goal")} className="w-full rounded-xl border border-white/[0.075] bg-[#141416] px-3 py-3 text-left outline-none transition hover:border-white/[0.12] hover:bg-[#19191b] focus-visible:ring-1 focus-visible:ring-white/18">
+          <span className="flex items-baseline justify-between gap-3">
+            <span className="text-xs font-semibold text-white/52">Daily target</span>
+            <span className="shrink-0 text-base font-semibold tabular-nums text-white">{formatNumber(target.calorie_target_kcal, " kcal")}</span>
+          </span>
+          <span className="mt-1 flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-xs font-medium text-white/46">
+              {formatNumber(target.protein_target_g)}P · {formatNumber(target.carb_target_g)}C · {formatNumber(target.fat_target_g)}F
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-white/58">Edit</span>
+          </span>
+        </button>
       ) : (
         <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-2xl font-semibold text-white">{formatNumber(target.calorie_target_kcal, " kcal")}</p>
               <p className="mt-1 text-xs text-white/46">{goalType ? targetSummaryGoalLabels[goalType] : "Daily target"}{activeGoalRate ? ` · ${activeGoalRate}` : ""} · {targetSource}</p>
+              {activeTimeline ? <p className="mt-1 text-[11px] text-white/38">Estimated timeline · {formatTimelineText(activeTimeline, true)}</p> : null}
               <p className="mt-1 text-[11px] text-white/36">Creator day {selectedDay}</p>
             </div>
             <button type="button" onClick={() => openSetup("update_goal")} className="min-h-10 rounded-lg border border-white/10 px-3 text-[11px] font-semibold text-white/68">Update goal</button>
@@ -707,7 +755,7 @@ export function NutritionTargetPanel({
         </div>
       )}
 
-      {error && !setupOpen ? <p className="mt-2 text-xs text-red-200/72">{error}</p> : null}
+      {visibleError && !setupOpen ? <p className="mt-2 text-xs text-red-200/72">{visibleError}</p> : null}
 
       {overrideOpen && target ? (
         <div className="fixed inset-0 z-[135] flex items-end justify-center bg-black/75 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Daily override">
@@ -996,6 +1044,7 @@ function DirectionStep({
 function DirectionPaceSelector({ form, updateForm, issue }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void; issue?: string }) {
   if (form.goalType !== "lose" && form.goalType !== "gain") return null;
   const goalType = form.goalType;
+  const timeline = timelineFromForm(form);
   return (
     <div>
       <p className="text-xs font-semibold text-white/54">Pace</p>
@@ -1019,6 +1068,7 @@ function DirectionPaceSelector({ form, updateForm, issue }: { form: TargetSetupF
           );
         })}
       </div>
+      {timeline ? <p className="mt-2 text-xs font-medium text-white/42">Estimated timeline · {formatTimelineText(timeline)}</p> : null}
     </div>
   );
 }
@@ -1330,6 +1380,13 @@ function ResultSurface({ preview, showCalculation }: { preview: NutritionTargetR
   const currentWeight = displayWeightFromKg(preview.weightKg, preview.preferredUnits);
   const goalWeight = preview.goalWeightKg === null ? null : displayWeightFromKg(preview.goalWeightKg, preview.preferredUnits);
   const selectedPace = paceLabel(preview.goalType, preview.goalRatePctPerWeek);
+  const timeline = calculateGoalTimelineEstimate({
+    goalType: preview.goalType,
+    currentWeightKg: preview.weightKg,
+    goalWeightKg: preview.goalWeightKg,
+    effectiveRateKgPerWeek: preview.effectiveGoalRateKgPerWeek,
+    selectedRateKgPerWeek: preview.selectedGoalRateKgPerWeek,
+  });
   const goalLine = preview.goalType === "lose" || preview.goalType === "gain"
     ? `${currentWeight}${goalWeight ? ` → ${goalWeight}` : ""} · ${selectedPace ?? "Selected pace"} · ${formatSignedCalories(calorieAdjustment)}`
     : preview.goalType === "maintain"
@@ -1352,6 +1409,7 @@ function ResultSurface({ preview, showCalculation }: { preview: NutritionTargetR
       <div className="space-y-1 text-xs leading-5 text-white/46">
         <p><span className="text-white/68">Estimated maintenance</span> · {preview.estimatedMaintenanceKcal.toLocaleString()} kcal</p>
         <p>{goalLine}</p>
+        {timeline ? <p>Estimated timeline · {formatTimelineText(timeline, true)}</p> : null}
       </div>
       {preview.warnings.length ? (
         <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-xs leading-5 text-amber-100/75">

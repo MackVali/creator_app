@@ -62,6 +62,7 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from "./habits";
+import { buildFitnessPlanScheduleInstanceMetadata } from "@/lib/fitness/planHabit";
 import {
   evaluateHabitDueOnDate,
   normalizeDayList,
@@ -142,6 +143,14 @@ const asJsonRecord = (
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value;
 };
+
+function buildHabitScheduleInstanceMetadata(habit: HabitScheduleItem) {
+  return buildFitnessPlanScheduleInstanceMetadata({
+    habitId: habit.id,
+    skillId: habit.skillId ?? null,
+    memoCaptureConfig: habit.memoCaptureConfig as Json | null | undefined,
+  }) as ScheduleInstance["metadata"] | null;
+}
 
 const OVERLAY_WINDOWS_TABLE = "overlay_windows" as never;
 const OVERLAY_ALLOWED_INSTANCE_TYPES_TABLE =
@@ -4577,6 +4586,7 @@ export async function scheduleBacklog(
         locked: false,
         event_name: habit.name ?? null,
         practice_context_monument_id: habit.practiceContextId ?? null,
+        metadata: buildHabitScheduleInstanceMetadata(habit),
       },
       (error) => {
         result.failures.push({
@@ -5171,7 +5181,8 @@ export async function scheduleBacklog(
                 continue;
               }
               const fixedMetadata = mergeNonDailyMetadata(
-                params.reuseInstance?.metadata,
+                buildHabitScheduleInstanceMetadata(habit) ??
+                  params.reuseInstance?.metadata,
                 {
                   role: params.role,
                   dueAtUtc: params.dueAtUtc,
@@ -5495,12 +5506,16 @@ export async function scheduleBacklog(
             maxGapCache: dayMaxGapCache,
             blockerCache,
             createBatcher: scheduleInstanceCreateBatch,
-            metadata: mergeNonDailyMetadata(params.reuseInstance?.metadata, {
-              role: params.role,
-              dueAtUtc: params.dueAtUtc,
-              anchorCompletedAtUtc: plan.anchor.completedAtUtc,
-              chainKey,
-            }),
+            metadata: mergeNonDailyMetadata(
+              buildHabitScheduleInstanceMetadata(habit) ??
+                params.reuseInstance?.metadata,
+              {
+                role: params.role,
+                dueAtUtc: params.dueAtUtc,
+                anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+                chainKey,
+              },
+            ),
             debugEnabled,
             timing,
           });
@@ -5940,6 +5955,7 @@ export async function scheduleBacklog(
           weightSnapshot: 0,
           eventName: habit.name ?? null,
           practiceContextId: habit.skillMonumentId ?? null,
+          metadata: buildHabitScheduleInstanceMetadata(habit),
         },
         supabase
       );
@@ -10745,6 +10761,7 @@ async function scheduleHabitsForDay(params: {
         day,
         timeZone: zone,
         existingInstance,
+        metadata: buildHabitScheduleInstanceMetadata(habit),
         timing,
         habitTimingPass,
       });
@@ -11856,6 +11873,7 @@ async function scheduleHabitsForDay(params: {
           allowHabitOverlap: allowsHabitOverlap,
           habitTypeById,
           windowEdgePreference: habit.windowEdgePreference,
+          metadata: buildHabitScheduleInstanceMetadata(habit),
           debugEnabled,
           timing,
         });

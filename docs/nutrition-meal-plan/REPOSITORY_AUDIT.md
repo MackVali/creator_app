@@ -6,6 +6,21 @@ The current Grocery **Meal Plan** is not an implemented planner. `GROCERY_EXTRA_
 
 The safe seam is a focused shared Meal Plan component and hook mounted by both Grocery and Nutrition within the existing sheet. Do not duplicate state, do not store plans in note-entry component state, and do not refactor the rest of the 17,786-line `NoteSlashTextarea.tsx`. Existing `meal_templates`/`meal_template_items` should remain the reusable definition of a meal; existing `meals`/`meal_items` should remain immutable-ish consumption logs. A dated plan assignment is a distinct concept and needs new persistence in Phase 1.
 
+# Saved Meal Template Schema Contract Repair
+
+The July 29, 2026 `PGRST205` failure on `GET /api/nutrition/meal-templates?limit=50` proves a VALI-v19 installation gap, not a stale route. Repository evidence establishes `public.meal_templates` as the canonical saved/reusable meal parent table:
+
+- `supabase/migrations/20260621090000_create_nutrition_meal_templates.sql` creates `meal_templates` and `meal_template_items`.
+- `supabase/migrations/20260621100000_add_icon_to_meal_templates.sql` adds the API/UI-required `icon` column.
+- `src/app/api/nutrition/meal-templates/route.ts` lists and creates saved meal templates from `meal_templates` and serializes ordered `meal_template_items` as client-facing `meal_items`.
+- `src/lib/nutrition/meals.ts` defines `NutritionMealTemplateRow` and `NutritionMealTemplateItemRow` from those tables.
+- `NoteSlashTextarea.tsx` creates reusable saved meals through `POST /api/nutrition/meal-templates`; recent consumed meals remain separate through `GET /api/nutrition/meals`.
+- `SharedMealPlanPanel` adds planned saved meals by passing `mealTemplateId` to `/api/nutrition/meal-plan`; that route expands `meal_template_items` into the immutable plan nutrition snapshot.
+
+`public.meal_items` is not the saved-template parent and must not replace `meal_templates`. It is the child table for consumed/logged `public.meals`, created by `supabase/migrations/20260620003000_create_nutrition_meals.sql` and populated by the `create_nutrition_meal` RPC. Saved reusable meal items live in `public.meal_template_items`, which belongs to `public.meal_templates`.
+
+No repository evidence shows another existing table that represents saved meal templates. The checked-in canonical SQL exists, but VALI-v19 does not have the table in the PostgREST schema cache. The repair is therefore a missing manual installation/repair file, not an API model rewrite and not a backfill from `meal_items`. Existing consumed `meals`/`meal_items` data does not require migration into saved templates because consumed logs and reusable templates are distinct product concepts. Any out-of-band saved-template data would already need to be in `meal_templates`; no alternate source-to-destination mapping is proven.
+
 # Existing Grocery Meal Plan
 
 ## Exact files and functions

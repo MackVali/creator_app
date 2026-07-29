@@ -66,7 +66,9 @@ type RelatedRoutineCardProps = {
   routine: RelatedRoutineCardRoutine;
   density: "large" | "small";
   fallbackIcon?: string;
-  onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
+  onHabitCompletionToggle?: (
+    habitId: string
+  ) => boolean | void | Promise<boolean | void>;
   onAddHabit?: (routine: RelatedRoutineCardRoutine) => void;
   restoreOpen?: boolean;
   newHabitRevealId?: string | null;
@@ -286,7 +288,9 @@ function RoutineHabitRowBody({
   style,
 }: {
   habit: RelatedRoutineCardHabit;
-  onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
+  onHabitCompletionToggle?: (
+    habitId: string
+  ) => boolean | void | Promise<boolean | void>;
   onDoubleClick: (
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -419,7 +423,9 @@ function DraggableRoutineHabitRow({
 }: {
   habit: RelatedRoutineCardHabit;
   fallbackIcon: string;
-  onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
+  onHabitCompletionToggle?: (
+    habitId: string
+  ) => boolean | void | Promise<boolean | void>;
   onDoubleClick: (
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -504,7 +510,9 @@ function StaticRoutineHabitRow({
 }: {
   habit: RelatedRoutineCardHabit;
   fallbackIcon: string;
-  onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
+  onHabitCompletionToggle?: (
+    habitId: string
+  ) => boolean | void | Promise<boolean | void>;
   onDoubleClick: (
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -1126,6 +1134,23 @@ export function RelatedRoutineCard({
         return;
       }
 
+      const previousCompleted = Boolean(habit.completed);
+      const previousPending = Boolean(habit.pending);
+      const rollbackLocalCompletion = () => {
+        clearPendingCompletedHabitMove(habit.id);
+        setLocalHabits((current) =>
+          current.map((currentHabit) =>
+            currentHabit.id === habit.id
+              ? {
+                  ...currentHabit,
+                  completed: previousCompleted,
+                  pending: previousPending,
+                }
+              : currentHabit
+          )
+        );
+      };
+
       completingHabitIdsRef.current.add(habit.id);
       if (!habit.completed) {
         setShowCompletedHabits(false);
@@ -1149,12 +1174,23 @@ export function RelatedRoutineCard({
       }
 
       try {
-        void Promise.resolve(onHabitCompletionToggle(habit.id)).finally(() => {
-          completingHabitIdsRef.current.delete(habit.id);
-        });
+        void Promise.resolve(onHabitCompletionToggle(habit.id))
+          .then((result) => {
+            if (result === false) {
+              rollbackLocalCompletion();
+            }
+          })
+          .catch((error) => {
+            rollbackLocalCompletion();
+            console.error("Failed to toggle routine Habit completion:", error);
+          })
+          .finally(() => {
+            completingHabitIdsRef.current.delete(habit.id);
+          });
       } catch (error) {
         completingHabitIdsRef.current.delete(habit.id);
-        throw error;
+        rollbackLocalCompletion();
+        console.error("Failed to toggle routine Habit completion:", error);
       }
     },
     [

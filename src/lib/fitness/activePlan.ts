@@ -1,4 +1,12 @@
 import type { FitnessPlanTemplate } from "@/lib/fitness/planTemplates";
+import type {
+  FitnessActivePlanExerciseOverride,
+  FitnessEquipmentProfile,
+} from "@/lib/fitness/equipmentAlternatives";
+import {
+  FITNESS_EQUIPMENT_PROFILE_OPTIONS,
+  getFitnessPlanEquipmentProfileFromTemplateEquipment,
+} from "@/lib/fitness/equipmentAlternatives";
 import {
   FITNESS_PROFILE_ENTRY_KIND,
   type FitnessProfile,
@@ -7,6 +15,13 @@ import {
 
 export const FITNESS_ACTIVE_PLAN_METADATA_KEY = "fitnessActivePlan";
 export const FITNESS_ACTIVE_PLAN_VERSION = 1;
+export const FITNESS_ACTIVE_PLAN_SESSION_DURATION_OPTIONS = [
+  30,
+  45,
+  60,
+  75,
+  90,
+] as const;
 
 export const FITNESS_ACTIVE_PLAN_WEEKDAYS = [
   "Mon",
@@ -19,7 +34,6 @@ export const FITNESS_ACTIVE_PLAN_WEEKDAYS = [
 ] as const;
 
 export type FitnessActivePlanWeekday = (typeof FITNESS_ACTIVE_PLAN_WEEKDAYS)[number];
-export type FitnessActivePlanScheduleMode = "flexible" | "weekly";
 
 export type FitnessActivePlan = {
   version: typeof FITNESS_ACTIVE_PLAN_VERSION;
@@ -27,9 +41,12 @@ export type FitnessActivePlan = {
   planTitle: string;
   source: "creator";
   status: "active" | "paused";
-  scheduleMode: FitnessActivePlanScheduleMode;
   targetDaysPerWeek: number;
   weekdays: FitnessActivePlanWeekday[];
+  sessionDurationMinutes: number;
+  equipmentProfile: FitnessEquipmentProfile;
+  exerciseOverrides?: FitnessActivePlanExerciseOverride[];
+  linkedFitnessHabitId?: string;
   startedAt: string;
   currentRoutineIndex: number;
   completedWorkoutCount: number;
@@ -75,15 +92,110 @@ function normalizeEquipment(value: string) {
   return normalized;
 }
 
+function readOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function readEquipmentProfile(value: unknown): FitnessEquipmentProfile | null {
+  return includesValue(FITNESS_EQUIPMENT_PROFILE_OPTIONS, value) ? value : null;
+}
+
+function readExerciseOverrides(value: unknown): FitnessActivePlanExerciseOverride[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const overrides: FitnessActivePlanExerciseOverride[] = [];
+  const seen = new Set<string>();
+  for (const override of value) {
+    if (!isRecord(override)) return null;
+    const routineTemplateId = readOptionalString(override.routineTemplateId);
+    const originalExerciseId = readOptionalString(override.originalExerciseId);
+    const replacementExerciseId = readOptionalString(override.replacementExerciseId);
+    if (!routineTemplateId || !originalExerciseId || !replacementExerciseId) return null;
+    const key = `${routineTemplateId}::${originalExerciseId}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    overrides.push({ routineTemplateId, originalExerciseId, replacementExerciseId });
+  }
+
+  return overrides;
+}
+
+function normalizeSessionDurationMinutes(value: unknown) {
+  const duration = Number(value);
+  if (!Number.isFinite(duration)) return 60;
+  const rounded = Math.round(duration);
+  return Math.min(180, Math.max(1, rounded));
+}
+
+export function getFitnessPlanDefaultSessionDurationMinutes(
+  plan: FitnessPlanTemplate,
+  profile?: FitnessProfile | null,
+) {
+  const target = getFitnessPlanTargetSessionMinutes(plan, profile);
+  const options = FITNESS_ACTIVE_PLAN_SESSION_DURATION_OPTIONS;
+  return options.reduce((closest, option) => {
+    const closestDistance = Math.abs(closest - target);
+    const optionDistance = Math.abs(option - target);
+    return optionDistance < closestDistance ? option : closest;
+  }, options[0]);
+}
+
+export function fitnessActivePlanWeekdayToRecurrenceDay(
+  weekday: FitnessActivePlanWeekday,
+) {
+  switch (weekday) {
+    case "Mon":
+      return 1;
+    case "Tue":
+      return 2;
+    case "Wed":
+      return 3;
+    case "Thu":
+      return 4;
+    case "Fri":
+      return 5;
+    case "Sat":
+      return 6;
+    case "Sun":
+      return 0;
+  }
+}
+
+export function fitnessActivePlanWeekdaysToRecurrenceDays(
+  weekdays: readonly FitnessActivePlanWeekday[],
+) {
+  return weekdays.map(fitnessActivePlanWeekdayToRecurrenceDay);
+}
+
+export function formatFitnessActivePlanSchedule(activePlan: FitnessActivePlan) {
+  const weekdayLabel =
+    activePlan.weekdays.length > 0
+      ? activePlan.weekdays.join(" · ")
+      : "Schedule not set";
+  return `${weekdayLabel} · ${activePlan.sessionDurationMinutes} min`;
+}
+
 export function getFitnessPlanTargetDaysPerWeek(
   plan: FitnessPlanTemplate,
   profile?: FitnessProfile | null,
 ) {
-  if (profile && plan.daysPerWeekOptions.includes(profile.trainingDaysPerWeek)) {
+  const allowedDaysPerWeek = plan.allowedDaysPerWeek ?? plan.daysPerWeekOptions ?? [];
+  const recommendedDaysPerWeek = plan.recommendedDaysPerWeek ?? allowedDaysPerWeek;
+  if (profile && allowedDaysPerWeek.includes(profile.trainingDaysPerWeek)) {
     return profile.trainingDaysPerWeek;
   }
 
-  return plan.daysPerWeekOptions[0] ?? 1;
+  return recommendedDaysPerWeek[0] ?? allowedDaysPerWeek[0] ?? 1;
+}
+
+export function getFitnessPlanDefaultEquipmentProfile(
+  plan: FitnessPlanTemplate,
+  profile?: FitnessProfile | null,
+) {
+  return profile?.equipment ?? getFitnessPlanEquipmentProfileFromTemplateEquipment(plan.equipment);
 }
 
 export function getFitnessPlanTargetSessionMinutes(
@@ -110,7 +222,9 @@ export function getFitnessPlanMatchLabel(
       normalizeEquipment(plan.equipment) !== "bodyweight");
   if (!equipmentMatches) return "Equipment mismatch";
 
-  const scheduleMatches = plan.daysPerWeekOptions.includes(profile.trainingDaysPerWeek);
+  const scheduleMatches = (plan.allowedDaysPerWeek ?? plan.daysPerWeekOptions ?? []).includes(
+    profile.trainingDaysPerWeek,
+  );
   if (!scheduleMatches) return "Schedule mismatch";
 
   const goalMatches = normalizeGoal(plan.goal) === normalizeGoal(profile.primaryGoal);
@@ -137,7 +251,7 @@ export function getFitnessPlanFitReasons(
   if (normalizeLabel(plan.level) === normalizeLabel(profile.experienceLevel)) {
     reasons.push(`Built for ${profile.experienceLevel.toLowerCase()} training.`);
   }
-  if (plan.daysPerWeekOptions.includes(profile.trainingDaysPerWeek)) {
+  if ((plan.allowedDaysPerWeek ?? plan.daysPerWeekOptions ?? []).includes(profile.trainingDaysPerWeek)) {
     reasons.push(`Supports ${profile.trainingDaysPerWeek} training days per week.`);
   } else {
     reasons.push(
@@ -159,7 +273,6 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
   if (value.version !== FITNESS_ACTIVE_PLAN_VERSION) return null;
   if (value.source !== "creator") return null;
   if (value.status !== "active" && value.status !== "paused") return null;
-  if (value.scheduleMode !== "flexible" && value.scheduleMode !== "weekly") return null;
   if (typeof value.planTemplateId !== "string" || !value.planTemplateId.trim()) return null;
   if (typeof value.planTitle !== "string" || !value.planTitle.trim()) return null;
   if (typeof value.startedAt !== "string" || !value.startedAt.trim()) return null;
@@ -187,8 +300,16 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
   }
 
   const weekdays = value.weekdays as FitnessActivePlanWeekday[];
-  if (value.scheduleMode === "flexible" && weekdays.length > 0) return null;
-  if (value.scheduleMode === "weekly" && weekdays.length !== targetDaysPerWeek) return null;
+  const scheduleMode =
+    typeof value.scheduleMode === "string" ? value.scheduleMode : null;
+  if (scheduleMode === "flexible" && weekdays.length > 0) return null;
+  if (scheduleMode === "weekly" && weekdays.length !== targetDaysPerWeek) return null;
+  if (!scheduleMode && weekdays.length !== targetDaysPerWeek) return null;
+
+  const linkedFitnessHabitId = readOptionalString(value.linkedFitnessHabitId);
+  const equipmentProfile = readEquipmentProfile(value.equipmentProfile) ?? "Full gym";
+  const exerciseOverrides = readExerciseOverrides(value.exerciseOverrides);
+  if (!exerciseOverrides) return null;
 
   return {
     version: FITNESS_ACTIVE_PLAN_VERSION,
@@ -196,9 +317,14 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
     planTitle: value.planTitle,
     source: "creator",
     status: value.status,
-    scheduleMode: value.scheduleMode,
     targetDaysPerWeek,
     weekdays,
+    sessionDurationMinutes: normalizeSessionDurationMinutes(
+      value.sessionDurationMinutes,
+    ),
+    equipmentProfile,
+    ...(exerciseOverrides.length > 0 ? { exerciseOverrides } : {}),
+    ...(linkedFitnessHabitId ? { linkedFitnessHabitId } : {}),
     startedAt: value.startedAt,
     currentRoutineIndex,
     completedWorkoutCount,
@@ -228,31 +354,54 @@ export function getFitnessActivePlanFromEntries(
 
 export function buildFitnessActivePlan({
   plan,
-  scheduleMode,
   targetDaysPerWeek,
   weekdays,
+  sessionDurationMinutes,
+  equipmentProfile,
+  exerciseOverrides,
   now,
+  existingActivePlan,
+  linkedFitnessHabitId,
 }: {
   plan: FitnessPlanTemplate;
-  scheduleMode: FitnessActivePlanScheduleMode;
   targetDaysPerWeek: number;
   weekdays: FitnessActivePlanWeekday[];
+  sessionDurationMinutes: number;
+  equipmentProfile: FitnessEquipmentProfile;
+  exerciseOverrides?: FitnessActivePlanExerciseOverride[];
   now: string;
+  existingActivePlan?: FitnessActivePlan | null;
+  linkedFitnessHabitId?: string | null;
 }): FitnessActivePlan {
+  const preserveProgress =
+    existingActivePlan?.planTemplateId === plan.id ? existingActivePlan : null;
+  const resolvedLinkedFitnessHabitId =
+    linkedFitnessHabitId ??
+    preserveProgress?.linkedFitnessHabitId ??
+    undefined;
   return {
     version: FITNESS_ACTIVE_PLAN_VERSION,
     planTemplateId: plan.id,
     planTitle: plan.title,
     source: "creator",
     status: "active",
-    scheduleMode,
     targetDaysPerWeek,
-    weekdays: scheduleMode === "flexible" ? [] : weekdays,
-    startedAt: now,
-    currentRoutineIndex: 0,
-    completedWorkoutCount: 0,
+    weekdays,
+    sessionDurationMinutes: normalizeSessionDurationMinutes(
+      sessionDurationMinutes,
+    ),
+    equipmentProfile,
+    ...(exerciseOverrides && exerciseOverrides.length > 0
+      ? { exerciseOverrides }
+      : {}),
+    ...(resolvedLinkedFitnessHabitId
+      ? { linkedFitnessHabitId: resolvedLinkedFitnessHabitId }
+      : {}),
+    startedAt: preserveProgress?.startedAt ?? now,
+    currentRoutineIndex: preserveProgress?.currentRoutineIndex ?? 0,
+    completedWorkoutCount: preserveProgress?.completedWorkoutCount ?? 0,
     checkInAfterCompletedWorkouts: targetDaysPerWeek * 4,
-    createdAt: now,
+    createdAt: preserveProgress?.createdAt ?? now,
     updatedAt: now,
   };
 }

@@ -13,6 +13,10 @@ export const runtime = "nodejs";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const MEAL_TEMPLATES_TABLE = "meal_templates";
+const MEAL_TEMPLATE_ITEMS_TABLE = "meal_template_items";
+const MEAL_TEMPLATE_SELECT =
+  "id,user_id,name,icon,total_calories,total_carbs_g,total_protein_g,total_fat_g,metadata,is_active,created_at,updated_at,meal_template_items(id,meal_template_id,item_type,food_id,recipe_id,custom_name,quantity,serving_unit,serving_grams,snapshot_name,snapshot_brand_name,snapshot_calories,snapshot_carbs_g,snapshot_protein_g,snapshot_fat_g,metadata,sort_order,created_at,updated_at)";
 
 type MealTemplateWithItems = NutritionMealTemplateRow & {
   meal_template_items?: NutritionMealTemplateItemRow[] | null;
@@ -40,8 +44,24 @@ function parseLimit(value: string | null) {
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
 }
 
+function getDatabaseErrorCode(error: unknown) {
+  return error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : "";
+}
+
 function databaseErrorResponse(message: string, error: unknown) {
   console.error(message, { error });
+  if (getDatabaseErrorCode(error) === "PGRST205") {
+    return NextResponse.json(
+      {
+        error: "Saved meal storage is not installed",
+        code: "MEAL_TEMPLATES_SCHEMA_UNAVAILABLE",
+      },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
@@ -49,9 +69,11 @@ function sortTemplateItems(template: MealTemplateWithItems): MealTemplateWithIte
   return {
     ...template,
     meal_template_items: [...(template.meal_template_items ?? [])].sort((a, b) => {
-      const orderDelta = a.sort_order - b.sort_order;
+      const leftOrder = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : 0;
+      const rightOrder = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : 0;
+      const orderDelta = leftOrder - rightOrder;
       if (orderDelta !== 0) return orderDelta;
-      return a.created_at.localeCompare(b.created_at);
+      return String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
     }),
   };
 }
@@ -109,10 +131,8 @@ async function loadMealTemplate(
   templateId: string,
 ) {
   const { data, error } = await supabase
-    .from("meal_templates")
-    .select(
-      "id,user_id,name,icon,total_calories,total_carbs_g,total_protein_g,total_fat_g,metadata,is_active,created_at,updated_at,meal_template_items(id,meal_template_id,item_type,food_id,recipe_id,custom_name,quantity,serving_unit,serving_grams,snapshot_name,snapshot_brand_name,snapshot_calories,snapshot_carbs_g,snapshot_protein_g,snapshot_fat_g,metadata,sort_order,created_at,updated_at)",
-    )
+    .from(MEAL_TEMPLATES_TABLE)
+    .select(MEAL_TEMPLATE_SELECT)
     .eq("id", templateId)
     .maybeSingle();
 
@@ -141,10 +161,8 @@ export async function GET(request: NextRequest) {
 
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
   const { data, error } = await supabase
-    .from("meal_templates")
-    .select(
-      "id,user_id,name,icon,total_calories,total_carbs_g,total_protein_g,total_fat_g,metadata,is_active,created_at,updated_at,meal_template_items(id,meal_template_id,item_type,food_id,recipe_id,custom_name,quantity,serving_unit,serving_grams,snapshot_name,snapshot_brand_name,snapshot_calories,snapshot_carbs_g,snapshot_protein_g,snapshot_fat_g,metadata,sort_order,created_at,updated_at)",
-    )
+    .from(MEAL_TEMPLATES_TABLE)
+    .select(MEAL_TEMPLATE_SELECT)
     .eq("user_id", user.id)
     .eq("is_active", true)
     .order("updated_at", { ascending: false })
@@ -213,14 +231,14 @@ export async function POST(request: NextRequest) {
 
     const mealTemplateTable = (
       supabase as unknown as {
-        from: (table: "meal_templates") => MealTemplateWriteTable;
+        from: (table: typeof MEAL_TEMPLATES_TABLE) => MealTemplateWriteTable;
       }
-    ).from("meal_templates");
+    ).from(MEAL_TEMPLATES_TABLE);
     const mealTemplateItemsTable = (
       supabase as unknown as {
-        from: (table: "meal_template_items") => MealTemplateItemsWriteTable;
+        from: (table: typeof MEAL_TEMPLATE_ITEMS_TABLE) => MealTemplateItemsWriteTable;
       }
-    ).from("meal_template_items");
+    ).from(MEAL_TEMPLATE_ITEMS_TABLE);
     const { data: createdTemplate, error: createTemplateError } =
       await mealTemplateTable
       .insert({

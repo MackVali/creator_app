@@ -5,8 +5,10 @@ import {
   NutritionTargetError,
   adultBmiCategory,
   calculateBmi,
+  calculateGoalTimelineEstimate,
   calculateNutritionTarget,
   mifflinStJeor,
+  poundsToKilograms,
 } from "@/lib/nutrition/targets";
 
 const base = {
@@ -133,5 +135,66 @@ describe("nutrition target v1", () => {
     expect(() => calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5 })).toThrow(/Goal weight is required/);
     expect(() => calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 0.5, goalWeightKg: 80 })).toThrow(/below your current weight/);
     expect(() => calculateNutritionTarget({ ...base, goalType: "gain", goalRatePctPerWeek: 0.25, goalWeightKg: 80 })).toThrow(/above your current weight/);
+  });
+
+  it("displays a loss timeline when directional weight and rate inputs are valid", () => {
+    const timeline = calculateGoalTimelineEstimate({
+      goalType: "lose",
+      currentWeightKg: 80,
+      goalWeightKg: 75,
+      selectedRateKgPerWeek: 0.4,
+      referenceDate: new Date(2026, 6, 29),
+    });
+    expect(timeline?.weeks).toBe(13);
+    expect(timeline?.completionDate.getFullYear()).toBe(2026);
+  });
+
+  it("displays a gain timeline when directional weight and rate inputs are valid", () => {
+    expect(calculateGoalTimelineEstimate({
+      goalType: "gain",
+      currentWeightKg: 80,
+      goalWeightKg: 85,
+      selectedRateKgPerWeek: 0.2,
+    })?.weeks).toBe(25);
+  });
+
+  it("hides timelines for maintain and recomposition", () => {
+    expect(calculateGoalTimelineEstimate({ goalType: "maintain", currentWeightKg: 80, goalWeightKg: 75, selectedRateKgPerWeek: 0.4 })).toBeNull();
+    expect(calculateGoalTimelineEstimate({ goalType: "recomposition", currentWeightKg: 80, goalWeightKg: 75, selectedRateKgPerWeek: 0.4 })).toBeNull();
+  });
+
+  it("uses the effective server calculation rate when caps reduce the selected rate", () => {
+    const result = calculateNutritionTarget({ ...base, goalType: "lose", goalRatePctPerWeek: 1, goalWeightKg: 72 });
+    expect(result.effectiveGoalRateKgPerWeek).toBeLessThan(result.selectedGoalRateKgPerWeek);
+    const timeline = calculateGoalTimelineEstimate({
+      goalType: result.goalType,
+      currentWeightKg: result.weightKg,
+      goalWeightKg: result.goalWeightKg,
+      effectiveRateKgPerWeek: result.effectiveGoalRateKgPerWeek,
+      selectedRateKgPerWeek: result.selectedGoalRateKgPerWeek,
+    });
+    expect(timeline?.weeks).toBe(Math.ceil(8 / result.effectiveGoalRateKgPerWeek));
+  });
+
+  it("does not produce Infinity or misleading timeline output for invalid or zero rates", () => {
+    expect(calculateGoalTimelineEstimate({ goalType: "lose", currentWeightKg: 80, goalWeightKg: 75, selectedRateKgPerWeek: 0 })).toBeNull();
+    expect(calculateGoalTimelineEstimate({ goalType: "gain", currentWeightKg: 80, goalWeightKg: 85, selectedRateKgPerWeek: Number.POSITIVE_INFINITY })).toBeNull();
+    expect(calculateGoalTimelineEstimate({ goalType: "lose", currentWeightKg: 80, goalWeightKg: 85, selectedRateKgPerWeek: 0.4 })).toBeNull();
+  });
+
+  it("uses canonical metric values so US and Metric entries produce equivalent timelines", () => {
+    const metric = calculateGoalTimelineEstimate({
+      goalType: "lose",
+      currentWeightKg: 90,
+      goalWeightKg: 82,
+      selectedRateKgPerWeek: 0.45,
+    });
+    const us = calculateGoalTimelineEstimate({
+      goalType: "lose",
+      currentWeightKg: poundsToKilograms(90 / 0.45359237),
+      goalWeightKg: poundsToKilograms(82 / 0.45359237),
+      selectedRateKgPerWeek: poundsToKilograms(0.45 / 0.45359237),
+    });
+    expect(us?.weeks).toBe(metric?.weeks);
   });
 });
