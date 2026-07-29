@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, LoaderCircle, RotateCcw, SlidersHorizontal, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, LoaderCircle, Minus, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import {
+  poundsToKilograms,
   type ActivityLevel,
   type GoalType,
   type MacroMode,
@@ -25,6 +26,7 @@ import {
   setHeightUs,
   setTargetFormUnits,
   setWeightDisplay,
+  trimNumber,
   type NutritionGoalRow,
   type NutritionProfileRow,
   type TargetSetupForm,
@@ -100,6 +102,8 @@ const wizardSmallPrimaryActionClass = "min-h-10 rounded-lg border border-white/[
 const wizardSelectedSegmentClass = "border border-white/[0.18] bg-[#2a2a2d] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
 const wizardSelectedChoiceClass = "border border-white/[0.18] bg-[#242427] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
 const wizardTextActionClass = "flex min-h-9 items-center justify-center rounded-lg px-3 text-xs font-semibold text-white/58 outline-none transition hover:bg-white/[0.045] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50";
+const weightMinKg = 25;
+const weightMaxKg = 500;
 const directionFieldIds = {
   currentWeight: "nutrition-target-current-weight",
   goalWeight: "nutrition-target-goal-weight",
@@ -241,7 +245,7 @@ function goalDefinitionIssue(form: TargetSetupForm) {
 function directionFieldIssues(form: TargetSetupForm): DirectionFieldIssues {
   const issues: DirectionFieldIssues = {};
   const currentWeight = numberOrNull(form.weightKgCanonical);
-  const currentWeightValid = currentWeight !== null && currentWeight >= 25 && currentWeight <= 500;
+  const currentWeightValid = currentWeight !== null && currentWeight >= weightMinKg && currentWeight <= weightMaxKg;
 
   if (!currentWeightValid) {
     issues.currentWeight = "Enter your current weight.";
@@ -590,7 +594,7 @@ export function NutritionTargetPanel({
     const headerLabel = profileOnly ? "Edit profile" : setupView === "wizard" ? `${setupStep + 1} of 2` : setupView === "result" ? "Target result" : "Advanced";
     return (
       <div className="flex h-full max-h-full min-h-0 flex-1 touch-pan-y flex-col overflow-hidden bg-[#090909]" aria-label="Nutrition target setup">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.055] px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.055] px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
             {(setupView !== "wizard" || setupStep > 0) && !profileOnly ? (
               <button type="button" onClick={goBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/54 outline-none transition hover:bg-white/[0.055] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18" aria-label="Back">
@@ -813,6 +817,114 @@ function WizardStepSurface({
   );
 }
 
+type WeightPickerField = "current" | "goal";
+
+function clampWeightKg(value: number) {
+  return Math.min(weightMaxKg, Math.max(weightMinKg, value));
+}
+
+function weightFieldValue(form: TargetSetupForm, field: WeightPickerField) {
+  return field === "current" ? form.weight : form.goalWeight;
+}
+
+function weightFieldCanonicalValue(form: TargetSetupForm, field: WeightPickerField) {
+  return field === "current" ? form.weightKgCanonical : form.goalWeightKgCanonical;
+}
+
+function updateWeightFieldCanonical(form: TargetSetupForm, field: WeightPickerField, weightKg: number) {
+  const canonical = trimNumber(clampWeightKg(weightKg), 4);
+  return normalizeDisplayForUnits(
+    field === "current"
+      ? { ...form, weightKgCanonical: canonical }
+      : { ...form, goalWeightKgCanonical: canonical },
+  );
+}
+
+function updateWeightFieldDisplay(form: TargetSetupForm, field: WeightPickerField, value: string) {
+  return field === "current" ? setWeightDisplay(form, value) : setGoalWeightDisplay(form, value);
+}
+
+function WeightPicker({
+  form,
+  field,
+  wide,
+  issue,
+  updateForm,
+}: {
+  form: TargetSetupForm;
+  field: WeightPickerField;
+  wide?: boolean;
+  issue?: string;
+  updateForm: (form: TargetSetupForm) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const value = weightFieldValue(form, field);
+  const unit = form.units === "metric" ? "kg" : "lb";
+  const label = field === "current" ? "Current weight" : "Goal weight";
+  const inputId = field === "current" ? directionFieldIds.currentWeight : directionFieldIds.goalWeight;
+  const errorId = field === "current" ? directionErrorIds.currentWeight : directionErrorIds.goalWeight;
+  const canonicalWeightKg = numberOrNull(weightFieldCanonicalValue(form, field));
+  const incrementKg = form.units === "metric" ? 0.5 : poundsToKilograms(1);
+  const commitValue = (nextValue: string) => {
+    updateForm(normalizeDisplayForUnits(updateWeightFieldDisplay(form, field, nextValue)));
+  };
+  const nudge = (direction: -1 | 1) => {
+    if (canonicalWeightKg === null) return;
+    updateForm(updateWeightFieldCanonical(form, field, canonicalWeightKg + incrementKg * direction));
+  };
+
+  return (
+    <div className={`${wide ? "col-span-2" : ""} min-w-0 text-[11px] font-medium text-white/48`}>
+      <label htmlFor={inputId}>{label}</label>
+      <ValidationLine id={errorId} message={issue} />
+      <div className="mt-1 grid min-h-11 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] overflow-hidden rounded-xl border border-white/[0.075] bg-[#101011] transition focus-within:border-white/[0.18]">
+        <button
+          type="button"
+          aria-label={field === "current" ? "Decrease current weight" : "Decrease goal weight"}
+          onClick={() => nudge(-1)}
+          className="flex min-h-11 min-w-11 items-center justify-center border-r border-white/[0.06] bg-[#171719] text-lg font-semibold text-white/66 outline-none transition hover:bg-[#1e1e21] hover:text-white focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/24 active:bg-[#111113]"
+        >
+          <Minus className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <div
+          className="flex min-h-11 min-w-0 items-center justify-center gap-1 bg-[#101011] px-2"
+          onClick={() => inputRef.current?.focus()}
+        >
+          <input
+            ref={inputRef}
+            id={inputId}
+            inputMode="decimal"
+            type="text"
+            value={value}
+            aria-label={label}
+            aria-describedby={issue ? errorId : undefined}
+            aria-invalid={issue ? true : undefined}
+            onChange={(event) => updateForm(updateWeightFieldDisplay(form, field, event.target.value))}
+            onBlur={(event) => commitValue(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              commitValue(event.currentTarget.value);
+              event.currentTarget.blur();
+            }}
+            className="min-h-11 w-full min-w-0 appearance-none bg-transparent px-0 text-center text-base font-semibold text-white outline-none [appearance:textfield]"
+          />
+          <span className="shrink-0 text-xs font-semibold text-white/48" aria-hidden="true">{unit}</span>
+        </div>
+        <button
+          type="button"
+          aria-label={field === "current" ? "Increase current weight" : "Increase goal weight"}
+          onClick={() => nudge(1)}
+          className="flex min-h-11 min-w-11 items-center justify-center border-l border-white/[0.06] bg-[#171719] text-lg font-semibold text-white/66 outline-none transition hover:bg-[#1e1e21] hover:text-white focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/24 active:bg-[#111113]"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DirectionStep({
   form,
   updateForm,
@@ -852,38 +964,20 @@ function DirectionStep({
           </div>
         </div>
         <div className={`grid gap-3 ${(form.goalType === "lose" || form.goalType === "gain") ? "sm:grid-cols-2" : ""}`}>
-          <Label
-            text={`Current weight (${form.units === "metric" ? "kg" : "lb"})`}
+          <WeightPicker
+            form={form}
+            field="current"
             wide={form.goalType !== "lose" && form.goalType !== "gain"}
-            validationId={directionErrorIds.currentWeight}
-            validationMessage={currentWeightIssue}
-          >
-            <input
-              id={directionFieldIds.currentWeight}
-              inputMode="decimal"
-              type="text"
-              value={form.weight}
-              aria-describedby={currentWeightIssue ? directionErrorIds.currentWeight : undefined}
-              aria-invalid={currentWeightIssue ? true : undefined}
-              onChange={(event) => updateForm(setWeightDisplay(form, event.target.value))}
-            />
-          </Label>
+            issue={currentWeightIssue}
+            updateForm={updateForm}
+          />
           {form.goalType === "lose" || form.goalType === "gain" ? (
-            <Label
-              text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`}
-              validationId={directionErrorIds.goalWeight}
-              validationMessage={goalWeightIssue}
-            >
-              <input
-                id={directionFieldIds.goalWeight}
-                inputMode="decimal"
-                type="text"
-                value={form.goalWeight}
-                aria-describedby={goalWeightIssue ? directionErrorIds.goalWeight : undefined}
-                aria-invalid={goalWeightIssue ? true : undefined}
-                onChange={(event) => updateForm(setGoalWeightDisplay(form, event.target.value))}
-              />
-            </Label>
+            <WeightPicker
+              form={form}
+              field="goal"
+              issue={goalWeightIssue}
+              updateForm={updateForm}
+            />
           ) : null}
         </div>
       </div>
@@ -901,14 +995,15 @@ function DirectionStep({
 
 function DirectionPaceSelector({ form, updateForm, issue }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void; issue?: string }) {
   if (form.goalType !== "lose" && form.goalType !== "gain") return null;
+  const goalType = form.goalType;
   return (
     <div>
       <p className="text-xs font-semibold text-white/54">Pace</p>
       <ValidationLine id={directionErrorIds.pace} message={issue} />
       <div className="mt-2 grid grid-cols-3 rounded-xl border border-white/[0.07] bg-[#101011] p-1">
-        {paceOptions[form.goalType].map((option) => {
+        {paceOptions[goalType].map((option) => {
           const selected = form.rate === option.value;
-          const receivesFocusId = selected || (Boolean(issue) && option.value === paceOptions[form.goalType][0]?.value);
+          const receivesFocusId = selected || (Boolean(issue) && option.value === paceOptions[goalType][0]?.value);
           return (
             <button
               key={option.value}

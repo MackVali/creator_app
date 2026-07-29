@@ -685,7 +685,10 @@ export default function TopNav() {
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [pinnedBodyDatabases, setPinnedBodyDatabases] = useState<PinnedBodyDatabase[]>([]);
+  const [hasLoadedCurrentUser, setHasLoadedCurrentUser] = useState(false);
+  const [pinnedBodyDatabases, setPinnedBodyDatabases] = useState<PinnedBodyDatabase[] | null>(
+    null,
+  );
   const [quickAddTarget, setQuickAddTarget] = useState<QuickAddBodyDatabaseTarget | null>(null);
   const [isCartQuickViewOpen, setIsCartQuickViewOpen] = useState(false);
   const [isBodyMenuOpen, setIsBodyMenuOpen] = useState(false);
@@ -763,23 +766,48 @@ export default function TopNav() {
 
   useEffect(() => {
     if (!supabase) {
+      setHasLoadedCurrentUser(true);
+      setCurrentUser(null);
+      setUserEmail(null);
       setPinnedBodyDatabases([]);
       return;
     }
 
+    let isCancelled = false;
+
     const getUserEmail = async () => {
+      setHasLoadedCurrentUser(false);
+      setPinnedBodyDatabases(null);
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (isCancelled) {
+        return;
+      }
       setCurrentUser(user ?? null);
       setUserEmail(user?.email || null);
+      setHasLoadedCurrentUser(true);
     };
 
     getUserEmail();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [supabase]);
 
   useEffect(() => {
-    if (!supabase || !currentUser?.id) {
+    if (!supabase) {
+      setPinnedBodyDatabases([]);
+      return;
+    }
+
+    if (!hasLoadedCurrentUser) {
+      setPinnedBodyDatabases(null);
+      return;
+    }
+
+    if (!currentUser?.id) {
       setPinnedBodyDatabases([]);
       return;
     }
@@ -787,32 +815,43 @@ export default function TopNav() {
     let isCancelled = false;
 
     const loadPinnedBodyDatabases = async () => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("id, skill_id, monument_id, metadata")
-        .eq("user_id", currentUser.id)
-        .not("metadata", "is", null);
+      setPinnedBodyDatabases(null);
 
-      if (isCancelled) {
-        return;
-      }
+      try {
+        const { data, error } = await supabase
+          .from("notes")
+          .select("id, skill_id, monument_id, metadata")
+          .eq("user_id", currentUser.id)
+          .not("metadata", "is", null);
 
-      if (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error) {
+          console.error("Failed to load pinned body note databases", { error });
+          setPinnedBodyDatabases([]);
+          return;
+        }
+
+        const pinnedDatabases = ((data ?? []) as PinnedBodyDatabaseNoteRow[]).flatMap((note) =>
+          getPinnedBodyDatabasesFromMetadata({
+            metadata: note.metadata,
+            noteId: note.id,
+            skillId: note.skill_id ?? null,
+            monumentId: note.monument_id ?? null,
+          }),
+        );
+
+        setPinnedBodyDatabases(sortPinnedBodyDatabases(pinnedDatabases));
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
         console.error("Failed to load pinned body note databases", { error });
         setPinnedBodyDatabases([]);
-        return;
       }
-
-      const pinnedDatabases = ((data ?? []) as PinnedBodyDatabaseNoteRow[]).flatMap((note) =>
-        getPinnedBodyDatabasesFromMetadata({
-          metadata: note.metadata,
-          noteId: note.id,
-          skillId: note.skill_id ?? null,
-          monumentId: note.monument_id ?? null,
-        }),
-      );
-
-      setPinnedBodyDatabases(sortPinnedBodyDatabases(pinnedDatabases));
     };
 
     const handlePinnedBodyDatabasesChanged = () => {
@@ -832,7 +871,7 @@ export default function TopNav() {
         handlePinnedBodyDatabasesChanged,
       );
     };
-  }, [currentUser?.id, supabase]);
+  }, [currentUser?.id, hasLoadedCurrentUser, supabase]);
 
   const openPinnedBodyDatabaseQuickAdd = useCallback(
     (database: PinnedBodyDatabase) => {
@@ -846,7 +885,7 @@ export default function TopNav() {
   );
 
   const openPinnedNutritionLogQuickAdd = useCallback(() => {
-    const nutritionDatabase = pinnedBodyDatabases.find(
+    const nutritionDatabase = pinnedBodyDatabases?.find(
       (database) =>
         normalizeBodyDatabaseKey(database.systemDatabaseKey) === "nutrition" ||
         normalizeBodyDatabaseKey(database.title) === "nutrition",
@@ -933,7 +972,9 @@ export default function TopNav() {
   const isAdmin = userIsAdmin(currentUser);
 
   const bodyPanelRows =
-    pinnedBodyDatabases.length > 0
+    pinnedBodyDatabases === null
+      ? []
+      : pinnedBodyDatabases.length > 0
       ? pinnedBodyDatabases.map((database) => ({
           key: `${database.noteId}:${database.databaseId}`,
           label: getBodyDatabaseDisplayLabel(database),

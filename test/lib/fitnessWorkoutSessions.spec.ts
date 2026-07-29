@@ -127,9 +127,11 @@ describe("Fitness workout structured session helpers", () => {
     );
 
     expect(databaseEntries.fitness).toHaveLength(1);
-    expect(
-      databaseEntries.fitness[0].values.metadata.fitnessWorkoutLog.status,
-    ).toBe("completed");
+    const metadata = databaseEntries.fitness[0].values.metadata as {
+      fitnessWorkoutLog: { status?: string };
+    };
+
+    expect(metadata.fitnessWorkoutLog.status).toBe("completed");
   });
 
   it("resume excludes resolved sets and preserves pending set details", () => {
@@ -179,8 +181,8 @@ describe("Fitness progression history extraction", () => {
   });
 });
 
-describe("Fitness ME Phase 1", () => {
-  it("does not render weekly progress for Manual / Untracked mode", () => {
+describe("Fitness ME header", () => {
+  it("renders My Fitness without the old Manual / Untracked mode", () => {
     const source = readFileSync(
       "src/components/notes/NoteSlashTextarea.tsx",
       "utf8",
@@ -190,7 +192,9 @@ describe("Fitness ME Phase 1", () => {
       source.indexOf("function renderFitnessTabContent"),
     );
 
-    expect(meContent).toContain("Manual / Untracked");
+    expect(meContent).toContain("renderFitnessMyHeader()");
+    expect(source).toContain("My Fitness");
+    expect(meContent).not.toContain("Manual / Untracked");
     expect(meContent).not.toContain("Weekly");
   });
 });

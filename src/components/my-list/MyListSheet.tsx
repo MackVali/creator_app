@@ -303,12 +303,6 @@ type MyListMonumentGroup = {
   rows: MyListVisibleTodoRow[];
 };
 
-function getPreferredMyListGroupId<
-  TGroup extends { id: string; rows: MyListVisibleTodoRow[] },
->(groups: TGroup[]) {
-  return groups.find((group) => group.rows.length > 0)?.id ?? groups[0]?.id ?? null;
-}
-
 function buildPinnedSourceRowKey(
   sourceType: MyListPinnableSourceType,
   sourceId: string
@@ -1419,10 +1413,15 @@ export function MyListSheet({
   >(null);
   const [dayDragDropBucketId, setDayDragDropBucketId] =
     useState<MyListDayViewBucketId | null>(null);
-  const [selectedDayGroupId, setSelectedDayGroupId] =
-    useState<MyListDayViewBucketId | null>(null);
-  const [selectedMonumentGroupId, setSelectedMonumentGroupId] =
-    useState<string | null>(null);
+  const [collapsedDayGroups, setCollapsedDayGroups] = useState<
+    Partial<Record<MyListDayViewBucketId, boolean>>
+  >({});
+  const [collapsedMonumentGroups, setCollapsedMonumentGroups] = useState<
+    Record<string, boolean>
+  >({});
+  const manualReorderCompactDayGroupIdsRef = useRef<
+    Set<MyListDayViewBucketId>
+  >(new Set());
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
@@ -2126,63 +2125,6 @@ export function MyListSheet({
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
   ]);
-  const selectedGroupedTodoGroup = useMemo(() => {
-    if (!isDayLensActive && !isMonumentLensActive) return null;
-
-    const selectedGroupId = isDayLensActive
-      ? selectedDayGroupId
-      : selectedMonumentGroupId;
-    const selectedGroup = selectedGroupId
-      ? visibleTodoGroups.find((group) => group.id === selectedGroupId)
-      : null;
-
-    return (
-      selectedGroup ??
-      visibleTodoGroups.find(
-        (group) => group.id === getPreferredMyListGroupId(visibleTodoGroups)
-      ) ??
-      null
-    );
-  }, [
-    isDayLensActive,
-    isMonumentLensActive,
-    selectedDayGroupId,
-    selectedMonumentGroupId,
-    visibleTodoGroups,
-  ]);
-
-  useEffect(() => {
-    if (!isDayLensActive) return;
-
-    setSelectedDayGroupId((currentGroupId) => {
-      if (
-        currentGroupId &&
-        visibleTodoGroups.some((group) => group.id === currentGroupId)
-      ) {
-        return currentGroupId;
-      }
-
-      return getPreferredMyListGroupId(visibleTodoGroups) as
-        | MyListDayViewBucketId
-        | null;
-    });
-  }, [isDayLensActive, visibleTodoGroups]);
-
-  useEffect(() => {
-    if (!isMonumentLensActive) return;
-
-    setSelectedMonumentGroupId((currentGroupId) => {
-      if (
-        currentGroupId &&
-        visibleTodoGroups.some((group) => group.id === currentGroupId)
-      ) {
-        return currentGroupId;
-      }
-
-      return getPreferredMyListGroupId(visibleTodoGroups);
-    });
-  }, [isMonumentLensActive, visibleTodoGroups]);
-
   const lensGroupLayoutSections = useMemo(() => {
     if (!isDayLensActive && !isMonumentLensActive) {
       return visibleTodoGroups.map((group) => ({
@@ -2193,31 +2135,91 @@ export function MyListSheet({
 
     const sections: Array<
       | {
-          sectionType: "group-selector";
-          groups: (typeof visibleTodoGroups)[number][];
-          selectedGroupId: string | null;
-        }
-      | {
           sectionType: "group";
           group: (typeof visibleTodoGroups)[number];
         }
-    > = [
-      {
-        sectionType: "group-selector",
-        groups: visibleTodoGroups,
-        selectedGroupId: selectedGroupedTodoGroup?.id ?? null,
-      },
-    ];
+      | {
+          sectionType: "compact-day-groups";
+          groups: (typeof visibleTodoGroups)[number][];
+        }
+      | {
+          sectionType: "compact-empty-monument-groups";
+          groups: (typeof visibleTodoGroups)[number][];
+        }
+    > = [];
 
-    if (selectedGroupedTodoGroup) {
-      sections.push({ sectionType: "group", group: selectedGroupedTodoGroup });
+    if (isMonumentLensActive) {
+      const emptyMonumentGroups: (typeof visibleTodoGroups)[number][] = [];
+
+      visibleTodoGroups.forEach((group) => {
+        if (
+          group.id !== MY_LIST_NO_MONUMENT_GROUP_ID &&
+          group.rows.length === 0
+        ) {
+          emptyMonumentGroups.push(group);
+          return;
+        }
+
+        const collapsedPreference = collapsedMonumentGroups[group.id];
+        const isExpanded =
+          collapsedPreference === false ||
+          (collapsedPreference === undefined && group.rows.length > 0);
+
+        if (isExpanded) {
+          sections.push({ sectionType: "group", group });
+          return;
+        }
+
+        const previousSection = sections.at(-1);
+        if (previousSection?.sectionType === "compact-day-groups") {
+          previousSection.groups.push(group);
+        } else {
+          sections.push({ sectionType: "compact-day-groups", groups: [group] });
+        }
+      });
+
+      if (emptyMonumentGroups.length > 0) {
+        sections.push({
+          sectionType: "compact-empty-monument-groups",
+          groups: emptyMonumentGroups,
+        });
+      }
+
+      return sections;
     }
+
+    visibleTodoGroups.forEach((group) => {
+      const bucketId = group.id as MyListDayViewBucketId;
+      const collapsedPreference = collapsedDayGroups[bucketId];
+      const wasCompactWhenManualDragStarted =
+        isDayLensActive &&
+        activeManualReorderRowId !== null &&
+        manualReorderCompactDayGroupIdsRef.current.has(bucketId);
+      const isExpanded =
+        !wasCompactWhenManualDragStarted &&
+        (collapsedPreference === false ||
+          (collapsedPreference === undefined && group.rows.length > 0));
+
+      if (isExpanded) {
+        sections.push({ sectionType: "group", group });
+        return;
+      }
+
+      const previousSection = sections.at(-1);
+      if (previousSection?.sectionType === "compact-day-groups") {
+        previousSection.groups.push(group);
+      } else {
+        sections.push({ sectionType: "compact-day-groups", groups: [group] });
+      }
+    });
 
     return sections;
   }, [
+    activeManualReorderRowId,
+    collapsedDayGroups,
+    collapsedMonumentGroups,
     isMonumentLensActive,
     isDayLensActive,
-    selectedGroupedTodoGroup,
     visibleTodoGroups,
   ]);
   const todoListSections = useMemo(
@@ -2238,37 +2240,27 @@ export function MyListSheet({
     ],
     [completedTodoCount, completedTodoRows, lensGroupLayoutSections]
   );
-  const manualReorderVisibleRows = selectedGroupedTodoGroup?.rows ?? visibleTodoRows;
   const manualReorderItemIds = useMemo(
     () =>
-      manualReorderVisibleRows
+      visibleTodoRows
         .map(getSortableTodoRowKey)
         .filter((rowKey): rowKey is MyListSortableTodoRowKey =>
           Boolean(rowKey)
         ),
-    [manualReorderVisibleRows]
+    [visibleTodoRows]
   );
-  const isGroupedLensActive = isDayLensActive || isMonumentLensActive;
-  const selectedGroupRowCount = selectedGroupedTodoGroup?.rows.length ?? 0;
-  const selectedGroupContentRowCount =
-    selectedGroupedTodoGroup && selectedGroupRowCount === 0
-      ? 1
-      : selectedGroupRowCount;
-  const renderedListRowCount = isGroupedLensActive
-    ? selectedGroupContentRowCount
-    : visibleListRowCount;
-  const renderedGroupHeaderCount = isGroupedLensActive
-    ? visibleTodoGroups.length > 0
-      ? 1
-      : 0
-    : PRIORITY_ORDER.length;
   const listContentHeight =
     LIST_COMPACT_HEADER_ALLOWANCE +
-    (renderedListRowCount +
+    (visibleListRowCount +
       (completedTodoCount > 0 ? 1 : 0) +
       completedRevealRowCount) *
       LIST_COMPACT_ROW_HEIGHT +
-    renderedGroupHeaderCount * LIST_COMPACT_GROUP_HEADER_HEIGHT +
+    (isDayLensActive
+      ? MY_LIST_DAY_VIEW_BUCKETS.length
+      : isMonumentLensActive
+        ? (monuments?.length ?? 0) + 1
+        : PRIORITY_ORDER.length) *
+      LIST_COMPACT_GROUP_HEADER_HEIGHT +
     LIST_COMPACT_NOTES_ALLOWANCE +
     LIST_COMPACT_BOTTOM_ALLOWANCE;
   const listCompactHeight = Math.min(
@@ -3159,6 +3151,7 @@ export function MyListSheet({
       setManualRows(originRows);
     }
     manualReorderOriginRowsRef.current = null;
+    manualReorderCompactDayGroupIdsRef.current.clear();
     setActiveManualReorderRowId(null);
   }, []);
 
@@ -3175,7 +3168,7 @@ export function MyListSheet({
       try {
         const rowKey = readManualReorderActiveRowKey(
           event.active,
-          manualReorderVisibleRows
+          visibleTodoRows
         );
         if (!open || activeView !== "list" || !rowKey) {
           return;
@@ -3188,6 +3181,19 @@ export function MyListSheet({
         setActiveDayPickerRowKey(null);
         setManualSkillSearch("");
         manualReorderOriginRowsRef.current = manualRows;
+        manualReorderCompactDayGroupIdsRef.current = new Set(
+          visibleTodoGroups
+            .filter((group) => {
+              const bucketId = group.id as MyListDayViewBucketId;
+              const collapsedPreference = collapsedDayGroups[bucketId];
+              return (
+                isDayLensActive &&
+                collapsedPreference !== false &&
+                (collapsedPreference === true || group.rows.length === 0)
+              );
+            })
+            .map((group) => group.id as MyListDayViewBucketId)
+        );
         setActiveManualReorderRowId(rowKey);
       } catch (error) {
         resetManualReorderAfterError(error);
@@ -3196,10 +3202,13 @@ export function MyListSheet({
     [
       activeView,
       clearManualUpgradePress,
-      manualReorderVisibleRows,
+      collapsedDayGroups,
+      isDayLensActive,
       manualRows,
       open,
       resetManualReorderAfterError,
+      visibleTodoGroups,
+      visibleTodoRows,
     ]
   );
 
@@ -3209,11 +3218,11 @@ export function MyListSheet({
         setManualRows((currentRows) => {
           const rowKey = readManualReorderActiveRowKey(
             event.active,
-            manualReorderVisibleRows
+            visibleTodoRows
           );
           const destination = resolveManualReorderDestination(
             event,
-            manualReorderVisibleRows
+            visibleTodoRows
           );
           if (!rowKey || !rowKey.startsWith("manual:") || !destination) {
             return currentRows;
@@ -3227,7 +3236,7 @@ export function MyListSheet({
     [
       resetManualReorderAfterError,
       resolveManualReorderDestination,
-      manualReorderVisibleRows,
+      visibleTodoRows,
     ]
   );
 
@@ -3235,11 +3244,11 @@ export function MyListSheet({
     try {
       const rowKey = readManualReorderActiveRowKey(
         event.active,
-        manualReorderVisibleRows
+        visibleTodoRows
       );
       const destination = resolveManualReorderDestination(
         event,
-        manualReorderVisibleRows
+        visibleTodoRows
       );
       if (!rowKey || !destination) {
         restoreManualReorderOrigin();
@@ -3254,7 +3263,17 @@ export function MyListSheet({
         restoreManualReorderOrigin();
         return;
       }
+      if (
+        destination.group?.kind === "day" &&
+        manualReorderCompactDayGroupIdsRef.current.has(destination.group.id)
+      ) {
+        setCollapsedDayGroups((current) => ({
+          ...current,
+          [destination.group!.id]: true,
+        }));
+      }
       manualReorderOriginRowsRef.current = null;
+      manualReorderCompactDayGroupIdsRef.current.clear();
       setActiveManualReorderRowId(null);
     } catch (error) {
       resetManualReorderAfterError(error);
@@ -3265,7 +3284,7 @@ export function MyListSheet({
     resetManualReorderAfterError,
     resolveManualReorderDestination,
     restoreManualReorderOrigin,
-    manualReorderVisibleRows,
+    visibleTodoRows,
   ]);
 
   const handleManualReorderDragCancel = useCallback(() => {
@@ -4916,51 +4935,74 @@ export function MyListSheet({
             {hasListRows ? (
               <>
                 {todoListSections.map((section) => {
-                  if (section.sectionType === "group-selector") {
+                  if (section.sectionType === "compact-empty-monument-groups") {
                     return (
                       <div
-                        key="group-selector"
-                        role="tablist"
-                        aria-label={
-                          isDayLensActive ? "Day groups" : "Monument groups"
-                        }
-                        className="-mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+                        key={`compact-empty-monuments:${section.groups
+                          .map((group) => group.id)
+                          .join(":")}`}
+                        className="flex flex-wrap items-center gap-1.5 px-3 py-1"
+                      >
+                        {section.groups.map((group) => {
+                          const monumentIcon =
+                            "icon" in group ? group.icon : null;
+
+                          return (
+                            <span
+                              key={group.id}
+                              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62"
+                            >
+                              {monumentIcon ? (
+                                <span
+                                  className="text-[0.72rem] leading-none"
+                                  aria-hidden="true"
+                                >
+                                  {monumentIcon}
+                                </span>
+                              ) : (
+                                <Landmark
+                                  className="h-3 w-3"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
+                              )}
+                              <span>{group.label}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  if (section.sectionType === "compact-day-groups") {
+                    return (
+                      <div
+                        key={`compact-day-groups:${section.groups
+                          .map((group) => group.id)
+                          .join(":")}`}
+                        className="flex flex-wrap items-center gap-1.5 px-3 py-1"
                       >
                         {section.groups.map((group) => {
                           if (isMonumentLensActive) {
                             const monumentIcon =
                               "icon" in group ? group.icon : null;
-                            const isSelected =
-                              section.selectedGroupId === group.id;
-
                             return (
                               <button
                                 key={group.id}
                                 type="button"
-                                role="tab"
-                                aria-selected={isSelected}
+                                aria-expanded={false}
+                                aria-label={`Expand ${group.label} group`}
                                 data-my-list-no-schedule-drag
                                 data-my-list-no-upgrade
-                                onPointerDown={(event) =>
-                                  event.stopPropagation()
-                                }
-                                onTouchStart={(event) =>
-                                  event.stopPropagation()
-                                }
-                                onMouseDown={(event) =>
-                                  event.stopPropagation()
-                                }
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setSelectedMonumentGroupId(group.id);
+                                  setCollapsedMonumentGroups((current) => ({
+                                    ...current,
+                                    [group.id]: false,
+                                  }));
                                 }}
                                 tabIndex={open ? 0 : -1}
-                                className={clsx(
-                                  "inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition focus-visible:ring-2 focus-visible:ring-white/35",
-                                  isSelected
-                                    ? "border-white/[0.22] bg-white/[0.12] text-white shadow-[0_0_18px_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]"
-                                    : "border-white/[0.1] bg-zinc-400/[0.09] text-white/58 hover:bg-white/[0.08] hover:text-white/82"
-                                )}
+                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
                               >
                                 {monumentIcon ? (
                                   <span
@@ -4988,15 +5030,13 @@ export function MyListSheet({
                             kind: "day",
                             id: bucketId,
                           } satisfies MyListManualReorderGroup;
-                          const isSelected =
-                            section.selectedGroupId === bucketId;
 
                           return (
                             <MyListManualTodoGroupDropZone
                               key={bucketId}
                               group={manualReorderGroup}
                               dayDropBucketId={bucketId}
-                              className="inline-flex shrink-0"
+                              className="inline-flex"
                             >
                               {(isOver) => {
                                 const isManualTodoOver =
@@ -5005,8 +5045,8 @@ export function MyListSheet({
                                 return (
                                   <button
                                     type="button"
-                                    role="tab"
-                                    aria-selected={isSelected}
+                                    aria-expanded={false}
+                                    aria-label={`Expand ${group.label} group`}
                                     data-my-list-no-schedule-drag
                                     data-my-list-no-upgrade
                                     onPointerDown={(event) =>
@@ -5020,15 +5060,15 @@ export function MyListSheet({
                                     }
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setSelectedDayGroupId(bucketId);
+                                      setCollapsedDayGroups((current) => ({
+                                        ...current,
+                                        [bucketId]: false,
+                                      }));
                                     }}
                                     tabIndex={open ? 0 : -1}
                                     className={clsx(
-                                      "inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition duration-150 hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                      "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition duration-150 hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
                                       dayVisual.pillClassName,
-                                      isSelected
-                                        ? "ring-1 ring-white/35 shadow-[0_0_18px_rgba(255,255,255,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]"
-                                        : "opacity-72",
                                       isManualTodoOver &&
                                         "scale-[1.04] border-white/45 bg-white/[0.16] text-white shadow-[0_0_12px_rgba(255,255,255,0.14)] ring-1 ring-white/30"
                                     )}
@@ -5073,23 +5113,11 @@ export function MyListSheet({
                             id: group.id as PriorityBucketId,
                           }
                         : null;
-                  const groupDropZoneGroup =
-                    isDayLensActive ? null : manualReorderGroup;
-                  const groupDropZoneDayBucketId = isDayLensActive
-                    ? undefined
-                    : dayDropBucketId ?? undefined;
-                  const shouldRenderGroupLabel = Boolean(
-                    group.label &&
-                      !(
-                        !isCompletedSection &&
-                        (isDayLensActive || isMonumentLensActive)
-                      )
-                  );
 
                   const groupRows = (
                     <MyListManualTodoGroupDropZone
-                      group={groupDropZoneGroup}
-                      dayDropBucketId={groupDropZoneDayBucketId}
+                      group={manualReorderGroup}
+                      dayDropBucketId={dayDropBucketId ?? undefined}
                       className={clsx(
                         "space-y-0.5 rounded-lg border px-1 pb-0.5 transition-colors",
                         dayDropBucketId && "min-h-8",
@@ -5100,10 +5128,98 @@ export function MyListSheet({
                           : "border-transparent bg-transparent"
                       )}
                     >
-                    {shouldRenderGroupLabel ? (
-                      <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
-                        {group.label}
-                      </div>
+                    {group.label ? (
+                      dayDropBucketId ? (
+                        <div className="px-2 pt-1">
+                          {(() => {
+                            const dayVisual =
+                              MY_LIST_DAY_VISUALS[dayDropBucketId];
+                            const DayIcon = dayVisual.Icon;
+
+                            return (
+                              <button
+                                type="button"
+                                aria-expanded={true}
+                                aria-label={`Collapse ${group.label} group`}
+                                data-my-list-no-schedule-drag
+                                data-my-list-no-upgrade
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onTouchStart={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCollapsedDayGroups((current) => ({
+                                    ...current,
+                                    [dayDropBucketId]: true,
+                                  }));
+                                }}
+                                tabIndex={open ? 0 : -1}
+                                className={clsx(
+                                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                  dayVisual.pillClassName
+                                )}
+                              >
+                                <DayIcon
+                                  className="h-3 w-3"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
+                                <span>{group.label}</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      ) : isMonumentLensActive && !isCompletedSection ? (
+                        <div className="px-2 pt-1">
+                          {(() => {
+                            const monumentIcon =
+                              "icon" in group ? group.icon : null;
+
+                            return (
+                              <button
+                                type="button"
+                                aria-expanded={true}
+                                aria-label={`Collapse ${group.label} group`}
+                                data-my-list-no-schedule-drag
+                                data-my-list-no-upgrade
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCollapsedMonumentGroups((current) => ({
+                                    ...current,
+                                    [group.id]: true,
+                                  }));
+                                }}
+                                tabIndex={open ? 0 : -1}
+                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
+                              >
+                                {monumentIcon ? (
+                                  <span
+                                    className="text-[0.72rem] leading-none"
+                                    aria-hidden="true"
+                                  >
+                                    {monumentIcon}
+                                  </span>
+                                ) : (
+                                  <Landmark
+                                    className="h-3 w-3"
+                                    strokeWidth={1.9}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                <span>{group.label}</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
+                          {group.label}
+                        </div>
+                      )
                     ) : null}
                     {group.rows.map((visibleRow) => {
                   const sortableRowKey = getSortableTodoRowKey(visibleRow);
@@ -5905,11 +6021,6 @@ export function MyListSheet({
                     </MyListSortableManualTodoRow>
                   );
                     })}
-                    {!isCompletedSection && group.rows.length === 0 ? (
-                      <div className="rounded-lg bg-transparent px-3 py-2.5 text-sm text-white/42">
-                        No To-Dos yet.
-                      </div>
-                    ) : null}
                     </MyListManualTodoGroupDropZone>
                   );
 
