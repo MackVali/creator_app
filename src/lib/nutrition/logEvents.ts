@@ -9,13 +9,16 @@ export const CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT =
   "creator:schedule-nutrition-log-overlay-open-changed";
 
 export type CreatorNutritionLogContext = {
-  source: "matrix-inferred-meal";
+  source: "matrix-inferred-meal" | "matrix-scheduled-meal";
   requestId: string;
-  syntheticEventId: string;
+  syntheticEventId?: string;
+  scheduleInstanceId?: string;
+  eventId?: string;
   dateKey: string;
   mealName: string;
   timeBlockId: string | null;
   dayTypeTimeBlockId: string | null;
+  windowId?: string | null;
   startUtc: string;
   endUtc: string;
   startLocal: string | null;

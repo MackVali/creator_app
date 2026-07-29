@@ -173,9 +173,7 @@ function readFitnessWeight(
 
   const weight = combinedWeightMatch?.[1] ?? rawWeight;
   return {
-    // A recognized non-bodyweight unit means this is an adjustable load, even
-    // when a fresh routine has not supplied a numeric value yet.
-    weight: !weight && rawUnit ? "0" : weight,
+    weight,
     // Numeric legacy payloads predate weightUnit; their form default was pounds.
     weightUnit: rawUnit || (weight && Number.isFinite(Number(weight)) ? "lb" : ""),
   };

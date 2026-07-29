@@ -12,14 +12,8 @@ export function AnalyticsDashboardSkeleton({
   includeHeader?: boolean;
 }) {
   const content = (
-    <section
-      aria-label="Analytics"
-      className={classNames(
-        "relative overflow-hidden rounded-[20px] border border-zinc-900/80 bg-zinc-950/35 p-0.5 min-[480px]:p-1.5 sm:rounded-[26px]",
-        !includeHeader && "border-0 bg-transparent p-0 min-[480px]:p-0"
-      )}
-    >
-      <div className="space-y-7 p-3 sm:space-y-8 sm:p-4 lg:p-5">
+    <section aria-label="Analytics">
+      <div className="space-y-7 sm:space-y-8">
         <OverviewSkeleton />
         <SkillContributionSkeleton />
         <HabitSkeleton />

@@ -488,7 +488,7 @@ export default function AnalyticsDashboard({}: {
     ) : !hasAnalyticsData && loading ? (
       <AnalyticsDashboardSkeleton />
     ) : (
-      <div className="space-y-7 p-3 sm:space-y-8 sm:p-4 lg:p-5">
+      <div className="space-y-7 sm:space-y-8">
         {overviewContent}
         {executionContent}
         {habitsContent}
@@ -507,12 +507,7 @@ export default function AnalyticsDashboard({}: {
           onRangeChange={setSelectedRange}
           isRefreshing={analyticsRefreshing}
         />
-        <section
-          aria-label="Analytics"
-          className="relative overflow-hidden rounded-[20px] border border-zinc-900/80 bg-zinc-950/35 p-0.5 min-[480px]:p-1.5 sm:rounded-[26px]"
-        >
-          {analyticsContent}
-        </section>
+        <section aria-label="Analytics">{analyticsContent}</section>
       </div>
     </div>
   );
