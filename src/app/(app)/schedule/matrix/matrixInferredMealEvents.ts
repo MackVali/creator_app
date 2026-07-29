@@ -53,7 +53,22 @@ export type MatrixInferredMealEventData = {
   completedMealId: string | null;
 };
 
+export type MatrixScheduledMealEventData = {
+  scheduleInstanceId: string;
+  eventId: string | null;
+  title: string;
+  timeBlockId: string | null;
+  dayTypeTimeBlockId: string | null;
+  windowId: string | null;
+  dateKey: string;
+  startUtc: string;
+  endUtc: string;
+  startLocal: string | null;
+  endLocal: string | null;
+};
+
 const MATRIX_INFERRED_MEAL_SOURCE = "matrix-inferred-meal";
+const MATRIX_SCHEDULED_MEAL_SOURCE = "matrix-scheduled-meal";
 const MATRIX_INFERRED_MEAL_PREFIX = "matrix-inferred-meal";
 
 function trimmed(value: string | null | undefined) {
@@ -139,6 +154,20 @@ export function isActualScheduledMealEventInTimeBlock(
   return Boolean(windowId && instance.window_id === windowId);
 }
 
+export function findActualScheduledMealTimeBlock(
+  instance: MatrixMealScheduleInstance,
+  windows: MatrixMealTimeBlockWindow[]
+) {
+  if (instance.source_type?.trim().toUpperCase() !== "EVENT") return null;
+  return (
+    windows.find(
+      (window) =>
+        isMatrixMealTimeBlock(window) &&
+        isActualScheduledMealEventInTimeBlock(instance, window)
+    ) ?? null
+  );
+}
+
 function readMetadataRecord(value: Json | null | undefined) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -211,10 +240,36 @@ export function buildMatrixInferredMealNutritionLogContext({
     mealName: inferredMeal.title,
     timeBlockId: inferredMeal.timeBlockId,
     dayTypeTimeBlockId: inferredMeal.dayTypeTimeBlockId,
+    windowId: inferredMeal.windowId,
     startUtc: inferredMeal.startUtc,
     endUtc: inferredMeal.endUtc,
     startLocal: inferredMeal.startLocal,
     endLocal: inferredMeal.endLocal,
+    timeZone,
+  };
+}
+
+export function buildMatrixScheduledMealNutritionLogContext({
+  meal,
+  timeZone,
+}: {
+  meal: MatrixScheduledMealEventData;
+  timeZone: string;
+}): CreatorNutritionLogContext {
+  return {
+    source: MATRIX_SCHEDULED_MEAL_SOURCE,
+    requestId: `${meal.scheduleInstanceId}:${Date.now()}`,
+    scheduleInstanceId: meal.scheduleInstanceId,
+    eventId: meal.eventId ?? undefined,
+    dateKey: meal.dateKey,
+    mealName: meal.title,
+    timeBlockId: meal.timeBlockId,
+    dayTypeTimeBlockId: meal.dayTypeTimeBlockId,
+    windowId: meal.windowId,
+    startUtc: meal.startUtc,
+    endUtc: meal.endUtc,
+    startLocal: meal.startLocal,
+    endLocal: meal.endLocal,
     timeZone,
   };
 }

@@ -11,6 +11,12 @@ export type FitnessLoggedSetPerformance = {
   unit?: "lb" | "kg" | "bodyweight" | "assisted" | "machine" | null;
 };
 
+function formatFitnessLoad(weight: number | null, unit: string | null) {
+  if (unit === "bodyweight") return "bodyweight";
+  if (unit === "assisted" && weight != null) return `${weight} lb assistance`;
+  return weight != null && unit ? `${weight} ${unit}` : null;
+}
+
 export type FitnessExerciseProgressionSummary = {
   exerciseId: string;
   exerciseName: string;
@@ -143,8 +149,7 @@ function representativeNumber(values: Array<number | null | undefined>) {
 }
 
 function formatLoad(weight: number | null, unit: string | null) {
-  if (unit === "bodyweight") return "bodyweight";
-  return weight != null && unit ? `${weight} ${unit}` : null;
+  return formatFitnessLoad(weight, unit);
 }
 
 function formatPerformance(load: string, reps: number | null, duration: number | null) {

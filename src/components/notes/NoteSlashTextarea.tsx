@@ -197,6 +197,14 @@ import {
   type FitnessExerciseProgressionSummary,
 } from "@/lib/fitness/progressiveOverload";
 import {
+  formatFitnessResistanceLabel,
+  getDefaultAddedFitnessLoad,
+  getFitnessResistanceStep,
+  isExternalFitnessLoadUnit,
+  isFitnessBodyweightExercise,
+  sanitizeFitnessResistanceValue,
+} from "@/lib/fitness/resistance";
+import {
   getFitnessExerciseHistory,
   getFitnessExerciseHistories,
   getFitnessPrHighlights,
@@ -1302,7 +1310,7 @@ function getInitialFitnessWorkoutExerciseDetail(
       ? `${getExactFitnessGuidanceNumber(guidanceDuration)} ${durationUnit}`
       : "",
     weight: "",
-    unit: "lb",
+    unit: isFitnessBodyweightExercise(exercise) ? "bodyweight" : "lb",
   };
 }
 
@@ -1343,6 +1351,17 @@ function isDefaultFitnessWorkoutWeight(value: string) {
   return Number.isFinite(numericValue) && numericValue === 0;
 }
 
+function isDefaultFitnessWorkoutResistance(
+  exercise: FitnessExerciseSample,
+  detail: Pick<FitnessWorkoutExerciseDetail, "weight" | "unit">,
+) {
+  const initialDetail = getInitialFitnessWorkoutExerciseDetail(exercise);
+  return (
+    isDefaultFitnessWorkoutWeight(detail.weight) &&
+    detail.unit === initialDetail.unit
+  );
+}
+
 function getFitnessWorkoutExerciseDetail(
   exercise: FitnessExerciseSample,
   detailsByExerciseId: Record<string, FitnessWorkoutExerciseDetail>,
@@ -1359,13 +1378,14 @@ function shouldUseFitnessDurationDetail(exercise: FitnessExerciseSample) {
 
 function formatFitnessWorkoutExerciseDetail(
   detail: FitnessWorkoutExerciseDetail,
-  weight = "",
-  unit: FitnessWeightUnit = "lb",
+  exercise?: FitnessExerciseSample,
+  weight = detail.weight,
+  unit: FitnessWeightUnit = detail.unit,
 ) {
   const sets = detail.sets.trim();
   const reps = detail.reps.trim();
   const duration = detail.duration.trim();
-  const weightLabel = formatFitnessWeightUnitLabel(weight, unit);
+  const weightLabel = formatFitnessWeightUnitLabel(weight, unit, exercise);
   const formattedSets = sets ? (/\bsets?\b/i.test(sets) ? sets : `${sets} sets`) : null;
   const formattedReps = reps
     ? /\b(?:reps?|steps)\b|\beach(?:\s+side)?\b/i.test(reps)
@@ -1387,6 +1407,13 @@ function parsePositiveFitnessNumber(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseFitnessWeightNumber(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+  const parsed = Number(trimmedValue);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function parseFitnessDurationSeconds(value: string) {
   const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*(sec|secs|seconds|min|mins|minutes)?$/i);
   if (!match) return null;
@@ -1395,10 +1422,12 @@ function parseFitnessDurationSeconds(value: string) {
   return Math.round(amount * (/^min/i.test(match[2] ?? "") ? 60 : 1));
 }
 
-function formatFitnessWeightUnitLabel(weight: string, unit: FitnessWeightUnit) {
-  const numericWeight = parsePositiveFitnessNumber(weight);
-  if (unit === "bodyweight" && numericWeight === null) return "bodyweight";
-  return numericWeight === null ? null : `${numericWeight} ${unit}`;
+function formatFitnessWeightUnitLabel(
+  weight: string,
+  unit: FitnessWeightUnit,
+  exercise?: FitnessExerciseSample,
+) {
+  return formatFitnessResistanceLabel({ weight, unit, exercise });
 }
 const GROCERY_FOOD_ACTION_TAB_IDS = new Set<NutritionFoodActionTabId>([
   "search",
@@ -6394,12 +6423,13 @@ function getFitnessWorkoutLogPreview(
       : durationSeconds
         ? `${sets.length}×${formatFitnessMetadataDuration(durationSeconds)}`
         : `${sets.length} sets`;
-    const load =
-      unit === "bodyweight" && weight === null
-        ? "bodyweight"
-        : weight !== null && unit
-          ? `${weight} ${unit}`
-          : null;
+    const load = unit
+      ? formatFitnessResistanceLabel({
+          weight,
+          unit,
+          exercise: { exerciseName: name },
+        })
+      : null;
 
     return [`${name} — ${prescription}${load ? ` @ ${load}` : ""}`];
   });
@@ -6421,12 +6451,13 @@ function getFitnessWorkoutLogPreview(
         : {};
       const weight = getPositiveFitnessMetadataNumber(firstSet.weight);
       const unit = typeof firstSet.unit === "string" ? firstSet.unit.trim() : "";
-      const load =
-        unit === "bodyweight" && weight === null
-          ? "bodyweight"
-          : weight !== null && unit
-            ? `${weight} ${unit}`
-            : null;
+      const load = unit
+        ? formatFitnessResistanceLabel({
+            weight,
+            unit,
+            exercise: { exerciseName: name },
+          })
+        : null;
       return name && load ? [`${name}: ${load}`] : [];
     }),
   );
@@ -8145,6 +8176,10 @@ export function NoteDatabaseEntrySheet({
     useState<FitnessWorkoutEntryContext | null>(null);
   const [isFitnessWorkoutStarting, setIsFitnessWorkoutStarting] = useState(false);
   const [isFitnessWorkoutReviewOpen, setIsFitnessWorkoutReviewOpen] = useState(false);
+  const [fitnessWeightEditTarget, setFitnessWeightEditTarget] = useState<{
+    exerciseId: string;
+    value: string;
+  } | null>(null);
   const [fitnessExerciseDetailTarget, setFitnessExerciseDetailTarget] = useState<{
     exerciseId: string;
     exerciseName: string;
@@ -8214,8 +8249,7 @@ export function NoteDatabaseEntrySheet({
         if (
           edits?.weight ||
           edits?.unit ||
-          !isDefaultFitnessWorkoutWeight(currentDetail.weight) ||
-          currentDetail.unit !== "lb"
+          !isDefaultFitnessWorkoutResistance(exercise, currentDetail)
         ) {
           return;
         }
@@ -9440,6 +9474,9 @@ export function NoteDatabaseEntrySheet({
         : value;
 
     updateFitnessWorkoutExerciseDetail(exercise, key, nextValue);
+    if (key === "unit" && nextValue === "bodyweight") {
+      updateFitnessWorkoutExerciseDetail(exercise, "weight", "");
+    }
   }
 
   function buildFitnessWorkoutEntryValues(
@@ -9465,14 +9502,14 @@ export function NoteDatabaseEntrySheet({
         : [sets ? `${sets} sets` : null, reps ? `${reps} reps` : null]
             .filter(Boolean)
             .join(" × ");
-      const weightLabel = formatFitnessWeightUnitLabel(detail.weight, detail.unit);
+      const weightLabel = formatFitnessWeightUnitLabel(detail.weight, detail.unit, exercise);
       return `${exercise.name} — ${prescription}${weightLabel ? ` @ ${weightLabel}` : ""}`;
     });
     const weightLines = selectedFitnessWorkoutExercises
       .map((exercise) => {
         const detail = detailsByExerciseId[getFitnessExerciseId(exercise)];
         const weightLabel = detail
-          ? formatFitnessWeightUnitLabel(detail.weight, detail.unit)
+          ? formatFitnessWeightUnitLabel(detail.weight, detail.unit, exercise)
           : null;
         return weightLabel ? `${exercise.name}: ${weightLabel}` : null;
       })
@@ -9528,7 +9565,7 @@ export function NoteDatabaseEntrySheet({
         const setCount = Math.max(1, Math.floor(parsePositiveFitnessNumber(detail.sets) ?? 1));
         const plannedReps = parsePositiveFitnessNumber(detail.reps);
         const plannedDurationSeconds = parseFitnessDurationSeconds(detail.duration);
-        const weight = parsePositiveFitnessNumber(detail.weight);
+        const weight = parseFitnessWeightNumber(detail.weight);
         const unit = detail.unit === "bodyweight" || weight !== null ? detail.unit : null;
         const focusSets = fitnessWorkoutFocusSessionResult?.workoutName === workoutName
           ? fitnessWorkoutFocusSessionResult.sets
@@ -9546,7 +9583,7 @@ export function NoteDatabaseEntrySheet({
             ? focusSets.map((set) => {
                 const setPlannedReps =
                   parsePositiveFitnessNumber(set.plannedReps ?? "") ?? plannedReps;
-                const setWeight = parsePositiveFitnessNumber(set.weight ?? "");
+                const setWeight = parseFitnessWeightNumber(set.weight ?? "");
                 const setUnit = FITNESS_WEIGHT_UNITS.includes(
                   set.weightUnit as FitnessWeightUnit,
                 )
@@ -9705,7 +9742,9 @@ export function NoteDatabaseEntrySheet({
       const prescribedDetail = {
         ...routinePrescriptionToWorkoutDetail(prescription),
         weight: "",
-        unit: "lb" as const,
+        unit: exercise && isFitnessBodyweightExercise(exercise)
+          ? ("bodyweight" as const)
+          : ("lb" as const),
       };
       details[prescription.name] = exercise
         ? initializeFitnessWorkoutTargetFromHistory(exercise, prescribedDetail)
@@ -9811,6 +9850,66 @@ export function NoteDatabaseEntrySheet({
       };
     });
 
+  }
+
+  function getFitnessPreferredExternalLoadUnit(exercise: FitnessExerciseSample): "lb" | "kg" {
+    const exerciseId = getFitnessExerciseId(exercise);
+    const progression = fitnessProgressionByExerciseId[exerciseId];
+    if (isExternalFitnessLoadUnit(progression?.suggestedUnit)) {
+      return progression.suggestedUnit;
+    }
+    if (isExternalFitnessLoadUnit(progression?.latestUnit)) {
+      return progression.latestUnit;
+    }
+
+    const latestPerformance = fitnessLoggedSetPerformances
+      .filter((performance) => isExternalFitnessLoadUnit(performance.unit))
+      .sort((a, b) => Date.parse(b.loggedAt) - Date.parse(a.loggedAt))[0];
+    return latestPerformance?.unit === "kg" ? "kg" : "lb";
+  }
+
+  function setFitnessWorkoutExerciseAddedLoad(exercise: FitnessExerciseSample) {
+    const unit = getFitnessPreferredExternalLoadUnit(exercise);
+    updateFitnessWorkoutExerciseDetail(
+      exercise,
+      "weight",
+      getDefaultAddedFitnessLoad(unit),
+    );
+    updateFitnessWorkoutExerciseDetail(exercise, "unit", unit);
+    void hapticSoftTick();
+  }
+
+  function setFitnessWorkoutExerciseBodyweight(exercise: FitnessExerciseSample) {
+    updateFitnessWorkoutExerciseDetail(exercise, "weight", "");
+    updateFitnessWorkoutExerciseDetail(exercise, "unit", "bodyweight");
+    const exerciseId = getFitnessExerciseId(exercise);
+    if (fitnessWeightEditTarget?.exerciseId === exerciseId) {
+      setFitnessWeightEditTarget(null);
+    }
+    void hapticSoftTick();
+  }
+
+  function startFitnessWeightInlineEdit(
+    exercise: FitnessExerciseSample,
+    currentWeight: string,
+  ) {
+    setFitnessWeightEditTarget({
+      exerciseId: getFitnessExerciseId(exercise),
+      value: currentWeight.trim(),
+    });
+  }
+
+  function commitFitnessWeightInlineEdit(exercise: FitnessExerciseSample) {
+    const exerciseId = getFitnessExerciseId(exercise);
+    if (fitnessWeightEditTarget?.exerciseId !== exerciseId) return;
+
+    updateFitnessWorkoutExerciseDetail(
+      exercise,
+      "weight",
+      sanitizeFitnessResistanceValue(fitnessWeightEditTarget.value),
+    );
+    setFitnessWeightEditTarget(null);
+    void hapticSoftTick();
   }
 
   function getPositiveFitnessDetailValue(value: string) {
@@ -9936,10 +10035,7 @@ export function NoteDatabaseEntrySheet({
           sets: detail.sets,
           reps: detail.reps,
           duration: detail.duration,
-          weight:
-            detail.unit !== "bodyweight" && !detail.weight.trim()
-              ? "0"
-              : detail.weight,
+          weight: detail.unit === "bodyweight" ? "" : detail.weight,
           weightUnit: detail.unit || "lb",
         };
       }),
@@ -11772,7 +11868,7 @@ export function NoteDatabaseEntrySheet({
   }
 
   function getFitnessWeightStep(unit: FitnessWeightUnit) {
-    return unit === "kg" ? 2.5 : 5;
+    return getFitnessResistanceStep(unit);
   }
 
   function bumpFitnessWorkoutWeight(
@@ -11798,14 +11894,33 @@ export function NoteDatabaseEntrySheet({
       exercise,
       fitnessWorkoutExerciseDetailsById,
     );
+    const exerciseId = getFitnessExerciseId(exercise);
+    const isBodyweightExercise = isFitnessBodyweightExercise(exercise);
+    const isEditing = fitnessWeightEditTarget?.exerciseId === exerciseId;
 
     if (detail.unit === "bodyweight") {
       return (
-        <div className="text-[11px] font-semibold text-white/58">
-          bodyweight
+        <div className="inline-flex h-8 items-center overflow-hidden rounded-lg border border-white/[0.07] bg-black/28">
+          <span className="flex h-8 items-center px-2.5 text-[11px] font-semibold text-white/70">
+            Bodyweight
+          </span>
+          <button
+            type="button"
+            onClick={() => setFitnessWorkoutExerciseAddedLoad(exercise)}
+            className="flex h-8 items-center border-l border-white/[0.055] px-2 text-[11px] font-semibold text-white/58 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            Add load
+          </button>
         </div>
       );
     }
+
+    const weightLabel = formatFitnessResistanceLabel({
+      weight: detail.weight,
+      unit: detail.unit,
+      exercise,
+      emptyNumericLabel: "0",
+    }) ?? `0 ${detail.unit || "lb"}`;
 
     return (
       <div className="inline-flex h-8 items-center overflow-hidden rounded-lg border border-white/[0.07] bg-black/28">
@@ -11817,9 +11932,41 @@ export function NoteDatabaseEntrySheet({
           >
             <Minus className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-          <span className="flex h-8 min-w-16 items-center justify-center border-x border-white/[0.055] px-2 text-xs font-semibold tabular-nums text-white/82">
-            {detail.weight.trim() || "0"} {detail.unit || "lb"}
-          </span>
+          {isEditing ? (
+            <input
+              type="text"
+              inputMode="decimal"
+              autoFocus
+              value={fitnessWeightEditTarget.value}
+              onChange={(event) =>
+                setFitnessWeightEditTarget({
+                  exerciseId,
+                  value: event.target.value,
+                })
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitFitnessWeightInlineEdit(exercise);
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setFitnessWeightEditTarget(null);
+                }
+              }}
+              onBlur={() => commitFitnessWeightInlineEdit(exercise)}
+              className="h-8 w-20 min-w-0 border-x border-white/[0.055] bg-black/20 px-2 text-center text-xs font-semibold tabular-nums text-white outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              aria-label={`Edit target weight for ${exercise.name}`}
+              onClick={() => startFitnessWeightInlineEdit(exercise, detail.weight)}
+              className="flex h-8 min-w-16 items-center justify-center border-x border-white/[0.055] px-2 text-xs font-semibold tabular-nums text-white/82 outline-none transition hover:bg-white/[0.055] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
+            >
+              {weightLabel}
+            </button>
+          )}
           <button
             type="button"
             aria-label={`Increase target weight for ${exercise.name}`}
@@ -11828,6 +11975,16 @@ export function NoteDatabaseEntrySheet({
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
+          {isBodyweightExercise ? (
+            <button
+              type="button"
+              aria-label={`Return ${exercise.name} to bodyweight`}
+              onClick={() => setFitnessWorkoutExerciseBodyweight(exercise)}
+              className="flex h-8 items-center border-l border-white/[0.055] px-2 text-[11px] font-semibold text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/78 focus-visible:bg-white/[0.08] focus-visible:text-white"
+            >
+              Bodyweight
+            </button>
+          ) : null}
       </div>
     );
   }
@@ -11953,6 +12110,13 @@ export function NoteDatabaseEntrySheet({
                             event.target.value,
                           )
                         }
+                        onBlur={(event) =>
+                          updateFitnessWorkoutLogDetail(
+                            exercise,
+                            "weight",
+                            sanitizeFitnessResistanceValue(event.target.value),
+                          )
+                        }
                         placeholder="Optional"
                         className="h-9 w-full rounded-lg border border-white/[0.06] bg-black/30 px-2 text-xs font-semibold text-white/82 outline-none transition placeholder:text-white/24 focus-visible:border-white/[0.15] focus-visible:ring-1 focus-visible:ring-white/12"
                       />
@@ -12047,7 +12211,7 @@ export function NoteDatabaseEntrySheet({
                   exercise,
                   fitnessWorkoutExerciseDetailsById,
                 );
-                const metadata = formatFitnessWorkoutExerciseDetail(detail);
+                const metadata = formatFitnessWorkoutExerciseDetail(detail, exercise);
                 const progression =
                   fitnessProgressionByExerciseId[getFitnessExerciseId(exercise)];
 
@@ -16267,9 +16431,11 @@ export function NoteDatabaseEntrySheet({
 
   return (
     <div
-      className={`fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6 ${
-        overlayClassName ?? ""
-      }`}
+      className={`fixed inset-0 z-[70] flex overflow-hidden overscroll-contain bg-black/58 backdrop-blur-sm ${
+        isNutritionTargetSetupTakeoverOpen
+          ? "items-stretch justify-center p-0 sm:items-center sm:p-6"
+          : "items-center justify-center p-3 sm:p-6"
+      } ${overlayClassName ?? ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={isNutritionTargetSetupTakeoverOpen ? undefined : "note-database-entry-form-title"}
@@ -16281,7 +16447,13 @@ export function NoteDatabaseEntrySheet({
         }
       }}
     >
-      <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
+      <div
+        className={`animate-in fade-in-0 zoom-in-95 flex w-full max-w-xl flex-col overflow-hidden border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200 ${
+          isNutritionTargetSetupTakeoverOpen
+            ? "h-[100dvh] max-h-[100dvh] min-h-0 rounded-none sm:h-[min(88dvh,720px)] sm:max-h-[88dvh] sm:rounded-[30px]"
+            : "max-h-[88vh] rounded-[30px]"
+        }`}
+      >
         {!isNutritionTargetSetupTakeoverOpen ? <div className="relative border-b border-white/[0.04] px-4 py-4">
           <h2
             id="note-database-entry-form-title"

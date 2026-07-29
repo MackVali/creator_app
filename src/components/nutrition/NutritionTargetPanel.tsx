@@ -37,6 +37,11 @@ type OverrideForm = { calories: string; protein: string; carbs: string; fat: str
 type SetupView = "wizard" | "result" | "advanced";
 type SetupStep = 0 | 1;
 type PaceGoalType = Extract<GoalType, "lose" | "gain">;
+type DirectionFieldIssues = {
+  currentWeight?: string;
+  goalWeight?: string;
+  pace?: string;
+};
 
 const goalLabels: Record<GoalType, string> = {
   lose: "Lose weight",
@@ -95,6 +100,16 @@ const wizardSmallPrimaryActionClass = "min-h-10 rounded-lg border border-white/[
 const wizardSelectedSegmentClass = "border border-white/[0.18] bg-[#2a2a2d] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
 const wizardSelectedChoiceClass = "border border-white/[0.18] bg-[#242427] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
 const wizardTextActionClass = "flex min-h-9 items-center justify-center rounded-lg px-3 text-xs font-semibold text-white/58 outline-none transition hover:bg-white/[0.045] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-50";
+const directionFieldIds = {
+  currentWeight: "nutrition-target-current-weight",
+  goalWeight: "nutrition-target-goal-weight",
+  pace: "nutrition-target-pace",
+} as const;
+const directionErrorIds = {
+  currentWeight: "nutrition-target-current-weight-error",
+  goalWeight: "nutrition-target-goal-weight-error",
+  pace: "nutrition-target-pace-error",
+} as const;
 
 const numberOrNull = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -223,10 +238,36 @@ function goalDefinitionIssue(form: TargetSetupForm) {
   return null;
 }
 
-function directionIssue(form: TargetSetupForm) {
+function directionFieldIssues(form: TargetSetupForm): DirectionFieldIssues {
+  const issues: DirectionFieldIssues = {};
   const currentWeight = numberOrNull(form.weightKgCanonical);
-  if (currentWeight === null || currentWeight < 25 || currentWeight > 500) return "Enter your current weight.";
-  return goalDefinitionIssue(form);
+  const currentWeightValid = currentWeight !== null && currentWeight >= 25 && currentWeight <= 500;
+
+  if (!currentWeightValid) {
+    issues.currentWeight = "Enter your current weight.";
+  }
+
+  if (form.goalType === "lose" || form.goalType === "gain") {
+    const goalWeight = numberOrNull(form.goalWeightKgCanonical);
+    if (goalWeight === null) {
+      issues.goalWeight = "Goal weight is required.";
+    } else if (currentWeightValid && form.goalType === "lose" && goalWeight >= currentWeight - 0.1) {
+      issues.goalWeight = "Choose a goal weight below your current weight.";
+    } else if (currentWeightValid && form.goalType === "gain" && goalWeight <= currentWeight + 0.1) {
+      issues.goalWeight = "Choose a goal weight above your current weight.";
+    }
+
+    if (!paceOptions[form.goalType].some((option) => option.value === form.rate)) {
+      issues.pace = "Choose a pace.";
+    }
+  }
+
+  return issues;
+}
+
+function directionIssue(form: TargetSetupForm) {
+  const issues = directionFieldIssues(form);
+  return issues.currentWeight ?? issues.goalWeight ?? issues.pace ?? null;
 }
 
 function canContinueSetupStep(form: TargetSetupForm, step: SetupStep) {
@@ -270,7 +311,6 @@ export function NutritionTargetPanel({
   const [setupView, setSetupView] = useState<SetupView>("wizard");
   const [setupSessionStarted, setSetupSessionStarted] = useState(false);
   const [setupAttempted, setSetupAttempted] = useState(false);
-  const [directionTouched, setDirectionTouched] = useState(false);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [form, setForm] = useState<TargetSetupForm>(() => createInitialTargetForm());
   const [formDirty, setFormDirty] = useState(false);
@@ -339,7 +379,6 @@ export function NutritionTargetPanel({
     setSetupStep(0);
     setSetupView("wizard");
     setSetupAttempted(false);
-    setDirectionTouched(false);
     setActivityExpanded(false);
     setSetupSessionStarted(true);
     setSetupMode(mode);
@@ -497,9 +536,22 @@ export function NutritionTargetPanel({
   const percentageTotal = macroPercentTotal(form);
   const automaticLoseBlocked = form.goalType === "lose" && form.formulaInput !== "manual" && form.pregnancyStatus !== "none";
   const setupGoalIssue = goalDefinitionIssue(form);
-  const setupDirectionIssue = directionIssue(form);
+  const setupDirectionFieldIssues = directionFieldIssues(form);
   const profileOnly = setupMode === "edit_profile";
-  const canContinue = canContinueSetupStep(form, setupStep) && !automaticLoseBlocked;
+  const canContinue = canContinueSetupStep(form, setupStep) && (setupStep === 0 || !automaticLoseBlocked);
+  const focusFirstDirectionInvalidInput = () => {
+    const firstInvalidId = setupDirectionFieldIssues.currentWeight
+      ? directionFieldIds.currentWeight
+      : setupDirectionFieldIssues.goalWeight
+        ? directionFieldIds.goalWeight
+        : setupDirectionFieldIssues.pace
+          ? directionFieldIds.pace
+          : null;
+    if (!firstInvalidId || typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(firstInvalidId)?.focus();
+    });
+  };
   const goBack = () => {
     if (setupView === "advanced") {
       setSetupView(preview ? "result" : "wizard");
@@ -517,6 +569,10 @@ export function NutritionTargetPanel({
     setError(null);
     if (!canContinue) {
       setSetupAttempted(true);
+      if (setupStep === 0) {
+        focusFirstDirectionInvalidInput();
+        return;
+      }
       if (setupStep === 1) setError(automaticLoseBlocked ? "Automatic deficit calculation is unavailable for the selected nutrition consideration. Use Maintain or a manual target instead." : "Complete the baseline details before previewing your target.");
       return;
     }
@@ -533,7 +589,7 @@ export function NutritionTargetPanel({
   if (setupOpen) {
     const headerLabel = profileOnly ? "Edit profile" : setupView === "wizard" ? `${setupStep + 1} of 2` : setupView === "result" ? "Target result" : "Advanced";
     return (
-      <div className="flex max-h-full min-h-0 flex-1 flex-col bg-[#090909]" aria-label="Nutrition target setup">
+      <div className="flex h-full max-h-full min-h-0 flex-1 touch-pan-y flex-col overflow-hidden bg-[#090909]" aria-label="Nutrition target setup">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.055] px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             {(setupView !== "wizard" || setupStep > 0) && !profileOnly ? (
@@ -546,7 +602,7 @@ export function NutritionTargetPanel({
           <button type="button" onClick={() => setSetupOpen(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 outline-none transition hover:bg-white/[0.055] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18" aria-label="Close target setup"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 [-webkit-overflow-scrolling:touch] sm:px-6">
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom,0px)+2rem)] pt-5 [-webkit-overflow-scrolling:touch] sm:px-6">
           {profileOnly ? (
             <EditProfileSurface
               form={form}
@@ -572,9 +628,8 @@ export function NutritionTargetPanel({
               form={form}
               step={setupStep}
               updateForm={updateForm}
-              showDirectionIssue={setupAttempted || directionTouched}
-              directionIssue={setupDirectionIssue}
-              onDirectionInteract={() => setDirectionTouched(true)}
+              showDirectionIssues={setupAttempted}
+              directionFieldIssues={setupDirectionFieldIssues}
               activityExpanded={activityExpanded}
               setActivityExpanded={setActivityExpanded}
             />
@@ -722,18 +777,16 @@ function WizardStepSurface({
   form,
   step,
   updateForm,
-  showDirectionIssue,
-  directionIssue: issue,
-  onDirectionInteract,
+  showDirectionIssues,
+  directionFieldIssues: issues,
   activityExpanded,
   setActivityExpanded,
 }: {
   form: TargetSetupForm;
   step: SetupStep;
   updateForm: (form: TargetSetupForm) => void;
-  showDirectionIssue: boolean;
-  directionIssue: string | null;
-  onDirectionInteract: () => void;
+  showDirectionIssues: boolean;
+  directionFieldIssues: DirectionFieldIssues;
   activityExpanded: boolean;
   setActivityExpanded: (expanded: boolean) => void;
 }) {
@@ -744,9 +797,8 @@ function WizardStepSurface({
         <DirectionStep
           form={form}
           updateForm={updateForm}
-          showIssue={showDirectionIssue}
-          issue={issue}
-          onInteract={onDirectionInteract}
+          showIssues={showDirectionIssues}
+          issues={issues}
         />
       ) : null}
       {step === 1 ? (
@@ -764,16 +816,17 @@ function WizardStepSurface({
 function DirectionStep({
   form,
   updateForm,
-  showIssue,
-  issue,
-  onInteract,
+  showIssues,
+  issues,
 }: {
   form: TargetSetupForm;
   updateForm: (form: TargetSetupForm) => void;
-  showIssue: boolean;
-  issue: string | null;
-  onInteract: () => void;
+  showIssues: boolean;
+  issues: DirectionFieldIssues;
 }) {
+  const currentWeightIssue = showIssues ? issues.currentWeight : undefined;
+  const goalWeightIssue = showIssues ? issues.goalWeight : undefined;
+  const paceIssue = showIssues ? issues.pace : undefined;
   const setGoalType = (goalType: GoalType) => {
     const nextRate = goalType === "lose"
       ? paceOptions.lose.some((option) => option.value === form.rate) ? form.rate : "0.5"
@@ -795,44 +848,76 @@ function DirectionStep({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold text-white/54">Weight</p>
           <div className="w-32">
-            <UnitToggle form={form} updateForm={(next) => { onInteract(); updateForm(next); }} />
+            <UnitToggle form={form} updateForm={updateForm} />
           </div>
         </div>
         <div className={`grid gap-3 ${(form.goalType === "lose" || form.goalType === "gain") ? "sm:grid-cols-2" : ""}`}>
-          <Label text={`Current weight (${form.units === "metric" ? "kg" : "lb"})`} wide={form.goalType !== "lose" && form.goalType !== "gain"}>
-            <input inputMode="decimal" type="text" value={form.weight} onChange={(event) => { onInteract(); updateForm(setWeightDisplay(form, event.target.value)); }} />
+          <Label
+            text={`Current weight (${form.units === "metric" ? "kg" : "lb"})`}
+            wide={form.goalType !== "lose" && form.goalType !== "gain"}
+            validationId={directionErrorIds.currentWeight}
+            validationMessage={currentWeightIssue}
+          >
+            <input
+              id={directionFieldIds.currentWeight}
+              inputMode="decimal"
+              type="text"
+              value={form.weight}
+              aria-describedby={currentWeightIssue ? directionErrorIds.currentWeight : undefined}
+              aria-invalid={currentWeightIssue ? true : undefined}
+              onChange={(event) => updateForm(setWeightDisplay(form, event.target.value))}
+            />
           </Label>
           {form.goalType === "lose" || form.goalType === "gain" ? (
-            <Label text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`}>
-              <input inputMode="decimal" type="text" value={form.goalWeight} onChange={(event) => { onInteract(); updateForm(setGoalWeightDisplay(form, event.target.value)); }} />
+            <Label
+              text={`Goal weight (${form.units === "metric" ? "kg" : "lb"})`}
+              validationId={directionErrorIds.goalWeight}
+              validationMessage={goalWeightIssue}
+            >
+              <input
+                id={directionFieldIds.goalWeight}
+                inputMode="decimal"
+                type="text"
+                value={form.goalWeight}
+                aria-describedby={goalWeightIssue ? directionErrorIds.goalWeight : undefined}
+                aria-invalid={goalWeightIssue ? true : undefined}
+                onChange={(event) => updateForm(setGoalWeightDisplay(form, event.target.value))}
+              />
             </Label>
           ) : null}
         </div>
       </div>
 
       {form.goalType === "lose" || form.goalType === "gain" ? (
-        <DirectionPaceSelector form={form} updateForm={updateForm} onInteract={onInteract} />
+        <DirectionPaceSelector form={form} updateForm={updateForm} issue={paceIssue} />
       ) : (
         <p className="text-sm leading-6 text-white/46">
           {form.goalType === "maintain" ? "Keep your daily target near estimated maintenance." : "Stay near maintenance while prioritizing protein."}
         </p>
       )}
-
-      {showIssue && issue ? <p className="rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/75">{issue}</p> : null}
     </div>
   );
 }
 
-function DirectionPaceSelector({ form, updateForm, onInteract }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void; onInteract: () => void }) {
+function DirectionPaceSelector({ form, updateForm, issue }: { form: TargetSetupForm; updateForm: (form: TargetSetupForm) => void; issue?: string }) {
   if (form.goalType !== "lose" && form.goalType !== "gain") return null;
   return (
     <div>
       <p className="text-xs font-semibold text-white/54">Pace</p>
+      <ValidationLine id={directionErrorIds.pace} message={issue} />
       <div className="mt-2 grid grid-cols-3 rounded-xl border border-white/[0.07] bg-[#101011] p-1">
         {paceOptions[form.goalType].map((option) => {
           const selected = form.rate === option.value;
+          const receivesFocusId = selected || (Boolean(issue) && option.value === paceOptions[form.goalType][0]?.value);
           return (
-            <button key={option.value} type="button" onClick={() => { onInteract(); updateForm({ ...form, rate: option.value }); }} className={`min-h-12 rounded-lg px-2 text-center text-xs font-semibold transition active:translate-y-px ${selected ? wizardSelectedSegmentClass : "border border-transparent text-white/50 hover:bg-white/[0.045]"}`}>
+            <button
+              key={option.value}
+              id={receivesFocusId ? directionFieldIds.pace : undefined}
+              type="button"
+              aria-describedby={issue && receivesFocusId ? directionErrorIds.pace : undefined}
+              onClick={() => updateForm({ ...form, rate: option.value })}
+              className={`min-h-12 rounded-lg px-2 text-center text-xs font-semibold transition active:translate-y-px ${selected ? wizardSelectedSegmentClass : "border border-transparent text-white/50 hover:bg-white/[0.045]"}`}
+            >
               <span className="block">{option.label}</span>
               {selected ? <span className="mt-0.5 block text-[10px] font-medium leading-3 text-white/48">{weeklyRateLabel(form, option.value)}</span> : null}
             </button>
@@ -1200,6 +1285,36 @@ function FormGrid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-2 gap-3 [&_.field-unit]:mt-1 [&_.field-unit]:block [&_.field-unit]:text-[10px] [&_.field-unit]:font-normal [&_.field-unit]:text-white/30 [&_input]:mt-1 [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-xl [&_input]:border-0 [&_input]:bg-black [&_input]:px-3 [&_input]:text-white [&_select]:mt-1 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-xl [&_select]:border-0 [&_select]:bg-black [&_select]:px-3 [&_select]:text-xs [&_select]:text-white">{children}</div>;
 }
 
-function Label({ text, wide, children }: { text: string; wide?: boolean; children: React.ReactNode }) {
-  return <label className={`${wide ? "col-span-2" : ""} min-w-0 text-[11px] font-medium text-white/48 [&_.field-unit]:mt-1 [&_.field-unit]:block [&_.field-unit]:text-[10px] [&_.field-unit]:font-normal [&_.field-unit]:text-white/30 [&_input]:mt-1 [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-white/[0.075] [&_input]:bg-[#101011] [&_input]:px-3 [&_input]:text-white [&_input]:outline-none [&_input]:transition [&_input]:focus:border-white/[0.18] [&_select]:mt-1 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-white/[0.075] [&_select]:bg-[#101011] [&_select]:px-3 [&_select]:text-xs [&_select]:text-white [&_select]:outline-none`}>{text}{children}</label>;
+function ValidationLine({ id, message }: { id: string; message?: string }) {
+  return (
+    <span
+      id={message ? id : undefined}
+      aria-hidden={message ? undefined : true}
+      className="mt-1 block min-h-3 text-[11px] leading-3 text-red-300/78"
+    >
+      {message ?? ""}
+    </span>
+  );
+}
+
+function Label({
+  text,
+  wide,
+  children,
+  validationId,
+  validationMessage,
+}: {
+  text: string;
+  wide?: boolean;
+  children: React.ReactNode;
+  validationId?: string;
+  validationMessage?: string;
+}) {
+  return (
+    <label className={`${wide ? "col-span-2" : ""} min-w-0 text-[11px] font-medium text-white/48 [&_.field-unit]:mt-1 [&_.field-unit]:block [&_.field-unit]:text-[10px] [&_.field-unit]:font-normal [&_.field-unit]:text-white/30 [&_input]:mt-1 [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:border-white/[0.075] [&_input]:bg-[#101011] [&_input]:px-3 [&_input]:text-white [&_input]:outline-none [&_input]:transition [&_input]:focus:border-white/[0.18] [&_select]:mt-1 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:border-white/[0.075] [&_select]:bg-[#101011] [&_select]:px-3 [&_select]:text-xs [&_select]:text-white [&_select]:outline-none`}>
+      <span>{text}</span>
+      {validationId ? <ValidationLine id={validationId} message={validationMessage} /> : null}
+      {children}
+    </label>
+  );
 }

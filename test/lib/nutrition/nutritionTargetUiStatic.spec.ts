@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const panel = readFileSync("src/components/nutrition/NutritionTargetPanel.tsx", "utf8");
+const noteSlashTextarea = readFileSync("src/components/notes/NoteSlashTextarea.tsx", "utf8");
 const sharedMealPlanPanel = readFileSync("src/components/nutrition/SharedMealPlanPanel.tsx", "utf8");
 const mealPlans = readFileSync("src/lib/nutrition/mealPlans.ts", "utf8");
+const mealPlanHook = readFileSync("src/hooks/useMealPlanDay.ts", "utf8");
 const dailyOverrideRoute = readFileSync("src/app/api/nutrition/targets/[id]/route.ts", "utf8");
 
 function functionBlock(name: string) {
@@ -127,8 +129,73 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(panel).toContain('Goal weight is required.');
     expect(panel).toContain('Choose a goal weight below your current weight.');
     expect(panel).toContain('Choose a goal weight above your current weight.');
-    expect(panel).toContain("directionTouched");
     expect(panel).toContain("setupAttempted");
+    expect(panel).not.toContain("directionTouched");
+  });
+
+  it("keeps first Direction validation hidden until Continue is attempted", () => {
+    const setupRender = panel.slice(panel.indexOf("if (setupOpen)"));
+    const continueSetup = panel.slice(panel.indexOf("const continueSetup"), panel.indexOf("if (setupOpen)"));
+
+    expect(setupRender).toContain("showDirectionIssues={setupAttempted}");
+    expect(setupRender).not.toContain("setupAttempted ||");
+    expect(continueSetup).toContain("setSetupAttempted(true)");
+    expect(continueSetup).toContain("focusFirstDirectionInvalidInput()");
+    expect(continueSetup).toContain("setSetupAttempted(false)");
+  });
+
+  it("renders quiet field-level Direction errors with reserved layout lines", () => {
+    const direction = functionBlock("DirectionStep");
+    const validationLine = functionBlock("ValidationLine");
+
+    expect(direction).toContain("currentWeightIssue");
+    expect(direction).toContain("goalWeightIssue");
+    expect(direction).toContain("paceIssue");
+    expect(direction).toContain("validationId={directionErrorIds.currentWeight}");
+    expect(direction).toContain("validationId={directionErrorIds.goalWeight}");
+    expect(direction).toContain("aria-describedby={currentWeightIssue ? directionErrorIds.currentWeight : undefined}");
+    expect(direction).toContain("aria-describedby={goalWeightIssue ? directionErrorIds.goalWeight : undefined}");
+    expect(direction).toContain("aria-invalid={currentWeightIssue ? true : undefined}");
+    expect(direction).toContain("aria-invalid={goalWeightIssue ? true : undefined}");
+    expect(validationLine).toContain("min-h-3");
+    expect(validationLine).toContain("text-[11px]");
+    expect(validationLine).toContain("leading-3");
+    expect(validationLine).toContain("text-red-300/78");
+    expect(validationLine).toContain("{message ?? \"\"}");
+  });
+
+  it("assigns Direction validation to the field it belongs to", () => {
+    const issues = functionBlock("directionFieldIssues");
+    const direction = functionBlock("DirectionStep");
+
+    expect(issues).toContain('issues.currentWeight = "Enter your current weight."');
+    expect(issues).toContain('issues.goalWeight = "Goal weight is required."');
+    expect(issues).toContain('issues.goalWeight = "Choose a goal weight below your current weight."');
+    expect(issues).toContain('issues.goalWeight = "Choose a goal weight above your current weight."');
+    expect(issues).toContain('issues.pace = "Choose a pace."');
+    expect(direction.indexOf("validationMessage={goalWeightIssue}")).toBeLessThan(direction.indexOf("value={form.goalWeight}"));
+  });
+
+  it("removes the old amber Direction validation presentation", () => {
+    const direction = functionBlock("DirectionStep");
+
+    expect(direction).not.toContain("border-amber-300/15");
+    expect(direction).not.toContain("bg-amber-300/[0.06]");
+    expect(direction).not.toContain("text-amber-100/75");
+    expect(direction).not.toContain("{showIssue && issue");
+  });
+
+  it("uses one bounded scroll body for the Nutrition target takeover", () => {
+    const setupTakeover = panel.slice(panel.indexOf("if (setupOpen)"), panel.indexOf('return (\n    <div className="border-b'));
+
+    expect(setupTakeover.match(/overflow-y-auto/g) ?? []).toHaveLength(1);
+    expect(setupTakeover).toContain("flex h-full max-h-full min-h-0 flex-1 touch-pan-y flex-col overflow-hidden");
+    expect(setupTakeover).toContain("min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain");
+    expect(setupTakeover).toContain("pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]");
+    expect(noteSlashTextarea).toContain('"h-full min-h-0"');
+    expect(noteSlashTextarea).toContain("h-[100dvh] max-h-[100dvh] min-h-0");
+    expect(noteSlashTextarea).toContain("items-stretch justify-center p-0");
+    expect(noteSlashTextarea).toContain('? "min-h-0 flex-1 overflow-hidden p-0"');
   });
 
   it("does not render old redundant primary path titles or bright glass controls", () => {
@@ -176,5 +243,18 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(panel).toContain("Get a calorie and macro target for your meal plan.");
     expect(sharedMealPlanPanel).toContain("No meals planned");
     expect(mealPlans).toContain("export function calculateMealPlanPlannedTotals");
+  });
+
+  it("keeps Meal Plan data cached by Creator day and avoids manual duplicate refresh broadcasts", () => {
+    expect(mealPlanHook).toContain("useQuery<MealPlanDay>");
+    expect(mealPlanHook).toContain("useQueryClient");
+    expect(mealPlanHook).toContain("getMealPlanDayQueryKey");
+    expect(mealPlanHook).toContain("queryClient.invalidateQueries({ queryKey })");
+    expect(mealPlanHook).toContain("getCurrentMealPlanCreatorDayDate");
+    expect(mealPlanHook).not.toContain("window.dispatchEvent(new Event");
+    expect(sharedMealPlanPanel).toContain("isRefreshing");
+    expect(sharedMealPlanPanel).toContain("backgroundError");
+    expect(sharedMealPlanPanel).toContain("Loading Meal Plan...");
+    expect(sharedMealPlanPanel).not.toContain("Loading Meal Plan…");
   });
 });

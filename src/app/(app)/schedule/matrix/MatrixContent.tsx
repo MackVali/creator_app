@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { Icon as IconifyIcon } from "@iconify/react";
 import {
   BadgeAlert,
   Calendar,
@@ -59,7 +60,6 @@ import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
 import { recordMatrixScheduledHabitCompletion } from "@/lib/schedule/matrixScheduledHabitCompletion";
 import {
   CREATOR_NUTRITION_MEAL_SAVED_EVENT,
-  CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT,
   dispatchOpenNutritionLogEvent,
   type CreatorNutritionMealSavedDetail,
 } from "@/lib/nutrition/logEvents";
@@ -85,11 +85,14 @@ import { cn } from "@/lib/utils";
 import {
   buildMatrixInferredMealEvents,
   buildMatrixInferredMealNutritionLogContext,
+  buildMatrixScheduledMealNutritionLogContext,
   claimMatrixInferredMealLogOpen,
+  findActualScheduledMealTimeBlock,
   releaseMatrixInferredMealLogOpen,
   type MatrixInferredMealEventData,
   type MatrixMealTimeBlockWindow,
   type MatrixNutritionMealCompletionRow,
+  type MatrixScheduledMealEventData,
 } from "./matrixInferredMealEvents";
 import { compareMatrixTimeBlockStarts } from "./matrixTimeBlockOrder";
 
@@ -182,6 +185,7 @@ type MatrixEvent = {
   habit: MatrixHabit | null;
   routine: MatrixRoutine | null;
   inferredMeal: MatrixInferredMealEventData | null;
+  scheduledMeal: MatrixScheduledMealEventData | null;
 };
 
 type MatrixHabit = HabitRow & {
@@ -443,6 +447,8 @@ const MATRIX_REORDER_LAYOUT_TRANSITION = {
   ease: [0.22, 1, 0.36, 1] as const,
 };
 const MATRIX_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
+const MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR =
+  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action]";
 
 type MatrixXpSourceCapture = {
   rect: CreatorXpBurstRect | null;
@@ -584,6 +590,7 @@ function findMatrixEventInState(
             habit: routineHabit.sourceHabit,
             routine: null,
             inferredMeal: null,
+            scheduledMeal: null,
           };
         }
       }
@@ -596,6 +603,10 @@ function getMatrixCompleteShimmerStyle() {
   return {
     "--matrix-complete-shimmer-delay": `-${Date.now() % MATRIX_COMPLETE_SHIMMER_DURATION_MS}ms`,
   } as CSSProperties;
+}
+
+function isMatrixMealEvent(event: MatrixEvent) {
+  return Boolean(event.inferredMeal || event.scheduledMeal);
 }
 
 const MATRIX_PREFERENCES_STORAGE_KEY = "creator:matrix-preferences";
@@ -1440,6 +1451,8 @@ function buildMatrixEvents({
   skillIdToMonumentId,
   skillIdToIcon,
   monumentIdToEmoji,
+  mealWindows,
+  dateKey,
   date,
   timeZone,
 }: {
@@ -1450,11 +1463,14 @@ function buildMatrixEvents({
   skillIdToMonumentId: Map<string, string>;
   skillIdToIcon: Map<string, string>;
   monumentIdToEmoji: Map<string, string>;
+  mealWindows: MatrixMealTimeBlockWindow[];
+  dateKey: string;
   date: Date;
   timeZone: string;
 }): MatrixEvent[] {
   return instances.flatMap((instance) => {
     if (instance.source_type === "EVENT") {
+      const mealWindow = findActualScheduledMealTimeBlock(instance, mealWindows);
       const skillContext = resolveScheduleEventSkillContext(instance.metadata);
       const skillIds = skillContext.skillIds;
       const firstSkillId = skillIds[0] ?? null;
@@ -1477,6 +1493,31 @@ function buildMatrixEvents({
         habit: null,
         routine: null,
         inferredMeal: null,
+        scheduledMeal: mealWindow
+          ? {
+              scheduleInstanceId: instance.id,
+              eventId: instance.source_id ?? null,
+              title: instance.event_name ?? mealWindow.label ?? "Meal",
+              timeBlockId:
+                instance.time_block_id ??
+                mealWindow.timeBlockId ??
+                mealWindow.time_block_id ??
+                mealWindow.sourceWindowId ??
+                mealWindow.id ??
+                null,
+              dayTypeTimeBlockId:
+                instance.day_type_time_block_id ??
+                mealWindow.dayTypeTimeBlockId ??
+                mealWindow.day_type_time_block_id ??
+                null,
+              windowId: instance.window_id ?? mealWindow.window_id ?? null,
+              dateKey,
+              startUtc: instance.start_utc ?? "",
+              endUtc: instance.end_utc ?? "",
+              startLocal: mealWindow.start_local ?? null,
+              endLocal: mealWindow.end_local ?? null,
+            }
+          : null,
       };
       return [event];
     }
@@ -1504,6 +1545,7 @@ function buildMatrixEvents({
         habit: null,
         routine: null,
         inferredMeal: null,
+        scheduledMeal: null,
       };
       return [event];
     }
@@ -1544,6 +1586,7 @@ function buildMatrixEvents({
         : null,
       routine: null,
       inferredMeal: null,
+      scheduledMeal: null,
     };
     return [event];
   });
@@ -1611,6 +1654,7 @@ function buildMatrixInferredMealMatrixEvents({
       habit: null,
       routine: null,
       inferredMeal,
+      scheduledMeal: null,
     };
   });
 }
@@ -1746,6 +1790,7 @@ function buildMatrixScheduledEvents({
       habit: null,
       routine: routineItem,
       inferredMeal: null,
+      scheduledMeal: null,
     });
   }
 
@@ -2840,18 +2885,94 @@ function MatrixProjectCard({
   );
 }
 
+function MatrixMealNutritionActionButton({
+  event,
+  completed,
+  onOpen,
+}: {
+  event: MatrixEvent;
+  completed: boolean;
+  onOpen(event: MatrixEvent): void;
+}) {
+  const stopActionPropagation = useCallback(
+    (
+      interactionEvent:
+        | PointerEvent<HTMLButtonElement>
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      interactionEvent.stopPropagation();
+    },
+    []
+  );
+  const activateMealNutrition = useCallback(
+    (
+      interactionEvent:
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+      if (!completed) {
+        onOpen(event);
+      }
+    },
+    [completed, event, onOpen]
+  );
+  const stopActionActivation = useCallback(
+    (interactionEvent: MouseEvent<HTMLButtonElement>) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+    },
+    []
+  );
+
+  return (
+    <button
+      type="button"
+      aria-label="Log meal"
+      title="Log meal"
+      data-matrix-meal-nutrition-action="true"
+      aria-disabled={completed}
+      onPointerDown={stopActionPropagation}
+      onPointerUp={stopActionPropagation}
+      onPointerCancel={stopActionPropagation}
+      onTouchStart={stopActionPropagation}
+      onTouchEnd={activateMealNutrition}
+      onDoubleClick={stopActionActivation}
+      onClick={activateMealNutrition}
+      className={cn(
+        "relative z-20 grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full text-white/66 transition hover:bg-white/[0.06] hover:text-white/86 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        completed ? "cursor-default opacity-45 hover:bg-transparent" : null
+      )}
+    >
+      <IconifyIcon
+        icon="game-icons:stomach"
+        className="h-4 w-4"
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 function MatrixScheduledEventRowCard({
   event,
   completed,
   status,
   open = false,
   onOpenChange,
+  onOpenMealNutritionLog,
 }: {
   event: MatrixEvent;
   completed: boolean;
   status?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onOpenMealNutritionLog?: (event: MatrixEvent) => void;
 }) {
   const sourceType = event.goal ? "PROJECT" : "HABIT";
   const displayStatus = completed ? "Completed" : status ?? "Scheduled";
@@ -2978,7 +3099,13 @@ function MatrixScheduledEventRowCard({
               />
             </span>
           ) : null}
-          {energyLevel !== "NO" ? (
+          {isMatrixMealEvent(event) && onOpenMealNutritionLog ? (
+            <MatrixMealNutritionActionButton
+              event={event}
+              completed={completed}
+              onOpen={onOpenMealNutritionLog}
+            />
+          ) : energyLevel !== "NO" ? (
             <span className="grid h-7 w-7 shrink-0 place-items-center overflow-visible">
               <FlameEmber
                 level={energyLevel}
@@ -2998,6 +3125,7 @@ function ScheduledEventCard({
   open,
   onOpenChange,
   onComplete,
+  onOpenMealNutritionLog,
   density,
 }: {
   event: MatrixEvent;
@@ -3008,6 +3136,7 @@ function ScheduledEventCard({
     nextStatus: ScheduleInstance["status"],
     options?: MatrixScheduledCompletionOptions
   ): void;
+  onOpenMealNutritionLog(event: MatrixEvent): void;
   density: MatrixCardDensity;
 }) {
   const fabCreation = useFabCreation();
@@ -3142,7 +3271,7 @@ function ScheduledEventCard({
       if (pointerEvent.pointerType === "mouse" && pointerEvent.button !== 0) return;
       if (
         pointerEvent.target instanceof Element &&
-        pointerEvent.target.closest("[data-matrix-checkbox]")
+        pointerEvent.target.closest(MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR)
       ) {
         return;
       }
@@ -3277,6 +3406,18 @@ function ScheduledEventCard({
     };
   }, [event.goal, isCompleted]);
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
+  const rendersInlineMealNutritionAction =
+    density === "row" && (scheduledGoal || event.habit);
+  const mealNutritionAction =
+    isMatrixMealEvent(event) && !rendersInlineMealNutritionAction ? (
+      <div className="absolute inset-y-0 right-1.5 z-20 flex items-center justify-center">
+        <MatrixMealNutritionActionButton
+          event={event}
+          completed={isCompleted}
+          onOpen={onOpenMealNutritionLog}
+        />
+      </div>
+    ) : null;
 
   const card = density === "todo" && event.routine ? (
     <MatrixRoutineCard
@@ -3343,6 +3484,7 @@ function ScheduledEventCard({
       status={cleanStatus}
       open={open}
       onOpenChange={scheduledGoal ? onOpenChange : undefined}
+      onOpenMealNutritionLog={onOpenMealNutritionLog}
     />
   ) : scheduledGoal ? (
     density !== "large" ? (
@@ -3415,11 +3557,12 @@ function ScheduledEventCard({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "matrix-event-card-shell h-full",
+          "matrix-event-card-shell relative h-full",
           isCompleted && event.goal ? "overflow-visible" : null
         )}
       >
         {card}
+        {mealNutritionAction}
       </div>
     </div>
   ) : null;
@@ -3481,7 +3624,7 @@ function DueHabitCard({
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (
         event.target instanceof Element &&
-        event.target.closest("[data-matrix-checkbox]")
+        event.target.closest(MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR)
       ) {
         return;
       }
@@ -4192,6 +4335,7 @@ function MatrixGridCarousel({
   initialCardDensity,
   persistCardDensity = true,
   onCompleteScheduledEvent,
+  onOpenMealNutritionLog,
   onCompleteDueHabit,
   completingDueHabitIds,
   heldScheduledCompletionItemIds,
@@ -4207,6 +4351,7 @@ function MatrixGridCarousel({
     nextStatus: ScheduleInstance["status"],
     options?: MatrixScheduledCompletionOptions
   ): void;
+  onOpenMealNutritionLog(event: MatrixEvent): void;
   onCompleteDueHabit(
     habitId: string,
     completedToday: boolean,
@@ -4968,6 +5113,7 @@ function MatrixGridCarousel({
                                   event={event}
                                   density={cardDensity}
                                   onComplete={onCompleteScheduledEvent}
+                                  onOpenMealNutritionLog={onOpenMealNutritionLog}
                                   open={
                                     Boolean(event.goal?.id) &&
                                     openGoalId === event.goal?.id
@@ -5143,6 +5289,10 @@ export function MatrixContent({
   const pendingScheduledCompletionIdsRef = useRef<Set<string>>(new Set());
   const pendingInferredMealLogIdsRef = useRef<Set<string>>(new Set());
   const pendingInferredMealReleaseTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
+  const pendingScheduledMealLogIdsRef = useRef<Set<string>>(new Set());
+  const pendingScheduledMealReleaseTimersRef = useRef<
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
   const matrixReorderHoldTimeoutsRef = useRef<
@@ -5530,6 +5680,7 @@ export function MatrixContent({
   useEffect(() => {
     const holdTimeouts = matrixReorderHoldTimeoutsRef.current;
     const inferredMealReleaseTimers = pendingInferredMealReleaseTimersRef.current;
+    const scheduledMealReleaseTimers = pendingScheduledMealReleaseTimersRef.current;
     return () => {
       for (const timer of holdTimeouts.values()) {
         clearTimeout(timer);
@@ -5539,6 +5690,10 @@ export function MatrixContent({
         clearTimeout(timer);
       }
       inferredMealReleaseTimers.clear();
+      for (const timer of scheduledMealReleaseTimers.values()) {
+        clearTimeout(timer);
+      }
+      scheduledMealReleaseTimers.clear();
     };
   }, []);
 
@@ -6179,6 +6334,7 @@ export function MatrixContent({
                 habit: routineHabit.sourceHabit,
                 routine: null,
                 inferredMeal: null,
+                scheduledMeal: null,
               };
             }
           }
@@ -6285,6 +6441,64 @@ export function MatrixContent({
     [timeZone]
   );
 
+  const openScheduledMealNutritionLog = useCallback(
+    (event: MatrixEvent) => {
+      const scheduledMeal = event.scheduledMeal;
+      if (!scheduledMeal || isMatrixEventCompleted(event)) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      const scheduleInstanceId = scheduledMeal.scheduleInstanceId;
+      if (
+        !claimMatrixInferredMealLogOpen(
+          pendingScheduledMealLogIdsRef.current,
+          scheduleInstanceId
+        )
+      ) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      const existingTimer =
+        pendingScheduledMealReleaseTimersRef.current.get(scheduleInstanceId);
+      if (existingTimer) clearTimeout(existingTimer);
+      pendingScheduledMealReleaseTimersRef.current.set(
+        scheduleInstanceId,
+        setTimeout(() => {
+          releaseMatrixInferredMealLogOpen(
+            pendingScheduledMealLogIdsRef.current,
+            scheduleInstanceId
+          );
+          pendingScheduledMealReleaseTimersRef.current.delete(scheduleInstanceId);
+        }, 30_000)
+      );
+
+      dispatchOpenNutritionLogEvent(
+        buildMatrixScheduledMealNutritionLogContext({
+          meal: scheduledMeal,
+          timeZone,
+        })
+      );
+    },
+    [timeZone]
+  );
+
+  const openMealNutritionLog = useCallback(
+    (event: MatrixEvent) => {
+      if (event.inferredMeal) {
+        openInferredMealNutritionLog(event);
+        return;
+      }
+      if (event.scheduledMeal) {
+        openScheduledMealNutritionLog(event);
+        return;
+      }
+      void hapticWarningPattern();
+    },
+    [openInferredMealNutritionLog, openScheduledMealNutritionLog]
+  );
+
   const handleCompleteScheduledEvent = useCallback(
     (
       instanceId: string,
@@ -6293,7 +6507,7 @@ export function MatrixContent({
     ) => {
       const event = findMatrixEvent(instanceId);
       if (event?.inferredMeal) {
-        openInferredMealNutritionLog(event);
+        void hapticWarningPattern();
         return;
       }
       if (
@@ -6313,8 +6527,67 @@ export function MatrixContent({
       }
       void commitScheduledEventCompletion(instanceId, nextStatus, options);
     },
-    [commitScheduledEventCompletion, findMatrixEvent, openInferredMealNutritionLog]
+    [commitScheduledEventCompletion, findMatrixEvent]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleNutritionMealSaved = (savedEvent: Event) => {
+      const detail = (savedEvent as CustomEvent<CreatorNutritionMealSavedDetail>)
+        .detail;
+      const context = detail?.context;
+      if (!context) return;
+
+      if (context.source === "matrix-inferred-meal") {
+        const syntheticEventId = context.syntheticEventId;
+        if (!syntheticEventId) return;
+
+        releaseMatrixInferredMealLogOpen(
+          pendingInferredMealLogIdsRef.current,
+          syntheticEventId
+        );
+        const existingTimer =
+          pendingInferredMealReleaseTimersRef.current.get(syntheticEventId);
+        if (existingTimer) clearTimeout(existingTimer);
+        pendingInferredMealReleaseTimersRef.current.delete(syntheticEventId);
+
+        markInferredMealEventCompleted({
+          syntheticEventId,
+          completedAt: detail.occurredAt ?? new Date().toISOString(),
+          mealId: detail.mealId ?? null,
+        });
+        return;
+      }
+
+      if (context.source === "matrix-scheduled-meal") {
+        const scheduleInstanceId = context.scheduleInstanceId;
+        if (!scheduleInstanceId) return;
+
+        releaseMatrixInferredMealLogOpen(
+          pendingScheduledMealLogIdsRef.current,
+          scheduleInstanceId
+        );
+        const existingTimer =
+          pendingScheduledMealReleaseTimersRef.current.get(scheduleInstanceId);
+        if (existingTimer) clearTimeout(existingTimer);
+        pendingScheduledMealReleaseTimersRef.current.delete(scheduleInstanceId);
+
+        void commitScheduledEventCompletion(scheduleInstanceId, "completed");
+      }
+    };
+
+    window.addEventListener(
+      CREATOR_NUTRITION_MEAL_SAVED_EVENT,
+      handleNutritionMealSaved
+    );
+    return () => {
+      window.removeEventListener(
+        CREATOR_NUTRITION_MEAL_SAVED_EVENT,
+        handleNutritionMealSaved
+      );
+    };
+  }, [commitScheduledEventCompletion, markInferredMealEventCompleted]);
 
   const dispatchMatrixDueHabitXpReward = useCallback(
     async (
@@ -7217,6 +7490,8 @@ export function MatrixContent({
           skillIdToMonumentId,
           skillIdToIcon,
           monumentIdToEmoji,
+          mealWindows: matrixWindowsForDate,
+          dateKey: dayKey,
           date: today,
           timeZone,
         });
@@ -7592,6 +7867,7 @@ export function MatrixContent({
               initialCardDensity={initialCardDensity}
               persistCardDensity={variant !== "sheet"}
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
+              onOpenMealNutritionLog={openMealNutritionLog}
               onCompleteDueHabit={handleCompleteDueHabit}
               completingDueHabitIds={completingDueHabitIds}
               heldScheduledCompletionItemIds={

@@ -108,6 +108,14 @@ import {
   type FitnessWorkoutFocusSessionPayload,
   type FitnessWorkoutFocusSessionResultPayload,
 } from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
+  formatFitnessResistanceLabel,
+  getDefaultAddedFitnessLoad,
+  getFitnessResistanceStep,
+  isExternalFitnessLoadUnit,
+  isFitnessBodyweightExercise,
+  sanitizeFitnessResistanceValue,
+} from "@/lib/fitness/resistance";
 import { updateFitnessWorkoutDatabaseEntryInNote } from "@/lib/notesStorage";
 import {
   hapticComplete,
@@ -3773,6 +3781,8 @@ function parseFitnessWorkoutDurationMinutes(value: string | undefined) {
 }
 
 function formatFitnessWorkoutFocusSetSubtitle(item: {
+  exerciseId?: string;
+  exerciseName?: string;
   setNumber: number;
   totalSets: number;
   reps?: string;
@@ -3781,11 +3791,17 @@ function formatFitnessWorkoutFocusSetSubtitle(item: {
   weightUnit?: string;
   targetLabel?: boolean;
 }) {
-  const weightLabel = item.weightUnit === "bodyweight"
-    ? "bodyweight"
-    : item.weightUnit
-      ? `${item.weight?.trim() || "0"} ${item.weightUnit}`
-      : null;
+  const weightLabel = item.weightUnit
+    ? formatFitnessResistanceLabel({
+        weight: item.weight,
+        unit: item.weightUnit,
+        exercise: {
+          exerciseId: item.exerciseId,
+          exerciseName: item.exerciseName,
+        },
+        emptyNumericLabel: item.weightUnit === "bodyweight" ? undefined : "0",
+      })
+    : null;
   const detailParts = [
     `Set ${item.setNumber} of ${item.totalSets}`,
     item.duration ||
@@ -3826,9 +3842,7 @@ function toFitnessWorkoutFocusQueueItems(
       fitnessPlannedDurationSeconds: set.plannedDurationSeconds,
       fitnessCompletedDurationSeconds: set.completedDurationSeconds,
       fitnessWeight:
-        set.weightUnit && set.weightUnit !== "bodyweight"
-          ? set.weight?.trim() || "0"
-          : set.weight,
+        set.weightUnit && set.weightUnit !== "bodyweight" ? set.weight?.trim() : set.weight,
       fitnessWeightUnit: set.weightUnit,
     };
   });
@@ -4487,6 +4501,10 @@ export default function FocusPomo({
   const [queue, setQueue] = useState<FocusPomoQueueItem[]>([]);
   const [activeFitnessWorkoutSession, setActiveFitnessWorkoutSession] =
     useState<FitnessWorkoutFocusSessionPayload | null>(null);
+  const [fitnessWeightEditTarget, setFitnessWeightEditTarget] = useState<{
+    itemKey: string;
+    value: string;
+  } | null>(null);
   const [queueLoading, setQueueLoading] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [scopeQueue, setScopeQueue] = useState<FocusPomoQueueItem[]>([]);
@@ -5502,6 +5520,14 @@ export default function FocusPomo({
     isFitnessWorkoutQueueItem(currentItem) &&
       currentFitnessWeightUnit === "bodyweight",
   );
+  const currentFitnessIsBodyweightExercise = Boolean(
+    isFitnessWorkoutQueueItem(currentItem) &&
+      currentItem &&
+      isFitnessBodyweightExercise({
+        exerciseId: currentItem.fitnessExerciseId,
+        exerciseName: currentItem.title,
+      }),
+  );
   const currentFitnessHasReps = Boolean(
     isFitnessWorkoutQueueItem(currentItem) &&
       currentItem.fitnessPlannedReps != null,
@@ -5616,7 +5642,7 @@ export default function FocusPomo({
         result,
       ]),
     );
-    const sets = resultQueue.flatMap((item) => {
+    const sets: FitnessWorkoutFocusSessionResultPayload["sets"] = resultQueue.flatMap((item) => {
       if (!isFitnessWorkoutQueueItem(item)) return [];
       const itemKey = getFocusPomoQueueItemKey(item);
       const history = historyByItemKey.get(itemKey);
@@ -5694,14 +5720,12 @@ export default function FocusPomo({
     void retryFitnessWorkoutCheckpointOutbox();
   }, []);
 
-  function bumpCurrentFitnessWeight(offset: -1 | 1) {
-    if (!currentItem || !currentFitnessHasAdjustableWeight) return;
+  function updateCurrentFitnessResistance(
+    nextWeight: string,
+    nextUnit = currentFitnessWeightUnit,
+  ) {
+    if (!currentItem || currentItemKey == null || !nextUnit) return;
 
-    const currentWeight = Number(currentItem.fitnessWeight?.trim() || "0");
-    if (!Number.isFinite(currentWeight)) return;
-
-    const step = currentFitnessWeightUnit === "kg" ? 2.5 : 5;
-    const nextWeight = String(Math.max(0, currentWeight + step * offset));
     const currentSetNumber = currentItem.fitnessSetNumber ?? 1;
     const exerciseId = currentItem.fitnessExerciseId;
 
@@ -5717,10 +5741,16 @@ export default function FocusPomo({
 
         if (!isCurrentItem && !isRemainingSet) return item;
 
-        const nextItem = { ...item, fitnessWeight: nextWeight };
+        const nextItem = {
+          ...item,
+          fitnessWeight: nextUnit === "bodyweight" ? "" : nextWeight,
+          fitnessWeightUnit: nextUnit,
+        };
         return {
           ...nextItem,
           subtitle: formatFitnessWorkoutFocusSetSubtitle({
+            exerciseId: nextItem.fitnessExerciseId,
+            exerciseName: nextItem.title,
             setNumber: nextItem.fitnessSetNumber ?? 1,
             totalSets: nextItem.fitnessTotalSets ?? 1,
             reps: nextItem.fitnessReps,
@@ -5733,6 +5763,53 @@ export default function FocusPomo({
     setQueue(nextQueue);
     writeFitnessWorkoutSessionResult(nextQueue);
     void hapticSoftTick();
+  }
+
+  function bumpCurrentFitnessWeight(offset: -1 | 1) {
+    if (!currentItem || !currentFitnessHasAdjustableWeight) return;
+
+    const currentWeight = Number(currentItem.fitnessWeight?.trim() || "0");
+    if (!Number.isFinite(currentWeight)) return;
+
+    const step = getFitnessResistanceStep(currentFitnessWeightUnit);
+    const nextWeight = String(Math.max(0, currentWeight + step * offset));
+    updateCurrentFitnessResistance(nextWeight);
+  }
+
+  function addLoadToCurrentBodyweightExercise() {
+    if (!currentItem || !currentFitnessIsBodyweight) return;
+    const unit =
+      queue.find(
+        (item) =>
+          item.fitnessExerciseId === currentItem.fitnessExerciseId &&
+          isExternalFitnessLoadUnit(item.fitnessWeightUnit),
+      )?.fitnessWeightUnit === "kg"
+        ? "kg"
+        : "lb";
+    updateCurrentFitnessResistance(getDefaultAddedFitnessLoad(unit), unit);
+  }
+
+  function returnCurrentFitnessExerciseToBodyweight() {
+    if (!currentItem || !isFitnessWorkoutQueueItem(currentItem)) return;
+    updateCurrentFitnessResistance("", "bodyweight");
+    setFitnessWeightEditTarget(null);
+  }
+
+  function startCurrentFitnessWeightEdit() {
+    if (!currentItem || currentItemKey == null) return;
+    setFitnessWeightEditTarget({
+      itemKey: currentItemKey,
+      value: currentItem.fitnessWeight?.trim() ?? "",
+    });
+  }
+
+  function commitCurrentFitnessWeightEdit() {
+    if (!currentItem || currentItemKey == null) return;
+    if (fitnessWeightEditTarget?.itemKey !== currentItemKey) return;
+    updateCurrentFitnessResistance(
+      sanitizeFitnessResistanceValue(fitnessWeightEditTarget.value),
+    );
+    setFitnessWeightEditTarget(null);
   }
 
   function bumpCurrentFitnessReps(offset: -1 | 1) {
@@ -8325,11 +8402,51 @@ export default function FocusPomo({
                                                 aria-hidden="true"
                                               />
                                             </button>
-                                            <span className="flex h-full min-w-0 flex-1 items-center justify-center border-x border-white/[0.07] px-1 text-xs font-semibold tabular-nums text-white sm:px-2 sm:text-sm">
-                                              {currentItem.fitnessWeight?.trim() ||
-                                                "0"}{" "}
-                                              {currentFitnessWeightUnit}
-                                            </span>
+                                            {fitnessWeightEditTarget?.itemKey ===
+                                            currentItemKey ? (
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                autoFocus
+                                                value={fitnessWeightEditTarget.value}
+                                                onChange={(event) =>
+                                                  setFitnessWeightEditTarget({
+                                                    itemKey: currentItemKey ?? "",
+                                                    value: event.target.value,
+                                                  })
+                                                }
+                                                onKeyDown={(event) => {
+                                                  if (event.key === "Enter") {
+                                                    event.preventDefault();
+                                                    commitCurrentFitnessWeightEdit();
+                                                  }
+                                                  if (event.key === "Escape") {
+                                                    event.preventDefault();
+                                                    setFitnessWeightEditTarget(null);
+                                                  }
+                                                }}
+                                                onBlur={commitCurrentFitnessWeightEdit}
+                                                className="h-full min-w-0 flex-1 border-x border-white/[0.07] bg-black/20 px-1 text-center text-xs font-semibold tabular-nums text-white outline-none sm:px-2 sm:text-sm"
+                                              />
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                aria-label={`Edit weight for ${currentItem.title}`}
+                                                onClick={startCurrentFitnessWeightEdit}
+                                                className="flex h-full min-w-0 flex-1 items-center justify-center border-x border-white/[0.07] px-1 text-xs font-semibold tabular-nums text-white transition hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:px-2 sm:text-sm"
+                                              >
+                                                {formatFitnessResistanceLabel({
+                                                  weight: currentItem.fitnessWeight,
+                                                  unit: currentFitnessWeightUnit,
+                                                  exercise: {
+                                                    exerciseId:
+                                                      currentItem.fitnessExerciseId,
+                                                    exerciseName: currentItem.title,
+                                                  },
+                                                  emptyNumericLabel: "0",
+                                                })}
+                                              </button>
+                                            )}
                                             <button
                                               type="button"
                                               aria-label={`Increase weight for ${currentItem.title}`}
@@ -8343,6 +8460,18 @@ export default function FocusPomo({
                                                 aria-hidden="true"
                                               />
                                             </button>
+                                            {currentFitnessIsBodyweightExercise ? (
+                                              <button
+                                                type="button"
+                                                aria-label={`Return ${currentItem.title} to bodyweight`}
+                                                onClick={
+                                                  returnCurrentFitnessExerciseToBodyweight
+                                                }
+                                                className="flex h-full shrink-0 items-center border-l border-white/[0.07] px-2 text-[10px] font-semibold text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35"
+                                              >
+                                                Bodyweight
+                                              </button>
+                                            ) : null}
                                           </div>
                                         </div>
                                       ) : currentFitnessIsBodyweight ? (
@@ -8350,9 +8479,18 @@ export default function FocusPomo({
                                           <span className="mb-1 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-[11px]">
                                             Weight
                                           </span>
-                                          <span className="inline-flex h-8 w-full min-w-0 items-center justify-center truncate rounded-lg border border-white/10 bg-black/30 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-300 sm:h-9 sm:text-xs">
-                                            bodyweight
-                                          </span>
+                                          <div className="inline-flex h-8 w-full min-w-0 items-center overflow-hidden rounded-lg border border-white/10 bg-black/30 sm:h-9">
+                                            <span className="flex h-full min-w-0 flex-1 items-center justify-center truncate px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-300 sm:text-xs">
+                                              Bodyweight
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={addLoadToCurrentBodyweightExercise}
+                                              className="flex h-full shrink-0 items-center border-l border-white/[0.07] px-2 text-[10px] font-semibold text-zinc-400 transition hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:text-[11px]"
+                                            >
+                                              Add load
+                                            </button>
+                                          </div>
                                         </div>
                                       ) : null}
                                     </div>

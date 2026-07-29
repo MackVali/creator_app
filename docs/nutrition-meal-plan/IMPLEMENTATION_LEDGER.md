@@ -16,6 +16,60 @@ Every future Codex session must read both the PRD and this ledger before editing
 
 `Phase 2A complete with manual SQL pending; two-screen target setup replacement complete; authenticated persistence and real-app target setup verification remain post-SQL prerequisites`
 
+# Meal Plan Initial Load Optimization (2026-07-28)
+
+## Classification
+
+`Focused client loading optimization complete; no SQL or API response semantics changed`
+
+This pass investigated the Nutrition form Meal Plan tab after a full page refresh before editing. The bottleneck was client-side remount/refetch behavior, with a smaller server-side cold-day initialization cost only when a `meal_plan_days` row does not yet exist.
+
+## Traced load path
+
+- Full page refresh mounts the app and `ClientProviders`, including the existing React Query `QueryClientProvider`.
+- Opening the Nutrition form mounts `NoteDatabaseEntrySheet` from `src/components/notes/NoteSlashTextarea.tsx`. Its local `selectedNutritionFoodAction` starts at `search`; the Meal Plan panel is not mounted yet. Nutrition daily progress and the active search/browse/favorites effects may load their own Nutrition data, but those are not Meal Plan loads.
+- Switching to `Meal Plan` sets `selectedNutritionFoodAction` to `meal-plan`, rendering the dedicated Nutrition branch of `renderNutritionFoodSearchField`.
+- That branch mounts `SharedMealPlanPanel`, which mounts `useMealPlanDay` and `NutritionTargetPanel`.
+- Before this fix, the tab immediately started `GET /api/nutrition/meal-plan`, `GET /api/nutrition/targets`, `GET /api/nutrition/profile`, and `GET /api/nutrition/meal-templates?limit=50`. The target panel already starts target and profile requests concurrently with `Promise.all`, and the plan request does not depend on either target response.
+- The Meal Plan GET route authenticates, reads `profiles.timezone`, resolves the Creator-day key, reads `meal_plan_days` with `meal_plan_items(*)`, and returns the existing day in one nested query. If the day is missing, it upserts the day and rereads it with items. No per-item N+1 enrichment occurs on GET.
+
+## Measured root cause
+
+- Before: one mounted Meal Plan panel performed one plan GET, but React Strict Mode/remounts and tab return discarded `useMealPlanDay` local state and repeated the same `GET /api/nutrition/meal-plan?...` for the same authenticated session, device timezone, and Creator-day key. Mutations also called `refresh()` and then dispatched a window change event listened to by the same hook, allowing duplicate post-mutation reloads.
+- After: identical concurrent plan loads are deduplicated by the existing React Query client. Fresh same-day tab return reuses cached data immediately. Mutations invalidate the active day query once instead of performing a direct reload plus a same-hook broadcast reload.
+- Request counts observed in focused tests: concurrent identical Creator-day loads changed from two hook-level fetch opportunities to one network call through `QueryClient.fetchQuery`; a fresh cache hit remains zero additional fetches; failed loads are not cached permanently and a retry issues a new request.
+
+## Cache and invalidation semantics
+
+- Meal Plan day cache key: `["nutrition", "meal-plan-day", creator_day_date, device_timezone]`.
+- When no explicit date is selected, the client cache key uses the existing 4:00 AM local Creator-day boundary so a post-boundary remount uses a new current-day key.
+- Explicit historical `creatorDayDate` values remain separate cache entries, so changing the Creator day loads the correct plan.
+- Successful add, servings edit, meal type edit, planned time edit, skip, remove, log, and Grocery-depletion retry invalidate the current day query.
+- Failed GETs remain retryable. Mutation failures are shown inline without discarding already loaded plan data.
+
+## UI behavior
+
+- The Meal Plan shell still renders immediately.
+- Initial missing plan data shows only a compact inline loading row.
+- Cached plan items remain visible on tab return and during background refresh.
+- Loaded empty state remains distinct from initial loading.
+- Nutrition target loading remains secondary: plan items can render while `NutritionTargetPanel` is still loading.
+- No planning action creates a Nutrition meal or depletes Grocery inventory; only the existing log route and partial-depletion retry path remain responsible for logging/depletion.
+
+## Changed files
+
+- `src/hooks/useMealPlanDay.ts`
+- `src/components/nutrition/SharedMealPlanPanel.tsx`
+- `test/lib/nutrition/useMealPlanDay.spec.ts`
+- `test/lib/nutrition/nutritionTargetUiStatic.spec.ts`
+- `docs/nutrition-meal-plan/IMPLEMENTATION_LEDGER.md`
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 4 files and 42 tests.
+- `pnpm exec eslint src/hooks/useMealPlanDay.ts src/components/nutrition/SharedMealPlanPanel.tsx test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with no findings.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/hooks/useMealPlanDay|src/components/nutrition/SharedMealPlanPanel|test/lib/nutrition/useMealPlanDay|test/lib/nutrition/nutritionTargetUiStatic' || true` - no focused diagnostics.
+
 # Phase 2A.4 Two-Screen Target Setup Replacement (2026-07-28)
 
 ## Classification

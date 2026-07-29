@@ -191,6 +191,7 @@ function formatDuration(seconds: number) {
 
 function formatLoad(weight: number | null | undefined, unit: string | null | undefined) {
   if (unit === "bodyweight") return "bodyweight";
+  if (unit === "assisted" && weight != null) return `${weight} lb assistance`;
   if (weight != null && unit) return `${weight} ${unit}`;
   return null;
 }

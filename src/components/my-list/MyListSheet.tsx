@@ -10,6 +10,7 @@ import {
   useState,
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TouchEvent as ReactTouchEvent,
@@ -173,12 +174,14 @@ const MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
 const MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX = 22;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
+const MY_LIST_CHECKBOX_TARGET_SELECTOR = "[data-my-list-checkbox]";
 const MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR = [
   "input",
   "textarea",
   "button",
   "select",
   "label",
+  MY_LIST_CHECKBOX_TARGET_SELECTOR,
   "[role='button']",
   "[role='listbox']",
   "[contenteditable='true']",
@@ -188,6 +191,7 @@ const MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR = [
   "button",
   "select",
   "label",
+  MY_LIST_CHECKBOX_TARGET_SELECTOR,
   "[role='button']",
   "[role='listbox']",
   "[contenteditable='true']",
@@ -210,6 +214,13 @@ function toCreatorXpBurstRect(rect: DOMRect): CreatorXpBurstRect {
     bottom: rect.bottom,
     left: rect.left,
   };
+}
+
+function isMyListCheckboxTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest(MY_LIST_CHECKBOX_TARGET_SELECTOR))
+  );
 }
 
 function resolveQuickCreateMediumPriorityMetadata() {
@@ -291,6 +302,12 @@ type MyListMonumentGroup = {
   icon?: string | null;
   rows: MyListVisibleTodoRow[];
 };
+
+function getPreferredMyListGroupId<
+  TGroup extends { id: string; rows: MyListVisibleTodoRow[] },
+>(groups: TGroup[]) {
+  return groups.find((group) => group.rows.length > 0)?.id ?? groups[0]?.id ?? null;
+}
 
 function buildPinnedSourceRowKey(
   sourceType: MyListPinnableSourceType,
@@ -1402,15 +1419,10 @@ export function MyListSheet({
   >(null);
   const [dayDragDropBucketId, setDayDragDropBucketId] =
     useState<MyListDayViewBucketId | null>(null);
-  const [collapsedDayGroups, setCollapsedDayGroups] = useState<
-    Partial<Record<MyListDayViewBucketId, boolean>>
-  >({});
-  const [collapsedMonumentGroups, setCollapsedMonumentGroups] = useState<
-    Record<string, boolean>
-  >({});
-  const manualReorderCompactDayGroupIdsRef = useRef<
-    Set<MyListDayViewBucketId>
-  >(new Set());
+  const [selectedDayGroupId, setSelectedDayGroupId] =
+    useState<MyListDayViewBucketId | null>(null);
+  const [selectedMonumentGroupId, setSelectedMonumentGroupId] =
+    useState<string | null>(null);
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
@@ -1625,16 +1637,6 @@ export function MyListSheet({
     groupablePinnedSourceRows,
     visibleTasks,
   ]);
-  const manualReorderItemIds = useMemo(
-    () =>
-      visibleTodoRows
-        .map(getSortableTodoRowKey)
-        .filter((rowKey): rowKey is MyListSortableTodoRowKey =>
-          Boolean(rowKey)
-        ),
-    [visibleTodoRows]
-  );
-
   useEffect(() => {
     setPinnedSourceCompletions((currentCompletions) => {
       const nextCompletions = { ...currentCompletions };
@@ -1726,40 +1728,6 @@ export function MyListSheet({
   const completedRevealRowCount = areCompletedTodosVisible
     ? completedTodoCount
     : 0;
-  const listContentHeight =
-    LIST_COMPACT_HEADER_ALLOWANCE +
-    (visibleListRowCount +
-      (completedTodoCount > 0 ? 1 : 0) +
-      completedRevealRowCount) *
-      LIST_COMPACT_ROW_HEIGHT +
-    (isDayLensActive
-      ? MY_LIST_DAY_VIEW_BUCKETS.length
-      : isMonumentLensActive
-        ? (monuments?.length ?? 0) + 1
-        : PRIORITY_ORDER.length) *
-      LIST_COMPACT_GROUP_HEADER_HEIGHT +
-    LIST_COMPACT_NOTES_ALLOWANCE +
-    LIST_COMPACT_BOTTOM_ALLOWANCE;
-  const listCompactHeight = Math.min(
-    Math.max(myListSheetHeights.compact, listContentHeight),
-    myListSheetHeights.expanded
-  );
-  const shouldExpandListOnOpen =
-    listContentHeight >= myListSheetHeights.expanded ||
-    listContentHeight >=
-      myListSheetHeights.expanded * LIST_COMPACT_EXPAND_THRESHOLD_RATIO;
-  const shouldExpandOnOpen = shouldExpandListOnOpen;
-  const compactSheetHeight =
-    activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
-  const rawCurrentSheetHeight = isExpanded
-    ? myListSheetHeights.expanded
-    : compactSheetHeight;
-  const currentSheetHeight = clampMyListSheetHeight(
-    rawCurrentSheetHeight,
-    editableFocusInsideSheetRef.current
-      ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
-      : MY_LIST_MIN_SAFE_SHEET_HEIGHT
-  );
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
@@ -2158,6 +2126,63 @@ export function MyListSheet({
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
   ]);
+  const selectedGroupedTodoGroup = useMemo(() => {
+    if (!isDayLensActive && !isMonumentLensActive) return null;
+
+    const selectedGroupId = isDayLensActive
+      ? selectedDayGroupId
+      : selectedMonumentGroupId;
+    const selectedGroup = selectedGroupId
+      ? visibleTodoGroups.find((group) => group.id === selectedGroupId)
+      : null;
+
+    return (
+      selectedGroup ??
+      visibleTodoGroups.find(
+        (group) => group.id === getPreferredMyListGroupId(visibleTodoGroups)
+      ) ??
+      null
+    );
+  }, [
+    isDayLensActive,
+    isMonumentLensActive,
+    selectedDayGroupId,
+    selectedMonumentGroupId,
+    visibleTodoGroups,
+  ]);
+
+  useEffect(() => {
+    if (!isDayLensActive) return;
+
+    setSelectedDayGroupId((currentGroupId) => {
+      if (
+        currentGroupId &&
+        visibleTodoGroups.some((group) => group.id === currentGroupId)
+      ) {
+        return currentGroupId;
+      }
+
+      return getPreferredMyListGroupId(visibleTodoGroups) as
+        | MyListDayViewBucketId
+        | null;
+    });
+  }, [isDayLensActive, visibleTodoGroups]);
+
+  useEffect(() => {
+    if (!isMonumentLensActive) return;
+
+    setSelectedMonumentGroupId((currentGroupId) => {
+      if (
+        currentGroupId &&
+        visibleTodoGroups.some((group) => group.id === currentGroupId)
+      ) {
+        return currentGroupId;
+      }
+
+      return getPreferredMyListGroupId(visibleTodoGroups);
+    });
+  }, [isMonumentLensActive, visibleTodoGroups]);
+
   const lensGroupLayoutSections = useMemo(() => {
     if (!isDayLensActive && !isMonumentLensActive) {
       return visibleTodoGroups.map((group) => ({
@@ -2168,91 +2193,31 @@ export function MyListSheet({
 
     const sections: Array<
       | {
+          sectionType: "group-selector";
+          groups: (typeof visibleTodoGroups)[number][];
+          selectedGroupId: string | null;
+        }
+      | {
           sectionType: "group";
           group: (typeof visibleTodoGroups)[number];
         }
-      | {
-          sectionType: "compact-day-groups";
-          groups: (typeof visibleTodoGroups)[number][];
-        }
-      | {
-          sectionType: "compact-empty-monument-groups";
-          groups: (typeof visibleTodoGroups)[number][];
-        }
-    > = [];
+    > = [
+      {
+        sectionType: "group-selector",
+        groups: visibleTodoGroups,
+        selectedGroupId: selectedGroupedTodoGroup?.id ?? null,
+      },
+    ];
 
-    if (isMonumentLensActive) {
-      const emptyMonumentGroups: (typeof visibleTodoGroups)[number][] = [];
-
-      visibleTodoGroups.forEach((group) => {
-        if (
-          group.id !== MY_LIST_NO_MONUMENT_GROUP_ID &&
-          group.rows.length === 0
-        ) {
-          emptyMonumentGroups.push(group);
-          return;
-        }
-
-        const collapsedPreference = collapsedMonumentGroups[group.id];
-        const isExpanded =
-          collapsedPreference === false ||
-          (collapsedPreference === undefined && group.rows.length > 0);
-
-        if (isExpanded) {
-          sections.push({ sectionType: "group", group });
-          return;
-        }
-
-        const previousSection = sections.at(-1);
-        if (previousSection?.sectionType === "compact-day-groups") {
-          previousSection.groups.push(group);
-        } else {
-          sections.push({ sectionType: "compact-day-groups", groups: [group] });
-        }
-      });
-
-      if (emptyMonumentGroups.length > 0) {
-        sections.push({
-          sectionType: "compact-empty-monument-groups",
-          groups: emptyMonumentGroups,
-        });
-      }
-
-      return sections;
+    if (selectedGroupedTodoGroup) {
+      sections.push({ sectionType: "group", group: selectedGroupedTodoGroup });
     }
-
-    visibleTodoGroups.forEach((group) => {
-      const bucketId = group.id as MyListDayViewBucketId;
-      const collapsedPreference = collapsedDayGroups[bucketId];
-      const wasCompactWhenManualDragStarted =
-        isDayLensActive &&
-        activeManualReorderRowId !== null &&
-        manualReorderCompactDayGroupIdsRef.current.has(bucketId);
-      const isExpanded =
-        !wasCompactWhenManualDragStarted &&
-        (collapsedPreference === false ||
-          (collapsedPreference === undefined && group.rows.length > 0));
-
-      if (isExpanded) {
-        sections.push({ sectionType: "group", group });
-        return;
-      }
-
-      const previousSection = sections.at(-1);
-      if (previousSection?.sectionType === "compact-day-groups") {
-        previousSection.groups.push(group);
-      } else {
-        sections.push({ sectionType: "compact-day-groups", groups: [group] });
-      }
-    });
 
     return sections;
   }, [
-    activeManualReorderRowId,
-    collapsedDayGroups,
-    collapsedMonumentGroups,
     isMonumentLensActive,
     isDayLensActive,
+    selectedGroupedTodoGroup,
     visibleTodoGroups,
   ]);
   const todoListSections = useMemo(
@@ -2272,6 +2237,59 @@ export function MyListSheet({
         : []),
     ],
     [completedTodoCount, completedTodoRows, lensGroupLayoutSections]
+  );
+  const manualReorderVisibleRows = selectedGroupedTodoGroup?.rows ?? visibleTodoRows;
+  const manualReorderItemIds = useMemo(
+    () =>
+      manualReorderVisibleRows
+        .map(getSortableTodoRowKey)
+        .filter((rowKey): rowKey is MyListSortableTodoRowKey =>
+          Boolean(rowKey)
+        ),
+    [manualReorderVisibleRows]
+  );
+  const isGroupedLensActive = isDayLensActive || isMonumentLensActive;
+  const selectedGroupRowCount = selectedGroupedTodoGroup?.rows.length ?? 0;
+  const selectedGroupContentRowCount =
+    selectedGroupedTodoGroup && selectedGroupRowCount === 0
+      ? 1
+      : selectedGroupRowCount;
+  const renderedListRowCount = isGroupedLensActive
+    ? selectedGroupContentRowCount
+    : visibleListRowCount;
+  const renderedGroupHeaderCount = isGroupedLensActive
+    ? visibleTodoGroups.length > 0
+      ? 1
+      : 0
+    : PRIORITY_ORDER.length;
+  const listContentHeight =
+    LIST_COMPACT_HEADER_ALLOWANCE +
+    (renderedListRowCount +
+      (completedTodoCount > 0 ? 1 : 0) +
+      completedRevealRowCount) *
+      LIST_COMPACT_ROW_HEIGHT +
+    renderedGroupHeaderCount * LIST_COMPACT_GROUP_HEADER_HEIGHT +
+    LIST_COMPACT_NOTES_ALLOWANCE +
+    LIST_COMPACT_BOTTOM_ALLOWANCE;
+  const listCompactHeight = Math.min(
+    Math.max(myListSheetHeights.compact, listContentHeight),
+    myListSheetHeights.expanded
+  );
+  const shouldExpandListOnOpen =
+    listContentHeight >= myListSheetHeights.expanded ||
+    listContentHeight >=
+      myListSheetHeights.expanded * LIST_COMPACT_EXPAND_THRESHOLD_RATIO;
+  const shouldExpandOnOpen = shouldExpandListOnOpen;
+  const compactSheetHeight =
+    activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
+  const rawCurrentSheetHeight = isExpanded
+    ? myListSheetHeights.expanded
+    : compactSheetHeight;
+  const currentSheetHeight = clampMyListSheetHeight(
+    rawCurrentSheetHeight,
+    editableFocusInsideSheetRef.current
+      ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
+      : MY_LIST_MIN_SAFE_SHEET_HEIGHT
   );
 
   const canStartScheduleTimelineDrag =
@@ -2335,16 +2353,16 @@ export function MyListSheet({
   }, []);
 
   const shouldIgnoreScheduleDragTarget = useCallback((target: EventTarget) => {
-    return (
+    return Boolean(
       target instanceof HTMLElement &&
-      Boolean(target.closest(MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR))
+        target.closest(MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR)
     );
   }, []);
 
   const shouldIgnoreManualUpgradeTarget = useCallback((target: EventTarget) => {
-    return (
+    return Boolean(
       target instanceof HTMLElement &&
-      Boolean(target.closest(MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR))
+        target.closest(MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR)
     );
   }, []);
 
@@ -2368,6 +2386,44 @@ export function MyListSheet({
     }
     manualUpgradePressRef.current = null;
   }, []);
+
+  const cancelTodoRowPressesForCheckbox = useCallback(() => {
+    clearScheduleDragPress();
+    clearManualUpgradePress();
+  }, [clearManualUpgradePress, clearScheduleDragPress]);
+
+  const stopMyListCheckboxInteraction = useCallback(
+    (
+      event:
+        | ReactPointerEvent<HTMLElement>
+        | ReactTouchEvent<HTMLElement>
+        | ReactMouseEvent<HTMLElement>
+    ) => {
+      cancelTodoRowPressesForCheckbox();
+      event.stopPropagation();
+    },
+    [cancelTodoRowPressesForCheckbox]
+  );
+
+  const activateTodoRowFromPointer = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, rowKey: MyListRowKey) => {
+      if (isMyListCheckboxTarget(event.target)) {
+        cancelTodoRowPressesForCheckbox();
+        return;
+      }
+
+      setActiveTodoRowKey(rowKey);
+    },
+    [cancelTodoRowPressesForCheckbox]
+  );
+
+  const activateTodoRowFromFocus = useCallback(
+    (event: ReactFocusEvent<HTMLElement>, rowKey: MyListRowKey) => {
+      if (isMyListCheckboxTarget(event.target)) return;
+      setActiveTodoRowKey(rowKey);
+    },
+    []
+  );
 
   const openManualUpgradeCreateSheet = useCallback(
     (press: MyListManualUpgradePress) => {
@@ -3103,7 +3159,6 @@ export function MyListSheet({
       setManualRows(originRows);
     }
     manualReorderOriginRowsRef.current = null;
-    manualReorderCompactDayGroupIdsRef.current.clear();
     setActiveManualReorderRowId(null);
   }, []);
 
@@ -3118,7 +3173,10 @@ export function MyListSheet({
   const handleManualReorderDragStart = useCallback(
     (event: DragStartEvent) => {
       try {
-        const rowKey = readManualReorderActiveRowKey(event.active, visibleTodoRows);
+        const rowKey = readManualReorderActiveRowKey(
+          event.active,
+          manualReorderVisibleRows
+        );
         if (!open || activeView !== "list" || !rowKey) {
           return;
         }
@@ -3130,19 +3188,6 @@ export function MyListSheet({
         setActiveDayPickerRowKey(null);
         setManualSkillSearch("");
         manualReorderOriginRowsRef.current = manualRows;
-        manualReorderCompactDayGroupIdsRef.current = new Set(
-          visibleTodoGroups
-            .filter((group) => {
-              const bucketId = group.id as MyListDayViewBucketId;
-              const collapsedPreference = collapsedDayGroups[bucketId];
-              return (
-                isDayLensActive &&
-                collapsedPreference !== false &&
-                (collapsedPreference === true || group.rows.length === 0)
-              );
-            })
-            .map((group) => group.id as MyListDayViewBucketId)
-        );
         setActiveManualReorderRowId(rowKey);
       } catch (error) {
         resetManualReorderAfterError(error);
@@ -3151,13 +3196,10 @@ export function MyListSheet({
     [
       activeView,
       clearManualUpgradePress,
-      collapsedDayGroups,
-      isDayLensActive,
+      manualReorderVisibleRows,
       manualRows,
       open,
       resetManualReorderAfterError,
-      visibleTodoRows,
-      visibleTodoGroups,
     ]
   );
 
@@ -3167,11 +3209,11 @@ export function MyListSheet({
         setManualRows((currentRows) => {
           const rowKey = readManualReorderActiveRowKey(
             event.active,
-            visibleTodoRows
+            manualReorderVisibleRows
           );
           const destination = resolveManualReorderDestination(
             event,
-            visibleTodoRows
+            manualReorderVisibleRows
           );
           if (!rowKey || !rowKey.startsWith("manual:") || !destination) {
             return currentRows;
@@ -3185,14 +3227,20 @@ export function MyListSheet({
     [
       resetManualReorderAfterError,
       resolveManualReorderDestination,
-      visibleTodoRows,
+      manualReorderVisibleRows,
     ]
   );
 
   const handleManualReorderDragEnd = useCallback((event: DragEndEvent) => {
     try {
-      const rowKey = readManualReorderActiveRowKey(event.active, visibleTodoRows);
-      const destination = resolveManualReorderDestination(event, visibleTodoRows);
+      const rowKey = readManualReorderActiveRowKey(
+        event.active,
+        manualReorderVisibleRows
+      );
+      const destination = resolveManualReorderDestination(
+        event,
+        manualReorderVisibleRows
+      );
       if (!rowKey || !destination) {
         restoreManualReorderOrigin();
         return;
@@ -3206,17 +3254,7 @@ export function MyListSheet({
         restoreManualReorderOrigin();
         return;
       }
-      if (
-        destination.group?.kind === "day" &&
-        manualReorderCompactDayGroupIdsRef.current.has(destination.group.id)
-      ) {
-        setCollapsedDayGroups((current) => ({
-          ...current,
-          [destination.group!.id]: true,
-        }));
-      }
       manualReorderOriginRowsRef.current = null;
-      manualReorderCompactDayGroupIdsRef.current.clear();
       setActiveManualReorderRowId(null);
     } catch (error) {
       resetManualReorderAfterError(error);
@@ -3227,7 +3265,7 @@ export function MyListSheet({
     resetManualReorderAfterError,
     resolveManualReorderDestination,
     restoreManualReorderOrigin,
-    visibleTodoRows,
+    manualReorderVisibleRows,
   ]);
 
   const handleManualReorderDragCancel = useCallback(() => {
@@ -4775,54 +4813,63 @@ export function MyListSheet({
                                 key={`${descendant.sourceType}:${descendant.id}`}
                                 className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg py-1 pl-5 pr-2 text-sm transition-colors hover:bg-white/[0.025]"
                               >
-                                <input
-                                  id={checkboxId}
-                                  type="checkbox"
-                                  checked={done}
-                                  disabled={!canToggleCompletion}
-                                  onChange={(event) => {
-                                    if (!canToggleCompletion) return;
-                                    const nextCompletedAt = event.target.checked
-                                      ? new Date().toISOString()
-                                      : null;
-                                    setPinnedSourceCompletions((current) => ({
-                                      ...current,
-                                      [completionKey]: nextCompletedAt,
-                                    }));
-                                    onTogglePinnedSourceCompletion?.(
-                                      descendant,
-                                      nextCompletedAt
-                                    );
-                                  }}
-                                  tabIndex={open && canToggleCompletion ? 0 : -1}
-                                  className="peer sr-only"
-                                />
-                                <label
-                                  htmlFor={checkboxId}
-                                  aria-label={
-                                    canToggleCompletion
-                                      ? done
-                                        ? `Mark ${descendant.sourceType.toLowerCase()} incomplete`
-                                        : `Mark ${descendant.sourceType.toLowerCase()} complete`
-                                      : `${descendant.sourceType.toLowerCase()} completion is unavailable`
-                                  }
-                                  className={clsx(
-                                    "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
-                                    done
-                                      ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45"
-                                      : "border-white/16 bg-black/24 text-transparent",
-                                    canToggleCompletion
-                                      ? "cursor-pointer"
-                                      : "cursor-default opacity-55"
-                                  )}
+                                <span
+                                  data-my-list-checkbox
+                                  onPointerDown={stopMyListCheckboxInteraction}
+                                  onTouchStart={stopMyListCheckboxInteraction}
+                                  onMouseDown={stopMyListCheckboxInteraction}
+                                  onClick={stopMyListCheckboxInteraction}
+                                  className="-m-1.5 flex h-7 w-7 shrink-0 items-center justify-center"
                                 >
-                                  <span
-                                    className={clsx(
-                                      "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
-                                      done ? "opacity-100" : "opacity-0"
-                                    )}
+                                  <input
+                                    id={checkboxId}
+                                    type="checkbox"
+                                    checked={done}
+                                    disabled={!canToggleCompletion}
+                                    onChange={(event) => {
+                                      if (!canToggleCompletion) return;
+                                      const nextCompletedAt = event.target.checked
+                                        ? new Date().toISOString()
+                                        : null;
+                                      setPinnedSourceCompletions((current) => ({
+                                        ...current,
+                                        [completionKey]: nextCompletedAt,
+                                      }));
+                                      onTogglePinnedSourceCompletion?.(
+                                        descendant,
+                                        nextCompletedAt
+                                      );
+                                    }}
+                                    tabIndex={open && canToggleCompletion ? 0 : -1}
+                                    className="peer sr-only"
                                   />
-                                </label>
+                                  <label
+                                    htmlFor={checkboxId}
+                                    aria-label={
+                                      canToggleCompletion
+                                        ? done
+                                          ? `Mark ${descendant.sourceType.toLowerCase()} incomplete`
+                                          : `Mark ${descendant.sourceType.toLowerCase()} complete`
+                                        : `${descendant.sourceType.toLowerCase()} completion is unavailable`
+                                    }
+                                    className={clsx(
+                                      "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                                      done
+                                        ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45"
+                                        : "border-white/16 bg-black/24 text-transparent",
+                                      canToggleCompletion
+                                        ? "cursor-pointer"
+                                        : "cursor-default opacity-55"
+                                    )}
+                                  >
+                                    <span
+                                      className={clsx(
+                                        "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                                        done ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                  </label>
+                                </span>
                                 <span
                                   className="flex h-4 w-4 shrink-0 items-center justify-center text-[0.72rem] text-white/56"
                                   aria-hidden="true"
@@ -4869,74 +4916,51 @@ export function MyListSheet({
             {hasListRows ? (
               <>
                 {todoListSections.map((section) => {
-                  if (section.sectionType === "compact-empty-monument-groups") {
+                  if (section.sectionType === "group-selector") {
                     return (
                       <div
-                        key={`compact-empty-monuments:${section.groups
-                          .map((group) => group.id)
-                          .join(":")}`}
-                        className="flex flex-wrap items-center gap-1.5 px-3 py-1"
-                      >
-                        {section.groups.map((group) => {
-                          const monumentIcon =
-                            "icon" in group ? group.icon : null;
-
-                          return (
-                            <span
-                              key={group.id}
-                              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62"
-                            >
-                              {monumentIcon ? (
-                                <span
-                                  className="text-[0.72rem] leading-none"
-                                  aria-hidden="true"
-                                >
-                                  {monumentIcon}
-                                </span>
-                              ) : (
-                                <Landmark
-                                  className="h-3 w-3"
-                                  strokeWidth={1.9}
-                                  aria-hidden="true"
-                                />
-                              )}
-                              <span>{group.label}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    );
-                  }
-
-                  if (section.sectionType === "compact-day-groups") {
-                    return (
-                      <div
-                        key={`compact-day-groups:${section.groups
-                          .map((group) => group.id)
-                          .join(":")}`}
-                        className="flex flex-wrap items-center gap-1.5 px-3 py-1"
+                        key="group-selector"
+                        role="tablist"
+                        aria-label={
+                          isDayLensActive ? "Day groups" : "Monument groups"
+                        }
+                        className="-mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
                       >
                         {section.groups.map((group) => {
                           if (isMonumentLensActive) {
                             const monumentIcon =
                               "icon" in group ? group.icon : null;
+                            const isSelected =
+                              section.selectedGroupId === group.id;
+
                             return (
                               <button
                                 key={group.id}
                                 type="button"
-                                aria-expanded={false}
-                                aria-label={`Expand ${group.label} group`}
+                                role="tab"
+                                aria-selected={isSelected}
                                 data-my-list-no-schedule-drag
                                 data-my-list-no-upgrade
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onTouchStart={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onMouseDown={(event) =>
+                                  event.stopPropagation()
+                                }
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setCollapsedMonumentGroups((current) => ({
-                                    ...current,
-                                    [group.id]: false,
-                                  }));
+                                  setSelectedMonumentGroupId(group.id);
                                 }}
                                 tabIndex={open ? 0 : -1}
-                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
+                                className={clsx(
+                                  "inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition focus-visible:ring-2 focus-visible:ring-white/35",
+                                  isSelected
+                                    ? "border-white/[0.22] bg-white/[0.12] text-white shadow-[0_0_18px_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                                    : "border-white/[0.1] bg-zinc-400/[0.09] text-white/58 hover:bg-white/[0.08] hover:text-white/82"
+                                )}
                               >
                                 {monumentIcon ? (
                                   <span
@@ -4964,13 +4988,15 @@ export function MyListSheet({
                             kind: "day",
                             id: bucketId,
                           } satisfies MyListManualReorderGroup;
+                          const isSelected =
+                            section.selectedGroupId === bucketId;
 
                           return (
                             <MyListManualTodoGroupDropZone
                               key={bucketId}
                               group={manualReorderGroup}
                               dayDropBucketId={bucketId}
-                              className="inline-flex"
+                              className="inline-flex shrink-0"
                             >
                               {(isOver) => {
                                 const isManualTodoOver =
@@ -4979,8 +5005,8 @@ export function MyListSheet({
                                 return (
                                   <button
                                     type="button"
-                                    aria-expanded={false}
-                                    aria-label={`Expand ${group.label} group`}
+                                    role="tab"
+                                    aria-selected={isSelected}
                                     data-my-list-no-schedule-drag
                                     data-my-list-no-upgrade
                                     onPointerDown={(event) =>
@@ -4994,15 +5020,15 @@ export function MyListSheet({
                                     }
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setCollapsedDayGroups((current) => ({
-                                        ...current,
-                                        [bucketId]: false,
-                                      }));
+                                      setSelectedDayGroupId(bucketId);
                                     }}
                                     tabIndex={open ? 0 : -1}
                                     className={clsx(
-                                      "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition duration-150 hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                      "inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition duration-150 hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
                                       dayVisual.pillClassName,
+                                      isSelected
+                                        ? "ring-1 ring-white/35 shadow-[0_0_18px_rgba(255,255,255,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                                        : "opacity-72",
                                       isManualTodoOver &&
                                         "scale-[1.04] border-white/45 bg-white/[0.16] text-white shadow-[0_0_12px_rgba(255,255,255,0.14)] ring-1 ring-white/30"
                                     )}
@@ -5047,11 +5073,23 @@ export function MyListSheet({
                             id: group.id as PriorityBucketId,
                           }
                         : null;
+                  const groupDropZoneGroup =
+                    isDayLensActive ? null : manualReorderGroup;
+                  const groupDropZoneDayBucketId = isDayLensActive
+                    ? undefined
+                    : dayDropBucketId ?? undefined;
+                  const shouldRenderGroupLabel = Boolean(
+                    group.label &&
+                      !(
+                        !isCompletedSection &&
+                        (isDayLensActive || isMonumentLensActive)
+                      )
+                  );
 
                   const groupRows = (
                     <MyListManualTodoGroupDropZone
-                      group={manualReorderGroup}
-                      dayDropBucketId={dayDropBucketId ?? undefined}
+                      group={groupDropZoneGroup}
+                      dayDropBucketId={groupDropZoneDayBucketId}
                       className={clsx(
                         "space-y-0.5 rounded-lg border px-1 pb-0.5 transition-colors",
                         dayDropBucketId && "min-h-8",
@@ -5062,98 +5100,10 @@ export function MyListSheet({
                           : "border-transparent bg-transparent"
                       )}
                     >
-                    {group.label ? (
-                      dayDropBucketId ? (
-                        <div className="px-2 pt-1">
-                          {(() => {
-                            const dayVisual =
-                              MY_LIST_DAY_VISUALS[dayDropBucketId];
-                            const DayIcon = dayVisual.Icon;
-
-                            return (
-                              <button
-                                type="button"
-                                aria-expanded={true}
-                                aria-label={`Collapse ${group.label} group`}
-                                data-my-list-no-schedule-drag
-                                data-my-list-no-upgrade
-                                onPointerDown={(event) =>
-                                  event.stopPropagation()
-                                }
-                                onTouchStart={(event) =>
-                                  event.stopPropagation()
-                                }
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setCollapsedDayGroups((current) => ({
-                                    ...current,
-                                    [dayDropBucketId]: true,
-                                  }));
-                                }}
-                                tabIndex={open ? 0 : -1}
-                                className={clsx(
-                                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
-                                  dayVisual.pillClassName
-                                )}
-                              >
-                                <DayIcon
-                                  className="h-3 w-3"
-                                  strokeWidth={1.9}
-                                  aria-hidden="true"
-                                />
-                                <span>{group.label}</span>
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      ) : isMonumentLensActive && !isCompletedSection ? (
-                        <div className="px-2 pt-1">
-                          {(() => {
-                            const monumentIcon =
-                              "icon" in group ? group.icon : null;
-
-                            return (
-                              <button
-                                type="button"
-                                aria-expanded={true}
-                                aria-label={`Collapse ${group.label} group`}
-                                data-my-list-no-schedule-drag
-                                data-my-list-no-upgrade
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setCollapsedMonumentGroups((current) => ({
-                                    ...current,
-                                    [group.id]: true,
-                                  }));
-                                }}
-                                tabIndex={open ? 0 : -1}
-                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
-                              >
-                                {monumentIcon ? (
-                                  <span
-                                    className="text-[0.72rem] leading-none"
-                                    aria-hidden="true"
-                                  >
-                                    {monumentIcon}
-                                  </span>
-                                ) : (
-                                  <Landmark
-                                    className="h-3 w-3"
-                                    strokeWidth={1.9}
-                                    aria-hidden="true"
-                                  />
-                                )}
-                                <span>{group.label}</span>
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      ) : (
-                        <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
-                          {group.label}
-                        </div>
-                      )
+                    {shouldRenderGroupLabel ? (
+                      <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
+                        {group.label}
+                      </div>
                     ) : null}
                     {group.rows.map((visibleRow) => {
                   const sortableRowKey = getSortableTodoRowKey(visibleRow);
@@ -5221,8 +5171,12 @@ export function MyListSheet({
                       data-my-list-schedule-drag-row={
                         canStartTodoRowLongPress ? "true" : undefined
                       }
-                      onPointerDownCapture={() => setActiveTodoRowKey(rowKey)}
-                      onFocusCapture={() => setActiveTodoRowKey(rowKey)}
+                      onPointerDownCapture={(event) =>
+                        activateTodoRowFromPointer(event, rowKey)
+                      }
+                      onFocusCapture={(event) =>
+                        activateTodoRowFromFocus(event, rowKey)
+                      }
                       onPointerDown={(event) =>
                         startScheduleDragPress(event, taskScheduleDragRow)
                       }
@@ -5244,61 +5198,70 @@ export function MyListSheet({
                         pending && "opacity-60"
                       )}
                     >
-                      <input
-                        id={checkboxId}
-                        type="checkbox"
-                        checked={done}
-                        disabled={pending}
-                        onChange={(event) => {
-                          setPendingDeleteRowId(null);
-                          const checked = event.target.checked;
-
-                          setTaskOverrides((currentOverrides) => ({
-                            ...currentOverrides,
-                            [task.id]: {
-                              ...currentOverrides[task.id],
-                              completedAt: checked
-                                ? new Date().toISOString()
-                                : null,
-                            },
-                          }));
-
-                          const sourceElement = event.currentTarget.closest(
-                            '[data-creator-xp-source="my-list-todo"]'
-                          );
-                          const sourceRect =
-                            sourceElement instanceof HTMLElement
-                              ? toCreatorXpBurstRect(
-                                  sourceElement.getBoundingClientRect()
-                                )
-                              : null;
-                          onToggleTask(task.id, sourceRect, {
-                            skillId: taskSkill.skillId,
-                            monumentId: taskSkill.monumentId,
-                          });
-                        }}
-                        tabIndex={open ? 0 : -1}
-                        className="peer sr-only disabled:cursor-wait"
-                      />
-                      <label
-                        htmlFor={checkboxId}
-                        aria-label={
-                          done ? "Mark to-do incomplete" : "Mark to-do complete"
-                        }
-                        className={clsx(
-                          "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
-                          done
-                            ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
-                            : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        )}
+                      <span
+                        data-my-list-checkbox
+                        onPointerDown={stopMyListCheckboxInteraction}
+                        onTouchStart={stopMyListCheckboxInteraction}
+                        onMouseDown={stopMyListCheckboxInteraction}
+                        onClick={stopMyListCheckboxInteraction}
+                        className="-m-1.5 flex h-7 w-7 shrink-0 items-center justify-center"
                       >
-                        <span
-                          className={clsx(
-                            "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
-                            done ? "opacity-100" : "opacity-0"
-                          )}
+                        <input
+                          id={checkboxId}
+                          type="checkbox"
+                          checked={done}
+                          disabled={pending}
+                          onChange={(event) => {
+                            setPendingDeleteRowId(null);
+                            const checked = event.target.checked;
+
+                            setTaskOverrides((currentOverrides) => ({
+                              ...currentOverrides,
+                              [task.id]: {
+                                ...currentOverrides[task.id],
+                                completedAt: checked
+                                  ? new Date().toISOString()
+                                  : null,
+                              },
+                            }));
+
+                            const sourceElement = event.currentTarget.closest(
+                              '[data-creator-xp-source="my-list-todo"]'
+                            );
+                            const sourceRect =
+                              sourceElement instanceof HTMLElement
+                                ? toCreatorXpBurstRect(
+                                    sourceElement.getBoundingClientRect()
+                                  )
+                                : null;
+                            onToggleTask(task.id, sourceRect, {
+                              skillId: taskSkill.skillId,
+                              monumentId: taskSkill.monumentId,
+                            });
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className="peer sr-only disabled:cursor-wait"
                         />
-                      </label>
+                        <label
+                          htmlFor={checkboxId}
+                          aria-label={
+                            done ? "Mark to-do incomplete" : "Mark to-do complete"
+                          }
+                          className={clsx(
+                            "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                            done
+                              ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                              : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                          )}
+                        >
+                          <span
+                            className={clsx(
+                              "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                              done ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                        </label>
+                      </span>
                       <div className="relative h-4 w-4 shrink-0">
                         <button
                           type="button"
@@ -5469,8 +5432,12 @@ export function MyListSheet({
                       <div
                         data-creator-xp-source="my-list-todo"
                         data-creator-xp-kind="todo"
-                        onPointerDownCapture={() => setActiveTodoRowKey(rowKey)}
-                        onFocusCapture={() => setActiveTodoRowKey(rowKey)}
+                        onPointerDownCapture={(event) =>
+                          activateTodoRowFromPointer(event, rowKey)
+                        }
+                        onFocusCapture={(event) =>
+                          activateTodoRowFromFocus(event, rowKey)
+                        }
                         className={clsx(
                           "group/todo-row relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
                           open && activeView === "list" && "cursor-pointer",
@@ -5479,45 +5446,54 @@ export function MyListSheet({
                         )}
                         style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                       >
-                        <input
-                          id={checkboxId}
-                          type="checkbox"
-                          checked={done}
-                          onChange={(event) => {
-                            const nextCompletedAt = event.target.checked
-                              ? new Date().toISOString()
-                              : null;
-                            setPendingDeleteRowId(null);
-                            setPinnedSourceCompletions((current) => ({
-                              ...current,
-                              [completionKey]: nextCompletedAt,
-                            }));
-                            onTogglePinnedSourceCompletion?.(row, nextCompletedAt);
-                          }}
-                          tabIndex={open ? 0 : -1}
-                          className="peer sr-only"
-                        />
-                        <label
-                          htmlFor={checkboxId}
-                          aria-label={
-                            done
-                              ? "Mark pinned item incomplete"
-                              : "Mark pinned item complete"
-                          }
-                          className={clsx(
-                            "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
-                            done
-                              ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
-                              : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                          )}
+                        <span
+                          data-my-list-checkbox
+                          onPointerDown={stopMyListCheckboxInteraction}
+                          onTouchStart={stopMyListCheckboxInteraction}
+                          onMouseDown={stopMyListCheckboxInteraction}
+                          onClick={stopMyListCheckboxInteraction}
+                          className="-m-1.5 flex h-7 w-7 shrink-0 items-center justify-center"
                         >
-                          <span
-                            className={clsx(
-                              "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
-                              done ? "opacity-100" : "opacity-0"
-                            )}
+                          <input
+                            id={checkboxId}
+                            type="checkbox"
+                            checked={done}
+                            onChange={(event) => {
+                              const nextCompletedAt = event.target.checked
+                                ? new Date().toISOString()
+                                : null;
+                              setPendingDeleteRowId(null);
+                              setPinnedSourceCompletions((current) => ({
+                                ...current,
+                                [completionKey]: nextCompletedAt,
+                              }));
+                              onTogglePinnedSourceCompletion?.(row, nextCompletedAt);
+                            }}
+                            tabIndex={open ? 0 : -1}
+                            className="peer sr-only"
                           />
-                        </label>
+                          <label
+                            htmlFor={checkboxId}
+                            aria-label={
+                              done
+                                ? "Mark pinned item incomplete"
+                                : "Mark pinned item complete"
+                            }
+                            className={clsx(
+                              "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                              done
+                                ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                                : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                            )}
+                          >
+                            <span
+                              className={clsx(
+                                "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                                done ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                          </label>
+                        </span>
                         <span
                           className={clsx(
                             "flex h-4 w-4 shrink-0 items-center justify-center text-center text-[0.78rem] leading-none text-white/70",
@@ -5638,11 +5614,11 @@ export function MyListSheet({
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-manual-upgrade-row="true"
-                      onPointerDownCapture={() =>
-                        setActiveTodoRowKey(`manual:${row.id}`)
+                      onPointerDownCapture={(event) =>
+                        activateTodoRowFromPointer(event, rowKey)
                       }
-                      onFocusCapture={() =>
-                        setActiveTodoRowKey(`manual:${row.id}`)
+                      onFocusCapture={(event) =>
+                        activateTodoRowFromFocus(event, rowKey)
                       }
                       onPointerDown={(event) =>
                         startManualUpgradePointerPress(event, row)
@@ -5674,38 +5650,49 @@ export function MyListSheet({
                       )}
                       style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     >
-                    <input
-                      id={`my-list-${row.id}`}
-                      type="checkbox"
-                      checked={row.done}
-                      onChange={(event) =>
-                        handleManualCompletionToggle(
-                          row.id,
-                          event.target.checked
-                        )
-                      }
-                      tabIndex={open ? 0 : -1}
-                      className="peer sr-only"
-                    />
-                    <label
-                      htmlFor={`my-list-${row.id}`}
-                      aria-label={
-                        row.done ? "Mark to-do incomplete" : "Mark to-do complete"
-                      }
-                      className={clsx(
-                        "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
-                        row.done
-                          ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
-                          : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                      )}
-                    >
                       <span
-                        className={clsx(
-                          "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
-                          row.done ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                    </label>
+                        data-my-list-checkbox
+                        onPointerDown={stopMyListCheckboxInteraction}
+                        onTouchStart={stopMyListCheckboxInteraction}
+                        onMouseDown={stopMyListCheckboxInteraction}
+                        onClick={stopMyListCheckboxInteraction}
+                        className="-m-1.5 flex h-7 w-7 shrink-0 items-center justify-center"
+                      >
+                        <input
+                          id={`my-list-${row.id}`}
+                          type="checkbox"
+                          checked={row.done}
+                          onChange={(event) =>
+                            handleManualCompletionToggle(
+                              row.id,
+                              event.target.checked
+                            )
+                          }
+                          tabIndex={open ? 0 : -1}
+                          className="peer sr-only"
+                        />
+                        <label
+                          htmlFor={`my-list-${row.id}`}
+                          aria-label={
+                            row.done
+                              ? "Mark to-do incomplete"
+                              : "Mark to-do complete"
+                          }
+                          className={clsx(
+                            "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                            row.done
+                              ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                              : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                          )}
+                        >
+                          <span
+                            className={clsx(
+                              "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                              row.done ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                        </label>
+                      </span>
                     <div className="relative h-4 w-4 shrink-0">
                       <button
                         type="button"
@@ -5918,6 +5905,11 @@ export function MyListSheet({
                     </MyListSortableManualTodoRow>
                   );
                     })}
+                    {!isCompletedSection && group.rows.length === 0 ? (
+                      <div className="rounded-lg bg-transparent px-3 py-2.5 text-sm text-white/42">
+                        No To-Dos yet.
+                      </div>
+                    ) : null}
                     </MyListManualTodoGroupDropZone>
                   );
 
