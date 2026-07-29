@@ -6,6 +6,7 @@ const noteSlashTextarea = readFileSync("src/components/notes/NoteSlashTextarea.t
 const sharedMealPlanPanel = readFileSync("src/components/nutrition/SharedMealPlanPanel.tsx", "utf8");
 const mealPlans = readFileSync("src/lib/nutrition/mealPlans.ts", "utf8");
 const mealPlanHook = readFileSync("src/hooks/useMealPlanDay.ts", "utf8");
+const activeTargetHook = readFileSync("src/hooks/useActiveNutritionTarget.ts", "utf8");
 const dailyOverrideRoute = readFileSync("src/app/api/nutrition/targets/[id]/route.ts", "utf8");
 
 function functionBlock(name: string) {
@@ -251,6 +252,28 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(panel).toContain("View calculation");
   });
 
+  it("keeps Meal Plan saved-template selection on the shared template loader", () => {
+    expect(sharedMealPlanPanel).toContain("useNutritionMealTemplates(50");
+    expect(sharedMealPlanPanel).toContain("meal.meal_items?.length");
+    expect(sharedMealPlanPanel).toContain("mealTemplateId: meal.id");
+    expect(sharedMealPlanPanel).toContain('add(`meal:${meal.id}`');
+    expect(sharedMealPlanPanel).toContain("mealTemplates.error");
+    expect(sharedMealPlanPanel).toContain("mealTemplates.retry()");
+  });
+
+  it("keeps the Nutrition Meals tab on reusable meal templates", () => {
+    const reusableMeals = noteSlashTextarea.slice(
+      noteSlashTextarea.indexOf("function renderNutritionReusableMealsContent"),
+      noteSlashTextarea.indexOf("function renderNutritionSavedMealsContent"),
+    );
+
+    expect(noteSlashTextarea).toContain("useNutritionMealTemplates(");
+    expect(reusableMeals).toContain("nutritionMealTemplates.map");
+    expect(reusableMeals).toContain("meal.meal_items?.length");
+    expect(reusableMeals).toContain('selectNutritionSavedMeal(meal, "meal_template")');
+    expect(reusableMeals).toContain("Create reusable meals for one-tap logging.");
+  });
+
   it("renders result values from the server preview without default BMI details", () => {
     const result = functionBlock("ResultSurface");
     expect(result).toContain("preview.calorieTargetKcal");
@@ -261,18 +284,46 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(result).toContain("formatSignedCalories(calorieAdjustment)");
     expect(result).toContain("Targeted near maintenance");
     expect(result).toContain("Maintenance calories with protein prioritized");
+    expect(result).toContain("calculateGoalTimelineEstimate");
+    expect(result).toContain("preview.effectiveGoalRateKgPerWeek");
+    expect(result).toContain("Estimated timeline");
     expect(result).not.toContain("bmi");
   });
 
-  it("hides the visible Meal Plan budget while preserving target prompts and planned-total helper", () => {
+  it("limits Meal Plan active target presentation to the compact two-line strip", () => {
+    const compactStart = panel.indexOf('<button type="button" onClick={() => openSetup("update_goal")} className="w-full rounded-xl');
+    const compactBranch = panel.slice(compactStart, panel.indexOf("</button>", compactStart));
+    expect(sharedMealPlanPanel).toContain('presentation="compact"');
+    expect(compactBranch).toContain("Daily target");
+    expect(compactBranch).toContain('formatNumber(target.calorie_target_kcal, " kcal")');
+    expect(compactBranch).toContain('formatNumber(target.protein_target_g)}P');
+    expect(compactBranch).toContain('formatNumber(target.carb_target_g)}C');
+    expect(compactBranch).toContain('formatNumber(target.fat_target_g)}F');
+    expect(compactBranch).toContain("Edit");
+    expect(compactBranch).toContain('bg-[#141416]');
+    expect(compactBranch).not.toContain("Estimated maintenance");
+    expect(compactBranch).not.toContain("Goal weight");
+    expect(compactBranch).not.toContain("Daily override");
+    expect(compactBranch).not.toContain("View calculation");
+    expect(compactBranch).not.toContain("Source");
+  });
+
+  it("hides verbose target management in Meal Plan while preserving target prompts and planned-total helper", () => {
     expect(sharedMealPlanPanel).not.toContain("MealPlanBudgetSummary");
     expect(sharedMealPlanPanel).not.toContain("Today&apos;s plan");
     expect(sharedMealPlanPanel).not.toContain("calculateMealPlanPlannedTotals");
     expect(sharedMealPlanPanel).toContain("<NutritionTargetPanel");
+    expect(sharedMealPlanPanel).toContain('presentation="compact"');
     expect(panel).toContain("Set your daily target");
     expect(panel).toContain("Get a calorie and macro target for your meal plan.");
     expect(sharedMealPlanPanel).toContain("No meals planned");
     expect(mealPlans).toContain("export function calculateMealPlanPlannedTotals");
+  });
+
+  it("keeps the missing-target prompt unchanged", () => {
+    expect(panel).toContain("Set your daily target");
+    expect(panel).toContain("Get a calorie and macro target for your meal plan.");
+    expect(panel).toContain("Set target");
   });
 
   it("keeps Meal Plan data cached by Creator day and avoids manual duplicate refresh broadcasts", () => {
@@ -286,5 +337,38 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(sharedMealPlanPanel).toContain("backgroundError");
     expect(sharedMealPlanPanel).toContain("Loading Meal Plan...");
     expect(sharedMealPlanPanel).not.toContain("Loading Meal Plan…");
+  });
+
+  it("uses the shared active daily target for Nutrition progress denominators", () => {
+    const progressBars = noteSlashTextarea.slice(noteSlashTextarea.indexOf("function NutritionDailyProgressBars"), noteSlashTextarea.indexOf("function getNutritionMealOccurredAt"));
+    expect(noteSlashTextarea).toContain("useActiveNutritionTarget");
+    expect(noteSlashTextarea).toContain("getNutritionProgressTargetsFromActiveTarget");
+    expect(noteSlashTextarea).toContain("targetGoals={nutritionDailyTargetGoals}");
+    expect(progressBars).toContain("targetGoals.calories");
+    expect(progressBars).toContain("targetGoals[macroKey]");
+    expect(progressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS.calories");
+    expect(progressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey]");
+    expect(activeTargetHook).toContain('ACTIVE_NUTRITION_TARGET_QUERY_ROOT = ["nutrition", "active-target"]');
+    expect(activeTargetHook).toContain('fetch(`/api/nutrition/targets?${params.toString()}`');
+    expect(activeTargetHook).toContain("getCurrentNutritionTargetCreatorDayDate");
+  });
+
+  it("keeps logged totals as progress numerators and does not count planned Meal Plan totals", () => {
+    const entryProgress = noteSlashTextarea.slice(noteSlashTextarea.indexOf("const nutritionDailyProgress = shouldRenderNutritionDailyProgress"), noteSlashTextarea.indexOf("const refreshNutritionDailyTotals = useCallback", noteSlashTextarea.indexOf("const nutritionDailyProgress = shouldRenderNutritionDailyProgress")));
+    expect(entryProgress).toContain("nutritionDailySavedTotals");
+    expect(entryProgress).toContain("aggregateSelectedNutritionFoodSnapshots");
+    expect(entryProgress).toContain("aggregateNutritionDraftTotals");
+    expect(entryProgress).not.toContain("calculateMealPlanPlannedTotals");
+    expect(noteSlashTextarea).toContain('fetch(`/api/nutrition/meals?${params.toString()}`)');
+    expect(noteSlashTextarea).not.toContain("plannedTotals");
+  });
+
+  it("writes saved target rows into the shared query cache before background revalidation", () => {
+    expect(panel).toContain("targetQuery.setTargetInCache(body.target)");
+    expect(panel).toContain("targetQuery.invalidate()");
+    expect(activeTargetHook).toContain("writeActiveNutritionTargetCache");
+    expect(activeTargetHook).toContain("queryClient.setQueryData<ActiveNutritionTargetResponse>");
+    expect(activeTargetHook).toContain("queryClient.setQueriesData<ActiveNutritionTargetResponse>");
+    expect(activeTargetHook).toContain("queryClient.invalidateQueries({ queryKey: ACTIVE_NUTRITION_TARGET_QUERY_ROOT })");
   });
 });

@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  Dumbbell,
   OctagonAlert,
   Pin,
   TriangleAlert,
@@ -56,8 +57,16 @@ import type { Database } from "@/types/supabase";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import {
+  isFitnessPlanManagedHabit,
+  isFitnessPlanScheduleMetadata,
+} from "@/lib/fitness/planHabit";
 import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
 import { recordMatrixScheduledHabitCompletion } from "@/lib/schedule/matrixScheduledHabitCompletion";
+import {
+  getMatrixRoutineProgress,
+  isMatrixScheduledRoutineHabitCompleted,
+} from "@/lib/schedule/matrixRoutineProgress";
 import {
   CREATOR_NUTRITION_MEAL_SAVED_EVENT,
   dispatchOpenNutritionLogEvent,
@@ -429,6 +438,8 @@ const MATRIX_HABIT_CHORE_CARD_BG_CLASS =
   "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
 const MATRIX_HABIT_PRACTICE_CARD_BG_CLASS =
   "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+const MATRIX_HABIT_FITNESS_PLAN_CARD_BG_CLASS =
+  "!bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.08),transparent_54%),linear-gradient(145deg,rgba(4,4,5,0.99)_0%,rgba(12,13,16,0.98)_58%,rgba(23,24,28,0.92)_100%)]";
 const MATRIX_HABIT_DEFAULT_CARD_BG_CLASS =
   "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
 const MATRIX_ROW_PROJECT_CARD_CLASS =
@@ -951,13 +962,7 @@ function isMatrixDueItemCompleted(item: MatrixDueItem): boolean {
 function isMatrixScheduledRoutineCompleted(
   habits: readonly MatrixRoutineHabit[]
 ) {
-  return (
-    habits.length > 0 &&
-    habits.every(
-      (habit) =>
-        habit.sourceInstance?.status?.trim().toLowerCase() === "completed"
-    )
-  );
+  return getMatrixRoutineProgress(habits).isComplete;
 }
 
 function sortMatrixScheduledItems(
@@ -1018,7 +1023,11 @@ function sortMatrixDueItems(
   });
 }
 
-function getHabitCardTypeClass(habitType: string | null | undefined): string {
+function getHabitCardTypeClass(
+  habitType: string | null | undefined,
+  isFitnessPlanManaged = false,
+): string {
+  if (isFitnessPlanManaged) return MATRIX_HABIT_FITNESS_PLAN_CARD_BG_CLASS;
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") {
     return MATRIX_HABIT_CHORE_CARD_BG_CLASS;
@@ -1030,7 +1039,13 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
   return MATRIX_HABIT_DEFAULT_CARD_BG_CLASS;
 }
 
-function getHabitCardBorderClass(habitType: string | null | undefined): string {
+function getHabitCardBorderClass(
+  habitType: string | null | undefined,
+  isFitnessPlanManaged = false,
+): string {
+  if (isFitnessPlanManaged) {
+    return "border-white/10 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.08)]";
+  }
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
   if (normalized === "SYNC" || normalized === "MEMO") return "border-zinc-200/45";
@@ -1038,7 +1053,11 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
   return "border-white/10 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.055)]";
 }
 
-function getHabitRowTypeClass(habitType: string | null | undefined): string {
+function getHabitRowTypeClass(
+  habitType: string | null | undefined,
+  isFitnessPlanManaged = false,
+): string {
+  if (isFitnessPlanManaged) return MATRIX_ROW_NEXUS_CARD_CLASS;
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return MATRIX_ROW_NEXUS_CHORE_CARD_CLASS;
   if (normalized === "SYNC" || normalized === "MEMO") {
@@ -1725,7 +1744,9 @@ function buildMatrixScheduledEvents({
             name: habit.name,
             dueLabel: getMatrixScheduledHabitLabel(event.instance.status),
             skillIcon: habit.skillIcon,
-            completed: isMatrixDueHabitCompleted(habit),
+            completed: isMatrixScheduledRoutineHabitCompleted({
+              sourceInstance: event.instance,
+            }),
             routinePosition: habit.routine_position ?? index + 1,
             currentStreakDays: habit.current_streak_days,
             habitType: habit.habit_type,
@@ -1891,7 +1912,7 @@ function buildMatrixDueItems({
       description: routine?.description ?? null,
       icon: routineIcon,
       habits: matrixRoutineHabits,
-      completed: matrixRoutineHabits.every((habit) => habit.completed),
+      completed: getMatrixRoutineProgress(matrixRoutineHabits).isComplete,
       monumentId: routineMonumentId,
       skillIds: routineSkillIds,
       glyph: routineIcon,
@@ -2571,6 +2592,7 @@ function MatrixHabitCard({
   title,
   pill,
   habitType,
+  isFitnessPlanManaged = false,
   overdue,
   status,
   completed = false,
@@ -2580,6 +2602,7 @@ function MatrixHabitCard({
   title: string;
   pill: string;
   habitType: string | null | undefined;
+  isFitnessPlanManaged?: boolean;
   overdue: boolean;
   status?: string | null;
   completed?: boolean;
@@ -2588,6 +2611,7 @@ function MatrixHabitCard({
   const isCompleted =
     completed || status?.trim().toLowerCase() === "completed";
   const isSmall = density === "small";
+  const displayGlyph = isFitnessPlanManaged ? "🏋️" : glyph;
   const displayPill = isCompleted ? "COMPLETE" : pill;
   const pillClass = isCompleted
     ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
@@ -2607,12 +2631,12 @@ function MatrixHabitCard({
   if (density === "row") {
     return (
       <MatrixEventRowCard
-        glyph={glyph}
+        glyph={displayGlyph}
         title={title}
         status={status}
         completed={isCompleted}
         overdue={overdue}
-        className={getHabitRowTypeClass(habitType)}
+        className={getHabitRowTypeClass(habitType, isFitnessPlanManaged)}
         meta={
           <span
             className={cn(
@@ -2630,7 +2654,7 @@ function MatrixHabitCard({
   if (isSmall) {
     return (
       <MatrixSmallEventCard
-        glyph={glyph}
+        glyph={displayGlyph}
         title={title}
         status={status}
         completed={isCompleted}
@@ -2638,8 +2662,8 @@ function MatrixHabitCard({
           isCompleted
             ? ["emerald-completed-compact", "shimmer-border-complete"]
             : [
-                getHabitCardTypeClass(habitType),
-                getHabitCardBorderClass(habitType),
+                getHabitCardTypeClass(habitType, isFitnessPlanManaged),
+                getHabitCardBorderClass(habitType, isFitnessPlanManaged),
                 overdue ? "related-habit-due-border" : null,
               ]
         )}
@@ -2673,8 +2697,8 @@ function MatrixHabitCard({
         isCompleted
           ? ["emerald-completed-compact", "shimmer-border-complete"]
           : [
-              getHabitCardTypeClass(habitType),
-              getHabitCardBorderClass(habitType),
+              getHabitCardTypeClass(habitType, isFitnessPlanManaged),
+              getHabitCardBorderClass(habitType, isFitnessPlanManaged),
               overdue ? "related-habit-due-border" : null,
             ]
       )}
@@ -2707,7 +2731,7 @@ function MatrixHabitCard({
             isCompleted ? completedGlyphBadgeClass : null
           )}
         >
-          {glyph}
+          {displayGlyph}
         </span>
         <div className="flex min-h-0 w-full min-w-0 items-center justify-center">
           <span
@@ -2717,6 +2741,9 @@ function MatrixHabitCard({
             )}
             style={{ hyphens: "auto" }}
           >
+            {isFitnessPlanManaged ? (
+              <Dumbbell className="mr-1 inline h-3 w-3 align-[-2px] text-white/72" aria-hidden="true" />
+            ) : null}
             {title}
           </span>
         </div>
@@ -3135,7 +3162,7 @@ function ScheduledEventCard({
     instanceId: string,
     nextStatus: ScheduleInstance["status"],
     options?: MatrixScheduledCompletionOptions
-  ): void;
+  ): boolean | void | Promise<boolean | void>;
   onOpenMealNutritionLog(event: MatrixEvent): void;
   density: MatrixCardDensity;
 }) {
@@ -3172,24 +3199,20 @@ function ScheduledEventCard({
 
   const completeEvent = useCallback((source?: MatrixXpSourceCapture | null) => {
     if (event.routine) {
-      const nextStatus = isCompleted ? "scheduled" : "completed";
-      let shouldFireCompletionHaptic = nextStatus === "completed";
-      let validInstanceCount = 0;
-      for (const habit of event.routine.habits) {
-        const instanceId = habit.sourceInstance?.id;
-        if (!instanceId) continue;
-
-        onComplete(instanceId, nextStatus, {
-          hapticOnComplete: shouldFireCompletionHaptic,
-          xpSourceRect: source?.rect ?? null,
-          xpSourceOrigin: source?.origin,
-        });
-        validInstanceCount += 1;
-        shouldFireCompletionHaptic = false;
-      }
-      if (validInstanceCount === 0) {
+      const targetHabit = event.routine.habits.find(
+        (habit) => !habit.completed
+      );
+      const instanceId = targetHabit?.sourceInstance?.id;
+      if (!instanceId) {
         void hapticWarningPattern();
+        return;
       }
+
+      onComplete(instanceId, "completed", {
+        hapticOnComplete: true,
+        xpSourceRect: source?.rect ?? null,
+        xpSourceOrigin: source?.origin,
+      });
       return;
     }
 
@@ -3430,9 +3453,9 @@ function ScheduledEventCard({
         const instanceId = routineHabit?.sourceInstance?.id;
         if (!instanceId) {
           void hapticWarningPattern();
-          return;
+          return false;
         }
-        onComplete(instanceId, completed ? "scheduled" : "completed", {
+        return onComplete(instanceId, completed ? "scheduled" : "completed", {
           xpSourceRect: source?.rect ?? null,
           xpSourceOrigin: source?.origin,
         });
@@ -3468,10 +3491,10 @@ function ScheduledEventCard({
         const instanceId = routineHabit?.sourceInstance?.id;
         if (!instanceId) {
           void hapticWarningPattern();
-          return;
+          return false;
         }
 
-        onComplete(instanceId, completed ? "scheduled" : "completed", {
+        return onComplete(instanceId, completed ? "scheduled" : "completed", {
           xpSourceRect: source?.rect ?? null,
           xpSourceOrigin: source?.origin,
         });
@@ -3515,6 +3538,10 @@ function ScheduledEventCard({
       title={event.title}
       pill={isCompleted ? "COMPLETE" : scheduledHabitPill}
       habitType={event.habit.habit_type}
+      isFitnessPlanManaged={
+        isFitnessPlanScheduleMetadata(event.instance.metadata) ||
+        isFitnessPlanManagedHabit(event.habit)
+      }
       overdue={false}
       status={cleanStatus}
       completed={isCompleted}
@@ -3581,7 +3608,7 @@ function DueHabitCard({
     habitId: string,
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
-  ): void;
+  ): boolean | void | Promise<boolean | void>;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3806,6 +3833,7 @@ function DueHabitCard({
             title={habit.name}
             pill={isCompletedToday ? "COMPLETE" : dueLabel}
             habitType={habit.habit_type}
+            isFitnessPlanManaged={isFitnessPlanManagedHabit(habit)}
             overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
             completed={isCompletedToday}
             density={density}
@@ -3813,6 +3841,38 @@ function DueHabitCard({
         )}
       </div>
     </div>
+  );
+}
+
+function MatrixRoutineProgressBar({
+  progress,
+  density,
+}: {
+  progress: ReturnType<typeof getMatrixRoutineProgress>;
+  density: MatrixCardDensity | "todo";
+}) {
+  return (
+    <span
+      role="progressbar"
+      aria-valuenow={progress.percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className={cn(
+        "block min-w-0 overflow-hidden rounded-full border border-white/[0.06] bg-black/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.45)]",
+        density === "row"
+          ? "h-1.5 w-20 max-w-[28vw]"
+          : density === "todo"
+            ? "h-1 w-24 max-w-[32vw]"
+            : "h-1.5 w-full"
+      )}
+    >
+      <span
+        className="progress-bar-glint block h-full rounded-full bg-emerald-400/55 shadow-[inset_0_1px_0_rgba(209,250,229,0.18),inset_0_-1px_0_rgba(0,0,0,0.24)] transition-[width] duration-200"
+        style={{ width: `${progress.percent}%` }}
+      >
+        <span className="progress-bar-glint-sweep" aria-hidden="true" />
+      </span>
+    </span>
   );
 }
 
@@ -3827,7 +3887,7 @@ function MatrixRoutineCard({
     habitId: string,
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
-  ): void;
+  ): boolean | void | Promise<boolean | void>;
 }) {
   const routineCardRef = useRef<HTMLDivElement | null>(null);
   const habitCount = Math.max(0, routine.dueHabitCount);
@@ -3835,6 +3895,11 @@ function MatrixRoutineCard({
   const routineName = routine.name?.trim() || "Routine";
   const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
   const completed = routine.completed;
+  const routineProgress = getMatrixRoutineProgress(routine.habits);
+  const routineProgressBar =
+    !completed && routineProgress.total > 0 ? (
+      <MatrixRoutineProgressBar progress={routineProgress} density={density} />
+    ) : null;
   const getRoutineXpSource = useCallback((): MatrixXpSourceCapture => {
     const rect = getUsableMatrixXpRect(routineCardRef.current);
     if (rect) {
@@ -3860,13 +3925,24 @@ function MatrixRoutineCard({
           completed={completed}
           meta={completed ? "Complete" : habitCountLabel}
           onToggle={(source) => {
-            for (const habit of routine.habits) {
-              if (completed || !habit.completed) {
-                onCompleteHabit(habit.id, Boolean(habit.completed), source);
-              }
+            const targetHabit = routine.habits.find((habit) => !habit.completed);
+            if (!targetHabit) {
+              void hapticWarningPattern();
+              return;
             }
+
+            onCompleteHabit(
+              targetHabit.id,
+              Boolean(targetHabit.completed),
+              source
+            );
           }}
         />
+        {routineProgressBar ? (
+          <div className="pointer-events-none absolute bottom-1.5 left-12 right-3 z-[5]">
+            {routineProgressBar}
+          </div>
+        ) : null}
         <div className="absolute inset-y-0 left-10 right-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
           <RelatedRoutineCard
             routine={routine}
@@ -3907,15 +3983,18 @@ function MatrixRoutineCard({
               completed={completed}
               className={getHabitRowTypeClass(null)}
               meta={
-                <span
-                  className={cn(
-                    "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
-                    completed
-                      ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                      : "border-white/10 bg-white/[0.06] text-white/65"
-                  )}
-                >
-                  {completed ? "COMPLETE" : habitCountLabel}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+                      completed
+                        ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                        : "border-white/10 bg-white/[0.06] text-white/65"
+                    )}
+                  >
+                    {completed ? "COMPLETE" : habitCountLabel}
+                  </span>
+                  {routineProgressBar}
                 </span>
               }
             />
@@ -3952,7 +4031,7 @@ function MatrixRoutineCard({
       >
         <div
           aria-hidden="true"
-          className="pointer-events-none h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+          className="pointer-events-none relative h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
         >
           <MatrixHabitCard
             glyph={routineGlyph}
@@ -3963,6 +4042,11 @@ function MatrixRoutineCard({
             completed={completed}
             density={density}
           />
+          {routineProgressBar ? (
+            <div className="absolute inset-x-3 bottom-2 z-[5]">
+              {routineProgressBar}
+            </div>
+          ) : null}
         </div>
         <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!aspect-auto [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
           <RelatedRoutineCard
@@ -6191,6 +6275,9 @@ export function MatrixContent({
                 return {
                   ...habit,
                   dueLabel: getMatrixScheduledHabitLabel(nextStatus),
+                  completed: isMatrixScheduledRoutineHabitCompleted({
+                    sourceInstance,
+                  }),
                   sourceInstance,
                 };
               });
@@ -6508,7 +6595,7 @@ export function MatrixContent({
       const event = findMatrixEvent(instanceId);
       if (event?.inferredMeal) {
         void hapticWarningPattern();
-        return;
+        return false;
       }
       if (
         nextStatus === "completed" &&
@@ -6523,9 +6610,9 @@ export function MatrixContent({
           xpSourceRect: options?.xpSourceRect ?? null,
           xpSourceOrigin: options?.xpSourceOrigin,
         });
-        return;
+        return false;
       }
-      void commitScheduledEventCompletion(instanceId, nextStatus, options);
+      return commitScheduledEventCompletion(instanceId, nextStatus, options);
     },
     [commitScheduledEventCompletion, findMatrixEvent]
   );
@@ -6768,7 +6855,7 @@ export function MatrixContent({
       completedToday: boolean,
       source?: MatrixXpSourceCapture | null
     ) => {
-      if (!user?.id) return;
+      if (!user?.id) return false;
 
       const habit = findMatrixHabit(habitId);
       if (
@@ -6785,10 +6872,10 @@ export function MatrixContent({
           xpSourceRect: source?.rect ?? null,
           xpSourceOrigin: source?.origin,
         });
-        return;
+        return false;
       }
 
-      if (completingDueHabitIdsRef.current.has(habitId)) return;
+      if (completingDueHabitIdsRef.current.has(habitId)) return false;
       const dueDiagnosticKeys = new Set<string>([
         getMatrixXpDiagnosticKey("due", habitId),
       ]);
@@ -6828,7 +6915,7 @@ export function MatrixContent({
           "blocked"
         );
         void hapticWarningPattern();
-        return;
+        return false;
       }
       completingDueHabitIdsRef.current.add(habitId);
       setCompletingDueHabitIds((currentIds) => {
@@ -6864,7 +6951,7 @@ export function MatrixContent({
               "failed"
             );
             void hapticWarningPattern();
-            return;
+            return false;
           }
         }
         const response = await fetch("/api/habits/completion", {
@@ -6931,7 +7018,7 @@ export function MatrixContent({
               );
             });
             void hapticWarningPattern();
-            return;
+            return false;
           }
         } else {
           const reverseResult = await reverseMatrixXpOccurrence(
@@ -6969,7 +7056,7 @@ export function MatrixContent({
               );
             });
             void hapticWarningPattern();
-            return;
+            return false;
           }
         }
 
@@ -7075,6 +7162,9 @@ export function MatrixContent({
                       routine: {
                         ...item.routine,
                         habits: updatedRoutineHabits,
+                        completed:
+                          getMatrixRoutineProgress(updatedRoutineHabits)
+                            .isComplete,
                         dueHabitCount: updatedRoutineHabits.length,
                         totalDueDurationMinutes:
                           totalDuration > 0 ? totalDuration : null,
@@ -7107,8 +7197,13 @@ export function MatrixContent({
             ),
           };
         });
+        if (!completedToday) {
+          void hapticComplete();
+        }
+        return true;
       } catch (error) {
         console.error("Failed to toggle due Matrix habit", error);
+        return false;
       } finally {
         completingDueHabitIdsRef.current.delete(habitId);
         setCompletingDueHabitIds((currentIds) => {

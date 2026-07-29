@@ -27,7 +27,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { Check, ChevronDown, ChevronUp, Lock, Play, Coffee, Crosshair, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Lock, Play, Coffee, Crosshair, Dumbbell, X } from "lucide-react";
 import { Icon } from "@iconify/react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -117,6 +117,10 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
+import {
+  isFitnessPlanManagedHabit,
+  isFitnessPlanScheduleMetadata,
+} from "@/lib/fitness/planHabit";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
@@ -3085,6 +3089,7 @@ type HabitTimelinePlacement = {
   habitType: HabitScheduleItem["habitType"];
   skillId: string | null;
   memoCaptureConfig: HabitScheduleItem["memoCaptureConfig"];
+  isFitnessPlanManaged: boolean;
   practiceContextId: string | null;
   currentStreakDays: number;
   instanceId: string | null;
@@ -3889,6 +3894,9 @@ function computeHabitPlacementsForDay({
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
         memoCaptureConfig: habit.memoCaptureConfig ?? null,
+        isFitnessPlanManaged:
+          isFitnessPlanScheduleMetadata(instance.metadata) ||
+          isFitnessPlanManagedHabit(habit),
         practiceContextId:
           normalizedHabitType === "PRACTICE"
             ? (resolvedPracticeContextId ?? null)
@@ -15044,14 +15052,29 @@ export default function ScheduleTabContent({
                   top: `${streakBadgeTopPx}px`,
                 };
               }
-              const habitVisuals = getScheduledHabitCardVisuals({
-                habitType: normalizedHabitType,
-                completed: isHabitCompleted,
-              });
+              const isFitnessPlanHabitCard = placement.isFitnessPlanManaged;
+              const habitVisuals = isFitnessPlanHabitCard
+                ? (() => {
+                    const visuals = getProjectScheduleInstanceVisuals({
+                      heightPx: habitHeightPx,
+                      completed: isHabitCompleted,
+                    });
+                    return {
+                      ...visuals,
+                      shadow: visuals.boxShadow,
+                      typeClass: "",
+                    };
+                  })()
+                : getScheduledHabitCardVisuals({
+                    habitType: normalizedHabitType,
+                    completed: isHabitCompleted,
+                  });
               const cardShadow = habitVisuals.shadow;
               const cardOutline = habitVisuals.outline;
               const habitBorderClass = habitVisuals.borderClass;
-              const habitTypeClass = habitVisuals.typeClass;
+              const habitTypeClass = isFitnessPlanHabitCard
+                ? ""
+                : habitVisuals.typeClass;
               const practiceContextIdForPlacement =
                 normalizedHabitType === "PRACTICE"
                   ? (placement.practiceContextId ?? null)
@@ -15398,9 +15421,14 @@ export default function ScheduleTabContent({
                       layoutId={habitLayoutTokens?.title}
                       className={clsx(
                         habitTitleClass,
+                        isFitnessPlanHabitCard &&
+                          "flex items-center gap-1.5 text-white/90",
                         isCompletedGemCard && "relative z-[2]"
                       )}
                     >
+                      {isFitnessPlanHabitCard ? (
+                        <Dumbbell className="h-3.5 w-3.5 shrink-0 text-white/72" aria-hidden="true" />
+                      ) : null}
                       {placement.habitName}
                     </motion.span>
                     {showHabitStreakBadge ? (

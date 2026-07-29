@@ -16,6 +16,194 @@ Every future Codex session must read both the PRD and this ledger before editing
 
 `Phase 2A complete with manual SQL pending; two-screen target setup replacement complete; authenticated persistence and real-app target setup verification remain post-SQL prerequisites`
 
+# Meal Template Schema Contract Repair (2026-07-29)
+
+## Classification
+
+`Missing VALI-v19 manual installation; API model retained`
+
+The proven failure was `PGRST205` from `GET /api/nutrition/meal-templates?limit=50`: PostgREST could not find `public.meal_templates` in the VALI-v19 schema cache. Repository evidence shows this is not a stale route and not a case where `public.meal_items` can substitute for `public.meal_templates`.
+
+## Canonical model
+
+- `public.meal_templates` is the intended reusable saved-meal parent table.
+- `public.meal_template_items` is the intended ordered child table for reusable saved-meal component snapshots.
+- `public.meals` is the consumed/logged Nutrition meal event table.
+- `public.meal_items` is only the child table for consumed/logged `meals`.
+- Meal Plan items may store a nullable `meal_template_id`, but their durable nutrition snapshot is copied from `meal_template_items` at planning time.
+
+## Repository evidence
+
+- `supabase/migrations/20260621090000_create_nutrition_meal_templates.sql` defines `meal_templates` and `meal_template_items` with ownership, totals, metadata, timestamps, RLS, grants, indexes, and updated-at triggers.
+- `supabase/migrations/20260621100000_add_icon_to_meal_templates.sql` adds the `icon` column used by route/UI code.
+- `src/app/api/nutrition/meal-templates/route.ts` reads and writes `meal_templates`, nests `meal_template_items`, and serializes those children as response `meal_items`.
+- `src/components/notes/NoteSlashTextarea.tsx` creates reusable saved meals with `POST /api/nutrition/meal-templates` and loads recent consumed meals separately from `/api/nutrition/meals`.
+- `src/components/nutrition/SharedMealPlanPanel.tsx` uses the shared template loader and passes `mealTemplateId` when planning a reusable saved meal.
+- No alternate existing table in repository SQL/types represents reusable saved meal templates.
+
+## Fix
+
+- Created `supabase/manual/20260729_repair_nutrition_meal_templates_vali_v19.sql`.
+- The SQL is manual-only, transaction-wrapped, idempotent, targeted at VALI-v19, and ends with `notify pgrst, 'reload schema';`.
+- It installs or repairs `meal_templates` and `meal_template_items`, including owner foreign key, title/icon/totals/metadata/timestamp fields, child FKs to templates/foods/recipes, check constraints, owner-scoped loading indexes, RLS, owner-only policies, grants, and existing `public.set_updated_at()` trigger integration.
+- It does not create duplicate template storage, touch `meal_items`, backfill consumed meals into templates, run automatically, or claim the table is installed.
+- Hardened the API route so `PGRST205` returns a controlled non-2xx schema-failure response instead of a successful empty list.
+- Kept successful empty lists as `200` with `{ meals: [] }`.
+- Preserved the existing response shape consumed by the Meal Plan picker and Nutrition Meals tab.
+- Aligned `src/types/supabase.ts` with the intended saved-template schema until Mack runs the manual SQL and linked types can be regenerated from VALI-v19.
+
+## Data compatibility
+
+No safe backfill is included. Repository evidence does not prove any existing alternate saved-template table or a safe consumed-log-to-template mapping. Existing `meals`/`meal_items` data remains consumed Nutrition history and should not be silently duplicated into reusable saved meals.
+
+## Verification
+
+- `pnpm exec vitest run test/app/api/nutrition/meal-templates/route.spec.ts test/lib/nutrition/mealTemplateRepairSql.spec.ts test/lib/nutrition/useNutritionMealTemplates.spec.ts test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 7 files and 68 tests.
+- `pnpm exec eslint src/app/api/nutrition/meal-templates/route.ts src/hooks/useNutritionMealTemplates.ts src/components/nutrition/SharedMealPlanPanel.tsx src/components/notes/NoteSlashTextarea.tsx src/types/supabase.ts test/app/api/nutrition/meal-templates/route.spec.ts test/lib/nutrition/mealTemplateRepairSql.spec.ts test/lib/nutrition/useNutritionMealTemplates.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with pre-existing warnings in `src/components/notes/NoteSlashTextarea.tsx` for `getNutritionFoodLineValue`, `fitnessPlanPreviewEditor`, and `setFitnessPlanEquipmentSelection`.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/app/api/nutrition/meal-templates|src/hooks/useNutritionMealTemplates|src/components/nutrition/SharedMealPlanPanel|src/components/notes/NoteSlashTextarea|src/types/supabase|test/app/api/nutrition/meal-templates|test/lib/nutrition/(mealTemplateRepairSql|useNutritionMealTemplates|nutritionTargetUiStatic)'` - broad TypeScript still reports existing repository diagnostics, including generated iOS route stubs, duplicate Supabase type incompatibilities, and unrelated `NoteSlashTextarea.tsx` issues; no direct diagnostic was reported for the updated meal-template route, hook, SQL test, or route test.
+- `git diff --check` - passed.
+
+## Changed files in this pass
+
+- `supabase/manual/20260729_repair_nutrition_meal_templates_vali_v19.sql`
+- `src/app/api/nutrition/meal-templates/route.ts`
+- `src/types/supabase.ts`
+- `test/app/api/nutrition/meal-templates/route.spec.ts`
+- `test/lib/nutrition/mealTemplateRepairSql.spec.ts`
+- `test/lib/nutrition/useNutritionMealTemplates.spec.ts`
+- `test/lib/nutrition/nutritionTargetUiStatic.spec.ts`
+- `docs/nutrition-meal-plan/REPOSITORY_AUDIT.md`
+- `docs/nutrition-meal-plan/IMPLEMENTATION_LEDGER.md`
+
+## Required manual step
+
+Mack must run exactly `supabase/manual/20260729_repair_nutrition_meal_templates_vali_v19.sql` manually in the VALI-v19 Supabase SQL editor. Do not run `supabase db push`, `supabase migration up`, or mark any migration as applied for this repair.
+
+# Meal Template Picker Load Error Correction (2026-07-29)
+
+## Classification
+
+`Focused client request lifecycle correction complete; no SQL or API route behavior changed`
+
+This pass investigated the recurring visible `Unable to load meals` error before editing. The exact literal string is returned by `GET /api/nutrition/meal-templates` from `src/app/api/nutrition/meal-templates/route.ts` when its Supabase list query fails. The Meal Plan day query was not the source of that literal.
+
+## Traced request path
+
+- Full refresh and opening Nutrition mounts `NoteDatabaseEntrySheet`.
+- Visiting `Meal Plan` renders `SharedMealPlanPanel` from `src/components/nutrition/SharedMealPlanPanel.tsx`.
+- That panel independently loaded saved meal/template choices with `GET /api/nutrition/meal-templates?limit=50`.
+- A non-2xx response from the route has status `500` and body `{ "error": "Unable to load meals" }`.
+- The prior panel code rejected with the raw server `error` string and rendered it as `pickerError` under Add to plan.
+- The normal Nutrition `Meals` tab also requested `GET /api/nutrition/meal-templates?limit=50`, but converted failures to `Meals are unavailable right now.`
+- Recent meals are separate: `GET /api/nutrition/meals?limit=20`, with failures rendered as `Saved meals are unavailable right now.`
+
+## Cause
+
+- The visible string was a client-surfaced API failure from the saved meal/template picker, not a Meal Plan day React Query failure.
+- The Meal Plan picker and the Nutrition `Meals` tab requested the same template list independently.
+- The picker used component-local state, so tab remounts could repeat the same request and an initial failed template request could remain visible as raw server wording.
+- Abort handling was local to the panel effect, but there was no shared authoritative lifecycle for this template collection.
+- The checked-in migration defines `meal_templates` and `meal_template_items` with the expected relationship and RLS, so this pass did not prove a database/schema mismatch and did not create SQL.
+
+## Fix
+
+- Added `src/hooks/useNutritionMealTemplates.ts` with React Query key `["nutrition", "meal-templates", limit]`.
+- Both `SharedMealPlanPanel` and the Nutrition `Meals` tab now read the same cached `limit=50` template query.
+- The Meal Plan picker shows compact scoped copy `Meals couldn’t load` with `Retry` only when the first real template request fails and no cached templates are available.
+- Retry reruns `GET /api/nutrition/meal-templates?limit=50`.
+- Cached template choices remain visible during remounts and fresh-cache reuse; failed loads are not cached permanently.
+- Intentional `AbortError` resolves without surfacing a meals error.
+- Optional malformed legacy template fields are normalized, and rows without a usable `id` are skipped rather than crashing the list.
+- Grocery resource choices are loaded separately from saved meal templates so a Grocery picker failure cannot render as a meals failure.
+
+## Changed files in this pass
+
+- `src/hooks/useNutritionMealTemplates.ts`
+- `src/components/nutrition/SharedMealPlanPanel.tsx`
+- `src/components/notes/NoteSlashTextarea.tsx`
+- `test/lib/nutrition/useNutritionMealTemplates.spec.ts`
+- `docs/nutrition-meal-plan/IMPLEMENTATION_LEDGER.md`
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/useNutritionMealTemplates.spec.ts test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed, 5 files and 55 tests.
+- `pnpm exec eslint src/hooks/useNutritionMealTemplates.ts src/components/nutrition/SharedMealPlanPanel.tsx src/components/notes/NoteSlashTextarea.tsx test/lib/nutrition/useNutritionMealTemplates.spec.ts test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with one pre-existing warning in `src/components/notes/NoteSlashTextarea.tsx` for `getNutritionFoodLineValue`.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/hooks/useNutritionMealTemplates|src/components/nutrition/SharedMealPlanPanel|test/lib/nutrition/useNutritionMealTemplates'` - no diagnostics.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/(hooks/useNutritionMealTemplates|components/nutrition/SharedMealPlanPanel|components/notes/NoteSlashTextarea)|test/lib/nutrition/useNutritionMealTemplates'` - remaining diagnostics are pre-existing unrelated `NoteSlashTextarea.tsx` diagnostics outside the template loader path.
+- `git diff --check` - passed.
+
+# Nutrition Target Integration Correction (2026-07-29)
+
+## Classification
+
+`Focused target integration correction complete; no SQL or nutrition equation changes`
+
+This pass corrected target visibility and target consumption across the existing Nutrition target, Meal Plan, and Nutrition progress surfaces without redesigning setup, changing calorie/macro formulas, changing goal-rate semantics, changing daily override behavior, or altering Meal Plan logging/depletion behavior.
+
+## Goal timeline
+
+- `calculateNutritionTarget` now exposes `selectedGoalRateKgPerWeek` and `effectiveGoalRateKgPerWeek`.
+- `effectiveGoalRateKgPerWeek` is derived from the existing accepted calorie delta after the current deficit/surplus caps: `acceptedDeltaKcalPerDay * 7 / 7700`.
+- `calculateGoalTimelineEstimate` uses canonical kilograms internally and estimates `absolute(currentWeightKg - goalWeightKg) / effectiveRateKgPerWeek`, falling back to the selected weekly kg rate only when no effective rate is available.
+- Timeline weeks are rounded up to a whole week with `Math.ceil` to avoid underestimating completion time.
+- Lose and Gain show `Estimated timeline · About n weeks` beneath the Direction pace selector once current weight, goal weight, and pace are valid.
+- The result/active target summary includes the same compact estimate, with a local approximate date formatted as `around Month day`.
+- Maintain and Recomposition do not render a weight-goal timeline.
+
+## Meal Plan target strip
+
+- The Nutrition Meal Plan tab now mounts `NutritionTargetPanel` in `presentation="compact"` mode.
+- The missing-target prompt remains unchanged:
+  - `Set your daily target`
+  - `Get a calorie and macro target for your meal plan.`
+  - `Set target`
+- When an active target exists, Meal Plan shows only a quiet two-line charcoal row:
+  - `Daily target` with calories primary on the right
+  - `{protein}P · {carbs}C · {fat}F` with a restrained `Edit` action
+- The compact strip opens the existing target update flow.
+- Verbose target-management details, calculation details, maintenance copy, goal-weight copy, pace copy, profile summary, Daily Override, Restore, separate macro cards, and planned-calorie dashboards are not rendered directly in Meal Plan.
+
+## Nutrition progress target source
+
+- Previous Nutrition header progress denominators were hardcoded constants in `DEFAULT_DAILY_NUTRITION_GOALS`: 2,000 calories, 250 g carbs, 150 g protein, and 70 g fat.
+- New shared source of truth is the active `daily_nutrition_targets` row from `GET /api/nutrition/targets` for the current Creator day.
+- The shared React Query root is `["nutrition", "active-target"]`, keyed by 4:00 AM local Creator-day date and device timezone.
+- Denominator precedence remains server/API-owned:
+  1. Current-day daily override values on `daily_nutrition_targets`
+  2. Current permanent goal snapshot values copied into `daily_nutrition_targets`
+  3. Existing hardcoded fallback when no valid target exists
+- `NutritionDailyProgressBars` now receives target denominators as props; it no longer reads hardcoded defaults internally.
+- Logged meal totals and current unsaved Nutrition form preview totals remain the progress numerators.
+- Planned Meal Plan totals are not counted as consumed progress.
+
+## Cache synchronization
+
+- New hook: `src/hooks/useActiveNutritionTarget.ts`.
+- `NutritionTargetPanel`, the Meal Plan compact strip, and both Nutrition progress headers use the shared active-target query.
+- Successful `Use target`, `Update goal`, daily override save, and restore write returned target rows directly into the active-target cache before invalidating the shared query root for background revalidation.
+- This avoids a visible flash back to stale denominators and lets header bars update without closing Nutrition, changing tabs, or refreshing.
+- Background target refresh does not block the full Nutrition form; previous target values remain visible while the query revalidates.
+
+## Changed files in this pass
+
+- `src/hooks/useActiveNutritionTarget.ts`
+- `src/lib/nutrition/targets.ts`
+- `src/components/nutrition/NutritionTargetPanel.tsx`
+- `src/components/nutrition/SharedMealPlanPanel.tsx`
+- `src/components/notes/NoteSlashTextarea.tsx`
+- `test/lib/nutrition/targets.spec.ts`
+- `test/lib/nutrition/useActiveNutritionTarget.spec.ts`
+- `test/lib/nutrition/nutritionTargetUiStatic.spec.ts`
+- `docs/nutrition-meal-plan/IMPLEMENTATION_LEDGER.md`
+
+## Verification
+
+- `pnpm exec vitest run test/lib/nutrition/targets.spec.ts test/lib/nutrition/useActiveNutritionTarget.spec.ts test/lib/nutrition/useMealPlanDay.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts test/lib/nutrition/mealPlans.spec.ts test/app/api/nutrition/meal-plan/log-route.spec.ts` - passed, 6 files and 80 tests.
+- `pnpm exec eslint src/hooks/useActiveNutritionTarget.ts src/components/nutrition/NutritionTargetPanel.tsx src/components/nutrition/SharedMealPlanPanel.tsx src/components/notes/NoteSlashTextarea.tsx test/lib/nutrition/targets.spec.ts test/lib/nutrition/useActiveNutritionTarget.spec.ts test/lib/nutrition/nutritionTargetUiStatic.spec.ts` - passed with one pre-existing warning in `src/components/notes/NoteSlashTextarea.tsx` for `getNutritionFoodLineValue`.
+- `pnpm exec tsc --noEmit --pretty false` - failed on broad pre-existing repository diagnostics outside this focused pass.
+- `pnpm exec tsc --noEmit --pretty false 2>&1 | rg 'src/(hooks/useActiveNutritionTarget|lib/nutrition/targets|components/nutrition/(NutritionTargetPanel|SharedMealPlanPanel)|components/notes/NoteSlashTextarea)|test/lib/nutrition/(targets|useActiveNutritionTarget|nutritionTargetUiStatic)' || true` - no diagnostics in new/changed target hook, target engine, target panel, Meal Plan panel, or nutrition tests; existing unrelated diagnostics remain in other `NoteSlashTextarea.tsx` sections.
+- `git diff --check` - passed.
+
 # Meal Plan Initial Load Optimization (2026-07-28)
 
 ## Classification

@@ -66,6 +66,8 @@ export type NutritionTargetResult = {
   estimatedMaintenanceKcal: number;
   goalType: GoalType;
   goalRatePctPerWeek: number;
+  selectedGoalRateKgPerWeek: number;
+  effectiveGoalRateKgPerWeek: number;
   goalWeightKg: number | null;
   provisionalCalorieDeltaKcal: number;
   acceptedCalorieDeltaKcal: number;
@@ -85,6 +87,12 @@ export type NutritionTargetResult = {
   timestamp: string;
   explanation: string[];
   calculationInputs: Record<string, unknown>;
+};
+
+export type GoalTimelineEstimate = {
+  weeks: number;
+  completionDate: Date;
+  rateKgPerWeek: number;
 };
 
 export class NutritionTargetError extends Error {
@@ -198,6 +206,14 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
       ? Math.min(provisionalDelta, rawMaintenance * 0.2, 750)
       : Math.min(provisionalDelta, rawMaintenance * 0.15, 500);
   }
+  const selectedGoalRateKgPerWeek = input.goalType === "lose" || input.goalType === "gain"
+    ? input.weightKg * (rate / 100)
+    : 0;
+  const effectiveGoalRateKgPerWeek = input.goalType === "lose" || input.goalType === "gain"
+    ? acceptedDelta > 0
+      ? acceptedDelta * 7 / 7700
+      : selectedGoalRateKgPerWeek
+    : 0;
   const signedDelta = input.goalType === "lose" ? -acceptedDelta : input.goalType === "gain" ? acceptedDelta : 0;
   const calorieTarget = roundToNearestTen(input.manualCalorieTargetKcal ?? rawMaintenance + signedDelta);
   if (!isManual && calorieTarget <= 800) throw new NutritionTargetError("CREATOR will not provide an automatic recommendation of 800 calories or lower.");
@@ -218,7 +234,7 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
     preferredUnits: input.preferredUnits, activityLevel: input.activityLevel, activityLabel: activity.label, activityCoefficient: activity.coefficient,
     rawRestingEstimateKcal: rawResting, restingEstimateDisplayKcal: rawResting === null ? null : Math.round(rawResting),
     rawEstimatedMaintenanceKcal: rawMaintenance, estimatedMaintenanceKcal: roundToNearestTen(rawMaintenance),
-    goalType: input.goalType, goalRatePctPerWeek: rate, goalWeightKg,
+    goalType: input.goalType, goalRatePctPerWeek: rate, selectedGoalRateKgPerWeek, effectiveGoalRateKgPerWeek, goalWeightKg,
     provisionalCalorieDeltaKcal: provisionalDelta, acceptedCalorieDeltaKcal: acceptedDelta, calorieTargetKcal: calorieTarget,
     macroMode: input.macroMode, proteinStrategy: macros.proteinStrategy, proteinTargetG: macros.protein,
     carbStrategy: macros.carbStrategy, carbTargetG: macros.carbs, fatStrategy: macros.fatStrategy, fatTargetG: macros.fat,
@@ -239,6 +255,8 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
       activityCoefficient: activity.coefficient,
       goalType: input.goalType,
       goalRatePctPerWeek: rate,
+      selectedGoalRateKgPerWeek,
+      effectiveGoalRateKgPerWeek,
       goalWeightKg,
       maintenanceSource: input.manualMaintenanceKcal === undefined ? "activity_calculation" : "manual_estimate",
       manualMaintenanceKcal: input.manualMaintenanceKcal ?? null,
@@ -258,3 +276,44 @@ export function calculateNutritionTarget(rawInput: NutritionTargetInput): Nutrit
 
 export const poundsToKilograms = (pounds: number) => pounds * 0.45359237;
 export const inchesToCentimeters = (inches: number) => inches * 2.54;
+
+export function calculateGoalTimelineEstimate({
+  goalType,
+  currentWeightKg,
+  goalWeightKg,
+  effectiveRateKgPerWeek,
+  selectedRateKgPerWeek,
+  referenceDate = new Date(),
+}: {
+  goalType: GoalType;
+  currentWeightKg?: number | null;
+  goalWeightKg?: number | null;
+  effectiveRateKgPerWeek?: number | null;
+  selectedRateKgPerWeek?: number | null;
+  referenceDate?: Date;
+}): GoalTimelineEstimate | null {
+  if (goalType !== "lose" && goalType !== "gain") return null;
+  if (
+    typeof currentWeightKg !== "number" ||
+    typeof goalWeightKg !== "number" ||
+    !Number.isFinite(currentWeightKg) ||
+    !Number.isFinite(goalWeightKg)
+  ) return null;
+  if (goalType === "lose" && goalWeightKg >= currentWeightKg) return null;
+  if (goalType === "gain" && goalWeightKg <= currentWeightKg) return null;
+
+  const rate = typeof effectiveRateKgPerWeek === "number" && Number.isFinite(effectiveRateKgPerWeek) && effectiveRateKgPerWeek > 0
+    ? effectiveRateKgPerWeek
+    : typeof selectedRateKgPerWeek === "number" && Number.isFinite(selectedRateKgPerWeek) && selectedRateKgPerWeek > 0
+      ? selectedRateKgPerWeek
+      : null;
+  if (rate === null) return null;
+
+  const rawWeeks = Math.abs(goalWeightKg - currentWeightKg) / rate;
+  if (!Number.isFinite(rawWeeks) || rawWeeks <= 0) return null;
+  const weeks = Math.max(1, Math.ceil(rawWeeks));
+  const completionDate = new Date(referenceDate);
+  if (Number.isNaN(completionDate.getTime())) return null;
+  completionDate.setDate(completionDate.getDate() + weeks * 7);
+  return { weeks, completionDate, rateKgPerWeek: rate };
+}

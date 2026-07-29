@@ -10,7 +10,9 @@ export type FitnessPlanTemplate = {
   goal: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   equipment: string;
-  daysPerWeekOptions: readonly number[];
+  recommendedDaysPerWeek: readonly number[];
+  allowedDaysPerWeek: readonly number[];
+  daysPerWeekOptions?: readonly number[];
   sessionLengthOptions: readonly number[];
   routineSequence: readonly string[];
 };
@@ -23,7 +25,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "Build muscle",
     level: "Intermediate",
     equipment: "Full Gym",
-    daysPerWeekOptions: [3, 4, 5, 6],
+    recommendedDaysPerWeek: [3, 6],
+    allowedDaysPerWeek: [2, 3, 4, 5, 6],
     sessionLengthOptions: [45, 60],
     routineSequence: ["push-day", "pull-day", "legs-day"],
   },
@@ -34,7 +37,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "Build muscle",
     level: "Intermediate",
     equipment: "Full Gym",
-    daysPerWeekOptions: [2, 4],
+    recommendedDaysPerWeek: [2, 4],
+    allowedDaysPerWeek: [2, 3, 4, 5, 6],
     sessionLengthOptions: [45, 60],
     routineSequence: ["upper-body", "lower-body"],
   },
@@ -45,7 +49,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "General fitness",
     level: "Beginner",
     equipment: "Mixed",
-    daysPerWeekOptions: [2, 3, 4],
+    recommendedDaysPerWeek: [3],
+    allowedDaysPerWeek: [2, 3, 4],
     sessionLengthOptions: [30, 45, 60],
     routineSequence: [
       "full-body-foundation",
@@ -61,7 +66,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "Strength",
     level: "Intermediate",
     equipment: "Bodyweight",
-    daysPerWeekOptions: [2, 3, 4, 5],
+    recommendedDaysPerWeek: [3, 5],
+    allowedDaysPerWeek: [2, 3, 4, 5],
     sessionLengthOptions: [30, 45],
     routineSequence: [
       "bodyweight-push",
@@ -78,7 +84,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "Athleticism",
     level: "Intermediate",
     equipment: "Full Gym",
-    daysPerWeekOptions: [2, 3, 4],
+    recommendedDaysPerWeek: [3],
+    allowedDaysPerWeek: [2, 3, 4],
     sessionLengthOptions: [30, 45],
     routineSequence: [
       "lower-body-power",
@@ -94,7 +101,8 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
     goal: "Mobility",
     level: "Beginner",
     equipment: "Bodyweight",
-    daysPerWeekOptions: [2, 3, 4, 5],
+    recommendedDaysPerWeek: [3, 5],
+    allowedDaysPerWeek: [2, 3, 4, 5],
     sessionLengthOptions: [15, 20, 30],
     routineSequence: [
       "full-body-mobility",
@@ -119,6 +127,16 @@ export function resolveFitnessPlanRoutineSequence(
 
     return routine;
   });
+}
+
+export function resolveFitnessPlanRoutineAtIndex(
+  plan: FitnessPlanTemplate,
+  currentRoutineIndex: number,
+): FitnessRoutineTemplate | null {
+  const routines = resolveFitnessPlanRoutineSequence(plan);
+  if (routines.length === 0) return null;
+
+  return routines[currentRoutineIndex % routines.length] ?? routines[0] ?? null;
 }
 
 FITNESS_PLAN_TEMPLATES.forEach(resolveFitnessPlanRoutineSequence);

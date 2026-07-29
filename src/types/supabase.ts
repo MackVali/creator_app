@@ -2155,6 +2155,139 @@ export type Database = {
         }
         Relationships: []
       }
+      meal_template_items: {
+        Row: {
+          created_at: string
+          custom_name: string | null
+          food_id: string | null
+          id: string
+          item_type: string
+          meal_template_id: string
+          metadata: Json
+          quantity: number
+          recipe_id: string | null
+          serving_grams: number | null
+          serving_unit: string | null
+          snapshot_brand_name: string | null
+          snapshot_calories: number
+          snapshot_carbs_g: number
+          snapshot_fat_g: number
+          snapshot_name: string
+          snapshot_protein_g: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          custom_name?: string | null
+          food_id?: string | null
+          id?: string
+          item_type: string
+          meal_template_id: string
+          metadata?: Json
+          quantity?: number
+          recipe_id?: string | null
+          serving_grams?: number | null
+          serving_unit?: string | null
+          snapshot_brand_name?: string | null
+          snapshot_calories?: number
+          snapshot_carbs_g?: number
+          snapshot_fat_g?: number
+          snapshot_name: string
+          snapshot_protein_g?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          custom_name?: string | null
+          food_id?: string | null
+          id?: string
+          item_type?: string
+          meal_template_id?: string
+          metadata?: Json
+          quantity?: number
+          recipe_id?: string | null
+          serving_grams?: number | null
+          serving_unit?: string | null
+          snapshot_brand_name?: string | null
+          snapshot_calories?: number
+          snapshot_carbs_g?: number
+          snapshot_fat_g?: number
+          snapshot_name?: string
+          snapshot_protein_g?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meal_template_items_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "foods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_template_items_meal_template_id_fkey"
+            columns: ["meal_template_id"]
+            isOneToOne: false
+            referencedRelation: "meal_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meal_template_items_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meal_templates: {
+        Row: {
+          created_at: string
+          icon: string
+          id: string
+          is_active: boolean
+          metadata: Json
+          name: string
+          total_calories: number
+          total_carbs_g: number
+          total_fat_g: number
+          total_protein_g: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name: string
+          total_calories?: number
+          total_carbs_g?: number
+          total_fat_g?: number
+          total_protein_g?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name?: string
+          total_calories?: number
+          total_carbs_g?: number
+          total_fat_g?: number
+          total_protein_g?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       meal_items: {
         Row: {
           created_at: string
