@@ -62,7 +62,12 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from "./habits";
-import { buildFitnessPlanScheduleInstanceMetadata } from "@/lib/fitness/planHabit";
+import {
+  buildFitnessPlanScheduleInstanceMetadata,
+  calculateFitnessPlanOccurrenceOffsetForDate,
+  readFitnessPlanHabitMetadata,
+  readFitnessPlanScheduleRoutineAssignment,
+} from "@/lib/fitness/planHabit";
 import {
   evaluateHabitDueOnDate,
   normalizeDayList,
@@ -144,11 +149,32 @@ const asJsonRecord = (
   return value;
 };
 
-function buildHabitScheduleInstanceMetadata(habit: HabitScheduleItem) {
+function buildHabitScheduleInstanceMetadata(
+  habit: HabitScheduleItem,
+  options?: {
+    day?: Date | null;
+    horizonStart?: Date | null;
+    timeZone?: string | null;
+  },
+) {
+  const planHabit = readFitnessPlanHabitMetadata(
+    habit.memoCaptureConfig as Json | null | undefined,
+  );
+  const occurrenceOffset =
+    planHabit && options?.day && options.horizonStart && options.timeZone
+      ? calculateFitnessPlanOccurrenceOffsetForDate({
+          weekdays: planHabit.weekdays,
+          occurrenceDate: options.day,
+          horizonStart: options.horizonStart,
+          timeZone: options.timeZone,
+        })
+      : null;
+
   return buildFitnessPlanScheduleInstanceMetadata({
     habitId: habit.id,
     skillId: habit.skillId ?? null,
     memoCaptureConfig: habit.memoCaptureConfig as Json | null | undefined,
+    occurrenceOffset,
   }) as ScheduleInstance["metadata"] | null;
 }
 
@@ -4586,7 +4612,11 @@ export async function scheduleBacklog(
         locked: false,
         event_name: habit.name ?? null,
         practice_context_monument_id: habit.practiceContextId ?? null,
-        metadata: buildHabitScheduleInstanceMetadata(habit),
+        metadata: buildHabitScheduleInstanceMetadata(habit, {
+          day: missedStart,
+          horizonStart: baseStart,
+          timeZone,
+        }),
       },
       (error) => {
         result.failures.push({
@@ -5181,7 +5211,11 @@ export async function scheduleBacklog(
                 continue;
               }
               const fixedMetadata = mergeNonDailyMetadata(
-                buildHabitScheduleInstanceMetadata(habit) ??
+                buildHabitScheduleInstanceMetadata(habit, {
+                  day: cursorDay,
+                  horizonStart: horizonStartLocalDay,
+                  timeZone,
+                }) ??
                   params.reuseInstance?.metadata,
                 {
                   role: params.role,
@@ -5507,7 +5541,11 @@ export async function scheduleBacklog(
             blockerCache,
             createBatcher: scheduleInstanceCreateBatch,
             metadata: mergeNonDailyMetadata(
-              buildHabitScheduleInstanceMetadata(habit) ??
+              buildHabitScheduleInstanceMetadata(habit, {
+                day: cursorDay,
+                horizonStart: horizonStartLocalDay,
+                timeZone,
+              }) ??
                 params.reuseInstance?.metadata,
               {
                 role: params.role,
@@ -10750,6 +10788,18 @@ async function scheduleHabitsForDay(params: {
     const normalizedType =
       habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
     const isSyncHabit = normalizedType === "SYNC";
+    const scheduledHabitMetadata = buildHabitScheduleInstanceMetadata(habit, {
+      day,
+      horizonStart: baseDate,
+      timeZone: zone,
+    });
+    const existingFitnessRoutineAssignment =
+      scheduledHabitMetadata && existingInstance?.metadata
+        ? readFitnessPlanScheduleRoutineAssignment(existingInstance.metadata)
+        : null;
+    const persistenceHabitMetadata = existingFitnessRoutineAssignment
+      ? existingInstance?.metadata
+      : scheduledHabitMetadata;
     if (hasFixedHabitLocalTime(habit) && !isSyncHabit) {
       if (!allowScheduling && !existingInstance) {
         continue;
@@ -10761,7 +10811,7 @@ async function scheduleHabitsForDay(params: {
         day,
         timeZone: zone,
         existingInstance,
-        metadata: buildHabitScheduleInstanceMetadata(habit),
+        metadata: persistenceHabitMetadata,
         timing,
         habitTimingPass,
       });
@@ -11716,6 +11766,17 @@ async function scheduleHabitsForDay(params: {
       }
 
       if (!needsUpdate && existingInstance) {
+        if (
+          scheduledHabitMetadata &&
+          !existingFitnessRoutineAssignment &&
+          JSON.stringify(existingInstance.metadata ?? null) !==
+            JSON.stringify(scheduledHabitMetadata)
+        ) {
+          needsUpdate = true;
+        }
+      }
+
+      if (!needsUpdate && existingInstance) {
         const overlapsExisting = hasBlockingHabitOverlap({
           candidateIsSync: isSyncHabit,
           candidateId: existingInstance.id ?? null,
@@ -11873,7 +11934,7 @@ async function scheduleHabitsForDay(params: {
           allowHabitOverlap: allowsHabitOverlap,
           habitTypeById,
           windowEdgePreference: habit.windowEdgePreference,
-          metadata: buildHabitScheduleInstanceMetadata(habit),
+          metadata: persistenceHabitMetadata,
           debugEnabled,
           timing,
         });

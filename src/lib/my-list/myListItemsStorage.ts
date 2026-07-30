@@ -333,6 +333,39 @@ export async function replaceManualMyListItems({
   }
 }
 
+export async function deleteManualMyListItem({
+  userId,
+  itemId,
+}: {
+  userId: string;
+  itemId: string;
+}) {
+  const storageItemId = typeof itemId === "string" ? itemId.trim() : "";
+  if (!isValidMyListUuid(storageItemId)) {
+    throw new Error(
+      `Manual My List delete requires a persisted my_list_items.id, received "${itemId}"`
+    );
+  }
+
+  const client = getClient();
+  if (!client) throw new Error("Supabase client not available");
+
+  const { data, error } = await client
+    .from("my_list_items")
+    .delete()
+    .eq("user_id", userId)
+    .eq("item_kind", "MANUAL")
+    .eq("id", storageItemId)
+    .select("id");
+
+  if (error) throw error;
+  if (!Array.isArray(data) || !data.some((row) => row.id === storageItemId)) {
+    throw new Error(
+      `Manual My List delete affected no persisted rows for ${storageItemId}`
+    );
+  }
+}
+
 function pinnedRowToWrite({
   userId,
   sourceType,

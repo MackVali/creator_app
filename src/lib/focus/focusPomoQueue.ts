@@ -24,6 +24,16 @@ export interface FocusPomoQueueItem {
   workType?: string | null;
   title: string;
   subtitle: string;
+  isFitnessPlanManaged?: boolean | null;
+  is_fitness_plan_managed?: boolean | null;
+  fitnessPlanTemplateId?: string | null;
+  fitness_plan_template_id?: string | null;
+  fitnessRoutineTemplateId?: string | null;
+  fitness_routine_template_id?: string | null;
+  fitnessRoutineTitle?: string | null;
+  fitness_routine_title?: string | null;
+  fitnessRoutineIndex?: number | null;
+  fitness_routine_index?: number | null;
   durationMinutes: number | null;
   durationLabel: string;
   energyLabel: string | null;

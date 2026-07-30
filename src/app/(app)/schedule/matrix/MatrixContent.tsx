@@ -54,13 +54,21 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
+import { resolveCreatorDay, type CreatorDay } from "@/lib/creatorDay";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
+  FITNESS_PLAN_HABIT_TITLE,
+  type FitnessPlanScheduleRoutineAssignment,
+  formatFitnessPlanRoutineTitleForCompactCard,
   isFitnessPlanManagedHabit,
   isFitnessPlanScheduleMetadata,
+  readFitnessPlanScheduleRoutineAssignment,
+  resolveFitnessPlanDueRoutineAssignment,
+  resolveFitnessPlanScheduleCardPresentation,
 } from "@/lib/fitness/planHabit";
+import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
 import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
 import { recordMatrixScheduledHabitCompletion } from "@/lib/schedule/matrixScheduledHabitCompletion";
 import {
@@ -74,7 +82,6 @@ import {
 } from "@/lib/nutrition/logEvents";
 import {
   addDaysInTimeZone,
-  formatDateKeyInTimeZone,
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
@@ -182,10 +189,15 @@ type RoutineRow = Pick<
   Database["public"]["Tables"]["habit_routines"]["Row"],
   "id" | "name" | "description" | "icon"
 >;
+type HabitCompletionDayRow = Pick<
+  Database["public"]["Tables"]["habit_completion_days"]["Row"],
+  "habit_id"
+>;
 
 type MatrixEvent = {
   instance: ScheduleInstance;
   title: string;
+  subtitle?: string | null;
   monumentId: string | null;
   skillIds: string[];
   skillResolverSource: string | null;
@@ -203,6 +215,7 @@ type MatrixHabit = HabitRow & {
   skillIcon: string | null;
   glyph: string;
   dueStatus?: MatrixHabitDueStatus;
+  fitnessPlanRoutineAssignment?: FitnessPlanScheduleRoutineAssignment | null;
 };
 type MatrixRoutineHabit = RelatedRoutineCardHabit & {
   sourceHabit: MatrixHabit;
@@ -267,6 +280,7 @@ type MatrixHabitDueStatus = {
   isDue: boolean;
   isOverdue: boolean;
   isCompletedToday?: boolean;
+  dueStart?: Date | null;
   label: "DUE" | "OVERDUE" | "DUE TODAY" | "COMPLETE";
 };
 type MatrixHabitDueEvaluation = ReturnType<typeof evaluateHabitDueOnDate>;
@@ -459,7 +473,7 @@ const MATRIX_REORDER_LAYOUT_TRANSITION = {
 };
 const MATRIX_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 const MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR =
-  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action]";
+  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action], [data-matrix-fitness-workout-action]";
 
 type MatrixXpSourceCapture = {
   rect: CreatorXpBurstRect | null;
@@ -618,6 +632,50 @@ function getMatrixCompleteShimmerStyle() {
 
 function isMatrixMealEvent(event: MatrixEvent) {
   return Boolean(event.inferredMeal || event.scheduledMeal);
+}
+
+function isMatrixFitnessPlanEvent(event: MatrixEvent) {
+  return Boolean(
+    event.habit &&
+      (isFitnessPlanScheduleMetadata(event.instance.metadata) ||
+        isFitnessPlanManagedHabit(event.habit)),
+  );
+}
+
+function dispatchOpenFitnessWorkoutForMatrixEvent(event: MatrixEvent) {
+  const routineAssignment = readFitnessPlanScheduleRoutineAssignment(
+    event.instance.metadata,
+  );
+
+  dispatchOpenFitnessWorkoutEvent({
+    requestId: `fitness-workout:matrix:${event.instance.id ?? event.habit?.id ?? "unknown"}`,
+    source: "matrix",
+    scheduleInstanceId: event.instance.id ?? null,
+    habitId: event.habit?.id ?? event.instance.source_id ?? null,
+    linkedFitnessHabitId: event.habit?.id ?? event.instance.source_id ?? null,
+    fitnessPlanTemplateId: routineAssignment?.fitnessPlanTemplateId ?? null,
+    fitnessRoutineTemplateId:
+      routineAssignment?.fitnessRoutineTemplateId ?? null,
+    fitnessRoutineTitle: routineAssignment?.fitnessRoutineTitle ?? null,
+    fitnessRoutineIndex: routineAssignment?.fitnessRoutineIndex ?? null,
+  });
+}
+
+function dispatchOpenFitnessWorkoutForMatrixDueHabit(habit: MatrixHabit) {
+  const routineAssignment = habit.fitnessPlanRoutineAssignment ?? null;
+
+  dispatchOpenFitnessWorkoutEvent({
+    requestId: `fitness-workout:matrix-due:${habit.id}`,
+    source: "matrix",
+    scheduleInstanceId: null,
+    habitId: habit.id,
+    linkedFitnessHabitId: habit.id,
+    fitnessPlanTemplateId: routineAssignment?.fitnessPlanTemplateId ?? null,
+    fitnessRoutineTemplateId:
+      routineAssignment?.fitnessRoutineTemplateId ?? null,
+    fitnessRoutineTitle: routineAssignment?.fitnessRoutineTitle ?? null,
+    fitnessRoutineIndex: routineAssignment?.fitnessRoutineIndex ?? null,
+  });
 }
 
 const MATRIX_PREFERENCES_STORAGE_KEY = "creator:matrix-preferences";
@@ -863,6 +921,21 @@ function formatDayLabel(date: Date, timeZone: string) {
   }).format(date);
 }
 
+function resolveMatrixCreatorDay(timeZone: string, instant = new Date()) {
+  return resolveCreatorDay({
+    instant,
+    profileTimezone: timeZone,
+  });
+}
+
+function getMatrixCreatorDayDisplayDate(creatorDay: CreatorDay) {
+  return new Date(creatorDay.startsAt);
+}
+
+function buildMatrixHabitCompletionKey(habitId: string, creatorDayDate: string) {
+  return `habit:${habitId}:${creatorDayDate}`;
+}
+
 function getHabitFallbackGlyph(habitType?: string | null) {
   return habitType?.trim().toUpperCase() === "CHORE" ? "◆" : "✦";
 }
@@ -916,26 +989,13 @@ function isMatrixEventCompleted(event: MatrixEvent): boolean {
   return event.instance.status?.trim().toLowerCase() === "completed";
 }
 
-function isMatrixHabitCompletedToday(
-  habit: Pick<HabitRow, "last_completed_at">,
-  date: Date,
-  timeZone: string
-): boolean {
-  const completedAt = parseOptionalDate(habit.last_completed_at);
-  if (!completedAt) return false;
-
-  return (
-    formatDateKeyInTimeZone(completedAt, timeZone) ===
-    formatDateKeyInTimeZone(date, timeZone)
-  );
-}
-
 function getMatrixHabitDisplayStatus(
   habit: HabitRow,
   date: Date,
-  timeZone: string
+  timeZone: string,
+  completedHabitIds: ReadonlySet<string>
 ): MatrixHabitDueStatus {
-  if (isMatrixHabitCompletedToday(habit, date, timeZone)) {
+  if (completedHabitIds.has(habit.id)) {
     return {
       isDue: true,
       isOverdue: false,
@@ -1327,6 +1387,7 @@ function getMatrixHabitDueStatus(
   return {
     isDue: todayEvaluation.isDue,
     isOverdue,
+    dueStart: overdueStart,
     label: isOverdue
       ? "OVERDUE"
       : habit.duration_minutes
@@ -1462,6 +1523,43 @@ function buildProjectGoal({
   };
 }
 
+function buildLegacyMatrixFitnessOccurrenceOffsets(
+  instances: readonly ScheduleInstance[],
+  habits: Map<string, HabitRow>,
+) {
+  const grouped = new Map<string, Array<{ id: string; start: Date }>>();
+  for (const instance of instances) {
+    if (instance.source_type !== "HABIT") continue;
+    if (instance.status !== "scheduled" && instance.status !== "completed") {
+      continue;
+    }
+    if (!instance.id) continue;
+    const habit = habits.get(instance.source_id);
+    if (
+      !habit ||
+      !(
+        isFitnessPlanScheduleMetadata(instance.metadata) ||
+        isFitnessPlanManagedHabit(habit)
+      )
+    ) {
+      continue;
+    }
+    const start = new Date(instance.start_utc ?? "");
+    if (Number.isNaN(start.getTime())) continue;
+    const group = grouped.get(habit.id) ?? [];
+    group.push({ id: instance.id, start });
+    grouped.set(habit.id, group);
+  }
+
+  const offsets = new Map<string, number>();
+  for (const group of grouped.values()) {
+    group
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .forEach((item, index) => offsets.set(item.id, index));
+  }
+  return offsets;
+}
+
 function buildMatrixEvents({
   instances,
   projects,
@@ -1474,6 +1572,7 @@ function buildMatrixEvents({
   dateKey,
   date,
   timeZone,
+  completedHabitIds,
 }: {
   instances: ScheduleInstance[];
   projects: Map<string, ProjectRow>;
@@ -1486,7 +1585,13 @@ function buildMatrixEvents({
   dateKey: string;
   date: Date;
   timeZone: string;
+  completedHabitIds: ReadonlySet<string>;
 }): MatrixEvent[] {
+  const legacyFitnessOccurrenceOffsets = buildLegacyMatrixFitnessOccurrenceOffsets(
+    instances,
+    habits,
+  );
+
   return instances.flatMap((instance) => {
     if (instance.source_type === "EVENT") {
       const mealWindow = findActualScheduledMealTimeBlock(instance, mealWindows);
@@ -1575,11 +1680,25 @@ function buildMatrixEvents({
     const habitSkillIcon =
       habit?.skill_id ? skillIdToIcon.get(habit.skill_id) : null;
     const dueStatus = habit
-      ? getMatrixHabitDisplayStatus(habit, date, timeZone)
+      ? getMatrixHabitDisplayStatus(habit, date, timeZone, completedHabitIds)
       : undefined;
+    const fitnessCard = habit
+      ? resolveFitnessPlanScheduleCardPresentation({
+          metadata: instance.metadata,
+          memoCaptureConfig: habit.memo_capture_config ?? null,
+          fallbackOccurrenceOffset: instance.id
+            ? (legacyFitnessOccurrenceOffsets.get(instance.id) ?? null)
+            : null,
+        })
+      : null;
     const event: MatrixEvent = {
       instance,
-      title: instance.event_name ?? habit?.name ?? "Untitled habit",
+      title:
+        fitnessCard?.title ??
+        instance.event_name ??
+        habit?.name ??
+        "Untitled habit",
+      subtitle: fitnessCard?.routineTitle ?? null,
       monumentId: resolveHabitMonumentId({
         habit,
         goals,
@@ -2339,6 +2458,7 @@ function MatrixLoadingRows() {
 function MatrixSmallEventCard({
   glyph,
   title,
+  subtitle,
   meta,
   className,
   status,
@@ -2346,6 +2466,7 @@ function MatrixSmallEventCard({
 }: {
   glyph: string;
   title: string;
+  subtitle?: string | null;
   meta: ReactNode;
   className?: string | null;
   status?: string | null;
@@ -2375,6 +2496,11 @@ function MatrixSmallEventCard({
             {title}
           </span>
         </div>
+        {subtitle ? (
+          <span className="block max-w-full truncate px-1 text-[6px] font-semibold leading-none text-white/54">
+            {subtitle}
+          </span>
+        ) : null}
 
         <div className="flex h-[14px] w-full shrink-0 items-center justify-center">
           {meta}
@@ -2387,6 +2513,7 @@ function MatrixSmallEventCard({
 function MatrixEventRowCard({
   glyph,
   title,
+  subtitle,
   meta,
   status,
   completed = false,
@@ -2397,6 +2524,7 @@ function MatrixEventRowCard({
 }: {
   glyph: string;
   title: string;
+  subtitle?: string | null;
   meta: ReactNode;
   status?: string | null;
   completed?: boolean;
@@ -2455,6 +2583,11 @@ function MatrixEventRowCard({
             <span className="block min-w-0 flex-1 line-clamp-2 break-words text-[13px] font-semibold leading-snug tracking-wide text-white">
               {title}
             </span>
+            {subtitle ? (
+              <span className="block min-w-0 truncate text-[10px] font-semibold leading-tight text-white/58">
+                {subtitle}
+              </span>
+            ) : null}
             <div className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.14em] text-white/60 md:text-[8px]">
               {status && !completed ? (
                 <span
@@ -2590,6 +2723,7 @@ function MatrixTodoRow({
 function MatrixHabitCard({
   glyph,
   title,
+  subtitle,
   pill,
   habitType,
   isFitnessPlanManaged = false,
@@ -2600,6 +2734,7 @@ function MatrixHabitCard({
 }: {
   glyph: string;
   title: string;
+  subtitle?: string | null;
   pill: string;
   habitType: string | null | undefined;
   isFitnessPlanManaged?: boolean;
@@ -2612,6 +2747,11 @@ function MatrixHabitCard({
     completed || status?.trim().toLowerCase() === "completed";
   const isSmall = density === "small";
   const displayGlyph = isFitnessPlanManaged ? "🏋️" : glyph;
+  const displayTitle = isFitnessPlanManaged ? FITNESS_PLAN_HABIT_TITLE : title;
+  const displaySubtitle =
+    isFitnessPlanManaged && subtitle && density === "small"
+      ? formatFitnessPlanRoutineTitleForCompactCard(subtitle)
+      : subtitle;
   const displayPill = isCompleted ? "COMPLETE" : pill;
   const pillClass = isCompleted
     ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
@@ -2632,7 +2772,8 @@ function MatrixHabitCard({
     return (
       <MatrixEventRowCard
         glyph={displayGlyph}
-        title={title}
+        title={displayTitle}
+        subtitle={displaySubtitle}
         status={status}
         completed={isCompleted}
         overdue={overdue}
@@ -2655,7 +2796,8 @@ function MatrixHabitCard({
     return (
       <MatrixSmallEventCard
         glyph={displayGlyph}
-        title={title}
+        title={displayTitle}
+        subtitle={displaySubtitle}
         status={status}
         completed={isCompleted}
         className={cn(
@@ -2744,9 +2886,14 @@ function MatrixHabitCard({
             {isFitnessPlanManaged ? (
               <Dumbbell className="mr-1 inline h-3 w-3 align-[-2px] text-white/72" aria-hidden="true" />
             ) : null}
-            {title}
+            {displayTitle}
           </span>
         </div>
+        {displaySubtitle ? (
+          <span className="block max-w-full truncate px-1 text-[8px] font-semibold leading-none text-white/56">
+            {displaySubtitle}
+          </span>
+        ) : null}
         <div
           className={cn(
             "flex min-w-0 items-center justify-center",
@@ -2986,6 +3133,131 @@ function MatrixMealNutritionActionButton({
   );
 }
 
+function MatrixFitnessWorkoutActionButton({
+  event,
+  onOpen,
+}: {
+  event: MatrixEvent;
+  onOpen(event: MatrixEvent): void;
+}) {
+  const stopActionPropagation = useCallback(
+    (
+      interactionEvent:
+        | PointerEvent<HTMLButtonElement>
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      interactionEvent.stopPropagation();
+    },
+    [],
+  );
+  const activateFitnessWorkout = useCallback(
+    (
+      interactionEvent:
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+      onOpen(event);
+    },
+    [event, onOpen],
+  );
+  const stopActionActivation = useCallback(
+    (interactionEvent: MouseEvent<HTMLButtonElement>) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+    },
+    [],
+  );
+
+  return (
+    <button
+      type="button"
+      aria-label="Open workout"
+      title="Open workout"
+      data-matrix-fitness-workout-action="true"
+      onPointerDown={stopActionPropagation}
+      onPointerUp={stopActionPropagation}
+      onPointerCancel={stopActionPropagation}
+      onTouchStart={stopActionPropagation}
+      onTouchEnd={activateFitnessWorkout}
+      onDoubleClick={stopActionActivation}
+      onClick={activateFitnessWorkout}
+      className="relative z-20 grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95"
+    >
+      <Dumbbell className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+function MatrixDueFitnessWorkoutActionButton({
+  habit,
+  onOpen,
+}: {
+  habit: MatrixHabit;
+  onOpen(habit: MatrixHabit): void;
+}) {
+  const stopActionPropagation = useCallback(
+    (
+      interactionEvent:
+        | PointerEvent<HTMLButtonElement>
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      interactionEvent.stopPropagation();
+    },
+    [],
+  );
+  const activateFitnessWorkout = useCallback(
+    (
+      interactionEvent:
+        | TouchEvent<HTMLButtonElement>
+        | MouseEvent<HTMLButtonElement>
+    ) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+      onOpen(habit);
+    },
+    [habit, onOpen],
+  );
+  const stopActionActivation = useCallback(
+    (interactionEvent: MouseEvent<HTMLButtonElement>) => {
+      if (interactionEvent.cancelable) {
+        interactionEvent.preventDefault();
+      }
+      interactionEvent.stopPropagation();
+    },
+    [],
+  );
+
+  return (
+    <button
+      type="button"
+      aria-label="Open workout"
+      title="Open workout"
+      data-matrix-fitness-workout-action="true"
+      data-matrix-due-fitness-workout-action="true"
+      onPointerDown={stopActionPropagation}
+      onPointerUp={stopActionPropagation}
+      onPointerCancel={stopActionPropagation}
+      onTouchStart={stopActionPropagation}
+      onTouchEnd={activateFitnessWorkout}
+      onDoubleClick={stopActionActivation}
+      onClick={activateFitnessWorkout}
+      className="absolute right-1.5 top-1/2 z-20 grid h-8 w-8 shrink-0 -translate-y-1/2 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95"
+    >
+      <Dumbbell className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+}
+
 function MatrixScheduledEventRowCard({
   event,
   completed,
@@ -2993,6 +3265,7 @@ function MatrixScheduledEventRowCard({
   open = false,
   onOpenChange,
   onOpenMealNutritionLog,
+  onOpenFitnessWorkout,
 }: {
   event: MatrixEvent;
   completed: boolean;
@@ -3000,6 +3273,7 @@ function MatrixScheduledEventRowCard({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onOpenMealNutritionLog?: (event: MatrixEvent) => void;
+  onOpenFitnessWorkout?: (event: MatrixEvent) => void;
 }) {
   const sourceType = event.goal ? "PROJECT" : "HABIT";
   const displayStatus = completed ? "Completed" : status ?? "Scheduled";
@@ -3092,6 +3366,11 @@ function MatrixScheduledEventRowCard({
             <span className="block min-w-0 flex-1 line-clamp-2 break-words text-[13px] font-semibold leading-snug tracking-wide text-white">
               {event.title}
             </span>
+            {event.subtitle ? (
+              <span className="block min-w-0 truncate text-[10px] font-semibold leading-tight text-white/58">
+                {event.subtitle}
+              </span>
+            ) : null}
             <div className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.14em] text-white/60 md:text-[8px]">
               {metaItems.map((item, index) => (
                 <span
@@ -3132,6 +3411,11 @@ function MatrixScheduledEventRowCard({
               completed={completed}
               onOpen={onOpenMealNutritionLog}
             />
+          ) : isMatrixFitnessPlanEvent(event) && onOpenFitnessWorkout ? (
+            <MatrixFitnessWorkoutActionButton
+              event={event}
+              onOpen={onOpenFitnessWorkout}
+            />
           ) : energyLevel !== "NO" ? (
             <span className="grid h-7 w-7 shrink-0 place-items-center overflow-visible">
               <FlameEmber
@@ -3153,6 +3437,7 @@ function ScheduledEventCard({
   onOpenChange,
   onComplete,
   onOpenMealNutritionLog,
+  onOpenFitnessWorkout,
   density,
 }: {
   event: MatrixEvent;
@@ -3164,6 +3449,7 @@ function ScheduledEventCard({
     options?: MatrixScheduledCompletionOptions
   ): boolean | void | Promise<boolean | void>;
   onOpenMealNutritionLog(event: MatrixEvent): void;
+  onOpenFitnessWorkout(event: MatrixEvent): void;
   density: MatrixCardDensity;
 }) {
   const fabCreation = useFabCreation();
@@ -3431,6 +3717,7 @@ function ScheduledEventCard({
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
   const rendersInlineMealNutritionAction =
     density === "row" && (scheduledGoal || event.habit);
+  const rendersInlineFitnessWorkoutAction = density === "row" && event.habit;
   const mealNutritionAction =
     isMatrixMealEvent(event) && !rendersInlineMealNutritionAction ? (
       <div className="absolute inset-y-0 right-1.5 z-20 flex items-center justify-center">
@@ -3438,6 +3725,15 @@ function ScheduledEventCard({
           event={event}
           completed={isCompleted}
           onOpen={onOpenMealNutritionLog}
+        />
+      </div>
+    ) : null;
+  const fitnessWorkoutAction =
+    isMatrixFitnessPlanEvent(event) && !rendersInlineFitnessWorkoutAction ? (
+      <div className="absolute inset-y-0 right-1.5 z-20 flex items-center justify-center">
+        <MatrixFitnessWorkoutActionButton
+          event={event}
+          onOpen={onOpenFitnessWorkout}
         />
       </div>
     ) : null;
@@ -3508,6 +3804,7 @@ function ScheduledEventCard({
       open={open}
       onOpenChange={scheduledGoal ? onOpenChange : undefined}
       onOpenMealNutritionLog={onOpenMealNutritionLog}
+      onOpenFitnessWorkout={onOpenFitnessWorkout}
     />
   ) : scheduledGoal ? (
     density !== "large" ? (
@@ -3536,6 +3833,7 @@ function ScheduledEventCard({
     <MatrixHabitCard
       glyph={event.glyph}
       title={event.title}
+      subtitle={event.subtitle ?? null}
       pill={isCompleted ? "COMPLETE" : scheduledHabitPill}
       habitType={event.habit.habit_type}
       isFitnessPlanManaged={
@@ -3590,6 +3888,7 @@ function ScheduledEventCard({
       >
         {card}
         {mealNutritionAction}
+        {fitnessWorkoutAction}
       </div>
     </div>
   ) : null;
@@ -3600,6 +3899,7 @@ function DueHabitCard({
   density,
   completing,
   onComplete,
+  onOpenFitnessWorkout,
 }: {
   habit: MatrixHabit;
   density: MatrixCardDensity;
@@ -3609,6 +3909,7 @@ function DueHabitCard({
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
   ): boolean | void | Promise<boolean | void>;
+  onOpenFitnessWorkout?(habit: MatrixHabit): void;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3623,6 +3924,16 @@ function DueHabitCard({
   const dueLabel =
     habit.dueStatus?.label ?? (habit.duration_minutes ? "DUE" : "DUE TODAY");
   const isCompletedToday = isMatrixDueHabitCompleted(habit);
+  const isFitnessPlanManaged = isFitnessPlanManagedHabit(habit);
+  const fitnessWorkoutAction =
+    isFitnessPlanManaged && onOpenFitnessWorkout ? (
+      <MatrixDueFitnessWorkoutActionButton
+        habit={habit}
+        onOpen={onOpenFitnessWorkout}
+      />
+    ) : null;
+  const fitnessRoutineTitle =
+    habit.fitnessPlanRoutineAssignment?.fitnessRoutineTitle?.trim() || null;
 
   const cancelLongPress = useCallback(
     (event?: PointerEvent<HTMLDivElement>) => {
@@ -3814,26 +4125,132 @@ function DueHabitCard({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         className={cn(
-          "matrix-event-card-shell h-full",
+          "matrix-event-card-shell relative h-full",
           completing ? "opacity-70" : null
         )}
       >
         {density === "todo" ? (
-          <MatrixTodoRow
-            title={habit.name}
-            glyph={habit.glyph}
-            completed={isCompletedToday}
-            disabled={completing}
-            meta={isCompletedToday ? "Complete" : dueLabel}
-            onToggle={(source) => completeHabit(source)}
-          />
+          <>
+            <MatrixTodoRow
+              title={isFitnessPlanManaged ? FITNESS_PLAN_HABIT_TITLE : habit.name}
+              glyph={isFitnessPlanManaged ? "🏋️" : habit.glyph}
+              completed={isCompletedToday}
+              disabled={completing}
+              meta={
+                isFitnessPlanManaged
+                  ? fitnessRoutineTitle ?? (isCompletedToday ? "Complete" : dueLabel)
+                  : isCompletedToday
+                    ? "Complete"
+                    : dueLabel
+              }
+              onToggle={(source) => completeHabit(source)}
+            />
+            {fitnessWorkoutAction}
+          </>
+        ) : isFitnessPlanManaged ? (
+          <>
+            {density === "row" ? (
+              <div
+                className={cn(
+                  "relative flex min-h-[56px] w-full min-w-0 select-none rounded-lg border px-3 py-1.5 text-left text-white transition-[filter,transform,border-color,box-shadow] duration-200 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                  isCompletedToday
+                    ? MATRIX_ROW_NEXUS_COMPLETED_CARD_CLASS
+                    : getHabitRowTypeClass(habit.habit_type, true),
+                  habit.dueStatus?.isOverdue && !isCompletedToday
+                    ? "outline-rose-300/[0.22] shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_36px_rgba(56,16,24,0.26),inset_0_1px_0_rgba(255,255,255,0.09)]"
+                    : null
+                )}
+                style={
+                  isCompletedToday ? getMatrixCompleteShimmerStyle() : undefined
+                }
+              >
+                {isCompletedToday ? (
+                  <span
+                    className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <div className="relative z-[2] flex w-full min-w-0 items-center gap-2 pr-8">
+                  <span
+                    className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] p-0.5 text-center text-[15px] leading-none text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                    aria-hidden="true"
+                  >
+                    <span className="flex size-6 max-w-full items-center justify-center truncate">
+                      🏋️
+                    </span>
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-0 items-baseline gap-1.5">
+                      <span className="shrink-0 text-[13px] font-semibold leading-snug tracking-wide text-white">
+                        {FITNESS_PLAN_HABIT_TITLE}
+                      </span>
+                      {fitnessRoutineTitle ? (
+                        <span className="min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight text-white/58">
+                          {fitnessRoutineTitle}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.14em] text-white/60 md:text-[8px]">
+                      {isCompletedToday ? "COMPLETE" : dueLabel}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  isCompletedToday
+                    ? cn(
+                        "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                        density === "small"
+                          ? "h-full min-h-[108px] rounded-xl p-[0.65rem_0.45rem]"
+                          : "min-h-[96px] rounded-2xl p-3 sm:p-4"
+                      )
+                    : density === "small"
+                      ? MATRIX_LIBRARY_SMALL_CARD_CLASS
+                      : MATRIX_LIBRARY_CARD_CLASS,
+                  isCompletedToday
+                    ? ["emerald-completed-compact", "shimmer-border-complete"]
+                    : [
+                        getHabitCardTypeClass(habit.habit_type, true),
+                        getHabitCardBorderClass(habit.habit_type, true),
+                        habit.dueStatus?.isOverdue
+                          ? "related-habit-due-border"
+                          : null,
+                      ]
+                )}
+                style={
+                  isCompletedToday ? getMatrixCompleteShimmerStyle() : undefined
+                }
+              >
+                <div className="relative z-[2] flex min-h-0 flex-1 flex-col justify-center gap-1.5 pr-8">
+                  <div className="flex min-w-0 items-baseline justify-center gap-1.5">
+                    <span className="shrink-0 text-[9px] font-semibold leading-none text-white/92 sm:text-[10px]">
+                      {FITNESS_PLAN_HABIT_TITLE}
+                    </span>
+                    {fitnessRoutineTitle ? (
+                      <span className="min-w-0 flex-1 truncate text-[8px] font-semibold leading-none text-white/52 sm:text-[9px]">
+                        {fitnessRoutineTitle}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex min-w-0 items-center justify-center">
+                    <span className="w-fit max-w-none whitespace-nowrap rounded-full border border-white/10 bg-white/[0.06] px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                      {isCompletedToday ? "COMPLETE" : dueLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {fitnessWorkoutAction}
+          </>
         ) : (
           <MatrixHabitCard
             glyph={habit.glyph}
             title={habit.name}
             pill={isCompletedToday ? "COMPLETE" : dueLabel}
             habitType={habit.habit_type}
-            isFitnessPlanManaged={isFitnessPlanManagedHabit(habit)}
+            isFitnessPlanManaged={false}
             overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
             completed={isCompletedToday}
             density={density}
@@ -4420,6 +4837,8 @@ function MatrixGridCarousel({
   persistCardDensity = true,
   onCompleteScheduledEvent,
   onOpenMealNutritionLog,
+  onOpenFitnessWorkout,
+  onOpenDueFitnessWorkout,
   onCompleteDueHabit,
   completingDueHabitIds,
   heldScheduledCompletionItemIds,
@@ -4436,6 +4855,8 @@ function MatrixGridCarousel({
     options?: MatrixScheduledCompletionOptions
   ): void;
   onOpenMealNutritionLog(event: MatrixEvent): void;
+  onOpenFitnessWorkout(event: MatrixEvent): void;
+  onOpenDueFitnessWorkout(habit: MatrixHabit): void;
   onCompleteDueHabit(
     habitId: string,
     completedToday: boolean,
@@ -5198,6 +5619,7 @@ function MatrixGridCarousel({
                                   density={cardDensity}
                                   onComplete={onCompleteScheduledEvent}
                                   onOpenMealNutritionLog={onOpenMealNutritionLog}
+                                  onOpenFitnessWorkout={onOpenFitnessWorkout}
                                   open={
                                     Boolean(event.goal?.id) &&
                                     openGoalId === event.goal?.id
@@ -5270,6 +5692,7 @@ function MatrixGridCarousel({
                                       item.habit.id
                                     )}
                                     onComplete={onCompleteDueHabit}
+                                    onOpenFitnessWorkout={onOpenDueFitnessWorkout}
                                   />
                                 )}
                               </motion.div>
@@ -5339,6 +5762,11 @@ export function MatrixContent({
     () => normalizeTimeZone(localTimeZone ?? getBrowserTimeZone()),
     [localTimeZone]
   );
+  const [creatorDayNow, setCreatorDayNow] = useState(() => new Date());
+  const activeCreatorDay = useMemo(
+    () => resolveMatrixCreatorDay(timeZone, creatorDayNow),
+    [creatorDayNow, timeZone]
+  );
   const [state, setState] = useState<MatrixState>(initialState);
   const [matrixView, setMatrixView] = useState<MatrixView>("monuments");
   const [matrixScope, setMatrixScope] = useState<MatrixScope>("scheduled");
@@ -5369,7 +5797,9 @@ export function MatrixContent({
   } | null>(null);
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
   const matrixStateRef = useRef<MatrixState>(initialState);
+  const activeCreatorDayRef = useRef<CreatorDay>(activeCreatorDay);
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
+  const pendingDueHabitCompletionKeysRef = useRef<Set<string>>(new Set());
   const pendingScheduledCompletionIdsRef = useRef<Set<string>>(new Set());
   const pendingInferredMealLogIdsRef = useRef<Set<string>>(new Set());
   const pendingInferredMealReleaseTimersRef = useRef<
@@ -5431,6 +5861,10 @@ export function MatrixContent({
   useEffect(() => {
     matrixStateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    activeCreatorDayRef.current = activeCreatorDay;
+  }, [activeCreatorDay]);
 
   const getMatrixReorderHoldTimerKey = useCallback(
     (scope: MatrixReorderHoldScope, itemId: string) => `${scope}:${itemId}`,
@@ -6586,6 +7020,24 @@ export function MatrixContent({
     [openInferredMealNutritionLog, openScheduledMealNutritionLog]
   );
 
+  const openFitnessWorkout = useCallback((event: MatrixEvent) => {
+    if (!isMatrixFitnessPlanEvent(event)) {
+      void hapticWarningPattern();
+      return;
+    }
+
+    dispatchOpenFitnessWorkoutForMatrixEvent(event);
+  }, []);
+
+  const openDueFitnessWorkout = useCallback((habit: MatrixHabit) => {
+    if (!isFitnessPlanManagedHabit(habit)) {
+      void hapticWarningPattern();
+      return;
+    }
+
+    dispatchOpenFitnessWorkoutForMatrixDueHabit(habit);
+  }, []);
+
   const handleCompleteScheduledEvent = useCallback(
     (
       instanceId: string,
@@ -6707,8 +7159,7 @@ export function MatrixContent({
         };
       }
 
-      const completedAtDate = new Date(completedAt);
-      const dayKey = formatDateKeyInTimeZone(completedAtDate, timeZone);
+      const dayKey = activeCreatorDayRef.current.creatorDayDate;
       const amount = MATRIX_XP_AWARD_AMOUNTS.HABIT;
       const durationMin =
         typeof habit.duration_minutes === "number" &&
@@ -6896,8 +7347,9 @@ export function MatrixContent({
           setMatrixXpDiagnostic(key, diagnostic, status);
         }
       };
+      const creatorDayDate = activeCreatorDayRef.current.creatorDayDate;
       if (!completedToday && (!habit?.id || !habit.skillIds.length)) {
-        const dayKey = formatDateKeyInTimeZone(new Date(), timeZone);
+        const dayKey = creatorDayDate;
         const occurrence = habit?.id
           ? getDueOccurrenceIdentity(habit.id, dayKey)
           : null;
@@ -6924,10 +7376,121 @@ export function MatrixContent({
         return nextIds;
       });
 
+      let previousStateForOptimisticRollback: MatrixState | null = null;
+      const applyOptimisticDueHabitCompletion = (
+        isCompleted: boolean,
+        completedAt: string
+      ) => {
+        previousStateForOptimisticRollback = matrixStateRef.current;
+        const displayDate = getMatrixCreatorDayDisplayDate(
+          activeCreatorDayRef.current
+        );
+
+        setState((current) => {
+          const updateHabitInGroups = (
+            groups: MonumentGroup<MatrixDueItem>[]
+          ) =>
+            groups.map((group) => ({
+              ...group,
+              items: group.items.map((item) => {
+                const updateHabit = (matrixHabit: MatrixHabit) => {
+                  if (matrixHabit.id !== habitId) return matrixHabit;
+
+                  if (isCompleted) {
+                    return {
+                      ...matrixHabit,
+                      last_completed_at: completedAt,
+                      next_due_override: null,
+                      dueStatus: {
+                        isDue: true,
+                        isOverdue: false,
+                        isCompletedToday: true,
+                        label: "COMPLETE" as const,
+                      },
+                    };
+                  }
+
+                  return {
+                    ...matrixHabit,
+                    dueStatus: getMatrixHabitDueStatus(
+                      matrixHabit,
+                      displayDate,
+                      timeZone
+                    ),
+                  };
+                };
+
+                if (item.kind === "habit") {
+                  const updatedHabit = updateHabit(item.habit);
+                  return {
+                    ...item,
+                    habit: updatedHabit,
+                    name: updatedHabit.name,
+                    monumentId: updatedHabit.monumentId,
+                    skillIds: updatedHabit.skillIds,
+                  };
+                }
+
+                const updatedRoutineHabits = item.routine.habits.map(
+                  (routineHabit): MatrixRoutineHabit => {
+                    const updatedHabit = updateHabit(routineHabit.sourceHabit);
+                    return {
+                      ...routineHabit,
+                      dueLabel: updatedHabit.dueStatus?.label ?? null,
+                      completed: isMatrixDueHabitCompleted(updatedHabit),
+                      sourceHabit: updatedHabit,
+                      durationMinutes: updatedHabit.duration_minutes,
+                    };
+                  }
+                );
+
+                return {
+                  ...item,
+                  routine: {
+                    ...item.routine,
+                    habits: updatedRoutineHabits,
+                    completed:
+                      getMatrixRoutineProgress(updatedRoutineHabits).isComplete,
+                  },
+                };
+              }),
+            }));
+
+          return {
+            ...current,
+            unscheduledDueHabitGroups: updateHabitInGroups(
+              current.unscheduledDueHabitGroups
+            ),
+            skillUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.skillUnscheduledDueHabitGroups
+            ),
+            blockUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.blockUnscheduledDueHabitGroups
+            ),
+            typeUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.typeUnscheduledDueHabitGroups
+            ),
+          };
+        });
+      };
+      const rollbackOptimisticDueHabitCompletion = () => {
+        if (previousStateForOptimisticRollback) {
+          setState(previousStateForOptimisticRollback);
+          previousStateForOptimisticRollback = null;
+        }
+      };
+
+      let pendingCompletionKey: string | null = null;
       try {
         const action = completedToday ? "undo" : "complete";
         const completedAt = new Date().toISOString();
-        const dayKey = formatDateKeyInTimeZone(new Date(completedAt), timeZone);
+        const dayKey = activeCreatorDayRef.current.creatorDayDate;
+        const completionKey = buildMatrixHabitCompletionKey(habitId, dayKey);
+        if (pendingDueHabitCompletionKeysRef.current.has(completionKey)) {
+          return false;
+        }
+        pendingDueHabitCompletionKeysRef.current.add(completionKey);
+        pendingCompletionKey = completionKey;
         const occurrence = getDueOccurrenceIdentity(habitId, dayKey);
         let repairResult: MatrixXpReverseOutcome | null = null;
         if (!completedToday) {
@@ -6954,6 +7517,7 @@ export function MatrixContent({
             return false;
           }
         }
+        applyOptimisticDueHabitCompletion(!completedToday, completedAt);
         const response = await fetch("/api/habits/completion", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -7017,6 +7581,7 @@ export function MatrixContent({
                 rollbackError
               );
             });
+            rollbackOptimisticDueHabitCompletion();
             void hapticWarningPattern();
             return false;
           }
@@ -7055,6 +7620,7 @@ export function MatrixContent({
                 rollbackError
               );
             });
+            rollbackOptimisticDueHabitCompletion();
             void hapticWarningPattern();
             return false;
           }
@@ -7093,11 +7659,12 @@ export function MatrixContent({
 
                     const undoneHabit = {
                       ...habit,
-                      last_completed_at: null,
                     };
                     const dueStatus = getMatrixHabitDueStatus(
                       undoneHabit,
-                      new Date(),
+                      getMatrixCreatorDayDisplayDate(
+                        activeCreatorDayRef.current
+                      ),
                       timeZone
                     );
 
@@ -7203,9 +7770,13 @@ export function MatrixContent({
         return true;
       } catch (error) {
         console.error("Failed to toggle due Matrix habit", error);
+        rollbackOptimisticDueHabitCompletion();
         return false;
       } finally {
         completingDueHabitIdsRef.current.delete(habitId);
+        if (pendingCompletionKey) {
+          pendingDueHabitCompletionKeysRef.current.delete(pendingCompletionKey);
+        }
         setCompletingDueHabitIds((currentIds) => {
           if (!currentIds.has(habitId)) return currentIds;
           const nextIds = new Set(currentIds);
@@ -7261,6 +7832,63 @@ export function MatrixContent({
   }, []);
 
   useEffect(() => {
+    pendingDueHabitCompletionKeysRef.current.clear();
+    completingDueHabitIdsRef.current.clear();
+    setCompletingDueHabitIds(new Set());
+    setHeldMatrixReorderItemIds((current) => ({
+      ...current,
+      due: new Set(),
+    }));
+  }, [activeCreatorDay.creatorDayDate]);
+
+  const revalidateMatrixCreatorDay = useCallback(() => {
+    const nextCreatorDay = resolveMatrixCreatorDay(timeZone);
+    const currentCreatorDay = activeCreatorDayRef.current;
+    if (
+      nextCreatorDay.creatorDayDate === currentCreatorDay.creatorDayDate &&
+      nextCreatorDay.startsAt === currentCreatorDay.startsAt &&
+      nextCreatorDay.endsAt === currentCreatorDay.endsAt
+    ) {
+      return;
+    }
+    setCreatorDayNow(new Date());
+  }, [timeZone]);
+
+  useEffect(() => {
+    const endsAtMs = Date.parse(activeCreatorDay.endsAt);
+    if (!Number.isFinite(endsAtMs)) return;
+
+    const delay = Math.max(0, endsAtMs - Date.now() + 1_000);
+    const timer = setTimeout(() => {
+      revalidateMatrixCreatorDay();
+    }, delay);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [activeCreatorDay.endsAt, revalidateMatrixCreatorDay]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        revalidateMatrixCreatorDay();
+      }
+    };
+    const handleFocus = () => {
+      revalidateMatrixCreatorDay();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [revalidateMatrixCreatorDay]);
+
+  useEffect(() => {
     if (!user?.id) return;
 
     const userId = user.id;
@@ -7277,9 +7905,11 @@ export function MatrixContent({
         return;
       }
 
-      const today = new Date();
-      const dayStart = startOfDayInTimeZone(today, timeZone);
-      const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
+      const creatorDay = activeCreatorDay;
+      const today = getMatrixCreatorDayDisplayDate(creatorDay);
+      const dayStart = new Date(creatorDay.startsAt);
+      const dayEnd = new Date(creatorDay.endsAt);
+      const dayKey = creatorDay.creatorDayDate;
 
       try {
         setState((current) => ({ ...current, loading: true, error: null }));
@@ -7299,11 +7929,11 @@ export function MatrixContent({
         if (instanceError) throw instanceError;
 
         const instances = (instanceData ?? []) as ScheduleInstance[];
-        const dayKey = formatDateKeyInTimeZone(today, timeZone);
         const windowsForDatePromise = (async () => {
           const params = new URLSearchParams();
           params.set("dayKey", dayKey);
           params.set("timeZone", timeZone);
+          params.set("mode", "creator-day");
           const response = await fetch(`/api/windows/for-date?${params.toString()}`, {
             cache: "no-store",
           });
@@ -7485,6 +8115,30 @@ export function MatrixContent({
 
         if (projectResult.error) throw projectResult.error;
 
+        const allHabitIds = Array.from(
+          new Set(
+            ((allHabitsResult.data ?? []) as HabitRow[])
+              .map((habit) => habit.id)
+              .filter((id): id is string => Boolean(id))
+          )
+        );
+        const habitCompletionResult = allHabitIds.length
+          ? await supabase
+              .from("habit_completion_days")
+              .select("habit_id")
+              .eq("user_id", userId)
+              .eq("completion_day", creatorDay.creatorDayDate)
+              .in("habit_id", allHabitIds)
+          : { data: [], error: null };
+
+        if (habitCompletionResult.error) throw habitCompletionResult.error;
+
+        const completedHabitIdsForCreatorDay = new Set(
+          ((habitCompletionResult.data ?? []) as HabitCompletionDayRow[])
+            .map((row) => row.habit_id)
+            .filter((id): id is string => Boolean(id))
+        );
+
         const skillIdToMonumentId = new Map<string, string>();
         const skillIdToIcon = new Map<string, string>();
         const skillLookup = new Map<string, SkillRow>();
@@ -7589,6 +8243,7 @@ export function MatrixContent({
           dateKey: dayKey,
           date: today,
           timeZone,
+          completedHabitIds: completedHabitIdsForCreatorDay,
         });
         const events = buildMatrixScheduledEvents({
           events: rawEvents,
@@ -7618,7 +8273,7 @@ export function MatrixContent({
         const dueHabitRows = ((allHabitsResult.data ?? []) as HabitRow[]).filter(
           (habit) =>
             isHabitDueToday(habit, today, timeZone) ||
-            isMatrixHabitCompletedToday(habit, today, timeZone)
+            completedHabitIdsForCreatorDay.has(habit.id)
         );
 
         const duplicateScheduledDueHabits = dueHabitRows.filter((habit) =>
@@ -7641,12 +8296,22 @@ export function MatrixContent({
             const dueStatus = getMatrixHabitDisplayStatus(
               habit,
               today,
-              timeZone
+              timeZone,
+              completedHabitIdsForCreatorDay
             );
+            const fitnessPlanRoutineAssignment = isFitnessPlanManagedHabit(habit)
+              ? resolveFitnessPlanDueRoutineAssignment({
+                  memoCaptureConfig: habit.memo_capture_config ?? null,
+                  occurrenceDate: dueStatus.dueStart ?? today,
+                  horizonStart: today,
+                  timeZone,
+                })
+              : null;
 
             return {
               ...habit,
               dueStatus,
+              fitnessPlanRoutineAssignment,
               monumentId: resolveHabitMonumentId({
                 habit,
                 goals: goalMap,
@@ -7731,7 +8396,7 @@ export function MatrixContent({
     return () => {
       cancelled = true;
     };
-  }, [refreshVersion, timeZone, user?.id]);
+  }, [activeCreatorDay, refreshVersion, timeZone, user?.id]);
 
   const matrixMonumentGroups = useMemo(
     () =>
@@ -7963,6 +8628,8 @@ export function MatrixContent({
               persistCardDensity={variant !== "sheet"}
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
               onOpenMealNutritionLog={openMealNutritionLog}
+              onOpenFitnessWorkout={openFitnessWorkout}
+              onOpenDueFitnessWorkout={openDueFitnessWorkout}
               onCompleteDueHabit={handleCompleteDueHabit}
               completingDueHabitIds={completingDueHabitIds}
               heldScheduledCompletionItemIds={

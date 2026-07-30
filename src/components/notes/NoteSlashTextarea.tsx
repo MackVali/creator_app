@@ -79,6 +79,7 @@ import {
 import { createPortal } from "react-dom";
 import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
+import { NutritionRecipesPanel } from "@/components/nutrition/NutritionRecipesPanel";
 import { SharedMealPlanPanel } from "@/components/nutrition/SharedMealPlanPanel";
 import {
   getNutritionProgressTargetsFromActiveTarget,
@@ -220,6 +221,7 @@ import {
   FITNESS_ACTION_TAB_SPECS,
   type FitnessActionTabId,
 } from "@/lib/fitness/actionTabs";
+import type { CreatorOpenFitnessWorkoutDetail } from "@/lib/fitness/openWorkout";
 import {
   getFitnessMuscleGroupStats,
   type FitnessMuscleGroupStat,
@@ -8318,6 +8320,7 @@ export function NoteDatabaseEntrySheet({
   databaseDefinition,
   entries = [],
   initialEntry,
+  initialFitnessWorkoutOpenRequest,
   onClose,
   onSaveEntry,
   overlayClassName,
@@ -8326,6 +8329,7 @@ export function NoteDatabaseEntrySheet({
   databaseDefinition: NoteDatabaseDefinition;
   entries?: NoteDatabaseEntry[];
   initialEntry?: NoteDatabaseEntry | null;
+  initialFitnessWorkoutOpenRequest?: CreatorOpenFitnessWorkoutDetail | null;
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
   overlayClassName?: string;
@@ -8418,6 +8422,7 @@ export function NoteDatabaseEntrySheet({
     null,
   );
   const fitnessWorkoutStartingRef = useRef(false);
+  const handledFitnessWorkoutOpenRequestRef = useRef<string | null>(null);
   const fitnessWeightEditsByExerciseIdRef = useRef<
     Record<string, Partial<Record<"weight" | "unit", boolean>>>
   >({});
@@ -8841,6 +8846,8 @@ export function NoteDatabaseEntrySheet({
     useState(false);
   const [nutritionRecipeBuilderSaveError, setNutritionRecipeBuilderSaveError] =
     useState<string | null>(null);
+  const [isNutritionRecipesEditorOpen, setIsNutritionRecipesEditorOpen] =
+    useState(false);
   const [nutritionBarcodeValue, setNutritionBarcodeValue] = useState("");
   const [isNutritionBarcodeScannerLoading, setIsNutritionBarcodeScannerLoading] =
     useState(false);
@@ -8900,7 +8907,8 @@ export function NoteDatabaseEntrySheet({
   const shouldShowFitnessEntryFields =
     !isDefaultFitnessDatabase || selectedFitnessAction === "custom";
   const shouldShowEntryFooter =
-    !isDefaultFitnessDatabase || selectedFitnessAction === "custom";
+    (!isDefaultFitnessDatabase || selectedFitnessAction === "custom") &&
+    !isNutritionRecipesEditorOpen;
   const isNutritionSearchMode =
     isFoodSearchDatabase && selectedNutritionFoodAction === "search";
   const shouldHideNutritionEntryFields =
@@ -10364,6 +10372,70 @@ export function NoteDatabaseEntrySheet({
     setSelectedFitnessPlanName(plan.planTemplateId);
     loadFitnessRoutineTemplate(resolvedRoutine, `${plan.planTitle} · ${nextRoutine.title}`);
   }
+
+  function loadScheduledFitnessPlanWorkout(
+    request: CreatorOpenFitnessWorkoutDetail,
+  ) {
+    selectFitnessAction("start");
+
+    const routineTemplateId = request.fitnessRoutineTemplateId?.trim();
+    const planTemplateId = request.fitnessPlanTemplateId?.trim();
+    if (!routineTemplateId || !planTemplateId) {
+      void hapticSoftTick();
+      return;
+    }
+
+    const template = getFitnessPlanById(planTemplateId);
+    if (!template) {
+      void hapticWarningPattern();
+      return;
+    }
+
+    const snapshottedRoutine =
+      resolveFitnessPlanRoutineSequence(template).find(
+        (routine) => routine.id === routineTemplateId,
+      ) ?? null;
+    if (!snapshottedRoutine) {
+      void hapticWarningPattern();
+      return;
+    }
+
+    const shouldApplyActivePlanOverrides =
+      activeFitnessPlan?.planTemplateId === planTemplateId &&
+      (!request.linkedFitnessHabitId ||
+        !activeFitnessPlan.linkedFitnessHabitId ||
+        request.linkedFitnessHabitId === activeFitnessPlan.linkedFitnessHabitId);
+    const { routine: resolvedRoutine } = shouldApplyActivePlanOverrides
+      ? resolveFitnessRoutineTemplateForEquipment({
+          routine: snapshottedRoutine,
+          equipmentProfile: activeFitnessPlan.equipmentProfile,
+          exerciseCatalog: FITNESS_EXERCISE_SAMPLE_BY_NAME,
+          exerciseOverrides: activeFitnessPlan.exerciseOverrides,
+        })
+      : { routine: snapshottedRoutine };
+    const displayRoutineTitle =
+      request.fitnessRoutineTitle?.trim() || snapshottedRoutine.title;
+
+    setSelectedFitnessPlanName(planTemplateId);
+    loadFitnessRoutineTemplate(
+      resolvedRoutine,
+      `${template.title} · ${displayRoutineTitle}`,
+    );
+  }
+
+  useEffect(() => {
+    if (!isDefaultFitnessDatabase || !initialFitnessWorkoutOpenRequest) return;
+    const requestKey = initialFitnessWorkoutOpenRequest.requestId;
+    if (handledFitnessWorkoutOpenRequestRef.current === requestKey) return;
+
+    handledFitnessWorkoutOpenRequestRef.current = requestKey;
+    loadScheduledFitnessPlanWorkout(initialFitnessWorkoutOpenRequest);
+    // The request key gates repeated taps; the loader intentionally uses current sheet state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    initialFitnessWorkoutOpenRequest,
+    isDefaultFitnessDatabase,
+  ]);
 
   async function activateFitnessPlan(plan: FitnessPlanTemplate) {
     if (isFitnessActivePlanSaving) return;
@@ -17289,40 +17361,6 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function renderGroceryPlanningPlaceholder(
-    tab: Extract<NutritionFoodActionTabId, "recipes" | "chef">,
-  ) {
-    const content = {
-      recipes: {
-        icon: BookOpen,
-        title: "Recipes",
-        body: "Saved and custom recipes will live here later. Browse menu ideas in Chef.",
-      },
-      chef: {
-        icon: ChefHat,
-        title: "Chef",
-        body: "Chef help for cooking from available groceries will live here later.",
-      },
-    }[tab];
-    const Icon = content.icon;
-
-    return (
-      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/66 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white/84">{content.title}</p>
-            <p className="mt-1 text-xs font-medium leading-5 text-white/42">
-              {content.body}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   function renderNutritionFoodBrowseContent() {
     const browseSelectedCount = isGroceryDatabase
       ? Object.keys(grocerySearchDrafts).length
@@ -17574,14 +17612,14 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div key={field.id} className="block">
-        {renderNutritionDailyProgress()}
+        {isNutritionRecipesEditorOpen ? null : renderNutritionDailyProgress()}
         {isNutritionMealBuilderOpen ? (
           renderNutritionMealBuilder()
         ) : isNutritionRecipeBuilderOpen ? (
           renderNutritionRecipeBuilder()
         ) : (
           <>
-            {renderNutritionFoodActionTabs()}
+            {isNutritionRecipesEditorOpen ? null : renderNutritionFoodActionTabs()}
 
             {selectedNutritionFoodAction === "custom" ? (
               isGroceryMode ? (
@@ -17691,7 +17729,9 @@ export function NoteDatabaseEntrySheet({
         ) : selectedNutritionFoodAction === "recent" ? (
           renderNutritionSavedMealsContent()
         ) : selectedNutritionFoodAction === "recipes" ? (
-          renderGroceryPlanningPlaceholder("recipes")
+          <NutritionRecipesPanel
+            onEditorOpenChange={setIsNutritionRecipesEditorOpen}
+          />
         ) : selectedNutritionFoodAction === "chef" ? (
           renderChefCatalog()
         ) : selectedNutritionFoodAction === "meal-plan" ? (

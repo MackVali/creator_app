@@ -11,10 +11,14 @@ vi.mock("@/lib/scheduler/repo", () => ({
 }));
 
 import {
+  buildMatrixInferredMealEventId,
+  buildMatrixInferredMealEvents,
   buildMatrixScheduledMealNutritionLogContext,
   claimMatrixInferredMealLogOpen,
   findActualScheduledMealTimeBlock,
+  isNutritionMealForInferredMatrixMeal,
   releaseMatrixInferredMealLogOpen,
+  type MatrixInferredMealEventData,
   type MatrixMealScheduleInstance,
   type MatrixMealTimeBlockWindow,
   type MatrixScheduledMealEventData,
@@ -57,6 +61,18 @@ const mealWindow: MatrixMealTimeBlockWindow = {
   window_id: "overlay-window-1",
   start_local: "12:00",
   end_local: "12:30",
+};
+
+const creatorDayMealWindow: MatrixMealTimeBlockWindow = {
+  id: "creator-window-1",
+  label: "Late Dinner",
+  window_kind: "MEAL",
+  timeBlockId: "creator-time-block-1",
+  dayTypeTimeBlockId: "creator-day-type-time-block-1",
+  start_local: "23:30",
+  end_local: "00:30",
+  dayTypeStartUtcMs: Date.parse("2026-07-30T04:30:00.000Z"),
+  dayTypeEndUtcMs: Date.parse("2026-07-30T05:30:00.000Z"),
 };
 
 const eventInstance: MatrixMealScheduleInstance = {
@@ -116,6 +132,100 @@ describe("Matrix Meal Event Nutrition action", () => {
       dateKey: "2026-07-29",
       timeZone: "America/Chicago",
     });
+  });
+
+  it("keys inferred Meal identity to the active Creator day", () => {
+    expect(
+      buildMatrixInferredMealEventId(creatorDayMealWindow, "2026-07-29")
+    ).toContain("matrix-inferred-meal:2026-07-29:");
+    expect(
+      buildMatrixInferredMealEvents({
+        windows: [creatorDayMealWindow],
+        instances: [],
+        meals: [],
+        dateKey: "2026-07-29",
+      })[0]
+    ).toMatchObject({
+      syntheticEventId: expect.stringContaining(
+        "matrix-inferred-meal:2026-07-29:"
+      ),
+      dateKey: "2026-07-29",
+      startUtc: "2026-07-30T04:30:00.000Z",
+      endUtc: "2026-07-30T05:30:00.000Z",
+    });
+  });
+
+  it("keeps inferred Meal completion visible across midnight until Creator-day rollover", () => {
+    const [inferredMeal] = buildMatrixInferredMealEvents({
+      windows: [creatorDayMealWindow],
+      instances: [],
+      meals: [
+        {
+          id: "meal-1",
+          occurred_at: "2026-07-30T04:45:00.000Z",
+          created_at: "2026-07-30T04:46:00.000Z",
+          metadata: null,
+          deleted_at: null,
+        },
+      ],
+      dateKey: "2026-07-29",
+    });
+
+    expect(inferredMeal).toMatchObject({
+      dateKey: "2026-07-29",
+      completed: true,
+      completedMealId: "meal-1",
+    });
+
+    const nextCreatorDayMeal: MatrixInferredMealEventData = {
+      ...inferredMeal,
+      syntheticEventId: inferredMeal.syntheticEventId.replace(
+        "2026-07-29",
+        "2026-07-30"
+      ),
+      dateKey: "2026-07-30",
+      startUtc: "2026-07-31T04:30:00.000Z",
+      endUtc: "2026-07-31T05:30:00.000Z",
+    };
+    expect(
+      isNutritionMealForInferredMatrixMeal(
+        {
+          id: "meal-1",
+          occurred_at: "2026-07-30T04:45:00.000Z",
+          created_at: "2026-07-30T04:46:00.000Z",
+          metadata: null,
+          deleted_at: null,
+        },
+        nextCreatorDayMeal
+      )
+    ).toBe(false);
+  });
+
+  it("preserves scheduled Meal Event completion through schedule instance status", () => {
+    expect(
+      buildMatrixInferredMealEvents({
+        windows: [creatorDayMealWindow],
+        instances: [
+          {
+            id: "schedule-instance-1",
+            source_type: "EVENT",
+            time_block_id: "creator-time-block-1",
+            day_type_time_block_id: null,
+            window_id: null,
+          },
+        ],
+        meals: [
+          {
+            id: "meal-1",
+            occurred_at: "2026-07-30T04:45:00.000Z",
+            created_at: "2026-07-30T04:46:00.000Z",
+            metadata: null,
+            deleted_at: null,
+          },
+        ],
+        dateKey: "2026-07-29",
+      })
+    ).toEqual([]);
   });
 
   it("uses the existing stomach icon for Meal Events and preserves non-Meal flame rendering", () => {

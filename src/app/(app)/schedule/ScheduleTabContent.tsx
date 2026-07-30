@@ -118,9 +118,14 @@ import {
   type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
 import {
+  formatFitnessPlanRoutineTitleForCompactCard,
+  FITNESS_PLAN_HABIT_TITLE,
   isFitnessPlanManagedHabit,
   isFitnessPlanScheduleMetadata,
+  readFitnessPlanScheduleRoutineAssignment,
+  resolveFitnessPlanScheduleCardPresentation,
 } from "@/lib/fitness/planHabit";
+import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
@@ -479,6 +484,33 @@ function getScheduleXpSourceRectByInstanceId(
 function dispatchOpenNutritionLogEvent() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CREATOR_OPEN_NUTRITION_LOG_EVENT));
+}
+
+function dispatchOpenFitnessWorkoutForScheduleInstance({
+  instance,
+  habitId,
+  source,
+}: {
+  instance: ScheduleInstance | null | undefined;
+  habitId: string | null | undefined;
+  source: "schedule" | "matrix";
+}) {
+  const routineAssignment = readFitnessPlanScheduleRoutineAssignment(
+    instance?.metadata,
+  );
+
+  dispatchOpenFitnessWorkoutEvent({
+    requestId: `fitness-workout:${source}:${instance?.id ?? habitId ?? "unknown"}`,
+    source,
+    scheduleInstanceId: instance?.id ?? null,
+    habitId: habitId ?? instance?.source_id ?? null,
+    linkedFitnessHabitId: habitId ?? instance?.source_id ?? null,
+    fitnessPlanTemplateId: routineAssignment?.fitnessPlanTemplateId ?? null,
+    fitnessRoutineTemplateId:
+      routineAssignment?.fitnessRoutineTemplateId ?? null,
+    fitnessRoutineTitle: routineAssignment?.fitnessRoutineTitle ?? null,
+    fitnessRoutineIndex: routineAssignment?.fitnessRoutineIndex ?? null,
+  });
 }
 
 function getProjectScheduleInstanceVisuals({
@@ -3090,6 +3122,7 @@ type HabitTimelinePlacement = {
   skillId: string | null;
   memoCaptureConfig: HabitScheduleItem["memoCaptureConfig"];
   isFitnessPlanManaged: boolean;
+  fitnessPlanRoutineTitle: string | null;
   practiceContextId: string | null;
   currentStreakDays: number;
   instanceId: string | null;
@@ -3729,6 +3762,43 @@ function computeStandaloneTaskInstancesForDay(
   return items;
 }
 
+function buildLegacyFitnessOccurrenceOffsets(
+  instances: ScheduleInstance[] | undefined,
+  habitMap: Map<string, HabitScheduleItem>,
+) {
+  const grouped = new Map<string, Array<{ id: string; start: Date }>>();
+  for (const instance of instances ?? []) {
+    if (instance.source_type !== "HABIT") continue;
+    if (instance.status !== "scheduled" && instance.status !== "completed") {
+      continue;
+    }
+    if (!instance.id) continue;
+    const habit = habitMap.get(instance.source_id);
+    if (
+      !habit ||
+      !(
+        isFitnessPlanScheduleMetadata(instance.metadata) ||
+        isFitnessPlanManagedHabit(habit)
+      )
+    ) {
+      continue;
+    }
+    const start = new Date(instance.start_utc);
+    if (!isValidDate(start)) continue;
+    const group = grouped.get(habit.id) ?? [];
+    group.push({ id: instance.id, start });
+    grouped.set(habit.id, group);
+  }
+
+  const offsets = new Map<string, number>();
+  for (const group of grouped.values()) {
+    group
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .forEach((item, index) => offsets.set(item.id, index));
+  }
+  return offsets;
+}
+
 function computeHabitPlacementsForDay({
   habits: allHabits,
   windows,
@@ -3752,6 +3822,10 @@ function computeHabitPlacementsForDay({
   const availability = new Map<string, number>();
 
   const habitMap = new Map(allHabits.map((habit) => [habit.id, habit]));
+  const legacyFitnessOccurrenceOffsets = buildLegacyFitnessOccurrenceOffsets(
+    instances,
+    habitMap,
+  );
 
   const windowEntries = windows
     .map((window) => {
@@ -3888,15 +3962,21 @@ function computeHabitPlacementsForDay({
       if (!resolvedPracticeContextId && timelinePlacement?.practiceContextId) {
         resolvedPracticeContextId = timelinePlacement.practiceContextId;
       }
+      const fitnessCard = resolveFitnessPlanScheduleCardPresentation({
+        metadata: instance.metadata,
+        memoCaptureConfig: habit.memoCaptureConfig ?? null,
+        fallbackOccurrenceOffset: instance.id
+          ? (legacyFitnessOccurrenceOffsets.get(instance.id) ?? null)
+          : null,
+      });
       placements.push({
         habitId: habit.id,
-        habitName: habit.name,
+        habitName: fitnessCard?.title ?? habit.name,
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
         memoCaptureConfig: habit.memoCaptureConfig ?? null,
-        isFitnessPlanManaged:
-          isFitnessPlanScheduleMetadata(instance.metadata) ||
-          isFitnessPlanManagedHabit(habit),
+        isFitnessPlanManaged: Boolean(fitnessCard),
+        fitnessPlanRoutineTitle: fitnessCard?.routineTitle ?? null,
         practiceContextId:
           normalizedHabitType === "PRACTICE"
             ? (resolvedPracticeContextId ?? null)
@@ -15111,6 +15191,14 @@ export default function ScheduleTabContent({
                 ? FOCUS_POMO_COMPLETE_SHADOW
                 : habitCardShadowBase;
               const isCompletedGemCard = isHabitCompleted;
+              const fitnessRoutineDisplayTitle =
+                isFitnessPlanHabitCard && placement.fitnessPlanRoutineTitle
+                  ? habitHeightPx <= 34
+                    ? formatFitnessPlanRoutineTitleForCompactCard(
+                        placement.fitnessPlanRoutineTitle,
+                      )
+                    : placement.fitnessPlanRoutineTitle
+                  : null;
               const stackingZIndex =
                 computeTimelineStackingIndex(startOffsetMinutes);
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
@@ -15284,6 +15372,37 @@ export default function ScheduleTabContent({
                     onPointerCancel: (e) => handleInstancePointerCancel(e),
                   }
                 : {};
+              const stopFitnessWorkoutActionGesture = (
+                event:
+                  | ReactPointerEvent<HTMLButtonElement>
+                  | ReactTouchEvent<HTMLButtonElement>
+                  | ReactMouseEvent<HTMLButtonElement>
+              ) => {
+                event.stopPropagation();
+              };
+              const openFitnessWorkoutAction = (
+                event:
+                  | ReactTouchEvent<HTMLButtonElement>
+                  | ReactMouseEvent<HTMLButtonElement>
+              ) => {
+                if (event.cancelable) {
+                  event.preventDefault();
+                }
+                event.stopPropagation();
+                dispatchOpenFitnessWorkoutForScheduleInstance({
+                  instance: placementScheduleInstance,
+                  habitId: placementCanonicalHabitId,
+                  source: "schedule",
+                });
+              };
+              const stopFitnessWorkoutActionActivation = (
+                event: ReactMouseEvent<HTMLButtonElement>
+              ) => {
+                if (event.cancelable) {
+                  event.preventDefault();
+                }
+                event.stopPropagation();
+              };
 
               const habitLayoutId = placement.instanceId
                 ? getScheduleInstanceLayoutId(placement.instanceId)
@@ -15417,24 +15536,42 @@ export default function ScheduleTabContent({
                         </span>
                       </div>
                     ) : null}
-                    <motion.span
-                      layoutId={habitLayoutTokens?.title}
-                      className={clsx(
-                        habitTitleClass,
-                        isFitnessPlanHabitCard &&
-                          "flex items-center gap-1.5 text-white/90",
-                        isCompletedGemCard && "relative z-[2]"
-                      )}
-                    >
-                      {isFitnessPlanHabitCard ? (
-                        <Dumbbell className="h-3.5 w-3.5 shrink-0 text-white/72" aria-hidden="true" />
-                      ) : null}
-                      {placement.habitName}
-                    </motion.span>
+                    {isFitnessPlanHabitCard ? (
+                      <motion.span
+                        layoutId={habitLayoutTokens?.title}
+                        className={clsx(
+                          "min-w-0 flex-1",
+                          isCompletedGemCard && "relative z-[2]",
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5 text-white/90">
+                          <Dumbbell className="h-3.5 w-3.5 shrink-0 text-white/72" aria-hidden="true" />
+                          <span className="min-w-0 truncate text-xs font-semibold leading-tight">
+                            {FITNESS_PLAN_HABIT_TITLE}
+                          </span>
+                        </span>
+                        {fitnessRoutineDisplayTitle ? (
+                          <span className="mt-0.5 block min-w-0 truncate pl-5 text-[10px] font-semibold leading-tight text-white/58">
+                            {fitnessRoutineDisplayTitle}
+                          </span>
+                        ) : null}
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        layoutId={habitLayoutTokens?.title}
+                        className={clsx(
+                          habitTitleClass,
+                          isCompletedGemCard && "relative z-[2]"
+                        )}
+                      >
+                        {placement.habitName}
+                      </motion.span>
+                    )}
                     {showHabitStreakBadge ? (
                       <span
                         className={clsx(
-                          "pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100",
+                          "pointer-events-none absolute top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100",
+                          isFitnessPlanHabitCard ? "right-12" : "right-3",
                           isCompletedGemCard && "z-[2]"
                         )}
                         style={streakBadgeStyle}
@@ -15452,6 +15589,24 @@ export default function ScheduleTabContent({
                         />
                         <span className="tracking-normal">{streakLabel}</span>
                       </span>
+                    ) : null}
+                    {isFitnessPlanHabitCard ? (
+                      <button
+                        type="button"
+                        aria-label="Open workout"
+                        title="Open workout"
+                        data-schedule-fitness-workout-action="true"
+                        className="relative z-20 grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.08] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95"
+                        onPointerDown={stopFitnessWorkoutActionGesture}
+                        onPointerUp={stopFitnessWorkoutActionGesture}
+                        onPointerCancel={stopFitnessWorkoutActionGesture}
+                        onTouchStart={stopFitnessWorkoutActionGesture}
+                        onTouchEnd={openFitnessWorkoutAction}
+                        onDoubleClick={stopFitnessWorkoutActionActivation}
+                        onClick={openFitnessWorkoutAction}
+                      >
+                        <Dumbbell className="h-4 w-4" aria-hidden="true" />
+                      </button>
                     ) : null}
                   </div>
                 </motion.div>

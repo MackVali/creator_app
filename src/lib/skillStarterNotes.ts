@@ -6,6 +6,7 @@ import type {
   NoteDatabaseViewDefinition,
 } from "@/components/notes/NoteSlashTextarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { resolveSkillDomainKey } from "@/lib/skills/domains";
 
 type SkillStarterKind = "health" | "fitness" | "cooking";
 
@@ -89,6 +90,14 @@ const STARTER_SKILL_ALIASES: Record<string, SkillStarterKind> = {
 
 function normalizeSkillName(name: string | null | undefined) {
   return (name ?? "").trim().toLowerCase();
+}
+
+function resolveStarterSkillKind(skillName: string | null | undefined) {
+  const directKind = STARTER_SKILL_ALIASES[normalizeSkillName(skillName)];
+  if (directKind) return directKind;
+
+  const domain = resolveSkillDomainKey(skillName);
+  return domain === "fitness" ? "fitness" : null;
 }
 
 function databaseMarker(title: string, databaseId: string) {
@@ -310,7 +319,7 @@ const STARTER_NOTES: Record<SkillStarterKind, SkillStarterNote> = {
 };
 
 export function getSkillStarterNote(skillName: string | null | undefined) {
-  const kind = STARTER_SKILL_ALIASES[normalizeSkillName(skillName)];
+  const kind = resolveStarterSkillKind(skillName);
   return kind ? STARTER_NOTES[kind] : null;
 }
 
