@@ -146,11 +146,9 @@ const MY_LIST_MIN_EDITABLE_SHEET_HEIGHT =
   LIST_COMPACT_ROW_HEIGHT +
   LIST_COMPACT_NOTES_ALLOWANCE +
   LIST_COMPACT_BOTTOM_ALLOWANCE;
-const MY_LIST_KEYBOARD_REDUCTION_THRESHOLD = 80;
 const MY_LIST_VIEWPORT_RECOVERY_TOLERANCE = 16;
 const MY_LIST_VIEWPORT_WIDTH_CHANGE_THRESHOLD = 24;
 const MY_LIST_VIEWPORT_WIDTH_RATIO_CHANGE_THRESHOLD = 0.06;
-const MY_LIST_VISUAL_PAN_THRESHOLD = 24;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
 const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
@@ -302,29 +300,11 @@ function readMyListViewportMetrics(): MyListViewportMetrics {
   };
 }
 
-function snapshotMyListRect(rect: DOMRect): MyListRectSnapshot {
-  return {
-    top: rect.top,
-    right: rect.right,
-    bottom: rect.bottom,
-    left: rect.left,
-    width: rect.width,
-    height: rect.height,
-  };
-}
-
 function isMyListKeyboardGeometryEqual(
   left: MyListKeyboardGeometryState,
   right: MyListKeyboardGeometryState
 ) {
-  const leftHeight = left.constrainedHeight ?? -1;
-  const rightHeight = right.constrainedHeight ?? -1;
-
-  return (
-    left.mode === right.mode &&
-    Math.abs(leftHeight - rightHeight) < 0.5 &&
-    Math.abs(left.internalBottomInset - right.internalBottomInset) <= 1
-  );
+  return Math.abs(left.internalBottomInset - right.internalBottomInset) <= 1;
 }
 
 function isMyListKeyboardBaselineRecovered(
@@ -373,25 +353,8 @@ type MyListViewportMetrics = {
   visualBottom: number;
 };
 
-type MyListKeyboardGeometryMode =
-  | "none"
-  | "layout-resized"
-  | "visual-occlusion"
-  | "mixed";
-
 type MyListKeyboardGeometryState = {
-  mode: MyListKeyboardGeometryMode;
-  constrainedHeight: number | null;
   internalBottomInset: number;
-};
-
-type MyListRectSnapshot = {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-  width: number;
-  height: number;
 };
 
 type MyListKeyboardSessionBaseline = {
@@ -403,11 +366,6 @@ type MyListKeyboardSessionBaseline = {
   visualHeight: number | null;
   visualOffsetTop: number | null;
   visualBottom: number;
-  sheetRootRect: MyListRectSnapshot | null;
-  compactHeight: number;
-  expandedHeight: number;
-  renderedSheetHeight: number;
-  isExpanded: boolean;
 };
 
 function compareQuickCreateOrderThenName(
@@ -1608,8 +1566,6 @@ export function MyListSheet({
   );
   const [keyboardGeometry, setKeyboardGeometry] =
     useState<MyListKeyboardGeometryState>({
-      mode: "none",
-      constrainedHeight: null,
       internalBottomInset: 0,
     });
   const [myListSheetHeights, setMyListSheetHeights] = useState(() => ({
@@ -1629,6 +1585,7 @@ export function MyListSheet({
   const editableFocusInsideSheetRef = useRef(false);
   const keyboardSessionBaselineRef =
     useRef<MyListKeyboardSessionBaseline | null>(null);
+  const normalViewportMetricsRef = useRef<MyListViewportMetrics | null>(null);
   const keyboardSessionClosingRef = useRef(false);
   const viewportMeasurementFrameRef = useRef<number | null>(null);
   const keyboardCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -2459,13 +2416,7 @@ export function MyListSheet({
       ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
       : MY_LIST_MIN_SAFE_SHEET_HEIGHT
   );
-  const currentSheetHeight =
-    keyboardGeometry.constrainedHeight === null
-      ? intendedCurrentSheetHeight
-      : Math.min(
-          intendedCurrentSheetHeight,
-          Math.max(keyboardGeometry.constrainedHeight, 1)
-        );
+  const currentSheetHeight = intendedCurrentSheetHeight;
 
   const canStartScheduleTimelineDrag =
     open && activeView === "list" && enableScheduleTimelineDrag;
@@ -4237,7 +4188,10 @@ export function MyListSheet({
     const scrollRect = scrollElement.getBoundingClientRect();
     const metrics =
       typeof window !== "undefined" ? readMyListViewportMetrics() : null;
-    const visibleTop = Math.max(scrollRect.top, metrics?.visualTop ?? scrollRect.top);
+    const visibleTop = Math.max(
+      scrollRect.top,
+      metrics?.visualTop ?? scrollRect.top
+    );
     const visibleBottom = Math.min(
       scrollRect.bottom,
       metrics?.visualBottom ?? scrollRect.bottom
@@ -4302,8 +4256,6 @@ export function MyListSheet({
     clearKeyboardCloseTimeout();
     setKeyboardGeometry((currentGeometry) => {
       const nextGeometry: MyListKeyboardGeometryState = {
-        mode: "none",
-        constrainedHeight: null,
         internalBottomInset: 0,
       };
 
@@ -4387,7 +4339,6 @@ export function MyListSheet({
     }
 
     const metrics = readMyListViewportMetrics();
-    const sheetRootRect = sheetRootRef.current?.getBoundingClientRect() ?? null;
 
     keyboardSessionBaselineRef.current = {
       innerWidth: metrics.innerWidth,
@@ -4398,30 +4349,45 @@ export function MyListSheet({
       visualHeight: metrics.hasVisualViewport ? metrics.visualHeight : null,
       visualOffsetTop: metrics.hasVisualViewport ? metrics.visualTop : null,
       visualBottom: metrics.visualBottom,
-      sheetRootRect: sheetRootRect ? snapshotMyListRect(sheetRootRect) : null,
-      compactHeight: compactSheetHeight,
-      expandedHeight: myListSheetHeights.expanded,
-      renderedSheetHeight: sheetRootRect?.height || currentSheetHeight,
-      isExpanded,
     };
     keyboardSessionClosingRef.current = false;
     clearKeyboardCloseTimeout();
-  }, [
-    clearKeyboardCloseTimeout,
-    compactSheetHeight,
-    currentSheetHeight,
-    isExpanded,
-    myListSheetHeights.expanded,
-  ]);
+  }, [clearKeyboardCloseTimeout]);
 
   const measureViewportGeometry = useCallback(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return;
 
     const metrics = readMyListViewportMetrics();
     const baseline = keyboardSessionBaselineRef.current;
+    const editableSessionActive =
+      editableFocusInsideSheetRef.current ||
+      keyboardSessionClosingRef.current ||
+      isEditableElementFocusedInsideSheet();
 
     if (!baseline) {
-      calculateNormalSheetHeights(metrics.layoutBottom);
+      if (editableSessionActive) {
+        beginKeyboardSession();
+      } else {
+        const previousMetrics = normalViewportMetricsRef.current;
+        const previousWidth =
+          previousMetrics?.visualWidth ?? previousMetrics?.innerWidth ?? null;
+        const currentWidth = metrics.visualWidth ?? metrics.innerWidth;
+        const widthDelta =
+          previousWidth === null
+            ? Number.POSITIVE_INFINITY
+            : Math.abs(currentWidth - previousWidth);
+        const widthRatioDelta =
+          previousWidth && previousWidth > 0 ? widthDelta / previousWidth : 0;
+
+        if (
+          previousMetrics === null ||
+          widthDelta >= MY_LIST_VIEWPORT_WIDTH_CHANGE_THRESHOLD ||
+          widthRatioDelta >= MY_LIST_VIEWPORT_WIDTH_RATIO_CHANGE_THRESHOLD
+        ) {
+          normalViewportMetricsRef.current = metrics;
+          calculateNormalSheetHeights(metrics.layoutBottom);
+        }
+      }
       return;
     }
 
@@ -4441,7 +4407,9 @@ export function MyListSheet({
       }
       orientationSettlementTimeoutRef.current = setTimeout(() => {
         orientationSettlementTimeoutRef.current = null;
-        calculateNormalSheetHeights(readMyListViewportMetrics().layoutBottom);
+        const settledMetrics = readMyListViewportMetrics();
+        normalViewportMetricsRef.current = settledMetrics;
+        calculateNormalSheetHeights(settledMetrics.layoutBottom);
       }, 180);
       return;
     }
@@ -4451,86 +4419,17 @@ export function MyListSheet({
       isMyListKeyboardBaselineRecovered(metrics, baseline)
     ) {
       clearKeyboardSession();
+      normalViewportMetricsRef.current = metrics;
       calculateNormalSheetHeights(metrics.layoutBottom);
       return;
     }
 
-    const focusedOrClosing =
-      editableFocusInsideSheetRef.current ||
-      keyboardSessionClosingRef.current ||
-      isEditableElementFocusedInsideSheet();
-    const layoutShrink = Math.max(
-      0,
-      baseline.innerHeight - metrics.innerHeight,
-      baseline.clientHeight - metrics.clientHeight,
-      baseline.layoutBottom - metrics.layoutBottom
-    );
-    const visualHeightReduction =
-      baseline.visualHeight === null
-        ? 0
-        : Math.max(0, baseline.visualHeight - metrics.visualHeight);
-    const visualBottomReduction = Math.max(
-      0,
-      baseline.visualBottom - metrics.visualBottom
-    );
-    const visualTopPanning =
-      baseline.visualOffsetTop === null
-        ? 0
-        : Math.max(0, metrics.visualTop - baseline.visualOffsetTop);
-    const layoutKeyboardLike =
-      focusedOrClosing && layoutShrink >= MY_LIST_KEYBOARD_REDUCTION_THRESHOLD;
-    const visualKeyboardLike =
-      focusedOrClosing &&
-      metrics.hasVisualViewport &&
-      (Math.max(visualHeightReduction, visualBottomReduction) >=
-        MY_LIST_KEYBOARD_REDUCTION_THRESHOLD ||
-        (visualTopPanning >= MY_LIST_VISUAL_PAN_THRESHOLD &&
-          Math.max(visualHeightReduction, visualBottomReduction) >=
-            MY_LIST_VISUAL_PAN_THRESHOLD));
-    const visualResidualBelowLayout = Math.max(
-      0,
-      metrics.layoutBottom - metrics.visualBottom
-    );
-    const mode: MyListKeyboardGeometryMode = layoutKeyboardLike
-      ? visualKeyboardLike &&
-        visualResidualBelowLayout > MY_LIST_VIEWPORT_RECOVERY_TOLERANCE
-        ? "mixed"
-        : "layout-resized"
-      : visualKeyboardLike
-        ? "visual-occlusion"
-        : "none";
-
-    if (mode === "none") {
-      setKeyboardGeometry((currentGeometry) => {
-        const nextGeometry: MyListKeyboardGeometryState = {
-          mode: "none",
-          constrainedHeight: null,
-          internalBottomInset: 0,
-        };
-
-        return isMyListKeyboardGeometryEqual(currentGeometry, nextGeometry)
-          ? currentGeometry
-          : nextGeometry;
-      });
-      return;
-    }
-
-    const safeTopBoundary = Math.max(
-      readRouteTopReserve(),
-      metrics.visualTop
-    );
-    const safeCurrentLayoutCapacity = Math.max(
-      1,
-      metrics.layoutBottom - safeTopBoundary
-    );
     const scrollRect = sheetScrollRef.current?.getBoundingClientRect() ?? null;
     const internalBottomInset =
-      metrics.hasVisualViewport && scrollRect
+      editableSessionActive && metrics.hasVisualViewport && scrollRect
         ? Math.max(0, Math.ceil(scrollRect.bottom - metrics.visualBottom))
         : 0;
     const nextGeometry: MyListKeyboardGeometryState = {
-      mode,
-      constrainedHeight: safeCurrentLayoutCapacity,
       internalBottomInset,
     };
 
@@ -4539,12 +4438,14 @@ export function MyListSheet({
         ? currentGeometry
         : nextGeometry
     );
-    scheduleActiveEditableVisibility();
+    if (editableSessionActive) {
+      scheduleActiveEditableVisibility();
+    }
   }, [
+    beginKeyboardSession,
     calculateNormalSheetHeights,
     clearKeyboardSession,
     isEditableElementFocusedInsideSheet,
-    readRouteTopReserve,
     scheduleActiveEditableVisibility,
   ]);
 
@@ -4560,7 +4461,8 @@ export function MyListSheet({
 
   const markKeyboardSessionClosing = useCallback(() => {
     editableFocusInsideSheetRef.current = false;
-    keyboardSessionClosingRef.current = keyboardSessionBaselineRef.current !== null;
+    keyboardSessionClosingRef.current =
+      keyboardSessionBaselineRef.current !== null;
     scheduleViewportMeasurement();
 
     clearKeyboardCloseTimeout();
@@ -4568,15 +4470,11 @@ export function MyListSheet({
       keyboardCloseTimeoutRef.current = setTimeout(() => {
         keyboardCloseTimeoutRef.current = null;
         clearKeyboardSession();
-        if (typeof window !== "undefined" && typeof document !== "undefined") {
-          calculateNormalSheetHeights(readMyListViewportMetrics().layoutBottom);
-        }
       }, 900);
     } else {
       clearKeyboardSession();
     }
   }, [
-    calculateNormalSheetHeights,
     clearKeyboardCloseTimeout,
     clearKeyboardSession,
     scheduleViewportMeasurement,
@@ -4970,7 +4868,7 @@ export function MyListSheet({
         transition={
           prefersReducedMotion
             ? { duration: 0 }
-            : keyboardGeometry.mode !== "none"
+            : keyboardGeometry.internalBottomInset > 0
               ? { duration: 0 }
             : { type: "spring", stiffness: 220, damping: 34, mass: 0.9 }
         }
