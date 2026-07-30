@@ -48,6 +48,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const dayKey = url.searchParams.get("dayKey");
   const timeZone = url.searchParams.get("timeZone") || "UTC";
+  const mode = url.searchParams.get("mode");
 
   if (!dayKey) {
     return NextResponse.json(
@@ -102,6 +103,32 @@ export async function GET(request: Request) {
       { year, month, day, hour: 4, minute: 0 },
       timeZone
     );
+
+    if (mode === "creator-day") {
+      const nextSchedulerDate = makeDateInTimeZone(
+        { year, month, day: day + 1, hour: 4, minute: 0 },
+        timeZone
+      );
+      const currentSchedulerWindows = await fetchWindowsForDate(
+        currentSchedulerDate,
+        supabase,
+        timeZone,
+        {
+          userId: user.id,
+          useDayTypes: true,
+        }
+      );
+      const windows = visibleCalendarWindowsForDay({
+        dayKey,
+        timeZone,
+        visibleStart: currentSchedulerDate,
+        visibleEnd: nextSchedulerDate,
+        previousSchedulerWindows: [],
+        currentSchedulerWindows,
+      });
+
+      return NextResponse.json({ windows });
+    }
 
     const [previousSchedulerWindows, currentSchedulerWindows] =
       await Promise.all([

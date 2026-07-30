@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveCreatorDay } from "@/lib/creatorDay";
 
 describe("resolveCreatorDay", () => {
-  it.each([["2026-07-22T03:59:00-05:00", "2026-07-21"], ["2026-07-22T04:00:00-05:00", "2026-07-22"], ["2026-07-22T12:00:00-05:00", "2026-07-22"]])("uses the 4 AM boundary for %s", (instant, expected) => expect(resolveCreatorDay({ instant: new Date(instant), profileTimezone: "America/Chicago" }).creatorDayDate).toBe(expected));
+  it.each([["2026-07-29T23:59:00-05:00", "2026-07-29"], ["2026-07-30T00:00:00-05:00", "2026-07-29"], ["2026-07-30T03:59:00-05:00", "2026-07-29"], ["2026-07-30T04:00:00-05:00", "2026-07-30"], ["2026-07-30T12:00:00-05:00", "2026-07-30"]])("uses the 4 AM boundary for %s", (instant, expected) => expect(resolveCreatorDay({ instant: new Date(instant), profileTimezone: "America/Chicago" }).creatorDayDate).toBe(expected));
   it("uses profile, device, then UTC timezone precedence", () => {
     expect(resolveCreatorDay({ profileTimezone: "America/Los_Angeles", deviceTimezone: "Asia/Tokyo" }).timezoneSource).toBe("profile");
     expect(resolveCreatorDay({ profileTimezone: "bad", deviceTimezone: "Europe/London" }).timezoneSource).toBe("device");

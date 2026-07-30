@@ -37,9 +37,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   AnimatePresence,
   motion,
-  useMotionValue,
   useReducedMotion,
-  useSpring,
 } from "framer-motion";
 import clsx from "clsx";
 import {
@@ -68,6 +66,7 @@ import {
   type MyListPinnableSourceType,
 } from "@/lib/my-list/pinnedSourceItems";
 import {
+  deleteManualMyListItem,
   loadManualMyListItems,
   replaceManualMyListItems,
 } from "@/lib/my-list/myListItemsStorage";
@@ -147,7 +146,11 @@ const MY_LIST_MIN_EDITABLE_SHEET_HEIGHT =
   LIST_COMPACT_ROW_HEIGHT +
   LIST_COMPACT_NOTES_ALLOWANCE +
   LIST_COMPACT_BOTTOM_ALLOWANCE;
-const MY_LIST_KEYBOARD_RECALC_DELAYS_MS = [80, 220, 420] as const;
+const MY_LIST_KEYBOARD_REDUCTION_THRESHOLD = 80;
+const MY_LIST_VIEWPORT_RECOVERY_TOLERANCE = 16;
+const MY_LIST_VIEWPORT_WIDTH_CHANGE_THRESHOLD = 24;
+const MY_LIST_VIEWPORT_WIDTH_RATIO_CHANGE_THRESHOLD = 0.06;
+const MY_LIST_VISUAL_PAN_THRESHOLD = 24;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
 const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
@@ -246,6 +249,108 @@ function clampMyListSheetHeight(height: number, minimumHeight: number) {
   return Math.max(height, safeMinimum);
 }
 
+function readPositiveViewportNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function readMyListViewportMetrics(): MyListViewportMetrics {
+  const fallbackHeight = MY_LIST_MIN_SAFE_SHEET_HEIGHT;
+  const innerWidth = readPositiveViewportNumber(window.innerWidth) ?? 1;
+  const innerHeight =
+    readPositiveViewportNumber(window.innerHeight) ?? fallbackHeight;
+  const clientHeight =
+    readPositiveViewportNumber(document.documentElement.clientHeight) ??
+    innerHeight;
+  const layoutBottom = Math.min(innerHeight, clientHeight);
+  const visualViewport = window.visualViewport;
+
+  if (!visualViewport) {
+    return {
+      innerWidth,
+      innerHeight,
+      clientHeight,
+      layoutBottom,
+      hasVisualViewport: false,
+      visualWidth: null,
+      visualHeight: layoutBottom,
+      visualTop: 0,
+      visualBottom: layoutBottom,
+    };
+  }
+
+  const visualWidth = readPositiveViewportNumber(visualViewport.width);
+  const visualHeight =
+    readPositiveViewportNumber(visualViewport.height) ?? layoutBottom;
+  const visualTop =
+    typeof visualViewport.offsetTop === "number" &&
+    Number.isFinite(visualViewport.offsetTop)
+      ? visualViewport.offsetTop
+      : 0;
+
+  return {
+    innerWidth,
+    innerHeight,
+    clientHeight,
+    layoutBottom,
+    hasVisualViewport: true,
+    visualWidth,
+    visualHeight,
+    visualTop,
+    visualBottom: visualTop + visualHeight,
+  };
+}
+
+function snapshotMyListRect(rect: DOMRect): MyListRectSnapshot {
+  return {
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function isMyListKeyboardGeometryEqual(
+  left: MyListKeyboardGeometryState,
+  right: MyListKeyboardGeometryState
+) {
+  const leftHeight = left.constrainedHeight ?? -1;
+  const rightHeight = right.constrainedHeight ?? -1;
+
+  return (
+    left.mode === right.mode &&
+    Math.abs(leftHeight - rightHeight) < 0.5 &&
+    Math.abs(left.internalBottomInset - right.internalBottomInset) <= 1
+  );
+}
+
+function isMyListKeyboardBaselineRecovered(
+  metrics: MyListViewportMetrics,
+  baseline: MyListKeyboardSessionBaseline
+) {
+  const visualHeightRecovered =
+    baseline.visualHeight === null ||
+    Math.abs(metrics.visualHeight - baseline.visualHeight) <=
+      MY_LIST_VIEWPORT_RECOVERY_TOLERANCE;
+  const visualTopRecovered =
+    baseline.visualOffsetTop === null ||
+    Math.abs(metrics.visualTop - baseline.visualOffsetTop) <= 8;
+
+  return (
+    Math.abs(metrics.innerHeight - baseline.innerHeight) <=
+      MY_LIST_VIEWPORT_RECOVERY_TOLERANCE &&
+    Math.abs(metrics.clientHeight - baseline.clientHeight) <=
+      MY_LIST_VIEWPORT_RECOVERY_TOLERANCE &&
+    Math.abs(metrics.visualBottom - baseline.visualBottom) <=
+      MY_LIST_VIEWPORT_RECOVERY_TOLERANCE &&
+    visualHeightRecovered &&
+    visualTopRecovered
+  );
+}
+
 const QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID = "uncategorized";
 const QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
 
@@ -254,6 +359,55 @@ type QuickCreateSkillGroup = {
   label: string;
   categoryOrder: number | null;
   skills: SkillRow[];
+};
+
+type MyListViewportMetrics = {
+  innerWidth: number;
+  innerHeight: number;
+  clientHeight: number;
+  layoutBottom: number;
+  hasVisualViewport: boolean;
+  visualWidth: number | null;
+  visualHeight: number;
+  visualTop: number;
+  visualBottom: number;
+};
+
+type MyListKeyboardGeometryMode =
+  | "none"
+  | "layout-resized"
+  | "visual-occlusion"
+  | "mixed";
+
+type MyListKeyboardGeometryState = {
+  mode: MyListKeyboardGeometryMode;
+  constrainedHeight: number | null;
+  internalBottomInset: number;
+};
+
+type MyListRectSnapshot = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  width: number;
+  height: number;
+};
+
+type MyListKeyboardSessionBaseline = {
+  innerWidth: number;
+  innerHeight: number;
+  clientHeight: number;
+  layoutBottom: number;
+  visualWidth: number | null;
+  visualHeight: number | null;
+  visualOffsetTop: number | null;
+  visualBottom: number;
+  sheetRootRect: MyListRectSnapshot | null;
+  compactHeight: number;
+  expandedHeight: number;
+  renderedSheetHeight: number;
+  isExpanded: boolean;
 };
 
 function compareQuickCreateOrderThenName(
@@ -367,6 +521,13 @@ function createManualRow(
     text: "",
     insertAfterRowKey: null,
   };
+}
+
+function createManualStorageBackedRowId(fallbackCounter: number) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `manual-${Date.now()}-${fallbackCounter}`;
 }
 
 function sanitizeMyListManualRow(
@@ -1398,6 +1559,9 @@ export function MyListSheet({
   const [pendingDeleteRowId, setPendingDeleteRowId] = useState<string | null>(
     null
   );
+  const [deletingManualRowIds, setDeletingManualRowIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [taskOverrides, setTaskOverrides] = useState<
     Record<string, MyListTaskOverride>
   >({});
@@ -1442,14 +1606,12 @@ export function MyListSheet({
       pendingDeleteRowId,
     ]
   );
-  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
-  const keyboardBottomOffset = useMotionValue(0);
-  const smoothedKeyboardBottomOffset = useSpring(keyboardBottomOffset, {
-    stiffness: 520,
-    damping: 58,
-    mass: 0.9,
-    restDelta: 0.5,
-  });
+  const [keyboardGeometry, setKeyboardGeometry] =
+    useState<MyListKeyboardGeometryState>({
+      mode: "none",
+      constrainedHeight: null,
+      internalBottomInset: 0,
+    });
   const [myListSheetHeights, setMyListSheetHeights] = useState(() => ({
     compact: 448,
     expanded: 720,
@@ -1458,21 +1620,24 @@ export function MyListSheet({
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
   const manualTitleInputRefs = useRef(new Map<string, HTMLInputElement>());
   const manualRowIdCounterRef = useRef(0);
+  const manualRowsPersistenceRef = useRef<Promise<void>>(Promise.resolve());
+  const deletingManualRowIdsRef = useRef<Set<string>>(new Set());
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const manualUpgradePressRef = useRef<MyListManualUpgradePress | null>(null);
   const manualReorderOriginRowsRef = useRef<MyListManualRow[] | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
-  const recalculateSheetHeightsRef = useRef<(() => void) | null>(null);
-  const keyboardRecalculationTimeoutsRef = useRef<
-    ReturnType<typeof setTimeout>[]
-  >([]);
-  const keyboardBaselineHeightRef = useRef<number | null>(null);
-  const focusVisibilityFrameRef = useRef<number | null>(null);
-  const focusVisibilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+  const keyboardSessionBaselineRef =
+    useRef<MyListKeyboardSessionBaseline | null>(null);
+  const keyboardSessionClosingRef = useRef(false);
+  const viewportMeasurementFrameRef = useRef<number | null>(null);
+  const keyboardCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const lastMeasuredViewportRef = useRef<{ width: number; height: number } | null>(
+  const orientationSettlementTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusVisibilityFrameRef = useRef<number | null>(null);
+  const focusVisibilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
@@ -1764,13 +1929,24 @@ export function MyListSheet({
     (rows: MyListManualRow[]) => {
       writeStoredMyListManualRows(rows, defaultPriority.id);
       if (userId) {
-        void replaceManualMyListItems({
-          userId,
-          rows,
-        }).catch((error) => {
+        const nextPersistence = manualRowsPersistenceRef.current
+          .catch(() => undefined)
+          .then(() => {
+            const rowsToPersist = rows.filter(
+              (row) => !deletingManualRowIdsRef.current.has(row.id)
+            );
+            return replaceManualMyListItems({
+              userId,
+              rows: rowsToPersist,
+            });
+          });
+        manualRowsPersistenceRef.current = nextPersistence;
+        void nextPersistence.catch((error) => {
           console.error("Failed to persist My List manual rows", error);
         });
+        return nextPersistence;
       }
+      return Promise.resolve();
     },
     [defaultPriority.id, userId]
   );
@@ -2277,12 +2453,19 @@ export function MyListSheet({
   const rawCurrentSheetHeight = isExpanded
     ? myListSheetHeights.expanded
     : compactSheetHeight;
-  const currentSheetHeight = clampMyListSheetHeight(
+  const intendedCurrentSheetHeight = clampMyListSheetHeight(
     rawCurrentSheetHeight,
     editableFocusInsideSheetRef.current
       ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
       : MY_LIST_MIN_SAFE_SHEET_HEIGHT
   );
+  const currentSheetHeight =
+    keyboardGeometry.constrainedHeight === null
+      ? intendedCurrentSheetHeight
+      : Math.min(
+          intendedCurrentSheetHeight,
+          Math.max(keyboardGeometry.constrainedHeight, 1)
+        );
 
   const canStartScheduleTimelineDrag =
     open && activeView === "list" && enableScheduleTimelineDrag;
@@ -2993,7 +3176,7 @@ export function MyListSheet({
 
   const createManualRowId = useCallback(() => {
     manualRowIdCounterRef.current += 1;
-    return `manual-${Date.now()}-${manualRowIdCounterRef.current}`;
+    return createManualStorageBackedRowId(manualRowIdCounterRef.current);
   }, []);
 
   const insertManualRowAfterAnchor = useCallback(
@@ -3574,7 +3757,7 @@ export function MyListSheet({
   );
 
   const handleDeleteRowAction = useCallback(
-    (
+    async (
       rowId: string,
       rowType: "manual" | "task" | "pinnedSource",
       pinnedSourceRow?: MyListPinnedSourceRow
@@ -3589,8 +3772,8 @@ export function MyListSheet({
         return;
       }
 
-      setPendingDeleteRowId(null);
       if (rowType === "pinnedSource" && pinnedSourceRow) {
+        setPendingDeleteRowId(null);
         setPinnedSourceCompletions((currentCompletions) => {
           const completionKey = `${pinnedSourceRow.sourceType}:${rowId}`;
           if (!(completionKey in currentCompletions)) return currentCompletions;
@@ -3604,21 +3787,61 @@ export function MyListSheet({
       }
 
       if (rowType === "manual") {
-        updateManualRowsWithPersistence((currentRows) =>
-          currentRows.filter((row) => row.id !== rowId)
-        );
-        setActiveSkillPickerRowKey((currentRowKey) =>
-          currentRowKey === `manual:${rowId}` ? null : currentRowKey
-        );
-        setActivePriorityPickerRowKey((currentRowKey) =>
-          currentRowKey === `manual:${rowId}` ? null : currentRowKey
-        );
-        setActiveDayPickerRowKey((currentRowKey) =>
-          currentRowKey === `manual:${rowId}` ? null : currentRowKey
-        );
+        if (deletingManualRowIds.has(rowId)) return;
+
+        deletingManualRowIdsRef.current.add(rowId);
+        setDeletingManualRowIds((currentIds) => {
+          const nextIds = new Set(currentIds);
+          nextIds.add(rowId);
+          return nextIds;
+        });
+
+        try {
+          if (userId) {
+            const nextPersistence = manualRowsPersistenceRef.current
+              .catch((error) => {
+                console.error(
+                  "Previous My List manual row persistence failed before delete",
+                  error
+                );
+              })
+              .then(() => deleteManualMyListItem({ userId, itemId: rowId }));
+            manualRowsPersistenceRef.current = nextPersistence;
+            await nextPersistence;
+          }
+
+          setManualRows((currentRows) => {
+            const nextRows = currentRows.filter((row) => row.id !== rowId);
+            writeStoredMyListManualRows(nextRows, defaultPriority.id);
+            return nextRows;
+          });
+          setActiveSkillPickerRowKey((currentRowKey) =>
+            currentRowKey === `manual:${rowId}` ? null : currentRowKey
+          );
+          setActivePriorityPickerRowKey((currentRowKey) =>
+            currentRowKey === `manual:${rowId}` ? null : currentRowKey
+          );
+          setActiveDayPickerRowKey((currentRowKey) =>
+            currentRowKey === `manual:${rowId}` ? null : currentRowKey
+          );
+        } catch (error) {
+          console.error("Failed to delete My List manual todo", error);
+        } finally {
+          setPendingDeleteRowId((currentRowKey) =>
+            currentRowKey === deleteRowId ? null : currentRowKey
+          );
+          setDeletingManualRowIds((currentIds) => {
+            if (!currentIds.has(rowId)) return currentIds;
+            const nextIds = new Set(currentIds);
+            nextIds.delete(rowId);
+            return nextIds;
+          });
+          deletingManualRowIdsRef.current.delete(rowId);
+        }
         return;
       }
 
+      setPendingDeleteRowId(null);
       setActiveSkillPickerRowKey((currentRowKey) =>
         currentRowKey === `task:${rowId}` ? null : currentRowKey
       );
@@ -3634,7 +3857,13 @@ export function MyListSheet({
         return nextIds;
       });
     },
-    [onRemovePinnedSource, pendingDeleteRowId, updateManualRowsWithPersistence]
+    [
+      defaultPriority.id,
+      deletingManualRowIds,
+      onRemovePinnedSource,
+      pendingDeleteRowId,
+      userId,
+    ]
   );
 
   const renderDeleteRowButton = useCallback(
@@ -3648,10 +3877,13 @@ export function MyListSheet({
           ? buildPinnedSourceRowKey(pinnedSourceRow.sourceType, rowId)
           : `${rowType}:${rowId}`;
       const confirming = pendingDeleteRowId === deleteRowId;
+      const isDeleting =
+        rowType === "manual" && deletingManualRowIds.has(rowId);
 
       return (
         <button
           type="button"
+          disabled={isDeleting}
           aria-label={
             confirming
               ? rowType === "pinnedSource"
@@ -3670,7 +3902,8 @@ export function MyListSheet({
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent p-0 outline-none transition focus-visible:ring-2 focus-visible:ring-white/30",
             confirming
               ? "text-red-300/78 hover:text-red-200"
-              : "text-white/24 hover:text-white/48"
+              : "text-white/24 hover:text-white/48",
+            isDeleting && "cursor-wait"
           )}
         >
           <AnimatePresence mode="wait" initial={false}>
@@ -3706,6 +3939,7 @@ export function MyListSheet({
     },
     [
       handleDeleteRowAction,
+      deletingManualRowIds,
       open,
       pendingDeleteRowId,
       prefersReducedMotion,
@@ -3978,29 +4212,59 @@ export function MyListSheet({
     [activeManualReorderRowId, expandSheet, isExpanded, open]
   );
 
+  const isEditableElementInsideSheet = useCallback((element: Element | null) => {
+    if (!(element instanceof HTMLElement)) return false;
+    if (!sheetRootRef.current?.contains(element)) return false;
+
+    return element.matches(MY_LIST_EDITABLE_TARGET_SELECTOR);
+  }, []);
+
+  const isEditableElementFocusedInsideSheet = useCallback(() => {
+    if (typeof document === "undefined") return false;
+
+    return isEditableElementInsideSheet(document.activeElement);
+  }, [isEditableElementInsideSheet]);
+
   const scrollActiveEditableIntoSheetView = useCallback(() => {
     if (typeof document === "undefined") return;
 
     const activeElement = document.activeElement;
     const scrollElement = sheetScrollRef.current;
     if (!(activeElement instanceof HTMLElement) || !scrollElement) return;
-    if (!sheetRootRef.current?.contains(activeElement)) return;
-    if (!activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
+    if (!isEditableElementInsideSheet(activeElement)) return;
 
     const elementRect = activeElement.getBoundingClientRect();
     const scrollRect = scrollElement.getBoundingClientRect();
-    const desiredScrollTop =
-      scrollElement.scrollTop +
-      elementRect.top -
-      scrollRect.top -
-      (scrollRect.height - elementRect.height) / 2;
+    const metrics =
+      typeof window !== "undefined" ? readMyListViewportMetrics() : null;
+    const visibleTop = Math.max(scrollRect.top, metrics?.visualTop ?? scrollRect.top);
+    const visibleBottom = Math.min(
+      scrollRect.bottom,
+      metrics?.visualBottom ?? scrollRect.bottom
+    );
+    const visibleHeight = visibleBottom - visibleTop;
+
+    if (visibleHeight <= 0) return;
+
+    const revealMargin = 12;
+    let desiredScrollTop = scrollElement.scrollTop;
+
+    if (elementRect.top < visibleTop + revealMargin) {
+      desiredScrollTop += elementRect.top - visibleTop - revealMargin;
+    } else if (elementRect.bottom > visibleBottom - revealMargin) {
+      desiredScrollTop += elementRect.bottom - visibleBottom + revealMargin;
+    } else {
+      return;
+    }
+
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
+    const keyboardSessionActive = keyboardSessionBaselineRef.current !== null;
 
     scrollElement.scrollTo({
       top: Math.min(Math.max(desiredScrollTop, 0), Math.max(maxScrollTop, 0)),
-      behavior: "smooth",
+      behavior: keyboardSessionActive ? "auto" : "smooth",
     });
-  }, []);
+  }, [isEditableElementInsideSheet]);
 
   const scheduleActiveEditableVisibility = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -4016,39 +4280,307 @@ export function MyListSheet({
       focusVisibilityFrameRef.current = null;
       scrollActiveEditableIntoSheetView();
     });
-    focusVisibilityTimeoutRef.current = setTimeout(() => {
-      focusVisibilityTimeoutRef.current = null;
-      scrollActiveEditableIntoSheetView();
-    }, 180);
+
+    if (keyboardSessionBaselineRef.current === null) {
+      focusVisibilityTimeoutRef.current = setTimeout(() => {
+        focusVisibilityTimeoutRef.current = null;
+        scrollActiveEditableIntoSheetView();
+      }, 180);
+    }
   }, [scrollActiveEditableIntoSheetView]);
 
-  const clearKeyboardRecalculationTimeouts = useCallback(() => {
-    keyboardRecalculationTimeoutsRef.current.forEach((timeout) => {
-      clearTimeout(timeout);
-    });
-    keyboardRecalculationTimeoutsRef.current = [];
+  const clearKeyboardCloseTimeout = useCallback(() => {
+    if (keyboardCloseTimeoutRef.current !== null) {
+      clearTimeout(keyboardCloseTimeoutRef.current);
+      keyboardCloseTimeoutRef.current = null;
+    }
   }, []);
 
-  const scheduleKeyboardSettledRecalculation = useCallback(() => {
-    if (typeof window === "undefined") return;
+  const clearKeyboardSession = useCallback(() => {
+    keyboardSessionBaselineRef.current = null;
+    keyboardSessionClosingRef.current = false;
+    clearKeyboardCloseTimeout();
+    setKeyboardGeometry((currentGeometry) => {
+      const nextGeometry: MyListKeyboardGeometryState = {
+        mode: "none",
+        constrainedHeight: null,
+        internalBottomInset: 0,
+      };
 
-    clearKeyboardRecalculationTimeouts();
-    recalculateSheetHeightsRef.current?.();
-    scheduleActiveEditableVisibility();
-
-    MY_LIST_KEYBOARD_RECALC_DELAYS_MS.forEach((delay) => {
-      const timeout = setTimeout(() => {
-        keyboardRecalculationTimeoutsRef.current =
-          keyboardRecalculationTimeoutsRef.current.filter(
-            (currentTimeout) => currentTimeout !== timeout
-          );
-        recalculateSheetHeightsRef.current?.();
-        scheduleActiveEditableVisibility();
-      }, delay);
-
-      keyboardRecalculationTimeoutsRef.current.push(timeout);
+      return isMyListKeyboardGeometryEqual(currentGeometry, nextGeometry)
+        ? currentGeometry
+        : nextGeometry;
     });
-  }, [clearKeyboardRecalculationTimeouts, scheduleActiveEditableVisibility]);
+  }, [clearKeyboardCloseTimeout]);
+
+  const measureSafeAreaTop = useCallback(() => {
+    if (typeof document === "undefined") return 0;
+
+    const probe = document.createElement("div");
+    probe.style.position = "fixed";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style.height = "env(safe-area-inset-top, 0px)";
+    probe.style.width = "0";
+    document.body.appendChild(probe);
+    const safeAreaTop = probe.getBoundingClientRect().height;
+    probe.remove();
+
+    return Number.isFinite(safeAreaTop) ? safeAreaTop : 0;
+  }, []);
+
+  const readRouteTopReserve = useCallback(() => {
+    const rootFontSize =
+      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const safeAreaTop = measureSafeAreaTop();
+    const scheduleTopReserve = Math.max(
+      4.75 * rootFontSize,
+      safeAreaTop + 3.75 * rootFontSize
+    );
+    const fullTopReserve = Math.max(
+      2.5 * rootFontSize,
+      safeAreaTop + 1.5 * rootFontSize
+    );
+
+    return useFullExpandedHeight ? fullTopReserve : scheduleTopReserve;
+  }, [measureSafeAreaTop, useFullExpandedHeight]);
+
+  const calculateNormalSheetHeights = useCallback(
+    (layoutBottom: number) => {
+      const rootFontSize =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const editableFocusedInsideSheet =
+        editableFocusInsideSheetRef.current ||
+        isEditableElementFocusedInsideSheet();
+      const minimumSheetHeight = editableFocusedInsideSheet
+        ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
+        : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
+      const compact = clampMyListSheetHeight(
+        Math.min(layoutBottom * 0.58, 28 * rootFontSize),
+        minimumSheetHeight
+      );
+      const expanded = clampMyListSheetHeight(
+        Math.max(compact, layoutBottom - readRouteTopReserve()),
+        minimumSheetHeight
+      );
+
+      setMyListSheetHeights((currentHeights) => {
+        if (
+          Math.abs(currentHeights.compact - compact) < 0.5 &&
+          Math.abs(currentHeights.expanded - expanded) < 0.5
+        ) {
+          return currentHeights;
+        }
+
+        return { compact, expanded };
+      });
+    },
+    [isEditableElementFocusedInsideSheet, readRouteTopReserve]
+  );
+
+  const beginKeyboardSession = useCallback(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (keyboardSessionBaselineRef.current) {
+      keyboardSessionClosingRef.current = false;
+      clearKeyboardCloseTimeout();
+      return;
+    }
+
+    const metrics = readMyListViewportMetrics();
+    const sheetRootRect = sheetRootRef.current?.getBoundingClientRect() ?? null;
+
+    keyboardSessionBaselineRef.current = {
+      innerWidth: metrics.innerWidth,
+      innerHeight: metrics.innerHeight,
+      clientHeight: metrics.clientHeight,
+      layoutBottom: metrics.layoutBottom,
+      visualWidth: metrics.visualWidth,
+      visualHeight: metrics.hasVisualViewport ? metrics.visualHeight : null,
+      visualOffsetTop: metrics.hasVisualViewport ? metrics.visualTop : null,
+      visualBottom: metrics.visualBottom,
+      sheetRootRect: sheetRootRect ? snapshotMyListRect(sheetRootRect) : null,
+      compactHeight: compactSheetHeight,
+      expandedHeight: myListSheetHeights.expanded,
+      renderedSheetHeight: sheetRootRect?.height || currentSheetHeight,
+      isExpanded,
+    };
+    keyboardSessionClosingRef.current = false;
+    clearKeyboardCloseTimeout();
+  }, [
+    clearKeyboardCloseTimeout,
+    compactSheetHeight,
+    currentSheetHeight,
+    isExpanded,
+    myListSheetHeights.expanded,
+  ]);
+
+  const measureViewportGeometry = useCallback(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const metrics = readMyListViewportMetrics();
+    const baseline = keyboardSessionBaselineRef.current;
+
+    if (!baseline) {
+      calculateNormalSheetHeights(metrics.layoutBottom);
+      return;
+    }
+
+    const baselineWidth = baseline.visualWidth ?? baseline.innerWidth;
+    const currentWidth = metrics.visualWidth ?? metrics.innerWidth;
+    const widthDelta = Math.abs(currentWidth - baselineWidth);
+    const widthRatioDelta =
+      baselineWidth > 0 ? widthDelta / baselineWidth : 0;
+
+    if (
+      widthDelta >= MY_LIST_VIEWPORT_WIDTH_CHANGE_THRESHOLD ||
+      widthRatioDelta >= MY_LIST_VIEWPORT_WIDTH_RATIO_CHANGE_THRESHOLD
+    ) {
+      clearKeyboardSession();
+      if (orientationSettlementTimeoutRef.current !== null) {
+        clearTimeout(orientationSettlementTimeoutRef.current);
+      }
+      orientationSettlementTimeoutRef.current = setTimeout(() => {
+        orientationSettlementTimeoutRef.current = null;
+        calculateNormalSheetHeights(readMyListViewportMetrics().layoutBottom);
+      }, 180);
+      return;
+    }
+
+    if (
+      keyboardSessionClosingRef.current &&
+      isMyListKeyboardBaselineRecovered(metrics, baseline)
+    ) {
+      clearKeyboardSession();
+      calculateNormalSheetHeights(metrics.layoutBottom);
+      return;
+    }
+
+    const focusedOrClosing =
+      editableFocusInsideSheetRef.current ||
+      keyboardSessionClosingRef.current ||
+      isEditableElementFocusedInsideSheet();
+    const layoutShrink = Math.max(
+      0,
+      baseline.innerHeight - metrics.innerHeight,
+      baseline.clientHeight - metrics.clientHeight,
+      baseline.layoutBottom - metrics.layoutBottom
+    );
+    const visualHeightReduction =
+      baseline.visualHeight === null
+        ? 0
+        : Math.max(0, baseline.visualHeight - metrics.visualHeight);
+    const visualBottomReduction = Math.max(
+      0,
+      baseline.visualBottom - metrics.visualBottom
+    );
+    const visualTopPanning =
+      baseline.visualOffsetTop === null
+        ? 0
+        : Math.max(0, metrics.visualTop - baseline.visualOffsetTop);
+    const layoutKeyboardLike =
+      focusedOrClosing && layoutShrink >= MY_LIST_KEYBOARD_REDUCTION_THRESHOLD;
+    const visualKeyboardLike =
+      focusedOrClosing &&
+      metrics.hasVisualViewport &&
+      (Math.max(visualHeightReduction, visualBottomReduction) >=
+        MY_LIST_KEYBOARD_REDUCTION_THRESHOLD ||
+        (visualTopPanning >= MY_LIST_VISUAL_PAN_THRESHOLD &&
+          Math.max(visualHeightReduction, visualBottomReduction) >=
+            MY_LIST_VISUAL_PAN_THRESHOLD));
+    const visualResidualBelowLayout = Math.max(
+      0,
+      metrics.layoutBottom - metrics.visualBottom
+    );
+    const mode: MyListKeyboardGeometryMode = layoutKeyboardLike
+      ? visualKeyboardLike &&
+        visualResidualBelowLayout > MY_LIST_VIEWPORT_RECOVERY_TOLERANCE
+        ? "mixed"
+        : "layout-resized"
+      : visualKeyboardLike
+        ? "visual-occlusion"
+        : "none";
+
+    if (mode === "none") {
+      setKeyboardGeometry((currentGeometry) => {
+        const nextGeometry: MyListKeyboardGeometryState = {
+          mode: "none",
+          constrainedHeight: null,
+          internalBottomInset: 0,
+        };
+
+        return isMyListKeyboardGeometryEqual(currentGeometry, nextGeometry)
+          ? currentGeometry
+          : nextGeometry;
+      });
+      return;
+    }
+
+    const safeTopBoundary = Math.max(
+      readRouteTopReserve(),
+      metrics.visualTop
+    );
+    const safeCurrentLayoutCapacity = Math.max(
+      1,
+      metrics.layoutBottom - safeTopBoundary
+    );
+    const scrollRect = sheetScrollRef.current?.getBoundingClientRect() ?? null;
+    const internalBottomInset =
+      metrics.hasVisualViewport && scrollRect
+        ? Math.max(0, Math.ceil(scrollRect.bottom - metrics.visualBottom))
+        : 0;
+    const nextGeometry: MyListKeyboardGeometryState = {
+      mode,
+      constrainedHeight: safeCurrentLayoutCapacity,
+      internalBottomInset,
+    };
+
+    setKeyboardGeometry((currentGeometry) =>
+      isMyListKeyboardGeometryEqual(currentGeometry, nextGeometry)
+        ? currentGeometry
+        : nextGeometry
+    );
+    scheduleActiveEditableVisibility();
+  }, [
+    calculateNormalSheetHeights,
+    clearKeyboardSession,
+    isEditableElementFocusedInsideSheet,
+    readRouteTopReserve,
+    scheduleActiveEditableVisibility,
+  ]);
+
+  const scheduleViewportMeasurement = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (viewportMeasurementFrameRef.current !== null) return;
+
+    viewportMeasurementFrameRef.current = window.requestAnimationFrame(() => {
+      viewportMeasurementFrameRef.current = null;
+      measureViewportGeometry();
+    });
+  }, [measureViewportGeometry]);
+
+  const markKeyboardSessionClosing = useCallback(() => {
+    editableFocusInsideSheetRef.current = false;
+    keyboardSessionClosingRef.current = keyboardSessionBaselineRef.current !== null;
+    scheduleViewportMeasurement();
+
+    clearKeyboardCloseTimeout();
+    if (keyboardSessionBaselineRef.current) {
+      keyboardCloseTimeoutRef.current = setTimeout(() => {
+        keyboardCloseTimeoutRef.current = null;
+        clearKeyboardSession();
+        if (typeof window !== "undefined" && typeof document !== "undefined") {
+          calculateNormalSheetHeights(readMyListViewportMetrics().layoutBottom);
+        }
+      }, 900);
+    } else {
+      clearKeyboardSession();
+    }
+  }, [
+    calculateNormalSheetHeights,
+    clearKeyboardCloseTimeout,
+    clearKeyboardSession,
+    scheduleViewportMeasurement,
+  ]);
 
   useEffect(() => {
     if (!pendingTitleFocusRowId || !open || activeView !== "list") return;
@@ -4065,6 +4597,7 @@ export function MyListSheet({
       if (!input) return;
 
       focused = true;
+      beginKeyboardSession();
       try {
         input.focus({ preventScroll: true });
       } catch {
@@ -4078,7 +4611,7 @@ export function MyListSheet({
     };
 
     focusFrame = window.requestAnimationFrame(focusPendingTitleInput);
-    focusTimeout = setTimeout(focusPendingTitleInput, 80);
+    focusTimeout = setTimeout(focusPendingTitleInput, 60);
 
     return () => {
       focused = true;
@@ -4091,73 +4624,11 @@ export function MyListSheet({
     };
   }, [
     activeView,
+    beginKeyboardSession,
     open,
     pendingTitleFocusRowId,
     scheduleActiveEditableVisibility,
   ]);
-
-  const isEditableElementFocusedInsideSheet = useCallback(() => {
-    if (typeof document === "undefined") return false;
-
-    const activeElement = document.activeElement;
-    if (!(activeElement instanceof HTMLElement)) return false;
-    if (!sheetRootRef.current?.contains(activeElement)) return false;
-
-    return activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR);
-  }, []);
-
-  const updateKeyboardBottomInset = useCallback(() => {
-    if (typeof window === "undefined") return;
-
-    const rawInnerHeight = window.innerHeight;
-    const innerHeight =
-      typeof rawInnerHeight === "number" &&
-      Number.isFinite(rawInnerHeight) &&
-      rawInnerHeight > 0
-        ? rawInnerHeight
-        : 0;
-
-    if (innerHeight > 0) {
-      keyboardBaselineHeightRef.current = Math.max(
-        keyboardBaselineHeightRef.current ?? innerHeight,
-        innerHeight
-      );
-    }
-
-    const shouldOffsetSheet =
-      open && activeView === "list" && isEditableElementFocusedInsideSheet();
-
-    if (!shouldOffsetSheet) {
-      setKeyboardBottomInset((currentInset) =>
-        currentInset === 0 ? currentInset : 0
-      );
-      return;
-    }
-
-    const visualViewport = window.visualViewport;
-    if (!visualViewport) {
-      setKeyboardBottomInset((currentInset) =>
-        currentInset === 0 ? currentInset : 0
-      );
-      return;
-    }
-
-    const baselineHeight = keyboardBaselineHeightRef.current ?? innerHeight;
-    const viewportHeight = visualViewport.height;
-    const viewportOffsetTop = visualViewport.offsetTop;
-    const rawInset =
-      baselineHeight - (viewportHeight + viewportOffsetTop);
-    const nextInset =
-      Number.isFinite(rawInset) && rawInset > 0 ? Math.round(rawInset) : 0;
-
-    setKeyboardBottomInset((currentInset) =>
-      Math.abs(currentInset - nextInset) <= 1 ? currentInset : nextInset
-    );
-  }, [activeView, isEditableElementFocusedInsideSheet, open]);
-
-  useEffect(() => {
-    keyboardBottomOffset.set(keyboardBottomInset);
-  }, [keyboardBottomInset, keyboardBottomOffset]);
 
   const handleSheetFocusCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
@@ -4167,33 +4638,30 @@ export function MyListSheet({
       if (!target.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
 
       editableFocusInsideSheetRef.current = true;
-      updateKeyboardBottomInset();
+      beginKeyboardSession();
       scheduleActiveEditableVisibility();
+      scheduleViewportMeasurement();
 
       if (!open || activeView !== "list") return;
 
       onOpenChange(true);
       if (!isExpanded) setIsExpanded(true);
-      scheduleKeyboardSettledRecalculation();
     },
     [
       activeView,
+      beginKeyboardSession,
       isExpanded,
       onOpenChange,
       open,
       scheduleActiveEditableVisibility,
-      scheduleKeyboardSettledRecalculation,
-      updateKeyboardBottomInset,
+      scheduleViewportMeasurement,
     ]
   );
 
   const handleSheetBlurCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
       const nextFocusedElement = event.relatedTarget;
-      if (
-        nextFocusedElement instanceof HTMLElement &&
-        sheetRootRef.current?.contains(nextFocusedElement)
-      ) {
+      if (isEditableElementInsideSheet(nextFocusedElement)) {
         return;
       }
 
@@ -4203,155 +4671,67 @@ export function MyListSheet({
       }
 
       setTimeout(() => {
-        editableFocusInsideSheetRef.current =
-          isEditableElementFocusedInsideSheet();
-        updateKeyboardBottomInset();
-      }, 120);
+        const editableStillFocused = isEditableElementFocusedInsideSheet();
+        editableFocusInsideSheetRef.current = editableStillFocused;
+        if (!editableStillFocused) {
+          markKeyboardSessionClosing();
+        }
+      }, 60);
     },
-    [isEditableElementFocusedInsideSheet, updateKeyboardBottomInset]
+    [
+      isEditableElementFocusedInsideSheet,
+      isEditableElementInsideSheet,
+      markKeyboardSessionClosing,
+    ]
   );
 
   useEffect(() => {
-    const measureSafeAreaTop = () => {
-      if (typeof document === "undefined") return 0;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
 
-      const probe = document.createElement("div");
-      probe.style.position = "fixed";
-      probe.style.visibility = "hidden";
-      probe.style.pointerEvents = "none";
-      probe.style.height = "env(safe-area-inset-top, 0px)";
-      probe.style.width = "0";
-      document.body.appendChild(probe);
-      const safeAreaTop = probe.getBoundingClientRect().height;
-      probe.remove();
-
-      return Number.isFinite(safeAreaTop) ? safeAreaTop : 0;
-    };
-
-    const calculateSheetHeights = () => {
-      const fallbackViewportWidth =
-        window.innerWidth > 0 ? window.innerWidth : 1;
-      const fallbackViewportHeight =
-        window.innerHeight > 0
-          ? window.innerHeight
-          : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
-      const rawViewportWidth = window.visualViewport?.width;
-      const rawViewportHeight = window.visualViewport?.height;
-      const viewportWidth =
-        typeof rawViewportWidth === "number" &&
-        Number.isFinite(rawViewportWidth) &&
-        rawViewportWidth > 0
-          ? rawViewportWidth
-          : fallbackViewportWidth;
-      const viewportHeight =
-        typeof rawViewportHeight === "number" &&
-        Number.isFinite(rawViewportHeight) &&
-        rawViewportHeight > 0
-          ? rawViewportHeight
-          : fallbackViewportHeight;
-      const lastMeasuredViewport = lastMeasuredViewportRef.current;
-      const widthChanged =
-        !lastMeasuredViewport ||
-        Math.abs(lastMeasuredViewport.width - viewportWidth) >= 0.5;
-      const heightChanged =
-        !lastMeasuredViewport ||
-        Math.abs(lastMeasuredViewport.height - viewportHeight) >= 0.5;
-      const editableFocusedInsideSheet =
-        editableFocusInsideSheetRef.current ||
-        isEditableElementFocusedInsideSheet();
-      const isKeyboardResizeInsideSheet =
-        heightChanged && !widthChanged && editableFocusedInsideSheet;
-
-      lastMeasuredViewportRef.current = {
-        width: viewportWidth,
-        height: viewportHeight,
-      };
-
-      const rootFontSize =
-        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const minimumSheetHeight = editableFocusedInsideSheet
-        ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
-        : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
-      const compact = clampMyListSheetHeight(
-        Math.min(viewportHeight * 0.58, 28 * rootFontSize),
-        minimumSheetHeight
-      );
-      const scheduleTopReserve = Math.max(
-        4.75 * rootFontSize,
-        measureSafeAreaTop() + 3.75 * rootFontSize
-      );
-      const fullTopReserve = Math.max(
-        2.5 * rootFontSize,
-        measureSafeAreaTop() + 1.5 * rootFontSize
-      );
-      const topReserve = useFullExpandedHeight
-        ? fullTopReserve
-        : scheduleTopReserve;
-      const expanded = clampMyListSheetHeight(
-        Math.max(compact, viewportHeight - topReserve),
-        minimumSheetHeight
-      );
-
-      setMyListSheetHeights((currentHeights) => {
-        if (
-          Math.abs(currentHeights.compact - compact) < 0.5 &&
-          Math.abs(currentHeights.expanded - expanded) < 0.5
-        ) {
-          return currentHeights;
-        }
-
-        return { compact, expanded };
-      });
-
-      if (isKeyboardResizeInsideSheet) {
-        scheduleActiveEditableVisibility();
-      }
-
-      updateKeyboardBottomInset();
-    };
-
-    recalculateSheetHeightsRef.current = calculateSheetHeights;
-    calculateSheetHeights();
-    window.addEventListener("resize", calculateSheetHeights);
-    window.visualViewport?.addEventListener("resize", calculateSheetHeights);
-    window.visualViewport?.addEventListener("scroll", calculateSheetHeights);
+    measureViewportGeometry();
+    window.addEventListener("resize", scheduleViewportMeasurement);
+    window.visualViewport?.addEventListener("resize", scheduleViewportMeasurement);
+    window.visualViewport?.addEventListener("scroll", scheduleViewportMeasurement);
 
     return () => {
-      if (recalculateSheetHeightsRef.current === calculateSheetHeights) {
-        recalculateSheetHeightsRef.current = null;
-      }
-      window.removeEventListener("resize", calculateSheetHeights);
+      window.removeEventListener("resize", scheduleViewportMeasurement);
       window.visualViewport?.removeEventListener(
         "resize",
-        calculateSheetHeights
+        scheduleViewportMeasurement
       );
       window.visualViewport?.removeEventListener(
         "scroll",
-        calculateSheetHeights
+        scheduleViewportMeasurement
       );
     };
-  }, [
-    isEditableElementFocusedInsideSheet,
-    scheduleActiveEditableVisibility,
-    updateKeyboardBottomInset,
-    useFullExpandedHeight,
-  ]);
+  }, [measureViewportGeometry, scheduleViewportMeasurement]);
 
   useEffect(() => {
     return () => {
       clearScheduleDragPress();
-      clearKeyboardRecalculationTimeouts();
+      keyboardSessionBaselineRef.current = null;
+      keyboardSessionClosingRef.current = false;
+      clearKeyboardCloseTimeout();
       if (
         typeof window !== "undefined" &&
         focusVisibilityFrameRef.current !== null
       ) {
         window.cancelAnimationFrame(focusVisibilityFrameRef.current);
       }
+      if (
+        typeof window !== "undefined" &&
+        viewportMeasurementFrameRef.current !== null
+      ) {
+        window.cancelAnimationFrame(viewportMeasurementFrameRef.current);
+      }
       if (focusVisibilityTimeoutRef.current !== null) {
         clearTimeout(focusVisibilityTimeoutRef.current);
       }
+      if (orientationSettlementTimeoutRef.current !== null) {
+        clearTimeout(orientationSettlementTimeoutRef.current);
+      }
     };
-  }, [clearKeyboardRecalculationTimeouts, clearScheduleDragPress]);
+  }, [clearKeyboardCloseTimeout, clearScheduleDragPress]);
 
   useEffect(() => {
     if (!open || !isExpanded || typeof document === "undefined") return;
@@ -4386,8 +4766,7 @@ export function MyListSheet({
   useEffect(() => {
     if (!open) {
       editableFocusInsideSheetRef.current = false;
-      setKeyboardBottomInset(0);
-      clearKeyboardRecalculationTimeouts();
+      clearKeyboardSession();
       setIsExpanded(false);
       setActiveSkillPickerRowKey(null);
       setActivePriorityPickerRowKey(null);
@@ -4396,7 +4775,7 @@ export function MyListSheet({
       setPendingDeleteRowId(null);
       setPendingTitleFocusRowId(null);
     }
-  }, [clearKeyboardRecalculationTimeouts, open]);
+  }, [clearKeyboardSession, open]);
 
   useEffect(() => {
     if (completedTodoCount === 0) {
@@ -4476,11 +4855,6 @@ export function MyListSheet({
       )}
       initial={false}
       animate={{ y: open ? 0 : "calc(100% - 2px)" }}
-      style={{
-        bottom: prefersReducedMotion
-          ? keyboardBottomOffset
-          : smoothedKeyboardBottomOffset,
-      }}
       transition={
         prefersReducedMotion
           ? { duration: 0 }
@@ -4515,7 +4889,7 @@ export function MyListSheet({
             if (shouldExpandOnOpen) setIsExpanded(true);
             onOpenChange(true);
           }}
-          className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507] pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
         >
           <ChevronUp
             className="h-3.5 w-3.5 transition-transform duration-200"
@@ -4539,7 +4913,7 @@ export function MyListSheet({
             setIsExpanded(false);
             onOpenChange(false);
           }}
-          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507] text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
         >
           <ChevronDown className="h-4 w-4" strokeWidth={2.2} aria-hidden="true" />
         </button>
@@ -4551,7 +4925,7 @@ export function MyListSheet({
           onTouchStart={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center overflow-hidden rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/64 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl"
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center overflow-hidden rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507] text-white/64 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)]"
         >
           <button
             type="button"
@@ -4586,8 +4960,7 @@ export function MyListSheet({
       <motion.div
         aria-hidden={!open}
         className={clsx(
-          "flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl",
-          isScheduleDragActive && "opacity-[0.82]"
+          "flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708] text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)]"
         )}
         initial={false}
         animate={{
@@ -4597,6 +4970,8 @@ export function MyListSheet({
         transition={
           prefersReducedMotion
             ? { duration: 0 }
+            : keyboardGeometry.mode !== "none"
+              ? { duration: 0 }
             : { type: "spring", stiffness: 220, damping: 34, mass: 0.9 }
         }
         style={{
@@ -4758,6 +5133,16 @@ export function MyListSheet({
           onTouchEnd={handleSheetTouchEnd}
           onTouchCancel={handleSheetTouchEnd}
           onWheel={handleSheetWheel}
+          style={{
+            paddingBottom:
+              keyboardGeometry.internalBottomInset > 0
+                ? `calc(0.75rem + ${keyboardGeometry.internalBottomInset}px)`
+                : undefined,
+            scrollPaddingBottom:
+              keyboardGeometry.internalBottomInset > 0
+                ? `${keyboardGeometry.internalBottomInset + 12}px`
+                : undefined,
+          }}
         >
           {activeView === "list" ? (
             <>

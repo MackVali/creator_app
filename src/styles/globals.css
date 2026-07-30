@@ -2,6 +2,13 @@
 @import "./tokens.css";
 @import "./habits.css";
 
+:root,
+html,
+body,
+[data-creator-root] {
+  background-color: var(--bg, #050505);
+}
+
 /* custom layers/utilities can go below */
 @layer utilities {
   .text-balance {

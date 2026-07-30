@@ -18,6 +18,8 @@ import { AmbientAudioProvider } from "@/lib/audio/ambientAudio";
 import { DEFAULT_THEME, THEME_STORAGE_KEY } from "@/lib/theme";
 import React from "react";
 
+const APP_BOOT_BACKGROUND = "var(--bg, #050505)";
+
 const themeInitScript = `
 (function() {
   try {
@@ -46,18 +48,26 @@ export default function RootLayout({
       lang="en"
       data-theme={DEFAULT_THEME}
       className={`theme-${DEFAULT_THEME}`}
+      style={{ backgroundColor: APP_BOOT_BACKGROUND }}
       suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="flex min-h-screen flex-col">
+      <body
+        className="flex min-h-screen flex-col"
+        style={{ backgroundColor: APP_BOOT_BACKGROUND }}
+      >
         <ErrorBoundary>
           <AuthProvider>
             <EntitlementProvider>
               <ClientProviders>
                 <AmbientAudioProvider>
-                  <main className="flex-1 bg-[var(--bg)] text-[var(--text)]">
+                  <main
+                    className="flex-1 bg-[var(--bg)] text-[var(--text)]"
+                    data-creator-root
+                    style={{ backgroundColor: APP_BOOT_BACKGROUND }}
+                  >
                     {children}
                   </main>
                 </AmbientAudioProvider>

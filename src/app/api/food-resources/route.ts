@@ -323,7 +323,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("food_resources")
     .select(
-      "id,user_id,food_id,name,brand_name,quantity,unit,location,expires_on,notes,status,metadata,created_at,updated_at,catalog_food:foods!food_resources_food_id_fkey(name,brand_name,normalized_name,normalized_brand_name,source,metadata)",
+      "id,user_id,food_id,name,brand_name,quantity,unit,location,expires_on,notes,status,metadata,created_at,updated_at,catalog_food:foods!food_resources_food_id_fkey(name,brand_name,normalized_name,normalized_brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,source,metadata)",
     )
     .eq("user_id", user.id)
     .order("expires_on", { ascending: true, nullsFirst: false })

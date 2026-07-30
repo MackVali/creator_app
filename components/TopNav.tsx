@@ -37,6 +37,7 @@ import {
 } from "@/lib/notifications/notificationOpenIntents";
 import {
   isOnHandDatabaseDefinition,
+  isDefaultFitnessDatabaseDefinition,
   ON_HAND_EXPIRES_ON_FIELD_ID,
   ON_HAND_LOCATION_FIELD_ID,
   ON_HAND_NAME_FIELD_ID,
@@ -44,6 +45,11 @@ import {
   ON_HAND_QUANTITY_FIELD_ID,
   ON_HAND_UNIT_FIELD_ID,
 } from "@/lib/skillStarterNotes";
+import { upsertFitnessWorkoutDatabaseEntry } from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
+  CREATOR_OPEN_FITNESS_WORKOUT_EVENT,
+  type CreatorOpenFitnessWorkoutDetail,
+} from "@/lib/fitness/openWorkout";
 
 type PinnedBodyDatabase = {
   databaseId: string;
@@ -58,6 +64,7 @@ type PinnedBodyDatabase = {
 
 type QuickAddBodyDatabaseTarget = PinnedBodyDatabase & {
   requestKey: number;
+  fitnessWorkoutOpenRequest?: CreatorOpenFitnessWorkoutDetail | null;
 };
 
 type NoteMetadataWithDatabases = {
@@ -603,10 +610,18 @@ function TopNavQuickAddEntrySheet({
     }
 
     const currentEntries = getMetadataDatabaseEntries(noteMetadata);
-    const nextDatabaseEntries: NoteDatabaseEntries = {
-      ...currentEntries,
-      [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), entry],
-    };
+    const nextDatabaseEntries: NoteDatabaseEntries = isDefaultFitnessDatabaseDefinition(
+      databaseDefinition,
+    )
+      ? (upsertFitnessWorkoutDatabaseEntry(
+          currentEntries,
+          databaseDefinition.id,
+          entry,
+        ) as NoteDatabaseEntries)
+      : {
+          ...currentEntries,
+          [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), entry],
+        };
     const nextMetadata = {
       ...(noteMetadata ?? {}),
       databaseEntries: nextDatabaseEntries,
@@ -671,6 +686,8 @@ function TopNavQuickAddEntrySheet({
     <NoteDatabaseEntrySheet
       key={`${target.requestKey}:${databaseDefinition.id}`}
       databaseDefinition={databaseDefinition}
+      entries={getMetadataDatabaseEntries(noteMetadata)[databaseDefinition.id]}
+      initialFitnessWorkoutOpenRequest={target.fitnessWorkoutOpenRequest ?? null}
       onClose={onClose}
       onSaveEntry={saveQuickAddEntry}
       overlayClassName={overlayClassName}
@@ -696,6 +713,8 @@ export default function TopNav() {
   const bodyMenuRef = useRef<HTMLDivElement | null>(null);
   const bodyMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const pendingNutritionLogOpenRef = useRef(false);
+  const pendingFitnessWorkoutOpenRef =
+    useRef<CreatorOpenFitnessWorkoutDetail | null>(null);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const {
     items,
@@ -900,11 +919,42 @@ export default function TopNav() {
     openPinnedBodyDatabaseQuickAdd(nutritionDatabase);
   }, [openPinnedBodyDatabaseQuickAdd, pinnedBodyDatabases]);
 
+  const openPinnedFitnessWorkoutQuickAdd = useCallback(
+    (detail: CreatorOpenFitnessWorkoutDetail) => {
+      const fitnessDatabase = pinnedBodyDatabases?.find(
+        (database) =>
+          normalizeBodyDatabaseKey(database.systemDatabaseKey) === "fitness" ||
+          normalizeBodyDatabaseKey(database.title) === "fitness",
+      );
+
+      if (!fitnessDatabase || !isDefaultPinnedBodyDatabase(fitnessDatabase)) {
+        pendingFitnessWorkoutOpenRef.current = detail;
+        return;
+      }
+
+      pendingFitnessWorkoutOpenRef.current = null;
+      setIsBodyMenuOpen(false);
+      setQuickAddTarget({
+        ...fitnessDatabase,
+        requestKey: Date.now(),
+        fitnessWorkoutOpenRequest: detail,
+      });
+    },
+    [pinnedBodyDatabases],
+  );
+
   useEffect(() => {
     if (!pendingNutritionLogOpenRef.current) return;
 
     openPinnedNutritionLogQuickAdd();
   }, [openPinnedNutritionLogQuickAdd]);
+
+  useEffect(() => {
+    const pendingFitnessWorkoutOpen = pendingFitnessWorkoutOpenRef.current;
+    if (!pendingFitnessWorkoutOpen) return;
+
+    openPinnedFitnessWorkoutQuickAdd(pendingFitnessWorkoutOpen);
+  }, [openPinnedFitnessWorkoutQuickAdd]);
 
   useEffect(() => {
     if (!consumePendingNutritionLogNotificationOpen()) return;
@@ -920,6 +970,30 @@ export default function TopNav() {
       window.removeEventListener(CREATOR_OPEN_NUTRITION_LOG_EVENT, openPinnedNutritionLogQuickAdd);
     };
   }, [openPinnedNutritionLogQuickAdd]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOpenFitnessWorkout = (event: Event) => {
+      const detail =
+        event instanceof CustomEvent
+          ? (event.detail as CreatorOpenFitnessWorkoutDetail | null)
+          : null;
+      if (!detail) return;
+      openPinnedFitnessWorkoutQuickAdd(detail);
+    };
+
+    window.addEventListener(
+      CREATOR_OPEN_FITNESS_WORKOUT_EVENT,
+      handleOpenFitnessWorkout,
+    );
+    return () => {
+      window.removeEventListener(
+        CREATOR_OPEN_FITNESS_WORKOUT_EVENT,
+        handleOpenFitnessWorkout,
+      );
+    };
+  }, [openPinnedFitnessWorkoutQuickAdd]);
 
   const isScheduleNutritionQuickAddOpen =
     shouldHideNav &&

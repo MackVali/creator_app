@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import {
+  isFitnessPlanScheduleMetadata,
+  readFitnessPlanSchedulePlanSnapshot,
+  readFitnessPlanScheduleRoutineAssignment,
+  resolveFitnessPlanScheduleDisplayText,
+} from "@/lib/fitness/planHabit";
+import type { Json } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
@@ -17,6 +24,7 @@ type ScheduleInstanceRow = {
   time_block_id: string | null;
   day_type_time_block_id: string | null;
   window_id: string | null;
+  metadata: Json | null;
 };
 
 function readString(value: string | null): string | null {
@@ -74,12 +82,24 @@ function matchesProvidedIdentity(
   return !row.time_block_id && !row.day_type_time_block_id && !row.window_id;
 }
 
-function mapScheduleInstance(row: ScheduleInstanceRow) {
+export function mapScheduleInstance(row: ScheduleInstanceRow) {
   const sourceType = readString(row.source_type)?.toUpperCase() ?? "EVENT";
+  const isFitnessPlanManaged = isFitnessPlanScheduleMetadata(row.metadata);
+  const fitnessDisplay = isFitnessPlanManaged
+    ? resolveFitnessPlanScheduleDisplayText({ metadata: row.metadata })
+    : null;
+  const fitnessRoutineAssignment = isFitnessPlanManaged
+    ? readFitnessPlanScheduleRoutineAssignment(row.metadata)
+    : null;
+  const fitnessPlanSnapshot = isFitnessPlanManaged
+    ? readFitnessPlanSchedulePlanSnapshot(row.metadata)
+    : null;
   const title =
+    fitnessDisplay?.title ??
     readString(row.event_name) ??
     readString(row.project_name) ??
     sourceTypeLabel(sourceType);
+  const subtitle = fitnessDisplay?.routineTitle ?? sourceTypeLabel(sourceType);
   const minutes =
     typeof row.duration_min === "number" && Number.isFinite(row.duration_min)
       ? Math.max(0, Math.round(row.duration_min))
@@ -95,7 +115,25 @@ function mapScheduleInstance(row: ScheduleInstanceRow) {
     source_id: row.source_id,
     workType: sourceType.toLowerCase(),
     title,
-    subtitle: label,
+    subtitle,
+    isFitnessPlanManaged,
+    is_fitness_plan_managed: isFitnessPlanManaged,
+    fitnessPlanTemplateId:
+      fitnessRoutineAssignment?.fitnessPlanTemplateId ??
+      fitnessPlanSnapshot?.fitnessPlanTemplateId ??
+      null,
+    fitness_plan_template_id:
+      fitnessRoutineAssignment?.fitnessPlanTemplateId ??
+      fitnessPlanSnapshot?.fitnessPlanTemplateId ??
+      null,
+    fitnessRoutineTemplateId:
+      fitnessRoutineAssignment?.fitnessRoutineTemplateId ?? null,
+    fitness_routine_template_id:
+      fitnessRoutineAssignment?.fitnessRoutineTemplateId ?? null,
+    fitnessRoutineTitle: fitnessDisplay?.routineTitle ?? null,
+    fitness_routine_title: fitnessDisplay?.routineTitle ?? null,
+    fitnessRoutineIndex: fitnessRoutineAssignment?.fitnessRoutineIndex ?? null,
+    fitness_routine_index: fitnessRoutineAssignment?.fitnessRoutineIndex ?? null,
     durationMinutes: minutes,
     durationLabel: durationLabel(minutes),
     energyLabel: sourceTypeLabel(row.energy_resolved),
@@ -153,7 +191,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("schedule_instances")
     .select(
-      "id,source_type,source_id,event_name,project_name,duration_min,energy_resolved,start_utc,end_utc,status,time_block_id,day_type_time_block_id,window_id",
+      "id,source_type,source_id,event_name,project_name,duration_min,energy_resolved,start_utc,end_utc,status,time_block_id,day_type_time_block_id,window_id,metadata",
     )
     .eq("user_id", user.id)
     .eq("status", "scheduled")

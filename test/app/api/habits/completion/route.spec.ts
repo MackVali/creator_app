@@ -73,6 +73,17 @@ describe("POST /api/habits/completion", () => {
   it("passes the CREATOR 4 AM completion day into the lifecycle rpc", async () => {
     const { rpc } = mockSupabase();
 
+    const afterMidnight = await POST(
+      buildRequest("2026-07-22T06:00:00.000Z") as never
+    );
+    expect(afterMidnight.status).toBe(200);
+    expect(rpc).toHaveBeenLastCalledWith("set_habit_completion_day", {
+      p_habit_id: habitId,
+      p_completion_day: "2026-07-21",
+      p_completed_at: "2026-07-22T06:00:00.000Z",
+      p_is_complete: true,
+    });
+
     const beforeBoundary = await POST(
       buildRequest("2026-07-22T08:59:00.000Z") as never
     );
