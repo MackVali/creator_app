@@ -5,7 +5,8 @@ export type FitnessRoutineGroupId =
   | "calisthenics"
   | "powerlifting"
   | "athletic"
-  | "mobility-recovery";
+  | "mobility-recovery"
+  | "custom";
 
 export type FitnessExerciseRole =
   | "primary"
@@ -188,7 +189,12 @@ const FITNESS_ROUTINE_TEMPLATE_BY_ID = new Map(
 
 export function getFitnessRoutineTemplateById(
   id: string,
+  templates: readonly FitnessRoutineTemplate[] = FITNESS_ROUTINE_TEMPLATES,
 ): FitnessRoutineTemplate | undefined {
+  if (templates !== FITNESS_ROUTINE_TEMPLATES) {
+    return templates.find((template) => template.id === id);
+  }
+
   return FITNESS_ROUTINE_TEMPLATE_BY_ID.get(id);
 }
 

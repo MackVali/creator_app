@@ -46,6 +46,7 @@ export type FitnessActivePlan = {
   sessionDurationMinutes: number;
   equipmentProfile: FitnessEquipmentProfile;
   exerciseOverrides?: FitnessActivePlanExerciseOverride[];
+  routineSequenceSnapshot?: FitnessActivePlanRoutineSnapshot[];
   linkedFitnessHabitId?: string;
   startedAt: string;
   currentRoutineIndex: number;
@@ -53,6 +54,11 @@ export type FitnessActivePlan = {
   checkInAfterCompletedWorkouts: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type FitnessActivePlanRoutineSnapshot = {
+  fitnessRoutineTemplateId: string;
+  fitnessRoutineTitle: string;
 };
 
 export type FitnessPlanMatchLabel =
@@ -121,6 +127,27 @@ function readExerciseOverrides(value: unknown): FitnessActivePlanExerciseOverrid
   }
 
   return overrides;
+}
+
+function readRoutineSequenceSnapshot(
+  value: unknown,
+): FitnessActivePlanRoutineSnapshot[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const snapshots: FitnessActivePlanRoutineSnapshot[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!isRecord(item)) return null;
+    const fitnessRoutineTemplateId = readOptionalString(item.fitnessRoutineTemplateId);
+    const fitnessRoutineTitle = readOptionalString(item.fitnessRoutineTitle);
+    if (!fitnessRoutineTemplateId || !fitnessRoutineTitle) return null;
+    if (seen.has(fitnessRoutineTemplateId)) continue;
+    seen.add(fitnessRoutineTemplateId);
+    snapshots.push({ fitnessRoutineTemplateId, fitnessRoutineTitle });
+  }
+
+  return snapshots;
 }
 
 function normalizeSessionDurationMinutes(value: unknown) {
@@ -310,6 +337,10 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
   const equipmentProfile = readEquipmentProfile(value.equipmentProfile) ?? "Full gym";
   const exerciseOverrides = readExerciseOverrides(value.exerciseOverrides);
   if (!exerciseOverrides) return null;
+  const routineSequenceSnapshot = readRoutineSequenceSnapshot(
+    value.routineSequenceSnapshot,
+  );
+  if (!routineSequenceSnapshot) return null;
 
   return {
     version: FITNESS_ACTIVE_PLAN_VERSION,
@@ -324,6 +355,7 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
     ),
     equipmentProfile,
     ...(exerciseOverrides.length > 0 ? { exerciseOverrides } : {}),
+    ...(routineSequenceSnapshot.length > 0 ? { routineSequenceSnapshot } : {}),
     ...(linkedFitnessHabitId ? { linkedFitnessHabitId } : {}),
     startedAt: value.startedAt,
     currentRoutineIndex,
@@ -359,6 +391,7 @@ export function buildFitnessActivePlan({
   sessionDurationMinutes,
   equipmentProfile,
   exerciseOverrides,
+  routineSequenceSnapshot,
   now,
   existingActivePlan,
   linkedFitnessHabitId,
@@ -369,6 +402,7 @@ export function buildFitnessActivePlan({
   sessionDurationMinutes: number;
   equipmentProfile: FitnessEquipmentProfile;
   exerciseOverrides?: FitnessActivePlanExerciseOverride[];
+  routineSequenceSnapshot?: FitnessActivePlanRoutineSnapshot[];
   now: string;
   existingActivePlan?: FitnessActivePlan | null;
   linkedFitnessHabitId?: string | null;
@@ -393,6 +427,9 @@ export function buildFitnessActivePlan({
     equipmentProfile,
     ...(exerciseOverrides && exerciseOverrides.length > 0
       ? { exerciseOverrides }
+      : {}),
+    ...(routineSequenceSnapshot && routineSequenceSnapshot.length > 0
+      ? { routineSequenceSnapshot }
       : {}),
     ...(resolvedLinkedFitnessHabitId
       ? { linkedFitnessHabitId: resolvedLinkedFitnessHabitId }

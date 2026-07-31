@@ -19,6 +19,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   ChevronLeft,
+  ChevronRight,
   Copy,
   GripVertical,
   MoreHorizontal,
@@ -28,7 +29,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNutritionRecipes } from "@/hooks/useNutritionRecipes";
 import type { FoodSearchResult } from "@/lib/nutrition/foods";
 import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
@@ -52,7 +53,7 @@ import {
   type NutritionRecipeServingUnit,
 } from "@/lib/nutrition/recipes";
 
-type FoodResponse = { foods?: FoodSearchResult[]; error?: string };
+type FoodResponse = { foods?: FoodSearchResult[]; hasMore?: boolean; error?: string };
 type ResourceResponse = { foodResources?: unknown; error?: string };
 
 type EditorMode =
@@ -61,6 +62,8 @@ type EditorMode =
   | { type: "duplicate"; recipe: NutritionRecipeListItem };
 
 const RECIPE_VALIDATION_SAVE_ERROR = "Fix the highlighted recipe details before saving.";
+const GROCERY_RESOURCE_REQUEST_LIMIT = 200;
+const FOOD_BROWSE_PAGE_SIZE = 25;
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -224,6 +227,99 @@ function RecipeFoodIconSlot({
   );
 }
 
+function IngredientDisclosureRow({
+  label,
+  isOpen,
+  onToggle,
+}: {
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex min-h-11 w-full items-center gap-2 px-1 py-2 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.055]"
+      aria-expanded={isOpen}
+    >
+      <ChevronRight
+        className={`h-3.5 w-3.5 shrink-0 text-white/36 transition-transform ${isOpen ? "rotate-90" : ""}`}
+        aria-hidden="true"
+      />
+      <span className="text-sm font-semibold text-white/76">{label}</span>
+    </button>
+  );
+}
+
+function FoodResultButton({
+  food,
+  onAdd,
+}: {
+  food: FoodSearchResult;
+  onAdd: (food: FoodSearchResult) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onAdd(food)}
+      className="flex w-full items-center gap-3 border-b border-white/[0.035] px-3 py-2.5 text-left outline-none transition last:border-b-0 hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+    >
+      <RecipeFoodIconSlot
+        icon={getFoodResultIcon(food)}
+        fallbackInitial={food.name.charAt(0)}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-white/84">{food.name}</span>
+        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+          {food.brand_name ? `${food.brand_name} · ` : ""}
+          {formatRecipeNumber(food.calories) ?? "Nutrition incomplete"} cal
+        </span>
+      </span>
+      <Plus className="h-4 w-4 text-white/42" aria-hidden="true" />
+    </button>
+  );
+}
+
+function GroceryResourceButton({
+  resource,
+  onAdd,
+}: {
+  resource: FoodResourceRecipeChoice;
+  onAdd: (ingredient: NutritionRecipeIngredientDraft) => void;
+}) {
+  const previewIngredient = makeRecipeIngredientFromResource(
+    resource,
+    `grocery-preview-${resource.id}`,
+  );
+  const issue = getRecipeIngredientIssue(previewIngredient);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (issue) return;
+        onAdd(makeRecipeIngredientFromResource(resource, id("grocery-ingredient")));
+      }}
+      disabled={Boolean(issue)}
+      className="flex w-full items-center gap-3 border-b border-white/[0.035] px-3 py-2.5 text-left outline-none transition last:border-b-0 hover:bg-white/[0.045] focus-visible:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <RecipeFoodIconSlot
+        icon={getGroceryResourceIcon(resource)}
+        fallbackInitial={resource.name.charAt(0)}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold text-white/84">{resource.name}</span>
+        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+          {resource.brand_name ? `${resource.brand_name} · ` : ""}
+          {issue ?? `${formatRecipeNumber(previewIngredient.calories) ?? "0"} cal`}
+        </span>
+      </span>
+      <Plus className="h-4 w-4 text-white/42" aria-hidden="true" />
+    </button>
+  );
+}
+
 function getFieldErrors(input: {
   name: string;
   servings: number;
@@ -380,8 +476,14 @@ export function NutritionRecipesPanel({
   const [ingredients, setIngredients] = useState<NutritionRecipeIngredientDraft[]>([]);
   const [ingredientSearch, setIngredientSearch] = useState("");
   const [foodResults, setFoodResults] = useState<FoodSearchResult[]>([]);
+  const [browseFoodResults, setBrowseFoodResults] = useState<FoodSearchResult[]>([]);
   const [groceryResources, setGroceryResources] = useState<FoodResourceRecipeChoice[]>([]);
   const [isFoodSearchLoading, setIsFoodSearchLoading] = useState(false);
+  const [isFoodBrowseLoading, setIsFoodBrowseLoading] = useState(false);
+  const [isFoodBrowseMoreLoading, setIsFoodBrowseMoreLoading] = useState(false);
+  const [hasMoreBrowseFoods, setHasMoreBrowseFoods] = useState(false);
+  const [isFoodsSectionOpen, setIsFoodsSectionOpen] = useState(false);
+  const [isGrocerySectionOpen, setIsGrocerySectionOpen] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasAttemptedSave, setHasAttemptedSave] = useState(false);
@@ -398,7 +500,11 @@ export function NutritionRecipesPanel({
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/food-resources?status=active&limit=200", { signal: controller.signal })
+    const params = new URLSearchParams({
+      status: "active",
+      limit: String(GROCERY_RESOURCE_REQUEST_LIMIT),
+    });
+    fetch(`/api/food-resources?${params.toString()}`, { signal: controller.signal })
       .then(async (response) => {
         const payload = (await response.json()) as ResourceResponse;
         if (!response.ok) throw new Error(payload.error || "Unable to load Grocery.");
@@ -417,6 +523,63 @@ export function NutritionRecipesPanel({
       });
     return () => controller.abort();
   }, []);
+
+  const loadBrowseFoods = useCallback(
+    async ({
+      append,
+      offset,
+      signal,
+    }: {
+      append: boolean;
+      offset: number;
+      signal?: AbortSignal;
+    }) => {
+      if (append) {
+        setIsFoodBrowseMoreLoading(true);
+      } else {
+        setIsFoodBrowseLoading(true);
+      }
+      setPickerError(null);
+
+      const params = new URLSearchParams({
+        mode: "browse",
+        limit: String(FOOD_BROWSE_PAGE_SIZE),
+        offset: String(offset),
+      });
+
+      try {
+        const response = await fetch(`/api/nutrition/foods/search?${params.toString()}`, {
+          signal,
+        });
+        const payload = (await response.json()) as FoodResponse;
+        if (!response.ok) throw new Error(payload.error || "Unable to browse foods.");
+
+        const nextFoods = payload.foods ?? [];
+        setBrowseFoodResults((current) => {
+          if (!append) return nextFoods;
+          const seen = new Set(current.map((food) => food.id));
+          return [...current, ...nextFoods.filter((food) => !seen.has(food.id))];
+        });
+        setHasMoreBrowseFoods(Boolean(payload.hasMore));
+      } catch (error) {
+        if (signal?.aborted) return;
+        console.error("Failed to browse recipe ingredients", { error });
+        setPickerError("Food browse is unavailable right now.");
+        if (!append) {
+          setBrowseFoodResults([]);
+          setHasMoreBrowseFoods(false);
+        }
+      } finally {
+        if (signal?.aborted) return;
+        if (append) {
+          setIsFoodBrowseMoreLoading(false);
+        } else {
+          setIsFoodBrowseLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const query = ingredientSearch.trim();
@@ -455,6 +618,20 @@ export function NutritionRecipesPanel({
     };
   }, [editorMode, ingredientSearch]);
 
+  useEffect(() => {
+    const query = ingredientSearch.trim();
+    if (!editorMode || query || !isFoodsSectionOpen) {
+      setBrowseFoodResults([]);
+      setIsFoodBrowseLoading(false);
+      setIsFoodBrowseMoreLoading(false);
+      setHasMoreBrowseFoods(false);
+      return;
+    }
+    const controller = new AbortController();
+    void loadBrowseFoods({ append: false, offset: 0, signal: controller.signal });
+    return () => controller.abort();
+  }, [editorMode, ingredientSearch, isFoodsSectionOpen, loadBrowseFoods]);
+
   const visibleRecipes = useMemo(() => {
     const query = librarySearch.trim().toLowerCase();
     if (!query) return recipesQuery.recipes;
@@ -465,12 +642,10 @@ export function NutritionRecipesPanel({
 
   const filteredGroceryResources = useMemo(() => {
     const query = ingredientSearch.trim().toLowerCase();
-    const rows = query.length < 2
-      ? groceryResources.slice(0, 8)
-      : groceryResources.filter((resource) =>
-          `${resource.name} ${resource.brand_name ?? ""}`.toLowerCase().includes(query),
-        );
-    return rows.slice(0, 8);
+    if (query.length < 2) return [];
+    return groceryResources.filter((resource) =>
+      `${resource.name} ${resource.brand_name ?? ""}`.toLowerCase().includes(query),
+    );
   }, [groceryResources, ingredientSearch]);
 
   const totals = useMemo(() => getRecipeTotals(ingredients), [ingredients]);
@@ -490,13 +665,46 @@ export function NutritionRecipesPanel({
     }
   }, [hasAttemptedSave, hasBlockingErrors, saveError]);
 
+  function resetIngredientPickerSections() {
+    setIsFoodsSectionOpen(false);
+    setIsGrocerySectionOpen(false);
+  }
+
+  function resetIngredientPicker() {
+    setIngredientSearch("");
+    setFoodResults([]);
+    setBrowseFoodResults([]);
+    setPickerError(null);
+    setIsFoodSearchLoading(false);
+    setIsFoodBrowseLoading(false);
+    setIsFoodBrowseMoreLoading(false);
+    setHasMoreBrowseFoods(false);
+    resetIngredientPickerSections();
+  }
+
+  function updateIngredientSearch(value: string) {
+    setIngredientSearch(value);
+    if (!value.trim()) {
+      resetIngredientPickerSections();
+      setFoodResults([]);
+      setPickerError(null);
+    }
+  }
+
+  function loadMoreBrowseFoods() {
+    if (isFoodBrowseMoreLoading || isFoodBrowseLoading || !hasMoreBrowseFoods) return;
+    void loadBrowseFoods({
+      append: true,
+      offset: browseFoodResults.length,
+    });
+  }
+
   function openEditor(mode: EditorMode) {
     setEditorMode(mode);
     setOpenMenuRecipeId(null);
     setSaveError(null);
     setHasAttemptedSave(false);
-    setIngredientSearch("");
-    setFoodResults([]);
+    resetIngredientPicker();
     if (mode.type === "create") {
       setName("");
       setIcon("🍽️");
@@ -526,12 +734,12 @@ export function NutritionRecipesPanel({
     setEditorMode(null);
     setSaveError(null);
     setHasAttemptedSave(false);
+    resetIngredientPicker();
   }
 
   function addIngredient(ingredient: NutritionRecipeIngredientDraft) {
     setIngredients((current) => [...current, ingredient]);
-    setIngredientSearch("");
-    setFoodResults([]);
+    resetIngredientPicker();
     setSaveError(null);
   }
 
@@ -696,14 +904,81 @@ export function NutritionRecipesPanel({
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36" aria-hidden="true" />
               <input
                 value={ingredientSearch}
-                onChange={(event) => setIngredientSearch(event.target.value)}
+                onChange={(event) => updateIngredientSearch(event.target.value)}
                 placeholder="Add ingredient"
                 className="h-11 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-sm font-medium text-white outline-none placeholder:text-white/28 focus-visible:ring-1 focus-visible:ring-white/14"
               />
             </div>
             {isFoodSearchLoading ? <p className="px-1 text-xs font-medium text-white/42">Searching...</p> : null}
             {pickerError ? <p className="px-1 text-xs font-medium text-red-200/72">{pickerError}</p> : null}
-            {ingredientSearch.trim().length >= 2 || filteredGroceryResources.length ? (
+            {ingredientSearch.trim().length === 0 ? (
+              <div className="border-y border-white/[0.055]">
+                <IngredientDisclosureRow
+                  label="Foods"
+                  isOpen={isFoodsSectionOpen}
+                  onToggle={() => setIsFoodsSectionOpen((current) => !current)}
+                />
+                {isFoodsSectionOpen ? (
+                  <div className="border-t border-white/[0.045] bg-black/22">
+                    {isFoodBrowseLoading ? (
+                      <p className="px-3 py-2.5 text-xs font-medium text-white/42">Loading foods...</p>
+                    ) : browseFoodResults.length > 0 ? (
+                      <>
+                        {browseFoodResults.map((food) => (
+                          <FoodResultButton
+                            key={food.id}
+                            food={food}
+                            onAdd={(selectedFood) =>
+                              addIngredient(makeRecipeIngredientFromFood(selectedFood, id()))
+                            }
+                          />
+                        ))}
+                        {hasMoreBrowseFoods ? (
+                          <button
+                            type="button"
+                            onClick={loadMoreBrowseFoods}
+                            disabled={isFoodBrowseMoreLoading}
+                            className="flex min-h-10 w-full items-center justify-center border-t border-white/[0.045] px-3 py-2 text-xs font-semibold text-white/58 outline-none transition hover:bg-white/[0.04] hover:text-white/78 disabled:cursor-not-allowed disabled:text-white/28"
+                          >
+                            {isFoodBrowseMoreLoading ? "Loading..." : "Show more"}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="px-3 py-2.5 text-xs font-medium text-white/42">
+                        Search for a food above
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+                <div className="border-t border-white/[0.045]">
+                  <IngredientDisclosureRow
+                    label="My Grocery"
+                    isOpen={isGrocerySectionOpen}
+                    onToggle={() => setIsGrocerySectionOpen((current) => !current)}
+                  />
+                </div>
+                {isGrocerySectionOpen ? (
+                  <div className="border-t border-white/[0.045] bg-black/22">
+                    {groceryResources.length > 0 ? (
+                      groceryResources.map((resource) => (
+                        <GroceryResourceButton
+                          key={resource.id}
+                          resource={resource}
+                          onAdd={addIngredient}
+                        />
+                      ))
+                    ) : (
+                      <p className="px-3 py-2.5 text-xs font-medium text-white/42">
+                        No Grocery foods yet.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : ingredientSearch.trim().length < 2 ? (
+              <p className="px-1 text-xs font-medium text-white/42">Keep typing to search.</p>
+            ) : (
               <div className="overflow-hidden rounded-xl border border-white/[0.055] bg-black/34">
                 {foodResults.length > 0 ? (
                   <div>
@@ -711,25 +986,13 @@ export function NutritionRecipesPanel({
                       Foods
                     </p>
                     {foodResults.map((food) => (
-                      <button
+                      <FoodResultButton
                         key={food.id}
-                        type="button"
-                        onClick={() => addIngredient(makeRecipeIngredientFromFood(food, id()))}
-                        className="flex w-full items-center gap-3 border-b border-white/[0.035] px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
-                      >
-                        <RecipeFoodIconSlot
-                          icon={getFoodResultIcon(food)}
-                          fallbackInitial={food.name.charAt(0)}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-white/84">{food.name}</span>
-                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                            {food.brand_name ? `${food.brand_name} · ` : ""}
-                            {formatRecipeNumber(food.calories) ?? "Nutrition incomplete"} cal
-                          </span>
-                        </span>
-                        <Plus className="h-4 w-4 text-white/42" aria-hidden="true" />
-                      </button>
+                        food={food}
+                        onAdd={(selectedFood) =>
+                          addIngredient(makeRecipeIngredientFromFood(selectedFood, id()))
+                        }
+                      />
                     ))}
                   </div>
                 ) : null}
@@ -738,39 +1001,17 @@ export function NutritionRecipesPanel({
                     <p className="border-b border-white/[0.045] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/34">
                       My Grocery
                     </p>
-                    {filteredGroceryResources.map((resource) => {
-                      const ingredient = makeRecipeIngredientFromResource(resource, id("grocery-ingredient"));
-                      const issue = getRecipeIngredientIssue(ingredient);
-                      return (
-                        <button
-                          key={resource.id}
-                          type="button"
-                          onClick={() => {
-                            if (issue) return;
-                            addIngredient(ingredient);
-                          }}
-                          disabled={Boolean(issue)}
-                          className="flex w-full items-center gap-3 border-b border-white/[0.035] px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          <RecipeFoodIconSlot
-                            icon={getGroceryResourceIcon(resource)}
-                            fallbackInitial={resource.name.charAt(0)}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold text-white/84">{resource.name}</span>
-                            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                              {resource.brand_name ? `${resource.brand_name} · ` : ""}
-                              {issue ?? `${formatRecipeNumber(ingredient.calories) ?? "0"} cal`}
-                            </span>
-                          </span>
-                          <Plus className="h-4 w-4 text-white/42" aria-hidden="true" />
-                        </button>
-                      );
-                    })}
+                    {filteredGroceryResources.map((resource) => (
+                      <GroceryResourceButton
+                        key={resource.id}
+                        resource={resource}
+                        onAdd={addIngredient}
+                      />
+                    ))}
                   </div>
                 ) : null}
               </div>
-            ) : null}
+            )}
           </section>
 
           <section className="space-y-2">

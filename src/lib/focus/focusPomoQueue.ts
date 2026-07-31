@@ -318,6 +318,11 @@ const PROJECT_SELECTS = [
   },
   {
     columns:
+      "id, name, duration_min, energy, priority, goal_id, completed_at, due_date, global_rank, created_at, updated_at",
+    filterCompleted: true,
+  },
+  {
+    columns:
       "id, name, title, duration_min, duration_minutes, energy, priority, goal_id, campaign_id, tags, completed_at, due_date, global_rank, created_at",
     filterCompleted: true,
   },

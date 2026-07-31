@@ -115,9 +115,13 @@ export const FITNESS_PLAN_TEMPLATES: readonly FitnessPlanTemplate[] = [
 
 export function resolveFitnessPlanRoutineSequence(
   plan: FitnessPlanTemplate,
+  routines: readonly FitnessRoutineTemplate[] = [],
 ): FitnessRoutineTemplate[] {
   return plan.routineSequence.map((routineId) => {
-    const routine = getFitnessRoutineTemplateById(routineId);
+    const routine = getFitnessRoutineTemplateById(
+      routineId,
+      routines.length > 0 ? routines : undefined,
+    );
 
     if (!routine) {
       throw new Error(
@@ -132,11 +136,16 @@ export function resolveFitnessPlanRoutineSequence(
 export function resolveFitnessPlanRoutineAtIndex(
   plan: FitnessPlanTemplate,
   currentRoutineIndex: number,
+  routineTemplates?: readonly FitnessRoutineTemplate[],
 ): FitnessRoutineTemplate | null {
-  const routines = resolveFitnessPlanRoutineSequence(plan);
+  const routines = resolveFitnessPlanRoutineSequence(plan, routineTemplates);
   if (routines.length === 0) return null;
 
-  return routines[currentRoutineIndex % routines.length] ?? routines[0] ?? null;
+  return (
+    routines[currentRoutineIndex % routines.length] ??
+    routines[0] ??
+    null
+  );
 }
 
 FITNESS_PLAN_TEMPLATES.forEach(resolveFitnessPlanRoutineSequence);

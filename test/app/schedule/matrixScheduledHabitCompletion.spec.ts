@@ -144,8 +144,11 @@ describe("Matrix scheduled Habit completion bridge", () => {
     });
   });
 
-  it("keeps Matrix scheduled Habit ordering: status, Habit completion, XP, local finalization", () => {
+  it("keeps Matrix scheduled Habit ordering: local optimistic state, status, Habit completion, XP", () => {
     const block = callbackBlock("commitScheduledEventCompletion");
+    const optimisticState = block.indexOf(
+      "scheduledCompletionOverridesRef.current.set("
+    );
     const statusPersistence = block.indexOf(
       "const result = await updateInstanceStatus("
     );
@@ -155,16 +158,16 @@ describe("Matrix scheduled Habit completion bridge", () => {
     const xpAward = block.indexOf(
       "const xpResult = await dispatchMatrixScheduledXpReward"
     );
-    const localFinalization = block.indexOf("setState((current) => ({");
 
-    expect(statusPersistence).toBeGreaterThanOrEqual(0);
+    expect(optimisticState).toBeGreaterThanOrEqual(0);
+    expect(statusPersistence).toBeGreaterThan(optimisticState);
     expect(habitCompletion).toBeGreaterThan(statusPersistence);
     expect(xpAward).toBeGreaterThan(habitCompletion);
-    expect(localFinalization).toBeGreaterThan(xpAward);
 
     const failureBranch = block.slice(habitCompletion, xpAward);
     expect(failureBranch).toContain("if (!habitCompletionResult.ok)");
     expect(failureBranch).toContain("previousStatus");
+    expect(failureBranch).toContain("rollbackScheduledCompletionState();");
     expect(failureBranch).toContain("return false;");
   });
 });

@@ -7,6 +7,8 @@ import { Icon as IconifyIcon } from "@iconify/react";
 import {
   BadgeAlert,
   Calendar,
+  ChevronDown,
+  ChevronUp,
   CircleAlert,
   Filter,
   Grid2x2,
@@ -272,6 +274,8 @@ type MatrixMonumentGroup = {
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
 type MatrixCardDensity = "large" | "small" | "row" | "todo";
+type MatrixTodoRowDensity = "default" | "compact";
+type MatrixPresentationMode = "default" | "checkbox-only";
 type MatrixView = "monuments" | "skills" | "blocks" | "types";
 type MatrixScope = "scheduled" | "pinned";
 type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
@@ -297,6 +301,14 @@ type MatrixScheduledCompletionOptions = {
   hapticOnComplete?: boolean;
   xpSourceRect?: CreatorXpBurstRect | null;
   xpSourceOrigin?: CreatorXpBurstSourceOrigin;
+};
+type MatrixScheduledCompletionOverride = {
+  status: ScheduleInstance["status"];
+  completedAt: string | null;
+};
+type MatrixDueHabitCompletionOverride = {
+  completed: boolean;
+  completedAt: string | null;
 };
 type MatrixXpResultStatus =
   | "inserted"
@@ -473,7 +485,7 @@ const MATRIX_REORDER_LAYOUT_TRANSITION = {
 };
 const MATRIX_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 const MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR =
-  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action], [data-matrix-fitness-workout-action]";
+  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action], [data-matrix-fitness-workout-action], [data-matrix-routine-details-action]";
 
 type MatrixXpSourceCapture = {
   rect: CreatorXpBurstRect | null;
@@ -1023,6 +1035,177 @@ function isMatrixScheduledRoutineCompleted(
   habits: readonly MatrixRoutineHabit[]
 ) {
   return getMatrixRoutineProgress(habits).isComplete;
+}
+
+function applyMatrixScheduledCompletionOverridesToEvents(
+  events: MatrixEvent[],
+  overrides: ReadonlyMap<string, MatrixScheduledCompletionOverride>
+): MatrixEvent[] {
+  if (overrides.size === 0) return events;
+
+  return events.map((event) => {
+    const eventOverride = overrides.get(event.instance.id);
+    const nextInstance = eventOverride
+      ? {
+          ...event.instance,
+          status: eventOverride.status,
+          completed_at: eventOverride.completedAt,
+        }
+      : event.instance;
+
+    if (!event.routine) {
+      return nextInstance === event.instance
+        ? event
+        : {
+            ...event,
+            instance: nextInstance,
+          };
+    }
+
+    let routineChanged = false;
+    const nextHabits = event.routine.habits.map((habit) => {
+      const sourceInstance = habit.sourceInstance;
+      if (!sourceInstance) return habit;
+
+      const habitOverride = overrides.get(sourceInstance.id);
+      if (!habitOverride) return habit;
+
+      routineChanged = true;
+      const nextSourceInstance = {
+        ...sourceInstance,
+        status: habitOverride.status,
+        completed_at: habitOverride.completedAt,
+      };
+
+      return {
+        ...habit,
+        dueLabel: getMatrixScheduledHabitLabel(habitOverride.status),
+        completed: isMatrixScheduledRoutineHabitCompleted({
+          sourceInstance: nextSourceInstance,
+        }),
+        sourceInstance: nextSourceInstance,
+      };
+    });
+
+    if (!eventOverride && !routineChanged) return event;
+
+    return {
+      ...event,
+      instance: nextInstance,
+      routine: {
+        ...event.routine,
+        habits: nextHabits,
+        completed: isMatrixScheduledRoutineCompleted(nextHabits),
+      },
+    };
+  });
+}
+
+function applyMatrixDueHabitCompletionOverridesToCompletedIds(
+  habitIds: ReadonlySet<string>,
+  overrides: ReadonlyMap<string, MatrixDueHabitCompletionOverride>
+) {
+  if (overrides.size === 0) return habitIds;
+
+  const nextHabitIds = new Set(habitIds);
+  for (const [habitId, override] of overrides) {
+    if (override.completed) {
+      nextHabitIds.add(habitId);
+    } else {
+      nextHabitIds.delete(habitId);
+    }
+  }
+  return nextHabitIds;
+}
+
+function applyMatrixDueHabitCompletionOverridesToItems(
+  items: MatrixDueItem[],
+  overrides: ReadonlyMap<string, MatrixDueHabitCompletionOverride>,
+  displayDate: Date,
+  timeZone: string
+): MatrixDueItem[] {
+  if (overrides.size === 0) return items;
+
+  const updateHabit = (habit: MatrixHabit): MatrixHabit | null => {
+    const override = overrides.get(habit.id);
+    if (!override) return habit;
+
+    if (override.completed) {
+      return {
+        ...habit,
+        last_completed_at: override.completedAt,
+        next_due_override: null,
+        dueStatus: {
+          isDue: true,
+          isOverdue: false,
+          isCompletedToday: true,
+          label: "COMPLETE" as const,
+        },
+      };
+    }
+
+    const dueStatus = getMatrixHabitDueStatus(habit, displayDate, timeZone);
+    return dueStatus.isDue
+      ? {
+          ...habit,
+          dueStatus,
+        }
+      : null;
+  };
+
+  return items.flatMap((item): MatrixDueItem[] => {
+    if (item.kind === "habit") {
+      const habit = updateHabit(item.habit);
+      return habit
+        ? [
+            {
+              ...item,
+              habit,
+              name: habit.name,
+              monumentId: habit.monumentId,
+              skillIds: habit.skillIds,
+            },
+          ]
+        : [];
+    }
+
+    const habits = item.routine.habits.flatMap((routineHabit) => {
+      const sourceHabit = updateHabit(routineHabit.sourceHabit);
+      return sourceHabit
+        ? [
+            {
+              ...routineHabit,
+              dueLabel: sourceHabit.dueStatus?.label ?? null,
+              completed: isMatrixDueHabitCompleted(sourceHabit),
+              sourceHabit,
+              durationMinutes: sourceHabit.duration_minutes,
+            },
+          ]
+        : [];
+    });
+
+    if (habits.length === 0) return [];
+
+    const totalDuration = habits.reduce((sum, habit) => {
+      const duration = habit.durationMinutes;
+      return typeof duration === "number" && Number.isFinite(duration)
+        ? sum + duration
+        : sum;
+    }, 0);
+
+    return [
+      {
+        ...item,
+        routine: {
+          ...item.routine,
+          habits,
+          completed: getMatrixRoutineProgress(habits).isComplete,
+          dueHabitCount: habits.length,
+          totalDueDurationMinutes: totalDuration > 0 ? totalDuration : null,
+        },
+      },
+    ];
+  });
 }
 
 function sortMatrixScheduledItems(
@@ -2617,6 +2800,7 @@ function MatrixTodoRow({
   disabled = false,
   glyph,
   meta,
+  density = "default",
   onToggle,
   onOpen,
 }: {
@@ -2625,6 +2809,7 @@ function MatrixTodoRow({
   disabled?: boolean;
   glyph?: string | null;
   meta?: string | null;
+  density?: MatrixTodoRowDensity;
   onToggle(source: MatrixXpSourceCapture): void;
   onOpen?: () => void;
 }) {
@@ -2643,7 +2828,10 @@ function MatrixTodoRow({
           : undefined
       }
       className={cn(
-        "group/todo-row flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-transparent py-1 pl-1 pr-2 text-left text-sm text-white/84 transition-colors hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        "group/todo-row flex w-full min-w-0 items-center rounded-lg bg-transparent text-left text-white/84 transition-colors hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        density === "compact"
+          ? "min-h-[30px] gap-1.5 py-0.5 pl-0.5 pr-1.5 text-[13px]"
+          : "min-h-8 gap-2 py-1 pl-1 pr-2 text-sm",
         onOpen ? "cursor-pointer" : null,
         disabled ? "opacity-60" : null
       )}
@@ -2669,7 +2857,10 @@ function MatrixTodoRow({
         onDoubleClick={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
         onTouchEnd={(event) => event.stopPropagation()}
-        className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-md outline-none disabled:cursor-wait focus-visible:ring-2 focus-visible:ring-white/35"
+        className={cn(
+          "relative z-10 flex shrink-0 items-center justify-center rounded-md outline-none disabled:cursor-wait focus-visible:ring-2 focus-visible:ring-white/35",
+          density === "compact" ? "h-7 w-7" : "size-8"
+        )}
       >
         <span
           className={cn(
@@ -2690,7 +2881,8 @@ function MatrixTodoRow({
       {glyph ? (
         <span
           className={cn(
-            "flex h-4 w-4 shrink-0 items-center justify-center truncate text-[0.78rem] leading-none text-white/70",
+            "flex shrink-0 items-center justify-center truncate leading-none text-white/70",
+            density === "compact" ? "h-3.5 w-3.5 text-[0.72rem]" : "h-4 w-4 text-[0.78rem]",
             completed ? "text-white/42" : null
           )}
           aria-hidden="true"
@@ -2700,7 +2892,8 @@ function MatrixTodoRow({
       ) : null}
       <span
         className={cn(
-          "min-w-0 flex-1 truncate leading-snug text-white/84",
+          "min-w-0 flex-1 truncate text-white/84",
+          density === "compact" ? "leading-[1.05rem]" : "leading-snug",
           completed ? "text-white/42 line-through" : null
         )}
       >
@@ -2709,7 +2902,10 @@ function MatrixTodoRow({
       {meta ? (
         <span
           className={cn(
-            "max-w-[35%] shrink-0 truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-white/38",
+            "max-w-[35%] shrink-0 truncate font-semibold uppercase text-white/38",
+            density === "compact"
+              ? "text-[8px] leading-none tracking-[0.06em]"
+              : "text-[9px] tracking-[0.08em]",
             completed ? "text-white/28" : null
           )}
         >
@@ -3063,10 +3259,12 @@ function MatrixMealNutritionActionButton({
   event,
   completed,
   onOpen,
+  density = "default",
 }: {
   event: MatrixEvent;
   completed: boolean;
   onOpen(event: MatrixEvent): void;
+  density?: MatrixTodoRowDensity;
 }) {
   const stopActionPropagation = useCallback(
     (
@@ -3120,13 +3318,14 @@ function MatrixMealNutritionActionButton({
       onDoubleClick={stopActionActivation}
       onClick={activateMealNutrition}
       className={cn(
-        "relative z-20 grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full text-white/66 transition hover:bg-white/[0.06] hover:text-white/86 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        "relative z-20 grid shrink-0 touch-manipulation place-items-center rounded-full text-white/66 transition hover:bg-white/[0.06] hover:text-white/86 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        density === "compact" ? "h-8 w-8" : "h-9 w-9",
         completed ? "cursor-default opacity-45 hover:bg-transparent" : null
       )}
     >
       <IconifyIcon
         icon="game-icons:stomach"
-        className="h-4 w-4"
+        className={cn(density === "compact" ? "h-3.5 w-3.5" : "h-4 w-4")}
         aria-hidden="true"
       />
     </button>
@@ -3136,9 +3335,11 @@ function MatrixMealNutritionActionButton({
 function MatrixFitnessWorkoutActionButton({
   event,
   onOpen,
+  density = "default",
 }: {
   event: MatrixEvent;
   onOpen(event: MatrixEvent): void;
+  density?: MatrixTodoRowDensity;
 }) {
   const stopActionPropagation = useCallback(
     (
@@ -3188,9 +3389,15 @@ function MatrixFitnessWorkoutActionButton({
       onTouchEnd={activateFitnessWorkout}
       onDoubleClick={stopActionActivation}
       onClick={activateFitnessWorkout}
-      className="relative z-20 grid h-9 w-9 shrink-0 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95"
+      className={cn(
+        "relative z-20 grid shrink-0 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        density === "compact" ? "h-8 w-8" : "h-9 w-9"
+      )}
     >
-      <Dumbbell className="h-4 w-4" aria-hidden="true" />
+      <Dumbbell
+        className={cn(density === "compact" ? "h-3.5 w-3.5" : "h-4 w-4")}
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -3198,9 +3405,11 @@ function MatrixFitnessWorkoutActionButton({
 function MatrixDueFitnessWorkoutActionButton({
   habit,
   onOpen,
+  density = "default",
 }: {
   habit: MatrixHabit;
   onOpen(habit: MatrixHabit): void;
+  density?: MatrixTodoRowDensity;
 }) {
   const stopActionPropagation = useCallback(
     (
@@ -3251,9 +3460,15 @@ function MatrixDueFitnessWorkoutActionButton({
       onTouchEnd={activateFitnessWorkout}
       onDoubleClick={stopActionActivation}
       onClick={activateFitnessWorkout}
-      className="absolute right-1.5 top-1/2 z-20 grid h-8 w-8 shrink-0 -translate-y-1/2 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95"
+      className={cn(
+        "absolute top-1/2 z-20 grid shrink-0 -translate-y-1/2 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        density === "compact" ? "right-1 h-7 w-7" : "right-1.5 h-8 w-8"
+      )}
     >
-      <Dumbbell className="h-4 w-4" aria-hidden="true" />
+      <Dumbbell
+        className={cn(density === "compact" ? "h-3.5 w-3.5" : "h-4 w-4")}
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -3439,6 +3654,9 @@ function ScheduledEventCard({
   onOpenMealNutritionLog,
   onOpenFitnessWorkout,
   density,
+  todoRowDensity = "default",
+  presentationMode = "default",
+  completingInstanceIds,
 }: {
   event: MatrixEvent;
   open: boolean;
@@ -3451,6 +3669,9 @@ function ScheduledEventCard({
   onOpenMealNutritionLog(event: MatrixEvent): void;
   onOpenFitnessWorkout(event: MatrixEvent): void;
   density: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
+  presentationMode?: MatrixPresentationMode;
+  completingInstanceIds: ReadonlySet<string>;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3481,7 +3702,7 @@ function ScheduledEventCard({
         ? "project"
         : event.habit || event.routine
           ? "habit"
-          : "event";
+        : "event";
 
   const completeEvent = useCallback((source?: MatrixXpSourceCapture | null) => {
     if (event.routine) {
@@ -3490,6 +3711,10 @@ function ScheduledEventCard({
       );
       const instanceId = targetHabit?.sourceInstance?.id;
       if (!instanceId) {
+        void hapticWarningPattern();
+        return;
+      }
+      if (completingInstanceIds.has(instanceId)) {
         void hapticWarningPattern();
         return;
       }
@@ -3502,11 +3727,22 @@ function ScheduledEventCard({
       return;
     }
 
+    if (completingInstanceIds.has(event.instance.id)) {
+      void hapticWarningPattern();
+      return;
+    }
+
     onComplete(event.instance.id, isCompleted ? "scheduled" : "completed", {
       xpSourceRect: source?.rect ?? null,
       xpSourceOrigin: source?.origin,
     });
-  }, [event.instance.id, event.routine, isCompleted, onComplete]);
+  }, [
+    completingInstanceIds,
+    event.instance.id,
+    event.routine,
+    isCompleted,
+    onComplete,
+  ]);
 
   const cancelLongPress = useCallback(
     (event?: PointerEvent<HTMLDivElement>) => {
@@ -3720,20 +3956,36 @@ function ScheduledEventCard({
   const rendersInlineFitnessWorkoutAction = density === "row" && event.habit;
   const mealNutritionAction =
     isMatrixMealEvent(event) && !rendersInlineMealNutritionAction ? (
-      <div className="absolute inset-y-0 right-1.5 z-20 flex items-center justify-center">
+      <div
+        className={cn(
+          "absolute inset-y-0 z-20 flex items-center justify-center",
+          density === "todo" && todoRowDensity === "compact"
+            ? "right-0.5"
+            : "right-1.5"
+        )}
+      >
         <MatrixMealNutritionActionButton
           event={event}
           completed={isCompleted}
           onOpen={onOpenMealNutritionLog}
+          density={density === "todo" ? todoRowDensity : "default"}
         />
       </div>
     ) : null;
   const fitnessWorkoutAction =
     isMatrixFitnessPlanEvent(event) && !rendersInlineFitnessWorkoutAction ? (
-      <div className="absolute inset-y-0 right-1.5 z-20 flex items-center justify-center">
+      <div
+        className={cn(
+          "absolute inset-y-0 z-20 flex items-center justify-center",
+          density === "todo" && todoRowDensity === "compact"
+            ? "right-0.5"
+            : "right-1.5"
+        )}
+      >
         <MatrixFitnessWorkoutActionButton
           event={event}
           onOpen={onOpenFitnessWorkout}
+          density={density === "todo" ? todoRowDensity : "default"}
         />
       </div>
     ) : null;
@@ -3742,12 +3994,18 @@ function ScheduledEventCard({
     <MatrixRoutineCard
       routine={event.routine}
       density={density}
+      todoRowDensity={todoRowDensity}
+      presentationMode={presentationMode}
       onCompleteHabit={(habitId, completed, source) => {
         const routineHabit = event.routine?.habits.find(
           (habit) => habit.id === habitId
         );
         const instanceId = routineHabit?.sourceInstance?.id;
         if (!instanceId) {
+          void hapticWarningPattern();
+          return false;
+        }
+        if (completingInstanceIds.has(instanceId)) {
           void hapticWarningPattern();
           return false;
         }
@@ -3762,6 +4020,8 @@ function ScheduledEventCard({
       title={event.title}
       glyph={event.glyph}
       completed={isCompleted}
+      disabled={completingInstanceIds.has(event.instance.id)}
+      density={todoRowDensity}
       meta={
         isCompleted
           ? "Complete"
@@ -3780,12 +4040,18 @@ function ScheduledEventCard({
     <MatrixRoutineCard
       routine={event.routine}
       density={density}
+      todoRowDensity={todoRowDensity}
+      presentationMode={presentationMode}
       onCompleteHabit={(habitId, completed, source) => {
         const routineHabit = event.routine?.habits.find(
           (habit) => habit.id === habitId
         );
         const instanceId = routineHabit?.sourceInstance?.id;
         if (!instanceId) {
+          void hapticWarningPattern();
+          return false;
+        }
+        if (completingInstanceIds.has(instanceId)) {
           void hapticWarningPattern();
           return false;
         }
@@ -3897,12 +4163,14 @@ function ScheduledEventCard({
 function DueHabitCard({
   habit,
   density,
+  todoRowDensity = "default",
   completing,
   onComplete,
   onOpenFitnessWorkout,
 }: {
   habit: MatrixHabit;
   density: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
   completing: boolean;
   onComplete(
     habitId: string,
@@ -3930,6 +4198,7 @@ function DueHabitCard({
       <MatrixDueFitnessWorkoutActionButton
         habit={habit}
         onOpen={onOpenFitnessWorkout}
+        density={density === "todo" ? todoRowDensity : "default"}
       />
     ) : null;
   const fitnessRoutineTitle =
@@ -4136,6 +4405,7 @@ function DueHabitCard({
               glyph={isFitnessPlanManaged ? "🏋️" : habit.glyph}
               completed={isCompletedToday}
               disabled={completing}
+              density={todoRowDensity}
               meta={
                 isFitnessPlanManaged
                   ? fitnessRoutineTitle ?? (isCompletedToday ? "Complete" : dueLabel)
@@ -4296,10 +4566,14 @@ function MatrixRoutineProgressBar({
 function MatrixRoutineCard({
   routine,
   density,
+  todoRowDensity = "default",
+  presentationMode = "default",
   onCompleteHabit,
 }: {
   routine: MatrixRoutine;
   density: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
+  presentationMode?: MatrixPresentationMode;
   onCompleteHabit(
     habitId: string,
     completedToday: boolean,
@@ -4307,11 +4581,14 @@ function MatrixRoutineCard({
   ): boolean | void | Promise<boolean | void>;
 }) {
   const routineCardRef = useRef<HTMLDivElement | null>(null);
+  const [areCompactDetailsOpen, setAreCompactDetailsOpen] = useState(false);
   const habitCount = Math.max(0, routine.dueHabitCount);
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
   const routineName = routine.name?.trim() || "Routine";
   const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
   const completed = routine.completed;
+  const shouldUseCompactDetails =
+    density === "todo" && presentationMode === "checkbox-only";
   const routineProgress = getMatrixRoutineProgress(routine.habits);
   const routineProgressBar =
     !completed && routineProgress.total > 0 ? (
@@ -4330,16 +4607,24 @@ function MatrixRoutineCard({
     return (
       <div
         ref={routineCardRef}
-        className="matrix-event-card-shell group/routine-card relative min-w-0"
         data-creator-xp-source="matrix-card"
         data-creator-xp-kind="habit"
         data-creator-xp-source-id={routine.id}
         data-matrix-entity-id={routine.id}
+        className={cn(
+          "matrix-event-card-shell group/routine-card relative min-w-0",
+          shouldUseCompactDetails
+            ? todoRowDensity === "compact"
+              ? "pr-7"
+              : "pr-8"
+            : null
+        )}
       >
         <MatrixTodoRow
           title={routineName}
           glyph={routineGlyph}
           completed={completed}
+          density={todoRowDensity}
           meta={completed ? "Complete" : habitCountLabel}
           onToggle={(source) => {
             const targetHabit = routine.habits.find((habit) => !habit.completed);
@@ -4355,26 +4640,137 @@ function MatrixRoutineCard({
             );
           }}
         />
-        {routineProgressBar ? (
-          <div className="pointer-events-none absolute bottom-1.5 left-12 right-3 z-[5]">
-            {routineProgressBar}
-          </div>
-        ) : null}
-        <div className="absolute inset-y-0 left-10 right-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
-          <RelatedRoutineCard
-            routine={routine}
-            density="small"
-            fallbackIcon={routineGlyph}
-            onHabitCompletionToggle={(habitId) => {
-              const habit = routine.habits.find((item) => item.id === habitId);
-              onCompleteHabit(
-                habitId,
-                Boolean(habit?.completed),
-                getRoutineXpSource()
-              );
+        {shouldUseCompactDetails && routine.habits.length > 0 ? (
+          <button
+            type="button"
+            aria-label={
+              areCompactDetailsOpen
+                ? "Hide routine habits"
+                : "Show routine habits"
+            }
+            aria-expanded={areCompactDetailsOpen}
+            data-matrix-routine-details-action="true"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setAreCompactDetailsOpen((current) => !current);
             }}
-          />
-        </div>
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            className={cn(
+              "absolute z-20 flex shrink-0 items-center justify-center rounded-full text-white/46 transition hover:bg-white/[0.055] hover:text-white/78 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+              todoRowDensity === "compact"
+                ? "right-0.5 top-0.5 h-7 w-7"
+                : "right-1 top-1 h-8 w-8"
+            )}
+          >
+            {areCompactDetailsOpen ? (
+              <ChevronUp
+                className="h-3.5 w-3.5"
+                strokeWidth={1.9}
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronDown
+                className="h-3.5 w-3.5"
+                strokeWidth={1.9}
+                aria-hidden="true"
+              />
+            )}
+          </button>
+        ) : null}
+        {routineProgressBar ? (
+          shouldUseCompactDetails ? (
+            <div
+              className={cn(
+                "pointer-events-none",
+                todoRowDensity === "compact"
+                  ? "ml-10 mr-2 -mt-0.5 pb-1"
+                  : "ml-12 mr-3 -mt-0.5 pb-1.5"
+              )}
+            >
+              {routineProgressBar}
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "pointer-events-none absolute z-[5]",
+                todoRowDensity === "compact"
+                  ? "bottom-1 left-10 right-2"
+                  : "bottom-1.5 left-12 right-3"
+              )}
+            >
+              {routineProgressBar}
+            </div>
+          )
+        ) : null}
+        {shouldUseCompactDetails ? (
+          <AnimatePresence initial={false}>
+            {areCompactDetailsOpen ? (
+              <motion.div
+                key="routine-compact-details"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <div
+                  className={cn(
+                    "flex flex-col gap-0.5",
+                    todoRowDensity === "compact" ? "pt-0.5 pl-5" : "pt-1 pl-6"
+                  )}
+                >
+                  {routine.habits.map((habit) => (
+                    <MatrixTodoRow
+                      key={habit.id}
+                      title={habit.name}
+                      glyph={habit.skillIcon || routineGlyph}
+                      completed={Boolean(habit.completed)}
+                      disabled={Boolean(habit.pending)}
+                      density={todoRowDensity}
+                      meta={
+                        habit.completed ? "Complete" : habit.dueLabel ?? null
+                      }
+                      onToggle={(source) => {
+                        onCompleteHabit(
+                          habit.id,
+                          Boolean(habit.completed),
+                          source
+                        );
+                      }}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        ) : (
+          <div
+            className={cn(
+              "absolute inset-y-0 right-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full",
+              todoRowDensity === "compact" ? "left-9" : "left-10"
+            )}
+          >
+            <RelatedRoutineCard
+              routine={routine}
+              density="small"
+              fallbackIcon={routineGlyph}
+              onHabitCompletionToggle={(habitId) => {
+                const habit = routine.habits.find((item) => item.id === habitId);
+                onCompleteHabit(
+                  habitId,
+                  Boolean(habit?.completed),
+                  getRoutineXpSource()
+                );
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -4834,12 +5230,15 @@ function MatrixGridCarousel({
   matrixView,
   matrixScope,
   initialCardDensity,
+  todoRowDensity = "default",
+  presentationMode = "default",
   persistCardDensity = true,
   onCompleteScheduledEvent,
   onOpenMealNutritionLog,
   onOpenFitnessWorkout,
   onOpenDueFitnessWorkout,
   onCompleteDueHabit,
+  completingScheduledEventIds,
   completingDueHabitIds,
   heldScheduledCompletionItemIds,
   heldDueCompletionItemIds,
@@ -4848,6 +5247,8 @@ function MatrixGridCarousel({
   matrixView: MatrixView;
   matrixScope: MatrixScope;
   initialCardDensity?: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
+  presentationMode?: MatrixPresentationMode;
   persistCardDensity?: boolean;
   onCompleteScheduledEvent(
     instanceId: string,
@@ -4862,6 +5263,7 @@ function MatrixGridCarousel({
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
   ): void;
+  completingScheduledEventIds: Set<string>;
   completingDueHabitIds: Set<string>;
   heldScheduledCompletionItemIds: ReadonlySet<string>;
   heldDueCompletionItemIds: ReadonlySet<string>;
@@ -4988,15 +5390,18 @@ function MatrixGridCarousel({
 
     return activeGroups.map(({ group }) => group.key).join("|");
   }, [activeMatrixPanel, activeScheduledGroups, activeUnscheduledDueHabitGroups]);
+  const effectiveCardDensity =
+    presentationMode === "checkbox-only" ? "todo" : cardDensity;
+  const isCardDensityToggleEnabled = presentationMode !== "checkbox-only";
   const matrixLibraryGridClass =
-    cardDensity === "row" || cardDensity === "todo"
+    effectiveCardDensity === "row" || effectiveCardDensity === "todo"
       ? MATRIX_LIBRARY_ROW_LIST_CLASS
-      : cardDensity === "small"
+      : effectiveCardDensity === "small"
         ? MATRIX_LIBRARY_SMALL_GRID_CLASS
         : MATRIX_LIBRARY_GRID_CLASS;
-  const isSmallCardDensity = cardDensity === "small";
-  const isRowCardDensity = cardDensity === "row";
-  const isTodoRowDensity = cardDensity === "todo";
+  const isSmallCardDensity = effectiveCardDensity === "small";
+  const isRowCardDensity = effectiveCardDensity === "row";
+  const isTodoRowDensity = effectiveCardDensity === "todo";
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -5134,28 +5539,30 @@ function MatrixGridCarousel({
       <span className="rounded-full border border-white/8 bg-white/[0.045] px-2 py-0.5 text-[9px] font-semibold leading-none text-white/50">
         {activeMatrixPanelLabel}
       </span>
-      <button
-        type="button"
-        aria-label={`Use ${nextCardDensityLabel}`}
-        title={`Use ${nextCardDensityLabel}`}
-        onClick={handleCardDensityToggle}
-        className={cn(
-          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/8 bg-white/[0.03] text-zinc-600 transition hover:border-white/15 hover:bg-white/[0.055] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-          cardDensity !== "large"
-            ? "text-zinc-300 shadow-[0_0_14px_-9px_rgba(255,255,255,0.72)]"
-            : null
-        )}
-      >
-        {isSmallCardDensity ? (
-          <Grid3x3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        ) : isTodoRowDensity ? (
-          <ListChecks className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        ) : isRowCardDensity ? (
-          <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        ) : (
-          <Grid2x2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        )}
-      </button>
+      {isCardDensityToggleEnabled ? (
+        <button
+          type="button"
+          aria-label={`Use ${nextCardDensityLabel}`}
+          title={`Use ${nextCardDensityLabel}`}
+          onClick={handleCardDensityToggle}
+          className={cn(
+            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/8 bg-white/[0.03] text-zinc-600 transition hover:border-white/15 hover:bg-white/[0.055] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+            cardDensity !== "large"
+              ? "text-zinc-300 shadow-[0_0_14px_-9px_rgba(255,255,255,0.72)]"
+              : null
+          )}
+        >
+          {isSmallCardDensity ? (
+            <Grid3x3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+          ) : isTodoRowDensity ? (
+            <ListChecks className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+          ) : isRowCardDensity ? (
+            <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+          ) : (
+            <Grid2x2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+          )}
+        </button>
+      ) : null}
     </>
   );
 
@@ -5214,7 +5621,7 @@ function MatrixGridCarousel({
   useLayoutEffect(() => {
     measureActiveMatrixPanel();
   }, [
-    cardDensity,
+    effectiveCardDensity,
     activeScheduledGroups,
     activeUnscheduledDueHabitGroups,
     measureActiveMatrixPanel,
@@ -5616,7 +6023,12 @@ function MatrixGridCarousel({
                               >
                                 <ScheduledEventCard
                                   event={event}
-                                  density={cardDensity}
+                                  density={effectiveCardDensity}
+                                  todoRowDensity={todoRowDensity}
+                                  presentationMode={presentationMode}
+                                  completingInstanceIds={
+                                    completingScheduledEventIds
+                                  }
                                   onComplete={onCompleteScheduledEvent}
                                   onOpenMealNutritionLog={onOpenMealNutritionLog}
                                   onOpenFitnessWorkout={onOpenFitnessWorkout}
@@ -5681,13 +6093,16 @@ function MatrixGridCarousel({
                                 {item.kind === "routine" ? (
                                   <MatrixRoutineCard
                                     routine={item.routine}
-                                    density={cardDensity}
+                                    density={effectiveCardDensity}
+                                    todoRowDensity={todoRowDensity}
+                                    presentationMode={presentationMode}
                                     onCompleteHabit={onCompleteDueHabit}
                                   />
                                 ) : (
                                   <DueHabitCard
                                     habit={item.habit}
-                                    density={cardDensity}
+                                    density={effectiveCardDensity}
+                                    todoRowDensity={todoRowDensity}
                                     completing={completingDueHabitIds.has(
                                       item.habit.id
                                     )}
@@ -5750,10 +6165,14 @@ function MatrixGridCarousel({
 export function MatrixContent({
   variant = "page",
   initialCardDensity,
+  todoRowDensity = "default",
+  presentationMode = "default",
   settingsTriggerTarget,
 }: {
   variant?: "page" | "sheet";
   initialCardDensity?: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
+  presentationMode?: MatrixPresentationMode;
   settingsTriggerTarget?: HTMLElement | null;
 } = {}) {
   const { user } = useAuth();
@@ -5776,6 +6195,8 @@ export function MatrixContent({
   const [completingDueHabitIds, setCompletingDueHabitIds] = useState<
     Set<string>
   >(new Set());
+  const [completingScheduledEventIds, setCompletingScheduledEventIds] =
+    useState<Set<string>>(new Set());
   const [heldMatrixReorderItemIds, setHeldMatrixReorderItemIds] = useState<{
     scheduled: Set<string>;
     due: Set<string>;
@@ -5798,6 +6219,13 @@ export function MatrixContent({
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
   const matrixStateRef = useRef<MatrixState>(initialState);
   const activeCreatorDayRef = useRef<CreatorDay>(activeCreatorDay);
+  const matrixLoadRequestIdRef = useRef(0);
+  const scheduledCompletionOverridesRef = useRef<
+    Map<string, MatrixScheduledCompletionOverride>
+  >(new Map());
+  const dueHabitCompletionOverridesRef = useRef<
+    Map<string, MatrixDueHabitCompletionOverride>
+  >(new Map());
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
   const pendingDueHabitCompletionKeysRef = useRef<Set<string>>(new Set());
   const pendingScheduledCompletionIdsRef = useRef<Set<string>>(new Set());
@@ -6016,6 +6444,47 @@ export function MatrixContent({
 
     return itemIds.size ? Array.from(itemIds) : [habitId];
   }, []);
+
+  const applyScheduledCompletionOverride = useCallback(
+    (instanceId: string, override: MatrixScheduledCompletionOverride) => {
+      const overrides = new Map<string, MatrixScheduledCompletionOverride>([
+        [instanceId, override],
+      ]);
+
+      setState((current) => ({
+        ...current,
+        eventGroups: current.eventGroups.map((group) => ({
+          ...group,
+          items: applyMatrixScheduledCompletionOverridesToEvents(
+            group.items,
+            overrides
+          ),
+        })),
+        skillEventGroups: current.skillEventGroups.map((group) => ({
+          ...group,
+          items: applyMatrixScheduledCompletionOverridesToEvents(
+            group.items,
+            overrides
+          ),
+        })),
+        blockEventGroups: current.blockEventGroups.map((group) => ({
+          ...group,
+          items: applyMatrixScheduledCompletionOverridesToEvents(
+            group.items,
+            overrides
+          ),
+        })),
+        typeEventGroups: current.typeEventGroups.map((group) => ({
+          ...group,
+          items: applyMatrixScheduledCompletionOverridesToEvents(
+            group.items,
+            overrides
+          ),
+        })),
+      }));
+    },
+    []
+  );
 
   const getDueOccurrenceIdentity = useCallback(
     (habitId: string, dayKey: string): MatrixDueOccurrenceIdentity => {
@@ -6451,7 +6920,13 @@ export function MatrixContent({
         return false;
       }
       pendingScheduledCompletionIdsRef.current.add(instanceId);
+      setCompletingScheduledEventIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.add(instanceId);
+        return nextIds;
+      });
 
+      let rollbackScheduledCompletionState: (() => void) | null = null;
       try {
         const persistedStatus =
           nextStatus === "completed" ? "completed" : "scheduled";
@@ -6501,6 +6976,44 @@ export function MatrixContent({
             : null;
         const scheduledLegacyOccurrenceStems =
           buildMatrixScheduledLegacyOccurrenceStems(eventBeforeCompletion);
+        const completedAt =
+          persistedStatus === "completed" ? new Date().toISOString() : null;
+        const previousStatus =
+          eventBeforeCompletion?.instance.status === "completed" ||
+          eventBeforeCompletion?.instance.status === "canceled"
+            ? eventBeforeCompletion.instance.status
+            : "scheduled";
+        const previousCompletedAt =
+          eventBeforeCompletion?.instance.completed_at ?? null;
+        const heldItemIds = getScheduledCompletionHoldIds(instanceId);
+        const nextCompletionOverride: MatrixScheduledCompletionOverride = {
+          status: persistedStatus,
+          completedAt,
+        };
+        rollbackScheduledCompletionState = () => {
+          scheduledCompletionOverridesRef.current.delete(instanceId);
+          applyScheduledCompletionOverride(instanceId, {
+            status: previousStatus,
+            completedAt: previousCompletedAt,
+          });
+          if (previousStatus === "completed") {
+            holdMatrixReorderItems("scheduled", heldItemIds);
+          } else {
+            releaseMatrixReorderHold("scheduled", heldItemIds);
+          }
+        };
+
+        scheduledCompletionOverridesRef.current.set(
+          instanceId,
+          nextCompletionOverride
+        );
+        applyScheduledCompletionOverride(instanceId, nextCompletionOverride);
+        if (persistedStatus === "completed") {
+          holdMatrixReorderItems("scheduled", heldItemIds);
+        } else {
+          releaseMatrixReorderHold("scheduled", heldItemIds);
+        }
+
         let repairResult: MatrixXpReverseOutcome | null = null;
         if (persistedStatus === "completed" && scheduledOccurrenceStem) {
           repairResult = await reverseMatrixXpOccurrence(
@@ -6522,19 +7035,11 @@ export function MatrixContent({
               },
               "failed"
             );
+            rollbackScheduledCompletionState();
             void hapticWarningPattern();
             return false;
           }
         }
-        const completedAt =
-          persistedStatus === "completed" ? new Date().toISOString() : null;
-        const previousStatus =
-          eventBeforeCompletion?.instance.status === "completed" ||
-          eventBeforeCompletion?.instance.status === "canceled"
-            ? eventBeforeCompletion.instance.status
-            : "scheduled";
-        const previousCompletedAt =
-          eventBeforeCompletion?.instance.completed_at ?? null;
         const result = await updateInstanceStatus(
           instanceId,
           persistedStatus,
@@ -6546,11 +7051,11 @@ export function MatrixContent({
 
         if (result.error) {
           console.error("Failed to toggle scheduled Matrix Event", result.error);
+          rollbackScheduledCompletionState();
           void hapticErrorPattern();
           return false;
         }
 
-        const heldItemIds = getScheduledCompletionHoldIds(instanceId);
         if (persistedStatus === "completed" && completedAt) {
           const habitCompletionResult =
             await recordMatrixScheduledHabitCompletion({
@@ -6581,6 +7086,7 @@ export function MatrixContent({
                 rollback.error
               );
             }
+            rollbackScheduledCompletionState();
             void hapticWarningPattern();
             return false;
           }
@@ -6627,6 +7133,7 @@ export function MatrixContent({
                 rollback.error
               );
             }
+            rollbackScheduledCompletionState();
             void hapticWarningPattern();
             return false;
           }
@@ -6666,15 +7173,10 @@ export function MatrixContent({
                 rollback.error
               );
             }
+            rollbackScheduledCompletionState();
             void hapticWarningPattern();
             return false;
           }
-        }
-
-        if (persistedStatus === "completed") {
-          holdMatrixReorderItems("scheduled", heldItemIds);
-        } else {
-          releaseMatrixReorderHold("scheduled", heldItemIds);
         }
 
         const updateScheduledEventGroups = (
@@ -6750,13 +7252,21 @@ export function MatrixContent({
         return true;
       } catch (error) {
         console.error("Failed to toggle scheduled Matrix Event", error);
+        rollbackScheduledCompletionState?.();
         void hapticErrorPattern();
         return false;
       } finally {
         pendingScheduledCompletionIdsRef.current.delete(instanceId);
+        setCompletingScheduledEventIds((currentIds) => {
+          if (!currentIds.has(instanceId)) return currentIds;
+          const nextIds = new Set(currentIds);
+          nextIds.delete(instanceId);
+          return nextIds;
+        });
       }
     },
     [
+      applyScheduledCompletionOverride,
       getScheduledCompletionHoldIds,
       buildScheduledXpDiagnostic,
       dispatchMatrixScheduledXpReward,
@@ -7491,6 +8001,10 @@ export function MatrixContent({
         }
         pendingDueHabitCompletionKeysRef.current.add(completionKey);
         pendingCompletionKey = completionKey;
+        const nextDueHabitOverride: MatrixDueHabitCompletionOverride = {
+          completed: !completedToday,
+          completedAt: !completedToday ? completedAt : null,
+        };
         const occurrence = getDueOccurrenceIdentity(habitId, dayKey);
         let repairResult: MatrixXpReverseOutcome | null = null;
         if (!completedToday) {
@@ -7517,6 +8031,10 @@ export function MatrixContent({
             return false;
           }
         }
+        dueHabitCompletionOverridesRef.current.set(
+          habitId,
+          nextDueHabitOverride
+        );
         applyOptimisticDueHabitCompletion(!completedToday, completedAt);
         const response = await fetch("/api/habits/completion", {
           method: "POST",
@@ -7566,6 +8084,7 @@ export function MatrixContent({
             xpResult.status !== "deduped" &&
             xpResult.inserted !== true;
           if (shouldRollbackCompletion) {
+            dueHabitCompletionOverridesRef.current.delete(habitId);
             await fetch("/api/habits/completion", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -7605,6 +8124,7 @@ export function MatrixContent({
             reverseResult.status
           );
           if (!reverseResult.ok) {
+            dueHabitCompletionOverridesRef.current.delete(habitId);
             await fetch("/api/habits/completion", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -7770,6 +8290,7 @@ export function MatrixContent({
         return true;
       } catch (error) {
         console.error("Failed to toggle due Matrix habit", error);
+        dueHabitCompletionOverridesRef.current.delete(habitId);
         rollbackOptimisticDueHabitCompletion();
         return false;
       } finally {
@@ -7834,9 +8355,14 @@ export function MatrixContent({
   useEffect(() => {
     pendingDueHabitCompletionKeysRef.current.clear();
     completingDueHabitIdsRef.current.clear();
+    pendingScheduledCompletionIdsRef.current.clear();
+    scheduledCompletionOverridesRef.current.clear();
+    dueHabitCompletionOverridesRef.current.clear();
     setCompletingDueHabitIds(new Set());
+    setCompletingScheduledEventIds(new Set());
     setHeldMatrixReorderItemIds((current) => ({
       ...current,
+      scheduled: new Set(),
       due: new Set(),
     }));
   }, [activeCreatorDay.creatorDayDate]);
@@ -7893,6 +8419,7 @@ export function MatrixContent({
 
     const userId = user.id;
     let cancelled = false;
+    const loadRequestId = ++matrixLoadRequestIdRef.current;
 
     async function loadMatrix() {
       const supabase = getSupabaseBrowser();
@@ -7917,7 +8444,7 @@ export function MatrixContent({
         const { data: instanceData, error: instanceError } = await supabase
           .from("schedule_instances")
           .select(
-            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata"
+            "id, source_id, source_type, start_utc, end_utc, status, completed_at, weight_snapshot, event_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata"
           )
           .eq("user_id", userId)
           .in("source_type", ["PROJECT", "HABIT", "EVENT"])
@@ -8133,11 +8660,16 @@ export function MatrixContent({
 
         if (habitCompletionResult.error) throw habitCompletionResult.error;
 
-        const completedHabitIdsForCreatorDay = new Set(
+        const loadedCompletedHabitIdsForCreatorDay = new Set(
           ((habitCompletionResult.data ?? []) as HabitCompletionDayRow[])
             .map((row) => row.habit_id)
             .filter((id): id is string => Boolean(id))
         );
+        const completedHabitIdsForCreatorDay =
+          applyMatrixDueHabitCompletionOverridesToCompletedIds(
+            loadedCompletedHabitIdsForCreatorDay,
+            dueHabitCompletionOverridesRef.current
+          );
 
         const skillIdToMonumentId = new Map<string, string>();
         const skillIdToIcon = new Map<string, string>();
@@ -8194,8 +8726,8 @@ export function MatrixContent({
           timeBlockMap.set(timeBlockId, {
             id: timeBlockId,
             label: window.label ?? "Meal",
-            start_local: window.start_local ?? null,
-            end_local: window.end_local ?? null,
+            start_local: window.start_local ?? "",
+            end_local: window.end_local ?? "",
           });
         }
         const dayTypeTimeBlockRows = [
@@ -8333,40 +8865,55 @@ export function MatrixContent({
           routines: routineMap,
         });
 
-        if (!cancelled) {
+        if (!cancelled && loadRequestId === matrixLoadRequestIdRef.current) {
+          const effectiveScheduledEvents =
+            applyMatrixScheduledCompletionOverridesToEvents(
+              scheduledEvents,
+              scheduledCompletionOverridesRef.current
+            );
+          const effectiveUnscheduledDueItems =
+            applyMatrixDueHabitCompletionOverridesToItems(
+              unscheduledDueItems,
+              dueHabitCompletionOverridesRef.current,
+              today,
+              timeZone
+            );
           setState({
             loading: false,
             error: null,
             matrixTags,
-            eventGroups: groupByMonument({ items: scheduledEvents, monuments }),
+            eventGroups: groupByMonument({
+              items: effectiveScheduledEvents,
+              monuments,
+            }),
             unscheduledDueHabitGroups: groupByMonument({
-              items: unscheduledDueItems,
+              items: effectiveUnscheduledDueItems,
               monuments,
             }),
             skillEventGroups: groupBySkill({
-              items: scheduledEvents,
+              items: effectiveScheduledEvents,
               skills: skillLookup,
             }),
             skillUnscheduledDueHabitGroups: groupBySkill({
-              items: unscheduledDueItems,
+              items: effectiveUnscheduledDueItems,
               skills: skillLookup,
             }),
             blockEventGroups: groupEventsByBlock({
-              items: scheduledEvents,
+              items: effectiveScheduledEvents,
               timeBlocks: timeBlockMap,
               dayTypeTimeBlockById,
               dayTypeTimeBlockByTimeBlockId,
             }),
             blockUnscheduledDueHabitGroups:
-              groupUnscheduledDueHabitsByNoBlock(unscheduledDueItems),
+              groupUnscheduledDueHabitsByNoBlock(effectiveUnscheduledDueItems),
             typeEventGroups: groupByType({
-              items: scheduledEvents,
+              items: effectiveScheduledEvents,
               skills: skillLookup,
               getTypeGroupKey: getMatrixEventTypeGroupKey,
               sortItems: sortMatrixScheduledItems,
             }),
             typeUnscheduledDueHabitGroups: groupByType({
-              items: unscheduledDueItems,
+              items: effectiveUnscheduledDueItems,
               skills: skillLookup,
               getTypeGroupKey: getMatrixDueItemTypeGroupKey,
               sortItems: sortMatrixDueItems,
@@ -8376,7 +8923,7 @@ export function MatrixContent({
         }
       } catch (error) {
         console.error("Failed to load Matrix", error);
-        if (!cancelled) {
+        if (!cancelled && loadRequestId === matrixLoadRequestIdRef.current) {
           setState({
             ...initialState,
             loading: false,
@@ -8625,12 +9172,15 @@ export function MatrixContent({
               matrixView={matrixView}
               matrixScope={matrixScope}
               initialCardDensity={initialCardDensity}
+              todoRowDensity={todoRowDensity}
+              presentationMode={presentationMode}
               persistCardDensity={variant !== "sheet"}
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
               onOpenMealNutritionLog={openMealNutritionLog}
               onOpenFitnessWorkout={openFitnessWorkout}
               onOpenDueFitnessWorkout={openDueFitnessWorkout}
               onCompleteDueHabit={handleCompleteDueHabit}
+              completingScheduledEventIds={completingScheduledEventIds}
               completingDueHabitIds={completingDueHabitIds}
               heldScheduledCompletionItemIds={
                 heldMatrixReorderItemIds.scheduled

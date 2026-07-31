@@ -24,6 +24,7 @@ import {
   useSensor,
   useSensors,
   useDroppable,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -68,7 +69,9 @@ import {
 import {
   deleteManualMyListItem,
   loadManualMyListItems,
+  MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
   replaceManualMyListItems,
+  type MyListManualItemConsumedDetail,
 } from "@/lib/my-list/myListItemsStorage";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
 import {
@@ -199,6 +202,7 @@ const MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR = [
   "[data-my-list-no-upgrade]",
 ].join(",");
 const MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE = {
+  WebkitTapHighlightColor: "transparent",
   WebkitTouchCallout: "none",
   WebkitUserSelect: "none",
   userSelect: "none",
@@ -893,6 +897,7 @@ type MyListManualUpgradePress = {
   pointerId: number;
   startX: number;
   startY: number;
+  rowId: string;
   title: string;
   skillId: string | null;
   priorityId: PriorityBucketId;
@@ -940,7 +945,7 @@ function MyListTodoDragHandle({
         event.preventDefault();
         event.stopPropagation();
       }}
-      className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
+      className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none select-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]"
     >
       <GripVertical
         className="h-3.5 w-3.5 translate-x-[5px]"
@@ -958,7 +963,8 @@ type MyListSortableManualTodoRowProps = {
 };
 type MyListManualReorderGroup =
   | { kind: "day"; id: MyListDayViewBucketId }
-  | { kind: "priority"; id: PriorityBucketId };
+  | { kind: "priority"; id: PriorityBucketId }
+  | { kind: "monument"; id: string };
 type MyListManualReorderOverData =
   | {
       type: "manual-row";
@@ -977,6 +983,26 @@ export type MyListTaskXpContext = {
 
 function buildManualReorderGroupDropId(group: MyListManualReorderGroup) {
   return `manualGroup:${group.kind}:${group.id}`;
+}
+
+function areManualReorderGroupsEqual(
+  leftGroup: MyListManualReorderGroup | null,
+  rightGroup: MyListManualReorderGroup | null
+) {
+  return (
+    leftGroup?.kind === rightGroup?.kind &&
+    leftGroup?.id === rightGroup?.id
+  );
+}
+
+function isManualReorderDestinationAllowedForSource(
+  sourceGroup: MyListManualReorderGroup | null,
+  destination: MyListManualReorderDestination | null
+) {
+  if (!sourceGroup || sourceGroup.kind !== "monument") return true;
+  if (!destination) return false;
+
+  return areManualReorderGroupsEqual(sourceGroup, destination.group);
 }
 
 function readManualReorderOverData(
@@ -1027,6 +1053,25 @@ function readManualReorderOverData(
     const parsedGroup = {
       kind: groupKind,
       id: groupId as PriorityBucketId,
+    } satisfies MyListManualReorderGroup;
+
+    return type === "manual-group" || type === "manual-row"
+      ? {
+          type,
+          ...(type === "manual-row" ? { rowType } : {}),
+          group: parsedGroup,
+        } as MyListManualReorderOverData
+      : null;
+  }
+
+  if (
+    groupKind === "monument" &&
+    typeof groupId === "string" &&
+    groupId.trim()
+  ) {
+    const parsedGroup = {
+      kind: groupKind,
+      id: groupId.trim(),
     } satisfies MyListManualReorderGroup;
 
     return type === "manual-group" || type === "manual-row"
@@ -1116,8 +1161,8 @@ function readManualReorderActiveRowKey(
 
 function resolveManualReorderGroupForRow(
   row: MyListManualRow,
-  groupKind: MyListManualReorderGroup["kind"]
-): MyListManualReorderGroup {
+  groupKind: Exclude<MyListManualReorderGroup, { kind: "monument" }>["kind"]
+): Exclude<MyListManualReorderGroup, { kind: "monument" }> {
   if (groupKind === "day") {
     return { kind: "day", id: row.dayBucketId ?? "anytime" };
   }
@@ -1129,6 +1174,7 @@ function isManualRowInReorderGroup(
   row: MyListManualRow,
   group: MyListManualReorderGroup
 ) {
+  if (group.kind === "monument") return false;
   const rowGroup = resolveManualReorderGroupForRow(row, group.kind);
   return rowGroup.id === group.id;
 }
@@ -1138,6 +1184,7 @@ function applyManualReorderGroup(
   group: MyListManualReorderGroup | null
 ): MyListManualRow {
   if (!group) return row;
+  if (group.kind === "monument") return row;
 
   if (group.kind === "day") {
     const dayBucketId = group.id === "anytime" ? null : group.id;
@@ -1149,9 +1196,9 @@ function applyManualReorderGroup(
 
 function resolvePinnedSourceReorderGroupForRow(
   row: MyListPinnedSourceRow,
-  groupKind: MyListManualReorderGroup["kind"],
+  groupKind: Exclude<MyListManualReorderGroup, { kind: "monument" }>["kind"],
   fallbackPriorityId: PriorityBucketId
-): MyListManualReorderGroup {
+): Exclude<MyListManualReorderGroup, { kind: "monument" }> {
   if (groupKind === "day") {
     return { kind: "day", id: row.dayBucketId ?? "anytime" };
   }
@@ -1167,6 +1214,7 @@ function isPinnedSourceRowInReorderGroup(
   group: MyListManualReorderGroup,
   fallbackPriorityId: PriorityBucketId
 ) {
+  if (group.kind === "monument") return false;
   const rowGroup = resolvePinnedSourceReorderGroupForRow(
     row,
     group.kind,
@@ -1180,6 +1228,7 @@ function applyPinnedSourceReorderGroup(
   group: MyListManualReorderGroup | null
 ): MyListPinnedSourceRow {
   if (!group) return row;
+  if (group.kind === "monument") return row;
 
   if (group.kind === "day") {
     const dayBucketId = group.id === "anytime" ? null : group.id;
@@ -1229,6 +1278,9 @@ function reorderManualRowsForDestination(
     ? readManualRowIdFromSortableKey(destination.targetRowKey)
     : null;
   if (targetManualRowId === EMPTY_DRAFT_MANUAL_ROW_ID) return currentRows;
+  if (destination.group?.kind === "monument" && !targetManualRowId) {
+    return currentRows;
+  }
 
   const draggedRow = applyManualReorderGroup(
     currentRows[draggedIndex],
@@ -1315,6 +1367,9 @@ function reorderPinnedSourceRowsForDestination(
   const targetKeyParts = destination.targetRowKey
     ? readPinnedSourceRowKeyParts(destination.targetRowKey)
     : null;
+  if (destination.group?.kind === "monument" && !targetKeyParts) {
+    return currentRows;
+  }
 
   if (targetKeyParts) {
     const targetIndex = rowsWithoutDragged.findIndex(
@@ -1533,6 +1588,8 @@ export function MyListSheet({
   const [activeManualReorderRowId, setActiveManualReorderRowId] = useState<
     MyListSortableTodoRowKey | null
   >(null);
+  const [activeManualReorderSourceGroup, setActiveManualReorderSourceGroup] =
+    useState<MyListManualReorderGroup | null>(null);
   const [dayDragDropBucketId, setDayDragDropBucketId] =
     useState<MyListDayViewBucketId | null>(null);
   const [collapsedDayGroups, setCollapsedDayGroups] = useState<
@@ -1582,6 +1639,10 @@ export function MyListSheet({
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const manualUpgradePressRef = useRef<MyListManualUpgradePress | null>(null);
   const manualReorderOriginRowsRef = useRef<MyListManualRow[] | null>(null);
+  const manualReorderSourceGroupRef =
+    useRef<MyListManualReorderGroup | null>(null);
+  const manualReorderLastValidDestinationRef =
+    useRef<MyListManualReorderDestination | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
   const keyboardSessionBaselineRef =
     useRef<MyListKeyboardSessionBaseline | null>(null);
@@ -1614,6 +1675,31 @@ export function MyListSheet({
       canScroll: (element: Element) => element === sheetScrollRef.current,
     }),
     []
+  );
+  const manualReorderCollisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const activeData = readManualReorderOverData(args.active.data.current);
+      const activeGroup =
+        activeData?.type === "manual-row" ? activeData.group : null;
+
+      if (!isMonumentLensActive || activeGroup?.kind !== "monument") {
+        return closestCenter(args);
+      }
+
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((container) => {
+          const containerData = readManualReorderOverData(
+            container.data.current
+          );
+          return (
+            containerData?.type === "manual-row" &&
+            areManualReorderGroupsEqual(activeGroup, containerData.group)
+          );
+        }),
+      });
+    },
+    [isMonumentLensActive]
   );
   const applyMyListViewModePreference = useCallback(
     (preference: MyListViewModePreference) => {
@@ -1917,6 +2003,66 @@ export function MyListSheet({
     },
     [persistManualRows]
   );
+  const removePersistedManualRowFromLocalState = useCallback(
+    (rowId: string) => {
+      const normalizedRowId = rowId.trim();
+      if (!normalizedRowId) return;
+
+      setManualRows((currentRows) => {
+        if (!currentRows.some((row) => row.id === normalizedRowId)) {
+          return currentRows;
+        }
+
+        const nextRows = currentRows.filter(
+          (row) => row.id !== normalizedRowId
+        );
+        persistManualRows(nextRows);
+        return nextRows;
+      });
+      setActiveSkillPickerRowKey((currentRowKey) =>
+        currentRowKey === `manual:${normalizedRowId}` ? null : currentRowKey
+      );
+      setActivePriorityPickerRowKey((currentRowKey) =>
+        currentRowKey === `manual:${normalizedRowId}` ? null : currentRowKey
+      );
+      setActiveDayPickerRowKey((currentRowKey) =>
+        currentRowKey === `manual:${normalizedRowId}` ? null : currentRowKey
+      );
+      setPendingDeleteRowId((currentRowKey) =>
+        currentRowKey === `manual:${normalizedRowId}` ? null : currentRowKey
+      );
+    },
+    [persistManualRows]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleManualItemConsumed = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as Partial<MyListManualItemConsumedDetail>;
+      if (detail.origin !== "manual-my-list-upgrade") return;
+      const consumedUserId =
+        typeof detail.userId === "string" ? detail.userId.trim() : "";
+      if (userId && consumedUserId && consumedUserId !== userId) return;
+      const itemId =
+        typeof detail.itemId === "string" ? detail.itemId.trim() : "";
+      if (!itemId) return;
+
+      removePersistedManualRowFromLocalState(itemId);
+    };
+
+    window.addEventListener(
+      MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
+      handleManualItemConsumed
+    );
+    return () => {
+      window.removeEventListener(
+        MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
+        handleManualItemConsumed
+      );
+    };
+  }, [removePersistedManualRowFromLocalState, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2374,13 +2520,41 @@ export function MyListSheet({
     [completedTodoCount, completedTodoRows, lensGroupLayoutSections]
   );
   const manualReorderItemIds = useMemo(
-    () =>
-      visibleTodoRows
+    () => {
+      if (
+        isMonumentLensActive &&
+        activeManualReorderSourceGroup?.kind === "monument"
+      ) {
+        const sourceGroup = visibleTodoGroups.find(
+          (group) => group.id === activeManualReorderSourceGroup.id
+        );
+        const sourceGroupRowIds =
+          sourceGroup?.rows
+            .map(getSortableTodoRowKey)
+            .filter((rowKey): rowKey is MyListSortableTodoRowKey =>
+              Boolean(rowKey)
+            ) ?? [];
+
+        return sourceGroupRowIds.length > 0
+          ? sourceGroupRowIds
+          : activeManualReorderRowId
+            ? [activeManualReorderRowId]
+            : [];
+      }
+
+      return visibleTodoRows
         .map(getSortableTodoRowKey)
         .filter((rowKey): rowKey is MyListSortableTodoRowKey =>
           Boolean(rowKey)
-        ),
-    [visibleTodoRows]
+        );
+    },
+    [
+      activeManualReorderRowId,
+      activeManualReorderSourceGroup,
+      isMonumentLensActive,
+      visibleTodoGroups,
+      visibleTodoRows,
+    ]
   );
   const listContentHeight =
     LIST_COMPACT_HEADER_ALLOWANCE +
@@ -2585,6 +2759,7 @@ export function MyListSheet({
             priority: press.priorityId,
             energy: "MEDIUM",
             origin: "my-list-upgrade",
+            sourceManualMyListItemId: press.rowId,
           },
         })
       );
@@ -2611,6 +2786,7 @@ export function MyListSheet({
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
+        rowId: row.id,
         title,
         skillId: row.skillId,
         priorityId: row.priorityId,
@@ -2695,6 +2871,7 @@ export function MyListSheet({
         pointerId: touch.identifier,
         startX: touch.clientX,
         startY: touch.clientY,
+        rowId: row.id,
         title,
         skillId: row.skillId,
         priorityId: row.priorityId,
@@ -2826,6 +3003,7 @@ export function MyListSheet({
         return;
       }
       if (isDayLensActive) {
+        suppressManualUpgradeSelection();
         press.dayDragStarted = true;
         press.dayDropBucketId = resolveDayDropBucketAtPoint(
           press.lastX,
@@ -2835,6 +3013,7 @@ export function MyListSheet({
         return;
       }
       press.dragStarted = true;
+      suppressManualUpgradeSelection();
       setIsScheduleDragActive(true);
       dispatchScheduleTimelineDrag(press);
     },
@@ -2844,6 +3023,7 @@ export function MyListSheet({
       dispatchScheduleTimelineDrag,
       isDayLensActive,
       resolveDayDropBucketAtPoint,
+      suppressManualUpgradeSelection,
     ]
   );
 
@@ -3285,8 +3465,11 @@ export function MyListSheet({
       setManualRows(originRows);
     }
     manualReorderOriginRowsRef.current = null;
+    manualReorderSourceGroupRef.current = null;
+    manualReorderLastValidDestinationRef.current = null;
     manualReorderCompactDayGroupIdsRef.current.clear();
     setActiveManualReorderRowId(null);
+    setActiveManualReorderSourceGroup(null);
   }, []);
 
   const resetManualReorderAfterError = useCallback(
@@ -3307,6 +3490,9 @@ export function MyListSheet({
         if (!open || activeView !== "list" || !rowKey) {
           return;
         }
+        const activeData = readManualReorderOverData(event.active.data.current);
+        const sourceGroup =
+          activeData?.type === "manual-row" ? activeData.group : null;
 
         clearManualUpgradePress();
         setPendingDeleteRowId(null);
@@ -3328,7 +3514,10 @@ export function MyListSheet({
             })
             .map((group) => group.id as MyListDayViewBucketId)
         );
+        manualReorderSourceGroupRef.current = sourceGroup;
+        manualReorderLastValidDestinationRef.current = null;
         setActiveManualReorderRowId(rowKey);
+        setActiveManualReorderSourceGroup(sourceGroup);
       } catch (error) {
         resetManualReorderAfterError(error);
       }
@@ -3358,7 +3547,18 @@ export function MyListSheet({
             event,
             visibleTodoRows
           );
-          if (!rowKey || !rowKey.startsWith("manual:") || !destination) {
+          if (
+            !rowKey ||
+            !destination ||
+            !isManualReorderDestinationAllowedForSource(
+              manualReorderSourceGroupRef.current,
+              destination
+            )
+          ) {
+            return currentRows;
+          }
+          manualReorderLastValidDestinationRef.current = destination;
+          if (!rowKey.startsWith("manual:")) {
             return currentRows;
           }
           return reorderManualRowsForDestination(currentRows, rowKey, destination);
@@ -3384,31 +3584,52 @@ export function MyListSheet({
         event,
         visibleTodoRows
       );
-      if (!rowKey || !destination) {
+      const sourceGroup = manualReorderSourceGroupRef.current;
+      const resolvedDestination =
+        destination &&
+        isManualReorderDestinationAllowedForSource(sourceGroup, destination)
+          ? destination
+          : sourceGroup?.kind === "monument"
+            ? manualReorderLastValidDestinationRef.current
+            : null;
+
+      if (
+        !rowKey ||
+        !resolvedDestination ||
+        !isManualReorderDestinationAllowedForSource(
+          sourceGroup,
+          resolvedDestination
+        )
+      ) {
         restoreManualReorderOrigin();
         return;
       }
 
       if (rowKey.startsWith("manual:")) {
-        persistManualRowForReorder(rowKey, destination);
+        persistManualRowForReorder(rowKey, resolvedDestination);
       } else if (rowKey.startsWith("pinnedSource:")) {
-        persistPinnedSourceRowsForReorder(rowKey, destination);
+        persistPinnedSourceRowsForReorder(rowKey, resolvedDestination);
       } else {
         restoreManualReorderOrigin();
         return;
       }
       if (
-        destination.group?.kind === "day" &&
-        manualReorderCompactDayGroupIdsRef.current.has(destination.group.id)
+        resolvedDestination.group?.kind === "day" &&
+        manualReorderCompactDayGroupIdsRef.current.has(
+          resolvedDestination.group.id
+        )
       ) {
         setCollapsedDayGroups((current) => ({
           ...current,
-          [destination.group!.id]: true,
+          [resolvedDestination.group!.id]: true,
         }));
       }
       manualReorderOriginRowsRef.current = null;
+      manualReorderSourceGroupRef.current = null;
+      manualReorderLastValidDestinationRef.current = null;
       manualReorderCompactDayGroupIdsRef.current.clear();
       setActiveManualReorderRowId(null);
+      setActiveManualReorderSourceGroup(null);
     } catch (error) {
       resetManualReorderAfterError(error);
     }
@@ -5203,7 +5424,7 @@ export function MyListSheet({
           ) : null}
           <DndContext
             sensors={manualReorderSensors}
-            collisionDetection={closestCenter}
+            collisionDetection={manualReorderCollisionDetection}
             autoScroll={manualReorderAutoScroll}
             onDragStart={handleManualReorderDragStart}
             onDragOver={handleManualReorderDragOver}
@@ -5389,6 +5610,8 @@ export function MyListSheet({
                   const manualReorderGroup: MyListManualReorderGroup | null =
                     !isCompletedSection && isDayLensActive && dayDropBucketId
                       ? { kind: "day", id: dayDropBucketId }
+                      : !isCompletedSection && isMonumentLensActive
+                        ? { kind: "monument", id: group.id }
                       : !isCompletedSection &&
                           PRIORITY_ORDER.includes(group.id as PriorityBucketId)
                         ? {
@@ -5588,14 +5811,25 @@ export function MyListSheet({
                       onTouchMove={handleScheduleDragTouchMove}
                       onTouchEnd={handleScheduleDragTouchEnd}
                       onTouchCancel={handleScheduleDragTouchEnd}
+                      onSelectCapture={(event) => {
+                        if (scheduleDragPressRef.current) {
+                          event.preventDefault();
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        if (!shouldIgnoreScheduleDragTarget(event.target)) {
+                          event.preventDefault();
+                        }
+                      }}
                       className={clsx(
-                        "group/todo-row flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                        "group/todo-row flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035] [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
                         canStartTodoRowLongPress &&
                           (isScheduleDragActive
                             ? "cursor-grabbing"
                             : "cursor-grab"),
                         pending && "opacity-60"
                       )}
+                      style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     >
                       <span
                         data-my-list-checkbox
@@ -5717,7 +5951,7 @@ export function MyListSheet({
                         aria-label="To-do text"
                         tabIndex={open ? 0 : -1}
                         className={clsx(
-                          "min-w-0 flex-1 bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30",
+                          "min-w-0 flex-1 select-text bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-touch-callout:default] [-webkit-user-select:text] [user-select:text]",
                           done && "text-white/42 line-through"
                         )}
                       />
@@ -6388,6 +6622,8 @@ export function MyListSheet({
               initialCardDensity={
                 shouldInitializeMatrixTodo ? "todo" : undefined
               }
+              todoRowDensity="compact"
+              presentationMode="checkbox-only"
             />
           )}
         </div>

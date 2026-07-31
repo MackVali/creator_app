@@ -4,6 +4,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { cancelFutureScheduledHabitInstancesForUpdate } from "@/lib/habits/scheduleReset";
 import type {
   FitnessActivePlan,
+  FitnessActivePlanRoutineSnapshot,
   FitnessActivePlanWeekday,
 } from "@/lib/fitness/activePlan";
 import { fitnessActivePlanWeekdaysToRecurrenceDays } from "@/lib/fitness/activePlan";
@@ -37,6 +38,7 @@ export type FitnessPlanHabitMetadata = {
   weekdays: FitnessActivePlanWeekday[];
   sessionDurationMinutes: number;
   currentRoutineIndex: number;
+  routineSequenceSnapshot?: FitnessActivePlanRoutineSnapshot[];
   skillType: "fitness";
   updatedAt: string;
 };
@@ -178,6 +180,20 @@ function normalizeRoutineIndex(value: unknown) {
   return Math.floor(index);
 }
 
+function readRoutineSequenceSnapshot(
+  value: unknown,
+): FitnessActivePlanRoutineSnapshot[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const fitnessRoutineTemplateId = readString(item.fitnessRoutineTemplateId);
+    const fitnessRoutineTitle = readString(item.fitnessRoutineTitle);
+    if (!fitnessRoutineTemplateId || !fitnessRoutineTitle) return [];
+    return [{ fitnessRoutineTemplateId, fitnessRoutineTitle }];
+  });
+}
+
 function getFitnessPlanTemplateById(planTemplateId: string) {
   return FITNESS_PLAN_TEMPLATES.find((plan) => plan.id === planTemplateId) ?? null;
 }
@@ -303,6 +319,10 @@ export function buildFitnessPlanHabitMetadata({
     weekdays: activePlan.weekdays,
     sessionDurationMinutes: activePlan.sessionDurationMinutes,
     currentRoutineIndex: activePlan.currentRoutineIndex,
+    ...(activePlan.routineSequenceSnapshot &&
+    activePlan.routineSequenceSnapshot.length > 0
+      ? { routineSequenceSnapshot: activePlan.routineSequenceSnapshot }
+      : {}),
     skillType: "fitness",
     updatedAt: now,
   };
@@ -324,6 +344,9 @@ export function readFitnessPlanHabitMetadata(
   const weekdays = Array.isArray(raw.weekdays)
     ? raw.weekdays.filter(isFitnessPlanWeekday)
     : [];
+  const routineSequenceSnapshot = readRoutineSequenceSnapshot(
+    raw.routineSequenceSnapshot,
+  );
   if (!planTemplateId || !planTitle || !updatedAt || !duration) return null;
 
   return {
@@ -334,6 +357,7 @@ export function readFitnessPlanHabitMetadata(
     weekdays,
     sessionDurationMinutes: duration,
     currentRoutineIndex,
+    ...(routineSequenceSnapshot.length > 0 ? { routineSequenceSnapshot } : {}),
     skillType: "fitness",
     updatedAt,
   };
@@ -343,15 +367,25 @@ export function resolveFitnessPlanScheduleRoutineAssignment({
   planTemplateId,
   currentRoutineIndex,
   occurrenceOffset,
+  routineSequenceSnapshot,
 }: {
   planTemplateId: string;
   currentRoutineIndex: number;
   occurrenceOffset: number;
+  routineSequenceSnapshot?: readonly FitnessActivePlanRoutineSnapshot[];
 }): FitnessPlanScheduleRoutineAssignment | null {
   const plan = getFitnessPlanTemplateById(planTemplateId);
-  if (!plan) return null;
-  const routines = resolveFitnessPlanRoutineSequence(plan);
-  if (routines.length === 0) return null;
+  const snapshotRoutines =
+    routineSequenceSnapshot && routineSequenceSnapshot.length > 0
+      ? routineSequenceSnapshot
+      : null;
+  const routines = plan
+    ? resolveFitnessPlanRoutineSequence(plan).map((routine) => ({
+        fitnessRoutineTemplateId: routine.id,
+        fitnessRoutineTitle: routine.title,
+      }))
+    : snapshotRoutines;
+  if (!routines || routines.length === 0) return null;
 
   const normalizedCurrentIndex = normalizeRoutineIndex(currentRoutineIndex);
   const normalizedOccurrenceOffset = normalizeRoutineIndex(occurrenceOffset);
@@ -363,9 +397,9 @@ export function resolveFitnessPlanScheduleRoutineAssignment({
   if (!routine) return null;
 
   return {
-    fitnessPlanTemplateId: plan.id,
-    fitnessRoutineTemplateId: routine.id,
-    fitnessRoutineTitle: routine.title,
+    fitnessPlanTemplateId: plan?.id ?? planTemplateId,
+    fitnessRoutineTemplateId: routine.fitnessRoutineTemplateId,
+    fitnessRoutineTitle: routine.fitnessRoutineTitle,
     fitnessRoutineIndex: routineIndex,
     fitnessRoutineOccurrenceOffset: normalizedOccurrenceOffset,
   };
@@ -414,6 +448,7 @@ export function resolveFitnessPlanRoutineAssignmentForDate({
   occurrenceDate,
   horizonStart,
   timeZone,
+  routineSequenceSnapshot,
 }: {
   planTemplateId: string;
   currentRoutineIndex: number;
@@ -421,6 +456,7 @@ export function resolveFitnessPlanRoutineAssignmentForDate({
   occurrenceDate: Date;
   horizonStart: Date;
   timeZone: string;
+  routineSequenceSnapshot?: readonly FitnessActivePlanRoutineSnapshot[];
 }) {
   const occurrenceOffset = calculateFitnessPlanOccurrenceOffsetForDate({
     weekdays,
@@ -434,6 +470,7 @@ export function resolveFitnessPlanRoutineAssignmentForDate({
     planTemplateId,
     currentRoutineIndex,
     occurrenceOffset,
+    routineSequenceSnapshot,
   });
 }
 
@@ -458,6 +495,7 @@ export function resolveFitnessPlanDueRoutineAssignment({
     occurrenceDate,
     horizonStart,
     timeZone,
+    routineSequenceSnapshot: habitMetadata.routineSequenceSnapshot,
   });
 }
 
@@ -512,6 +550,7 @@ export function buildFitnessPlanScheduleInstanceMetadata({
           planTemplateId: planHabit.planTemplateId,
           currentRoutineIndex: planHabit.currentRoutineIndex,
           occurrenceOffset,
+          routineSequenceSnapshot: planHabit.routineSequenceSnapshot,
         });
 
   return {
@@ -709,6 +748,7 @@ export function resolveFitnessPlanScheduleDisplayText({
           planTemplateId: habitMetadata.planTemplateId,
           currentRoutineIndex: habitMetadata.currentRoutineIndex,
           occurrenceOffset: fallbackOccurrenceOffset,
+          routineSequenceSnapshot: habitMetadata.routineSequenceSnapshot,
         })
       : null;
 

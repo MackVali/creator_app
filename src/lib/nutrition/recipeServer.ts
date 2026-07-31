@@ -15,7 +15,7 @@ import {
 import type { Database, Json } from "@/types/supabase";
 
 export const RECIPE_SELECT =
-  "id,user_id,name,icon,description,servings,total_calories,total_carbs_g,total_protein_g,total_fat_g,metadata,is_active,created_at,updated_at,recipe_items(id,recipe_id,item_type,food_id,custom_name,quantity,serving_unit,serving_grams,snapshot_name,snapshot_brand_name,snapshot_calories,snapshot_carbs_g,snapshot_protein_g,snapshot_fat_g,metadata,sort_order,created_at,updated_at)";
+  "id,user_id,name,description,servings,total_calories,total_carbs_g,total_protein_g,total_fat_g,metadata,is_active,created_at,updated_at,recipe_items(id,recipe_id,item_type,food_id,custom_name,quantity,serving_unit,serving_grams,snapshot_name,snapshot_brand_name,snapshot_calories,snapshot_carbs_g,snapshot_protein_g,snapshot_fat_g,metadata,sort_order,created_at,updated_at)";
 
 type SupabaseServer = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
 type RecipeWithItems = NutritionRecipeRow & {

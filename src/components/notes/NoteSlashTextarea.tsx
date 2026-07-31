@@ -188,6 +188,21 @@ import {
   resolveFitnessPlanRoutineSequence,
   type FitnessPlanTemplate,
 } from "@/lib/fitness/planTemplates";
+import { customFitnessExerciseToCatalogItem } from "@/lib/fitness/customExercise";
+import {
+  buildFitnessCustomLibraryEntry,
+  customFitnessPlanToTemplate,
+  customFitnessRoutineToTemplate,
+  getFitnessCustomLibraryEntry,
+  getFitnessCustomLibraryFromEntries,
+  upsertCustomFitnessExercise,
+  upsertCustomFitnessPlan,
+  upsertCustomFitnessRoutine,
+  type CustomFitnessExercise,
+  type CustomFitnessPlan,
+  type CustomFitnessRoutine,
+  type FitnessCustomLibrary,
+} from "@/lib/fitness/customLibrary";
 import { resolveFitnessPlanTrainingTrajectory } from "@/lib/fitness/planTrajectory";
 import {
   assertFitnessEquipmentAlternativesAreSeeded,
@@ -531,6 +546,33 @@ type FitnessWorkoutEntryContext = {
   databaseId?: string;
   startedAt: string;
   createdAt: string;
+};
+type FitnessCustomFlow = "hub" | "exercise" | "routine" | "plan";
+type FitnessCustomExerciseDraft = {
+  name: string;
+  movementType: string;
+  primaryArea: string;
+  equipment: string;
+  guidance: string;
+  notes: string;
+};
+type FitnessCustomRoutineDraft = {
+  title: string;
+  goal: FitnessRoutineTemplate["goal"];
+  level: FitnessRoutineTemplate["level"];
+  equipment: string;
+  durationMinutes: string;
+  exercisesText: string;
+};
+type FitnessCustomPlanDraft = {
+  title: string;
+  description: string;
+  goal: string;
+  level: FitnessPlanTemplate["level"];
+  equipment: string;
+  daysPerWeek: string;
+  sessionDurationMinutes: string;
+  routinesText: string;
 };
 type FitnessMovementGroupSample = {
   label: string;
@@ -1366,21 +1408,57 @@ const FITNESS_MOVEMENT_GROUP_SAMPLES: FitnessMovementGroupSample[] = [
     ],
   },
 ];
-const FITNESS_EXERCISE_SAMPLE_BY_NAME = new Map(
-  FITNESS_EXERCISE_SAMPLES.map((exercise) => [exercise.name, exercise]),
-);
 assertFitnessEquipmentAlternativesAreSeeded(
   new Set(FITNESS_EXERCISE_SAMPLES.map((exercise) => getFitnessExerciseId(exercise))),
 );
-const FITNESS_EXERCISE_HISTORY_CATALOG = FITNESS_EXERCISE_SAMPLES.map((exercise) => ({
-  exerciseId: getFitnessExerciseId(exercise),
-  exerciseName: exercise.name,
-  primaryMuscleGroup: exercise.primaryArea,
-  movementType: exercise.movementType,
-  equipment: exercise.equipment,
-}));
 function getFitnessExerciseId(exercise: Pick<FitnessExerciseSample, "name">) {
   return exercise.name;
+}
+
+function slugFitnessCustomLibraryId(prefix: string, label: string, now: string) {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 48);
+  const suffix = Date.parse(now).toString(36);
+  return `${prefix}-${slug || "item"}-${suffix}`;
+}
+
+function getDefaultFitnessCustomExerciseDraft(): FitnessCustomExerciseDraft {
+  return {
+    name: "",
+    movementType: "Custom",
+    primaryArea: "",
+    equipment: "",
+    guidance: "3 sets x 10 reps",
+    notes: "",
+  };
+}
+
+function getDefaultFitnessCustomRoutineDraft(): FitnessCustomRoutineDraft {
+  return {
+    title: "",
+    goal: "Foundation",
+    level: "Beginner",
+    equipment: "Custom",
+    durationMinutes: "45",
+    exercisesText: "",
+  };
+}
+
+function getDefaultFitnessCustomPlanDraft(): FitnessCustomPlanDraft {
+  return {
+    title: "",
+    description: "",
+    goal: "General fitness",
+    level: "Beginner",
+    equipment: "Custom",
+    daysPerWeek: "3",
+    sessionDurationMinutes: "45",
+    routinesText: "",
+  };
 }
 
 function getFitnessGuidancePart(guidance: string, pattern: RegExp) {
@@ -8355,6 +8433,17 @@ export function NoteDatabaseEntrySheet({
   const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>(DEFAULT_FITNESS_ACTION_TAB_ID);
+  const [fitnessCustomFlow, setFitnessCustomFlow] = useState<FitnessCustomFlow>("hub");
+  const [fitnessCustomExerciseDraft, setFitnessCustomExerciseDraft] =
+    useState<FitnessCustomExerciseDraft>(() => getDefaultFitnessCustomExerciseDraft());
+  const [fitnessCustomRoutineDraft, setFitnessCustomRoutineDraft] =
+    useState<FitnessCustomRoutineDraft>(() => getDefaultFitnessCustomRoutineDraft());
+  const [fitnessCustomPlanDraft, setFitnessCustomPlanDraft] =
+    useState<FitnessCustomPlanDraft>(() => getDefaultFitnessCustomPlanDraft());
+  const [isFitnessCustomLibrarySaving, setIsFitnessCustomLibrarySaving] =
+    useState(false);
+  const [fitnessCustomLibraryOverride, setFitnessCustomLibraryOverride] =
+    useState<FitnessCustomLibrary | null>(null);
   const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
     FitnessExerciseSample[]
   >([]);
@@ -8438,12 +8527,101 @@ export function NoteDatabaseEntrySheet({
     () => getFitnessActivePlanEntry(entries),
     [entries],
   );
+  const fitnessCustomLibraryEntry = useMemo(
+    () => getFitnessCustomLibraryEntry(entries),
+    [entries],
+  );
+  const persistedFitnessCustomLibrary = useMemo(
+    () => getFitnessCustomLibraryFromEntries(entries),
+    [entries],
+  );
+  const activeFitnessCustomLibrary =
+    fitnessCustomLibraryOverride ?? persistedFitnessCustomLibrary;
+  const customFitnessExercises = useMemo(
+    () =>
+      activeFitnessCustomLibrary?.exercises.map(customFitnessExerciseToCatalogItem) ?? [],
+    [activeFitnessCustomLibrary],
+  );
+  const allFitnessExercises = useMemo(
+    () => [...FITNESS_EXERCISE_SAMPLES, ...customFitnessExercises],
+    [customFitnessExercises],
+  );
+  const allFitnessExerciseByName = useMemo(
+    () => new Map(allFitnessExercises.map((exercise) => [exercise.name, exercise])),
+    [allFitnessExercises],
+  );
+  const allFitnessExerciseHistoryCatalog = useMemo(
+    () =>
+      allFitnessExercises.map((exercise) => ({
+        exerciseId: getFitnessExerciseId(exercise),
+        exerciseName: exercise.name,
+        primaryMuscleGroup: exercise.primaryArea,
+        movementType: exercise.movementType,
+        equipment: exercise.equipment,
+      })),
+    [allFitnessExercises],
+  );
+  const allFitnessMovementGroups = useMemo(
+    () =>
+      customFitnessExercises.length > 0
+        ? [
+            ...FITNESS_MOVEMENT_GROUP_SAMPLES,
+            {
+              label: "Custom",
+              icon: PencilLine,
+              subcategories: [
+                {
+                  label: "My Exercises",
+                  exercises: customFitnessExercises.map((exercise) => exercise.name),
+                },
+              ],
+            },
+          ]
+        : FITNESS_MOVEMENT_GROUP_SAMPLES,
+    [customFitnessExercises],
+  );
+  const customFitnessRoutineTemplates = useMemo(
+    () =>
+      activeFitnessCustomLibrary?.routines.map(customFitnessRoutineToTemplate) ?? [],
+    [activeFitnessCustomLibrary],
+  );
+  const allFitnessRoutineTemplates = useMemo(
+    () => [
+      ...FITNESS_ROUTINE_GROUPS.flatMap((group) => group.routines),
+      ...customFitnessRoutineTemplates,
+    ],
+    [customFitnessRoutineTemplates],
+  );
+  const allFitnessRoutineGroups = useMemo(
+    () =>
+      customFitnessRoutineTemplates.length > 0
+        ? [
+            ...FITNESS_ROUTINE_GROUPS,
+            {
+              id: "custom" as const,
+              title: "Custom",
+              routines: customFitnessRoutineTemplates,
+            },
+          ]
+        : FITNESS_ROUTINE_GROUPS,
+    [customFitnessRoutineTemplates],
+  );
+  const allFitnessPlanTemplates = useMemo(
+    () => [
+      ...FITNESS_PLAN_TEMPLATES,
+      ...(activeFitnessCustomLibrary?.plans.map(customFitnessPlanToTemplate) ?? []),
+    ],
+    [activeFitnessCustomLibrary],
+  );
   useEffect(() => {
     if (fitnessProfile) setFitnessProfileOverride(null);
   }, [fitnessProfile]);
   useEffect(() => {
     if (persistedFitnessActivePlan) setFitnessActivePlanOverride(null);
   }, [persistedFitnessActivePlan]);
+  useEffect(() => {
+    if (persistedFitnessCustomLibrary) setFitnessCustomLibraryOverride(null);
+  }, [persistedFitnessCustomLibrary]);
   useEffect(() => {
     if (!isFitnessPlanWeekdayMenuOpen) return;
 
@@ -8476,8 +8654,8 @@ export function NoteDatabaseEntrySheet({
     [entries],
   );
   const fitnessExerciseHistories = useMemo(
-    () => getFitnessExerciseHistories(entries, FITNESS_EXERCISE_HISTORY_CATALOG),
-    [entries],
+    () => getFitnessExerciseHistories(entries, allFitnessExerciseHistoryCatalog),
+    [allFitnessExerciseHistoryCatalog, entries],
   );
   const fitnessPrHighlights = useMemo(
     () => getFitnessPrHighlights(fitnessExerciseHistories, 3),
@@ -8488,9 +8666,9 @@ export function NoteDatabaseEntrySheet({
     return getFitnessExerciseHistory(
       entries,
       fitnessExerciseDetailTarget,
-      FITNESS_EXERCISE_HISTORY_CATALOG,
+      allFitnessExerciseHistoryCatalog,
     );
-  }, [entries, fitnessExerciseDetailTarget]);
+  }, [allFitnessExerciseHistoryCatalog, entries, fitnessExerciseDetailTarget]);
   const fitnessProgressionByExerciseId = useMemo(
     () => Object.fromEntries(
       selectedFitnessWorkoutExercises.flatMap((exercise) => {
@@ -8904,11 +9082,9 @@ export function NoteDatabaseEntrySheet({
   const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(databaseDefinition);
   const isGroceryDatabase = isOnHandDatabaseDefinition(databaseDefinition);
   const isFoodSearchDatabase = isDefaultNutritionDatabase || isGroceryDatabase;
-  const shouldShowFitnessEntryFields =
-    !isDefaultFitnessDatabase || selectedFitnessAction === "custom";
+  const shouldShowFitnessEntryFields = !isDefaultFitnessDatabase;
   const shouldShowEntryFooter =
-    (!isDefaultFitnessDatabase || selectedFitnessAction === "custom") &&
-    !isNutritionRecipesEditorOpen;
+    !isDefaultFitnessDatabase && !isNutritionRecipesEditorOpen;
   const isNutritionSearchMode =
     isFoodSearchDatabase && selectedNutritionFoodAction === "search";
   const shouldHideNutritionEntryFields =
@@ -9755,6 +9931,238 @@ export function NoteDatabaseEntrySheet({
     }
   }
 
+  function openFitnessCustomFlow(flow: FitnessCustomFlow) {
+    setFitnessCustomFlow(flow);
+    setSubmitError(null);
+    void hapticSoftTick();
+  }
+
+  async function persistFitnessCustomLibrary(library: FitnessCustomLibrary, now: string) {
+    const nextEntry = buildFitnessCustomLibraryEntry({
+      databaseId: databaseDefinition.id,
+      existingEntry:
+        fitnessProfileEntry ?? fitnessActivePlanEntry ?? fitnessCustomLibraryEntry,
+      library,
+      now,
+    });
+    const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+
+    await onSaveEntry(nextEntry);
+    if (routeContext.noteId) {
+      const persisted = await upsertFitnessWorkoutDatabaseEntryInNote({
+        noteId: routeContext.noteId,
+        databaseId: routeContext.databaseId,
+        entry: nextEntry,
+      });
+      if (!persisted.success) {
+        console.error("Failed to persist Fitness custom library", persisted.error);
+      }
+    }
+  }
+
+  function parseFitnessCustomRoutineExercises(text: string) {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, index): FitnessRoutineTemplate["exercises"][number] | null => {
+        const [rawName, rawDetail = ""] = line.split(/\s+[—|]\s+|,\s*/, 2);
+        const name = rawName.trim();
+        if (!name || !allFitnessExerciseByName.has(name)) return null;
+
+        const sets =
+          Number.parseInt(
+            rawDetail.match(/\b(\d+)\s*(?:sets?|x)\b/i)?.[1] ?? "",
+            10,
+          ) || 3;
+        const repsMatch =
+          rawDetail.match(/\bx\s*(\d+)/i)?.[1] ??
+          rawDetail.match(/\b(\d+)\s*reps?\b/i)?.[1];
+        const durationMatch = rawDetail.match(/\b(\d+)\s*(sec|secs|seconds|min|mins|minutes)\b/i);
+        const durationValue = durationMatch
+          ? Number.parseInt(durationMatch[1], 10)
+          : null;
+        const durationUnit = durationMatch?.[2]?.toLowerCase() ?? "";
+        const durationSeconds = durationValue
+          ? durationUnit.startsWith("min")
+            ? durationValue * 60
+            : durationValue
+          : null;
+
+        return {
+          name,
+          sets: Math.max(1, sets),
+          ...(repsMatch ? { reps: Number.parseInt(repsMatch, 10) } : {}),
+          ...(durationSeconds ? { durationSeconds } : {}),
+          role: index === 0 ? "primary" : index === 1 ? "secondary" : "accessory",
+          restSeconds: 60,
+        };
+      });
+  }
+
+  function parseFitnessCustomPlanRoutineIds(text: string) {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const normalizedLine = line.toLowerCase();
+        const match = allFitnessRoutineTemplates.find(
+          (routine) =>
+            routine.id.toLowerCase() === normalizedLine ||
+            routine.title.toLowerCase() === normalizedLine,
+        );
+        return match?.id ?? null;
+      });
+  }
+
+  async function saveCustomFitnessExercise() {
+    const name = fitnessCustomExerciseDraft.name.trim();
+    const primaryArea = fitnessCustomExerciseDraft.primaryArea.trim();
+    const equipment = fitnessCustomExerciseDraft.equipment.trim();
+    const guidance = fitnessCustomExerciseDraft.guidance.trim();
+    if (!name || !primaryArea || !equipment || !guidance) {
+      setSubmitError("Add a name, muscle area, equipment, and guidance.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const exercise: CustomFitnessExercise = {
+      id: slugFitnessCustomLibraryId("custom-exercise", name, now),
+      name,
+      movementType: fitnessCustomExerciseDraft.movementType.trim() || "Custom",
+      primaryArea,
+      equipment,
+      guidance,
+      notes: fitnessCustomExerciseDraft.notes.trim(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextLibrary = upsertCustomFitnessExercise(
+      activeFitnessCustomLibrary,
+      exercise,
+      now,
+    );
+
+    setIsFitnessCustomLibrarySaving(true);
+    setSubmitError(null);
+    try {
+      await persistFitnessCustomLibrary(nextLibrary, now);
+      setFitnessCustomLibraryOverride(nextLibrary);
+      setFitnessCustomExerciseDraft(getDefaultFitnessCustomExerciseDraft());
+      setFitnessCustomFlow("hub");
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to save custom Fitness exercise", { error });
+      setSubmitError("Unable to save this exercise right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessCustomLibrarySaving(false);
+    }
+  }
+
+  async function saveCustomFitnessRoutine() {
+    const title = fitnessCustomRoutineDraft.title.trim();
+    const exercises = parseFitnessCustomRoutineExercises(
+      fitnessCustomRoutineDraft.exercisesText,
+    );
+    if (!title || exercises.length === 0 || exercises.some((exercise) => !exercise)) {
+      setSubmitError("Add a title and use one known exercise per line.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    const durationMinutes =
+      Number.parseInt(fitnessCustomRoutineDraft.durationMinutes, 10) || 45;
+    const now = new Date().toISOString();
+    const routine: CustomFitnessRoutine = {
+      id: slugFitnessCustomLibraryId("custom-routine", title, now),
+      title,
+      goal: fitnessCustomRoutineDraft.goal,
+      level: fitnessCustomRoutineDraft.level,
+      equipment: fitnessCustomRoutineDraft.equipment.trim() || "Custom",
+      durationMinutes: Math.max(1, durationMinutes),
+      exercises: exercises.filter(
+        (exercise): exercise is FitnessRoutineTemplate["exercises"][number] =>
+          Boolean(exercise),
+      ),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextLibrary = upsertCustomFitnessRoutine(
+      activeFitnessCustomLibrary,
+      routine,
+      now,
+    );
+
+    setIsFitnessCustomLibrarySaving(true);
+    setSubmitError(null);
+    try {
+      await persistFitnessCustomLibrary(nextLibrary, now);
+      setFitnessCustomLibraryOverride(nextLibrary);
+      setFitnessCustomRoutineDraft(getDefaultFitnessCustomRoutineDraft());
+      setFitnessCustomFlow("hub");
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to save custom Fitness routine", { error });
+      setSubmitError("Unable to save this routine right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessCustomLibrarySaving(false);
+    }
+  }
+
+  async function saveCustomFitnessPlan() {
+    const title = fitnessCustomPlanDraft.title.trim();
+    const routineSequence = parseFitnessCustomPlanRoutineIds(
+      fitnessCustomPlanDraft.routinesText,
+    );
+    if (!title || routineSequence.length === 0 || routineSequence.some((id) => !id)) {
+      setSubmitError("Add a title and use one known routine per line.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    const daysPerWeek =
+      Number.parseInt(fitnessCustomPlanDraft.daysPerWeek, 10) || 3;
+    const sessionDurationMinutes =
+      Number.parseInt(fitnessCustomPlanDraft.sessionDurationMinutes, 10) || 45;
+    const safeDaysPerWeek = Math.max(1, Math.min(7, daysPerWeek));
+    const now = new Date().toISOString();
+    const plan: CustomFitnessPlan = {
+      id: slugFitnessCustomLibraryId("custom-plan", title, now),
+      title,
+      description: fitnessCustomPlanDraft.description.trim() || undefined,
+      goal: fitnessCustomPlanDraft.goal.trim() || "General fitness",
+      level: fitnessCustomPlanDraft.level,
+      equipment: fitnessCustomPlanDraft.equipment.trim() || "Custom",
+      recommendedDaysPerWeek: [safeDaysPerWeek],
+      allowedDaysPerWeek: [safeDaysPerWeek],
+      sessionLengthOptions: [Math.max(1, sessionDurationMinutes)],
+      routineSequence: routineSequence.filter((id): id is string => Boolean(id)),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextLibrary = upsertCustomFitnessPlan(activeFitnessCustomLibrary, plan, now);
+
+    setIsFitnessCustomLibrarySaving(true);
+    setSubmitError(null);
+    try {
+      await persistFitnessCustomLibrary(nextLibrary, now);
+      setFitnessCustomLibraryOverride(nextLibrary);
+      setFitnessCustomPlanDraft(getDefaultFitnessCustomPlanDraft());
+      setFitnessCustomFlow("hub");
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to save custom Fitness plan", { error });
+      setSubmitError("Unable to save this plan right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessCustomLibrarySaving(false);
+    }
+  }
+
   function selectFitnessActionByOffset(offset: -1 | 1) {
     const currentIndex = FITNESS_ACTION_TABS.findIndex(
       (tab) => tab.id === selectedFitnessAction,
@@ -9876,7 +10284,7 @@ export function NoteDatabaseEntrySheet({
       completedAt?: string | null;
     },
   ) {
-    const sourcePlanName = FITNESS_PLAN_TEMPLATES.find(
+    const sourcePlanName = allFitnessPlanTemplates.find(
       (plan) => plan.id === selectedFitnessPlanName,
     )?.title;
     const now = options?.updatedAt ?? new Date().toISOString();
@@ -10060,10 +10468,10 @@ export function NoteDatabaseEntrySheet({
     workoutName = routine.title,
   ) {
     const routineExercises = routine.exercises.map((prescription) => {
-      const exercise = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(prescription.name);
+      const exercise = allFitnessExerciseByName.get(prescription.name);
 
       if (!exercise) {
-        throw new Error(`Routine exercise is missing from fitness seeds: ${prescription.name}`);
+        throw new Error(`Routine exercise is missing from fitness library: ${prescription.name}`);
       }
 
       return exercise;
@@ -10071,7 +10479,7 @@ export function NoteDatabaseEntrySheet({
     const routineDetails = routine.exercises.reduce<
       Record<string, FitnessWorkoutExerciseDetail>
     >((details, prescription) => {
-      const exercise = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(prescription.name);
+      const exercise = allFitnessExerciseByName.get(prescription.name);
       const prescribedDetail = {
         ...routinePrescriptionToWorkoutDetail(prescription),
         weight: "",
@@ -10120,7 +10528,7 @@ export function NoteDatabaseEntrySheet({
 
   function getFitnessPlanById(planId: string | null) {
     if (!planId) return null;
-    return FITNESS_PLAN_TEMPLATES.find((plan) => plan.id === planId) ?? null;
+    return allFitnessPlanTemplates.find((plan) => plan.id === planId) ?? null;
   }
 
   function getFitnessPlanDaysLabel(daysPerWeek: readonly number[]) {
@@ -10187,9 +10595,9 @@ export function NoteDatabaseEntrySheet({
     equipmentProfile = fitnessPlanEquipmentProfile,
   ) {
     return resolveFitnessPlanRoutineTemplatesForEquipment({
-      routines: resolveFitnessPlanRoutineSequence(plan),
+      routines: resolveFitnessPlanRoutineSequence(plan, allFitnessRoutineTemplates),
       equipmentProfile,
-      exerciseCatalog: FITNESS_EXERCISE_SAMPLE_BY_NAME,
+      exerciseCatalog: allFitnessExerciseByName,
       exerciseOverrides: overrides,
     });
   }
@@ -10207,9 +10615,9 @@ export function NoteDatabaseEntrySheet({
     setIsFitnessPlanEquipmentUsingProfile(useProfile);
     setFitnessPlanExerciseOverrides((currentOverrides) =>
       filterFitnessExerciseOverridesForEquipment({
-        routines: resolveFitnessPlanRoutineSequence(plan),
+        routines: resolveFitnessPlanRoutineSequence(plan, allFitnessRoutineTemplates),
         equipmentProfile,
-        exerciseCatalog: FITNESS_EXERCISE_SAMPLE_BY_NAME,
+        exerciseCatalog: allFitnessExerciseByName,
         exerciseOverrides: currentOverrides,
       }),
     );
@@ -10252,7 +10660,11 @@ export function NoteDatabaseEntrySheet({
     const template = getFitnessPlanById(plan.planTemplateId);
     if (!template) return null;
 
-    return resolveFitnessPlanRoutineAtIndex(template, plan.currentRoutineIndex);
+    return resolveFitnessPlanRoutineAtIndex(
+      template,
+      plan.currentRoutineIndex,
+      allFitnessRoutineTemplates,
+    );
   }
 
   function openFitnessPlanPreview(plan: FitnessPlanTemplate) {
@@ -10366,7 +10778,7 @@ export function NoteDatabaseEntrySheet({
     const { routine: resolvedRoutine } = resolveFitnessRoutineTemplateForEquipment({
       routine: nextRoutine,
       equipmentProfile: plan.equipmentProfile,
-      exerciseCatalog: FITNESS_EXERCISE_SAMPLE_BY_NAME,
+      exerciseCatalog: allFitnessExerciseByName,
       exerciseOverrides: plan.exerciseOverrides,
     });
     setSelectedFitnessPlanName(plan.planTemplateId);
@@ -10392,7 +10804,7 @@ export function NoteDatabaseEntrySheet({
     }
 
     const snapshottedRoutine =
-      resolveFitnessPlanRoutineSequence(template).find(
+      resolveFitnessPlanRoutineSequence(template, allFitnessRoutineTemplates).find(
         (routine) => routine.id === routineTemplateId,
       ) ?? null;
     if (!snapshottedRoutine) {
@@ -10409,7 +10821,7 @@ export function NoteDatabaseEntrySheet({
       ? resolveFitnessRoutineTemplateForEquipment({
           routine: snapshottedRoutine,
           equipmentProfile: activeFitnessPlan.equipmentProfile,
-          exerciseCatalog: FITNESS_EXERCISE_SAMPLE_BY_NAME,
+          exerciseCatalog: allFitnessExerciseByName,
           exerciseOverrides: activeFitnessPlan.exerciseOverrides,
         })
       : { routine: snapshottedRoutine };
@@ -10451,6 +10863,13 @@ export function NoteDatabaseEntrySheet({
     const now = new Date().toISOString();
     const { replacements } = getFitnessPlanResolvedRoutines(plan);
     const exerciseOverrides = getFitnessPlanPersistedExerciseOverrides(replacements);
+    const routineSequenceSnapshot = resolveFitnessPlanRoutineSequence(
+      plan,
+      allFitnessRoutineTemplates,
+    ).map((routine) => ({
+      fitnessRoutineTemplateId: routine.id,
+      fitnessRoutineTitle: routine.title,
+    }));
     const draftActivePlan = buildFitnessActivePlan({
       plan,
       targetDaysPerWeek,
@@ -10458,6 +10877,7 @@ export function NoteDatabaseEntrySheet({
       sessionDurationMinutes: fitnessPlanSessionDurationMinutes,
       equipmentProfile: fitnessPlanEquipmentProfile,
       exerciseOverrides,
+      routineSequenceSnapshot,
       now,
       existingActivePlan: activeFitnessPlan,
       linkedFitnessHabitId: activeFitnessPlan?.linkedFitnessHabitId ?? null,
@@ -10494,6 +10914,7 @@ export function NoteDatabaseEntrySheet({
         sessionDurationMinutes: fitnessPlanSessionDurationMinutes,
         equipmentProfile: fitnessPlanEquipmentProfile,
         exerciseOverrides,
+        routineSequenceSnapshot,
         now,
         existingActivePlan: activeFitnessPlan,
         linkedFitnessHabitId,
@@ -10730,7 +11151,7 @@ export function NoteDatabaseEntrySheet({
       startedAt: now,
       sourceRoutineName: selectedFitnessSourceRoutineName,
       sourcePlanName:
-        FITNESS_PLAN_TEMPLATES.find((plan) => plan.id === selectedFitnessPlanName)?.title ??
+        allFitnessPlanTemplates.find((plan) => plan.id === selectedFitnessPlanName)?.title ??
         null,
       exercises: selectedFitnessWorkoutExercises.map((exercise) => {
         const detail = getFitnessWorkoutExerciseDetail(
@@ -11661,7 +12082,7 @@ export function NoteDatabaseEntrySheet({
   function renderFitnessExerciseDetailSheet() {
     if (!fitnessExerciseDetailTarget) return null;
 
-    const sample = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(
+    const sample = allFitnessExerciseByName.get(
       fitnessExerciseDetailTarget.exerciseName,
     );
     const history: FitnessExerciseHistory =
@@ -11874,10 +12295,10 @@ export function NoteDatabaseEntrySheet({
               <span className="shrink-0 text-white/34">· Current workout</span>
             </div>
           ) : null}
-          {FITNESS_MOVEMENT_GROUP_SAMPLES.map((movementGroup) => {
+          {allFitnessMovementGroups.map((movementGroup) => {
             const isGroupOpen = expandedFitnessMovementGroups.has(movementGroup.label);
             const isFirstGroup =
-              movementGroup.label === FITNESS_MOVEMENT_GROUP_SAMPLES[0]?.label;
+              movementGroup.label === allFitnessMovementGroups[0]?.label;
             const movementExerciseCount = movementGroup.subcategories.reduce(
               (count, subcategory) => count + subcategory.exercises.length,
               0,
@@ -11953,7 +12374,7 @@ export function NoteDatabaseEntrySheet({
                     >
                       {movementGroup.subcategories.map((subcategory) => {
                         const exercises = subcategory.exercises
-                          .map((exerciseName) => FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName))
+                          .map((exerciseName) => allFitnessExerciseByName.get(exerciseName))
                           .filter(
                             (exercise): exercise is FitnessExerciseSample => Boolean(exercise),
                           );
@@ -12128,7 +12549,7 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessFavoritesBrowser() {
-    const favoriteExercises = FITNESS_EXERCISE_SAMPLES.filter((exercise) =>
+    const favoriteExercises = allFitnessExercises.filter((exercise) =>
       favoriteFitnessExerciseIds.has(exercise.name),
     );
 
@@ -12225,19 +12646,428 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessCustomIntro() {
-    return (
-      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
-        <div className="flex items-start gap-3">
+    const customCounts = activeFitnessCustomLibrary
+      ? [
+          `${activeFitnessCustomLibrary.exercises.length} exercises`,
+          `${activeFitnessCustomLibrary.routines.length} routines`,
+          `${activeFitnessCustomLibrary.plans.length} plans`,
+        ].join(" · ")
+      : "No custom library items yet";
+    const canCreatePlan = allFitnessRoutineTemplates.length > 0;
+
+    function renderHubRow({
+      flow,
+      title,
+      description,
+      Icon,
+    }: {
+      flow: FitnessCustomFlow;
+      title: string;
+      description: string;
+      Icon: LucideIcon;
+    }) {
+      const isSelected = fitnessCustomFlow === flow;
+      return (
+        <button
+          type="button"
+          onClick={() => openFitnessCustomFlow(flow)}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-xl border p-3 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/18",
+            isSelected
+              ? "border-white/[0.12] bg-white/[0.075]"
+              : "border-white/[0.055] bg-black/42 hover:border-white/[0.1] hover:bg-white/[0.045]",
+          )}
+        >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.055] text-white/62">
-            <PencilLine className="h-4 w-4" aria-hidden="true" />
+            <Icon className="h-4 w-4" aria-hidden="true" />
           </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white/82">Custom fitness log</p>
-            <p className="mt-1 text-xs font-medium leading-5 text-white/42">
-              Review selected exercises or enter a manual workout before saving.
-            </p>
-          </div>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-white/84">
+              {title}
+            </span>
+            <span className="mt-0.5 block text-xs font-medium leading-5 text-white/42">
+              {description}
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/34" aria-hidden="true" />
+        </button>
+      );
+    }
+
+    function renderTextInput({
+      label,
+      value,
+      onChange,
+      placeholder,
+      type = "text",
+    }: {
+      label: string;
+      value: string;
+      onChange: (value: string) => void;
+      placeholder?: string;
+      type?: "text" | "number";
+    }) {
+      return (
+        <label className="block">
+          <span className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+            {label}
+          </span>
+          <input
+            type={type}
+            value={value}
+            placeholder={placeholder}
+            onChange={(event) => onChange(event.target.value)}
+            className="mt-1 h-10 w-full rounded-xl border border-white/[0.07] bg-black/36 px-3 text-sm font-medium text-white/82 outline-none transition placeholder:text-white/24 focus:border-white/[0.16] focus:bg-black/44"
+          />
+        </label>
+      );
+    }
+
+    function renderTextarea({
+      label,
+      value,
+      onChange,
+      placeholder,
+      rows = 3,
+    }: {
+      label: string;
+      value: string;
+      onChange: (value: string) => void;
+      placeholder?: string;
+      rows?: number;
+    }) {
+      return (
+        <label className="block">
+          <span className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+            {label}
+          </span>
+          <textarea
+            value={value}
+            placeholder={placeholder}
+            rows={rows}
+            onChange={(event) => onChange(event.target.value)}
+            className="mt-1 w-full resize-none rounded-xl border border-white/[0.07] bg-black/36 px-3 py-2.5 text-sm font-medium leading-5 text-white/82 outline-none transition placeholder:text-white/24 focus:border-white/[0.16] focus:bg-black/44"
+          />
+        </label>
+      );
+    }
+
+    function renderSelect<T extends string>({
+      label,
+      value,
+      options,
+      onChange,
+    }: {
+      label: string;
+      value: T;
+      options: readonly T[];
+      onChange: (value: T) => void;
+    }) {
+      return (
+        <label className="block">
+          <span className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+            {label}
+          </span>
+          <select
+            value={value}
+            onChange={(event) => onChange(event.target.value as T)}
+            className="mt-1 h-10 w-full rounded-xl border border-white/[0.07] bg-black/36 px-3 text-sm font-medium text-white/82 outline-none transition focus:border-white/[0.16] focus:bg-black/44"
+          >
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+
+    function renderFlowActions(onSave: () => void) {
+      return (
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setFitnessCustomFlow("hub");
+              setSubmitError(null);
+              void hapticSnap();
+            }}
+            disabled={isFitnessCustomLibrarySaving}
+            className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.065] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isFitnessCustomLibrarySaving}
+            className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.32] bg-white/72 px-3 text-xs font-semibold text-zinc-950 outline-none transition hover:border-white/[0.5] hover:bg-white/82 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {isFitnessCustomLibrarySaving ? "Saving..." : "Save"}
+          </button>
         </div>
+      );
+    }
+
+    return (
+      <div className="mt-3 space-y-3">
+        <div className="px-1">
+          <p className="text-sm font-semibold text-white/82">Create Fitness Content</p>
+          <p className="mt-0.5 text-xs font-medium text-white/38">{customCounts}</p>
+        </div>
+        <div className="grid gap-2">
+          {renderHubRow({
+            flow: "exercise",
+            title: "Create Exercise",
+            description: "Add a movement to your personal exercise library.",
+            Icon: Dumbbell,
+          })}
+          {renderHubRow({
+            flow: "routine",
+            title: "Create Routine",
+            description: "Build a reusable workout from known exercises.",
+            Icon: ListChecks,
+          })}
+          {renderHubRow({
+            flow: "plan",
+            title: "Create Plan",
+            description: "Sequence routines into a weekly training system.",
+            Icon: Calendar,
+          })}
+        </div>
+
+        {fitnessCustomFlow === "exercise" ? (
+          <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+            {renderTextInput({
+              label: "Name",
+              value: fitnessCustomExerciseDraft.name,
+              placeholder: "Cable Y Raise",
+              onChange: (name) =>
+                setFitnessCustomExerciseDraft((draft) => ({ ...draft, name })),
+            })}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderTextInput({
+                label: "Movement",
+                value: fitnessCustomExerciseDraft.movementType,
+                placeholder: "Pull",
+                onChange: (movementType) =>
+                  setFitnessCustomExerciseDraft((draft) => ({
+                    ...draft,
+                    movementType,
+                  })),
+              })}
+              {renderTextInput({
+                label: "Equipment",
+                value: fitnessCustomExerciseDraft.equipment,
+                placeholder: "Cable",
+                onChange: (equipment) =>
+                  setFitnessCustomExerciseDraft((draft) => ({ ...draft, equipment })),
+              })}
+            </div>
+            {renderTextInput({
+              label: "Primary Area",
+              value: fitnessCustomExerciseDraft.primaryArea,
+              placeholder: "Rear delts, upper back",
+              onChange: (primaryArea) =>
+                setFitnessCustomExerciseDraft((draft) => ({ ...draft, primaryArea })),
+            })}
+            {renderTextInput({
+              label: "Default Guidance",
+              value: fitnessCustomExerciseDraft.guidance,
+              placeholder: "3 sets x 12 reps",
+              onChange: (guidance) =>
+                setFitnessCustomExerciseDraft((draft) => ({ ...draft, guidance })),
+            })}
+            {renderTextarea({
+              label: "Notes",
+              value: fitnessCustomExerciseDraft.notes,
+              placeholder: "Keep shoulders down and pause at the top.",
+              onChange: (notes) =>
+                setFitnessCustomExerciseDraft((draft) => ({ ...draft, notes })),
+            })}
+            {renderFlowActions(() => void saveCustomFitnessExercise())}
+          </section>
+        ) : null}
+
+        {fitnessCustomFlow === "routine" ? (
+          <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+            {renderTextInput({
+              label: "Title",
+              value: fitnessCustomRoutineDraft.title,
+              placeholder: "Upper Pull Accessories",
+              onChange: (title) =>
+                setFitnessCustomRoutineDraft((draft) => ({ ...draft, title })),
+            })}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderSelect({
+                label: "Goal",
+                value: fitnessCustomRoutineDraft.goal,
+                options: [
+                  "Foundation",
+                  "Hypertrophy",
+                  "Strength",
+                  "Power",
+                  "Conditioning",
+                  "Mobility",
+                  "Recovery",
+                ] as const,
+                onChange: (goal) =>
+                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, goal })),
+              })}
+              {renderSelect({
+                label: "Level",
+                value: fitnessCustomRoutineDraft.level,
+                options: ["Beginner", "Intermediate", "Advanced"] as const,
+                onChange: (level) =>
+                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, level })),
+              })}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderTextInput({
+                label: "Equipment",
+                value: fitnessCustomRoutineDraft.equipment,
+                placeholder: "Full gym",
+                onChange: (equipment) =>
+                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, equipment })),
+              })}
+              {renderTextInput({
+                label: "Minutes",
+                value: fitnessCustomRoutineDraft.durationMinutes,
+                type: "number",
+                onChange: (durationMinutes) =>
+                  setFitnessCustomRoutineDraft((draft) => ({
+                    ...draft,
+                    durationMinutes,
+                  })),
+              })}
+            </div>
+            {renderTextarea({
+              label: "Exercises",
+              value: fitnessCustomRoutineDraft.exercisesText,
+              rows: 5,
+              placeholder: "Pull-up, 4 x 6\nCable Y Raise, 3 x 12\nPlank, 3 x 45 sec",
+              onChange: (exercisesText) =>
+                setFitnessCustomRoutineDraft((draft) => ({
+                  ...draft,
+                  exercisesText,
+                })),
+            })}
+            {renderFlowActions(() => void saveCustomFitnessRoutine())}
+          </section>
+        ) : null}
+
+        {fitnessCustomFlow === "plan" ? (
+          <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+            {!canCreatePlan ? (
+              <p className="rounded-xl border border-dashed border-white/[0.08] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
+                Create a routine before creating a plan.
+              </p>
+            ) : null}
+            {renderTextInput({
+              label: "Title",
+              value: fitnessCustomPlanDraft.title,
+              placeholder: "Three Day Strength",
+              onChange: (title) =>
+                setFitnessCustomPlanDraft((draft) => ({ ...draft, title })),
+            })}
+            {renderTextarea({
+              label: "Description",
+              value: fitnessCustomPlanDraft.description,
+              placeholder: "A compact three-day strength rotation.",
+              onChange: (description) =>
+                setFitnessCustomPlanDraft((draft) => ({ ...draft, description })),
+            })}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderTextInput({
+                label: "Goal",
+                value: fitnessCustomPlanDraft.goal,
+                placeholder: "Strength",
+                onChange: (goal) =>
+                  setFitnessCustomPlanDraft((draft) => ({ ...draft, goal })),
+              })}
+              {renderSelect({
+                label: "Level",
+                value: fitnessCustomPlanDraft.level,
+                options: ["Beginner", "Intermediate", "Advanced"] as const,
+                onChange: (level) =>
+                  setFitnessCustomPlanDraft((draft) => ({ ...draft, level })),
+              })}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {renderTextInput({
+                label: "Equipment",
+                value: fitnessCustomPlanDraft.equipment,
+                placeholder: "Full gym",
+                onChange: (equipment) =>
+                  setFitnessCustomPlanDraft((draft) => ({ ...draft, equipment })),
+              })}
+              {renderTextInput({
+                label: "Days/Week",
+                value: fitnessCustomPlanDraft.daysPerWeek,
+                type: "number",
+                onChange: (daysPerWeek) =>
+                  setFitnessCustomPlanDraft((draft) => ({ ...draft, daysPerWeek })),
+              })}
+              {renderTextInput({
+                label: "Minutes",
+                value: fitnessCustomPlanDraft.sessionDurationMinutes,
+                type: "number",
+                onChange: (sessionDurationMinutes) =>
+                  setFitnessCustomPlanDraft((draft) => ({
+                    ...draft,
+                    sessionDurationMinutes,
+                  })),
+              })}
+            </div>
+            {renderTextarea({
+              label: "Routine Sequence",
+              value: fitnessCustomPlanDraft.routinesText,
+              rows: 5,
+              placeholder: "Upper Body\nLower Body\nFull Body Foundation",
+              onChange: (routinesText) =>
+                setFitnessCustomPlanDraft((draft) => ({ ...draft, routinesText })),
+            })}
+            {renderFlowActions(() => void saveCustomFitnessPlan())}
+          </section>
+        ) : null}
+
+        {activeFitnessCustomLibrary &&
+        (activeFitnessCustomLibrary.exercises.length > 0 ||
+          activeFitnessCustomLibrary.routines.length > 0 ||
+          activeFitnessCustomLibrary.plans.length > 0) ? (
+          <div className="space-y-1.5 px-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/34">
+              Library
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {activeFitnessCustomLibrary.exercises.slice(-3).map((exercise) => (
+                <span
+                  key={exercise.id}
+                  className="rounded-full border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium text-white/48"
+                >
+                  {exercise.name}
+                </span>
+              ))}
+              {activeFitnessCustomLibrary.routines.slice(-3).map((routine) => (
+                <span
+                  key={routine.id}
+                  className="rounded-full border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium text-white/48"
+                >
+                  {routine.title}
+                </span>
+              ))}
+              {activeFitnessCustomLibrary.plans.slice(-3).map((plan) => (
+                <span
+                  key={plan.id}
+                  className="rounded-full border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium text-white/48"
+                >
+                  {plan.title}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -12249,7 +13079,7 @@ export function NoteDatabaseEntrySheet({
           <p className="text-sm font-semibold text-white/82">Routines</p>
         </div>
         <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
-          {FITNESS_ROUTINE_GROUPS.map((routineGroup, groupIndex) => {
+          {allFitnessRoutineGroups.map((routineGroup, groupIndex) => {
             const isGroupOpen = expandedFitnessRoutineGroups.has(routineGroup.id);
 
             return (
@@ -12387,7 +13217,7 @@ export function NoteDatabaseEntrySheet({
           </p>
         ) : null}
         <div className="space-y-2">
-          {FITNESS_PLAN_TEMPLATES.map((plan) => {
+          {allFitnessPlanTemplates.map((plan) => {
             const matchLabel = getFitnessPlanMatchLabel(plan, activeFitnessProfile);
 
             return (
@@ -12443,7 +13273,10 @@ export function NoteDatabaseEntrySheet({
     if (!plan) return null;
 
     const previewPlan = plan;
-    const routines = resolveFitnessPlanRoutineSequence(previewPlan);
+    const routines = resolveFitnessPlanRoutineSequence(
+      previewPlan,
+      allFitnessRoutineTemplates,
+    );
     const targetDaysPerWeek = fitnessPlanTargetDaysPerWeek;
     const checkInAfterCompletedWorkouts = targetDaysPerWeek * 4;
     const fitReasons = getFitnessPlanFitReasons(previewPlan, activeFitnessProfile);
@@ -13481,7 +14314,7 @@ export function NoteDatabaseEntrySheet({
 
     const nextExercises = log.exercises.flatMap((exerciseValue) => {
       const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
-      const sample = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName);
+      const sample = allFitnessExerciseByName.get(exerciseName);
       return sample ? [sample] : [];
     });
     const nextDetails = log.exercises.reduce<Record<string, FitnessWorkoutExerciseDetail>>(
