@@ -9,6 +9,7 @@ import type {
   MyListPinnedGoalRow,
   MyListPinnedSourceRow,
 } from "../../src/components/my-list/MyListSheet";
+import { MY_LIST_MANUAL_ITEM_CONSUMED_EVENT } from "../../src/lib/my-list/myListItemsStorage";
 
 vi.mock("@/app/(app)/schedule/matrix/MatrixContent", () => ({
   MatrixContent: () => React.createElement("div", null),
@@ -69,6 +70,7 @@ const renderSheet = async (options?: {
   onTogglePinnedSourceCompletion?: ReturnType<typeof vi.fn>;
   onToggleTask?: ReturnType<typeof vi.fn>;
   userId?: string | null;
+  enableScheduleTimelineDrag?: boolean;
 }) => {
   const { MyListSheet } = await import(
     "../../src/components/my-list/MyListSheet"
@@ -92,9 +94,14 @@ const renderSheet = async (options?: {
     },
   ];
 
-  const onToggleTask = options?.onToggleTask ?? vi.fn();
-  const onTogglePinnedSourceCompletion =
+  type MyListSheetProps = React.ComponentProps<typeof MyListSheet>;
+  const onToggleTaskMock = options?.onToggleTask ?? vi.fn();
+  const onTogglePinnedSourceCompletionMock =
     options?.onTogglePinnedSourceCompletion ?? vi.fn();
+  const onToggleTask =
+    onToggleTaskMock as MyListSheetProps["onToggleTask"];
+  const onTogglePinnedSourceCompletion =
+    onTogglePinnedSourceCompletionMock as MyListSheetProps["onTogglePinnedSourceCompletion"];
 
   await act(async () => {
     root.render(
@@ -112,6 +119,7 @@ const renderSheet = async (options?: {
         skillCategories: [],
         pendingTaskIds: new Set<string>(),
         useFullExpandedHeight: false,
+        enableScheduleTimelineDrag: options?.enableScheduleTimelineDrag === true,
         onTogglePinnedSourceCompletion,
         onToggleTask,
         onTaskSkillSelect: vi.fn(),
@@ -119,7 +127,12 @@ const renderSheet = async (options?: {
     );
   });
 
-  return { container, onTogglePinnedSourceCompletion, onToggleTask, root };
+  return {
+    container,
+    onTogglePinnedSourceCompletion: onTogglePinnedSourceCompletionMock,
+    onToggleTask: onToggleTaskMock,
+    root,
+  };
 };
 
 const getTodoRowByText = (container: HTMLElement, text: string) => {
@@ -196,6 +209,7 @@ const clickCheckbox = async (row: HTMLElement) => {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = "";
   window.localStorage.clear();
   vi.clearAllMocks();
@@ -260,7 +274,7 @@ describe("MyListSheet checkbox interactions", () => {
     expect(onTogglePinnedSourceCompletion).toHaveBeenCalledTimes(3);
     expect(
       onTogglePinnedSourceCompletion.mock.calls.map(
-        ([row]: [MyListPinnedSourceRow]) => row.sourceType
+        (call) => (call[0] as MyListPinnedSourceRow).sourceType
       )
     ).toEqual(["PROJECT", "TASK", "HABIT"]);
 
@@ -282,6 +296,134 @@ describe("MyListSheet checkbox interactions", () => {
     });
 
     expect(getRowControls(row).className).toContain("w-auto");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("includes the manual row id in the long-press upgrade payload", async () => {
+    vi.useFakeTimers();
+    const manualRowId = "11111111-1111-4111-8111-111111111111";
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: manualRowId,
+          done: false,
+          completedAt: null,
+          skillId: "skill-1",
+          skillName: "Writing",
+          skillIcon: "W",
+          priorityId: "HIGH",
+          dayBucketId: null,
+          text: "Upgrade Me",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const quickCreateEvents: CustomEvent[] = [];
+    const handleQuickCreate = (event: Event) => {
+      quickCreateEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+
+    await act(async () => {
+      pointerDown(getTodoRowByText(container, "Upgrade Me"));
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(quickCreateEvents).toHaveLength(1);
+    expect(quickCreateEvents[0]?.detail).toMatchObject({
+      title: "Upgrade Me",
+      skillId: "skill-1",
+      priority: "HIGH",
+      origin: "my-list-upgrade",
+      sourceManualMyListItemId: manualRowId,
+    });
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("removes a manual row locally after a successful upgrade consumption event", async () => {
+    const consumedRowId = "11111111-1111-4111-8111-111111111111";
+    const remainingRowId = "22222222-2222-4222-8222-222222222222";
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: consumedRowId,
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Consumed Todo",
+          insertAfterRowKey: null,
+        },
+        {
+          id: remainingRowId,
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Remaining Todo",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const { container, root } = await renderSheet({ userId: null });
+
+    expect(getTodoRowByText(container, "Consumed Todo")).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(MY_LIST_MANUAL_ITEM_CONSUMED_EVENT, {
+          detail: {
+            origin: "manual-my-list-upgrade",
+            userId: "user-1",
+            itemId: consumedRowId,
+            createdEntityType: "TASK",
+            createdEntityId: "task-1",
+          },
+        })
+      );
+    });
+
+    expect(
+      Array.from(container.querySelectorAll("input")).some(
+        (input) => input instanceof HTMLInputElement && input.value === "Consumed Todo"
+      )
+    ).toBe(false);
+    expect(getTodoRowByText(container, "Remaining Todo")).toBeTruthy();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("creator:my-list:manual-rows") ?? "[]"
+      )
+    ).toEqual([
+      expect.objectContaining({
+        id: remainingRowId,
+        text: "Remaining Todo",
+      }),
+    ]);
 
     await act(async () => {
       root.unmount();

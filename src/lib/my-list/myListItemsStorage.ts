@@ -2,6 +2,8 @@ import { getSupabaseBrowser } from "../../../lib/supabase";
 
 export const MY_LIST_ITEMS_MIGRATION_STORAGE_PREFIX =
   "creator:my-list:items-migrated-to-supabase";
+export const MY_LIST_MANUAL_ITEM_CONSUMED_EVENT =
+  "creator:my-list:manual-item-consumed";
 
 const MY_LIST_SOURCE_TYPES = ["GOAL", "PROJECT", "TASK", "HABIT"] as const;
 const MY_LIST_VALID_UUID_PATTERN =
@@ -10,6 +12,13 @@ const MY_LIST_VALID_UUID_PATTERN =
 export type MyListItemKind = "MANUAL" | "PINNED_SOURCE";
 export type MyListSourceType = (typeof MY_LIST_SOURCE_TYPES)[number];
 export type MyListStorageDayBucketId = "morning" | "afternoon" | "evening";
+export type MyListManualItemConsumedDetail = {
+  origin: "manual-my-list-upgrade";
+  userId: string;
+  itemId: string;
+  createdEntityType: "TASK" | "HABIT";
+  createdEntityId: string;
+};
 
 export type MyListManualStorageItem = {
   id: string;
@@ -364,6 +373,32 @@ export async function deleteManualMyListItem({
       `Manual My List delete affected no persisted rows for ${storageItemId}`
     );
   }
+}
+
+export async function consumeManualMyListUpgradeSource({
+  userId,
+  itemId,
+  createdEntityType,
+  createdEntityId,
+}: Omit<MyListManualItemConsumedDetail, "origin">) {
+  await deleteManualMyListItem({ userId, itemId });
+
+  if (typeof window === "undefined") return;
+
+  window.dispatchEvent(
+    new CustomEvent<MyListManualItemConsumedDetail>(
+      MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
+      {
+        detail: {
+          origin: "manual-my-list-upgrade",
+          userId,
+          itemId,
+          createdEntityType,
+          createdEntityId,
+        },
+      }
+    )
+  );
 }
 
 function pinnedRowToWrite({

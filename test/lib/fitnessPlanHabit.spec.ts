@@ -125,6 +125,49 @@ describe("fitness plan managed habit metadata", () => {
     });
   });
 
+  it("uses active plan routine snapshots for custom plan schedule metadata", () => {
+    const customPlan: FitnessActivePlan = {
+      ...activePlan,
+      planTemplateId: "custom-plan-three-day",
+      planTitle: "Three Day Custom",
+      routineSequenceSnapshot: [
+        {
+          fitnessRoutineTemplateId: "custom-routine-upper",
+          fitnessRoutineTitle: "Custom Upper",
+        },
+        {
+          fitnessRoutineTemplateId: "custom-routine-lower",
+          fitnessRoutineTitle: "Custom Lower",
+        },
+      ],
+    };
+    const memoConfig = buildFitnessPlanHabitMemoCaptureConfig({
+      current: null,
+      activePlan: customPlan,
+      now: customPlan.updatedAt,
+    });
+    const metadata = buildFitnessPlanScheduleInstanceMetadata({
+      habitId: "habit-fitness-plan",
+      memoCaptureConfig: memoConfig,
+      occurrenceOffset: 1,
+    });
+
+    expect(readFitnessPlanHabitMetadata(memoConfig)?.routineSequenceSnapshot).toEqual(
+      customPlan.routineSequenceSnapshot,
+    );
+    expect(metadata).toMatchObject({
+      fitnessPlanTemplateId: "custom-plan-three-day",
+      fitnessRoutineTemplateId: "custom-routine-lower",
+      fitnessRoutineTitle: "Custom Lower",
+    });
+    expect(
+      resolveFitnessPlanScheduleDisplayText({
+        memoCaptureConfig: memoConfig,
+        fallbackOccurrenceOffset: 0,
+      }).routineTitle,
+    ).toBe("Custom Upper");
+  });
+
   it("builds authoritative schedule instance metadata for rendering and routine loading", () => {
     const memoConfig = buildFitnessPlanHabitMemoCaptureConfig({
       current: null,

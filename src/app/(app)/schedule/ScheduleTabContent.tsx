@@ -15545,7 +15545,6 @@ export default function ScheduleTabContent({
                         )}
                       >
                         <span className="flex min-w-0 items-center gap-1.5 text-white/90">
-                          <Dumbbell className="h-3.5 w-3.5 shrink-0 text-white/72" aria-hidden="true" />
                           <span className="min-w-0 truncate text-xs font-semibold leading-tight">
                             {FITNESS_PLAN_HABIT_TITLE}
                           </span>

@@ -16,7 +16,8 @@ const DEFAULT_LIMIT = 8;
 const DEFAULT_BROWSE_LIMIT = 25;
 const MAX_LIMIT = 50;
 const MAX_SEARCH_FETCH_LIMIT = 80;
-const MAX_BROWSE_FETCH_LIMIT = 300;
+const BROWSE_SCAN_BATCH_SIZE = 200;
+const MAX_BROWSE_SCAN_LIMIT = 5_000;
 
 type FoodSearchRow = FoodSearchResult & {
   normalized_name: string;
@@ -29,6 +30,12 @@ function parseLimit(value: string | null, fallback = DEFAULT_LIMIT) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
+}
+
+function parseOffset(value: string | null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
 }
 
 function toNullableNumber(value: number | string | null | undefined) {
@@ -140,34 +147,54 @@ export async function GET(request: NextRequest) {
       normalizeFoodBrowseDepartment(searchParams.get("department")) ?? "Everyday";
     const aisle =
       normalizeFoodBrowseAisle(searchParams.get("aisle")) ?? "Breakfast basics";
-    const fetchLimit = Math.min(MAX_BROWSE_FETCH_LIMIT, limit * 12);
-    const { data, error } = await supabase
-      .from("foods")
-      .select(
-        "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name,source,metadata",
-      )
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(fetchLimit);
+    const offset = parseOffset(searchParams.get("offset"));
+    const targetMatchCount = offset + limit + 1;
+    const maxRowsToScan = Math.min(
+      MAX_BROWSE_SCAN_LIMIT,
+      Math.max(BROWSE_SCAN_BATCH_SIZE, targetMatchCount * 12),
+    );
+    const matches: Array<{ row: FoodSearchRow; placement: FoodBrowsePlacement }> = [];
+    let scannedRows = 0;
+    let reachedEnd = false;
 
-    if (error) {
-      console.error("Failed to browse nutrition foods", { error });
-      return NextResponse.json({ error: "Unable to browse foods" }, { status: 500 });
+    while (matches.length < targetMatchCount && scannedRows < maxRowsToScan) {
+      const batchSize = Math.min(BROWSE_SCAN_BATCH_SIZE, maxRowsToScan - scannedRows);
+      const from = scannedRows;
+      const to = from + batchSize - 1;
+      const { data, error } = await supabase
+        .from("foods")
+        .select(
+          "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name,source,metadata",
+        )
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .range(from, to);
+
+      if (error) {
+        console.error("Failed to browse nutrition foods", { error });
+        return NextResponse.json({ error: "Unable to browse foods" }, { status: 500 });
+      }
+
+      const rows = (data ?? []) as FoodSearchRow[];
+      for (const row of rows) {
+        const placement = getFoodBrowsePlacementForSection(row, department, aisle);
+        if (placement) matches.push({ row, placement });
+      }
+
+      scannedRows += rows.length;
+      if (rows.length < batchSize) {
+        reachedEnd = true;
+        break;
+      }
     }
 
-    const foods = ((data ?? []) as FoodSearchRow[])
-      .map((row) => ({
-        row,
-        placement: getFoodBrowsePlacementForSection(row, department, aisle),
-      }))
-      .filter(
-        (match): match is { row: FoodSearchRow; placement: FoodBrowsePlacement } =>
-          Boolean(match.placement),
-      )
-      .slice(0, limit)
-      .map(({ row, placement }) => mapFoodRow(row, placement));
+    const page = matches.slice(offset, offset + limit);
+    const hasMore =
+      matches.length > offset + limit ||
+      (!reachedEnd && scannedRows >= maxRowsToScan && page.length > 0);
+    const foods = page.map(({ row, placement }) => mapFoodRow(row, placement));
 
-    return NextResponse.json({ foods });
+    return NextResponse.json({ foods, hasMore });
   }
 
   if (normalizedQuery.length < 2) {

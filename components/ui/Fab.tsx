@@ -152,6 +152,7 @@ import {
   isSourceItemPinned,
   setSourceItemPinned,
 } from "@/lib/my-list/pinnedSourceItems";
+import { consumeManualMyListUpgradeSource } from "@/lib/my-list/myListItemsStorage";
 import {
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
@@ -207,6 +208,11 @@ type ScheduleQuickCreateTaskDetailsPayload = {
   priority?: string | null;
   energy?: string | null;
   origin?: string | null;
+  sourceManualMyListItemId?: string | null;
+};
+type UnifiedEventManualUpgradeSourceContext = {
+  origin: "manual-my-list-upgrade";
+  itemId: string;
 };
 type ScheduleQuickCreateTaskDetailsEvent = CustomEvent<
   ScheduleQuickCreateTaskDetailsPayload
@@ -714,6 +720,16 @@ const hasFabCompletionTimestamp = (value?: string | null) =>
 const FAB_GOAL_PROJECT_LONG_PRESS_MS = 650;
 const FAB_GOAL_PROJECT_DOUBLE_TAP_MS = 325;
 const FAB_GOAL_PROJECT_DRAG_CANCEL_PX = 10;
+const UNIFIED_RELATION_TAP_SLOP_PX = 10;
+
+type UnifiedRelationTapState = {
+  pointerId: number | null;
+  touchIdentifier: number | null;
+  startX: number;
+  startY: number;
+  scrollTop: number;
+  cancelled: boolean;
+};
 
 const isFabCompletionStatus = (value?: string | null) => {
   const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
@@ -4377,6 +4393,10 @@ export function Fab({
   const prefersReducedMotion = useReducedMotion();
   const [isUnifiedEventSheetOpen, setIsUnifiedEventSheetOpen] =
     useState(false);
+  const [
+    unifiedEventManualUpgradeSource,
+    setUnifiedEventManualUpgradeSource,
+  ] = useState<UnifiedEventManualUpgradeSourceContext | null>(null);
   const [isUnifiedNotesSheetOpen, setIsUnifiedNotesSheetOpen] =
     useState(false);
   const [isUnifiedTagsSheetOpen, setIsUnifiedTagsSheetOpen] = useState(false);
@@ -4519,6 +4539,9 @@ export function Fab({
   const unifiedNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const unifiedTagCreateInputRef = useRef<HTMLInputElement | null>(null);
   const unifiedSheetSuppressClickUntilRef = useRef(0);
+  const unifiedRelationListRef = useRef<HTMLDivElement | null>(null);
+  const unifiedRelationTapStateRef =
+    useRef<UnifiedRelationTapState | null>(null);
   const creationSelectionTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTypeRef = useRef<CreationType | null>(null);
@@ -4571,6 +4594,191 @@ export function Fab({
     }),
     [],
   );
+  const suppressUnifiedRelationClick = useCallback(() => {
+    unifiedSheetSuppressClickUntilRef.current = Date.now() + 450;
+  }, []);
+  const clearUnifiedRelationTapState = useCallback(() => {
+    unifiedRelationTapStateRef.current = null;
+  }, []);
+  const cancelUnifiedRelationTapState = useCallback(() => {
+    if (!unifiedRelationTapStateRef.current) return;
+    unifiedRelationTapStateRef.current = null;
+    suppressUnifiedRelationClick();
+  }, [suppressUnifiedRelationClick]);
+  const beginUnifiedRelationTapState = useCallback(
+    ({
+      clientX,
+      clientY,
+      pointerId = null,
+      touchIdentifier = null,
+    }: {
+      clientX: number;
+      clientY: number;
+      pointerId?: number | null;
+      touchIdentifier?: number | null;
+    }) => {
+      unifiedRelationTapStateRef.current = {
+        pointerId,
+        touchIdentifier,
+        startX: clientX,
+        startY: clientY,
+        scrollTop: unifiedRelationListRef.current?.scrollTop ?? 0,
+        cancelled: false,
+      };
+    },
+    [],
+  );
+  const updateUnifiedRelationTapMovement = useCallback(
+    (clientX: number, clientY: number) => {
+      const state = unifiedRelationTapStateRef.current;
+      if (!state) return;
+
+      const deltaX = Math.abs(clientX - state.startX);
+      const deltaY = Math.abs(clientY - state.startY);
+      if (
+        deltaX > UNIFIED_RELATION_TAP_SLOP_PX ||
+        deltaY > UNIFIED_RELATION_TAP_SLOP_PX
+      ) {
+        cancelUnifiedRelationTapState();
+      }
+    },
+    [cancelUnifiedRelationTapState],
+  );
+  const getUnifiedRelationTouch = useCallback(
+    (touches: React.TouchList, touchIdentifier: number | null) => {
+      if (touchIdentifier === null) {
+        return touches.length > 0 ? touches[0] : null;
+      }
+
+      for (let index = 0; index < touches.length; index += 1) {
+        const touch = touches.item(index);
+        if (touch?.identifier === touchIdentifier) return touch;
+      }
+
+      return null;
+    },
+    [],
+  );
+  const getUnifiedRelationTapActivationProps = useCallback(
+    (action: () => void, opts?: { disabled?: boolean }) => ({
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (opts?.disabled || event.pointerType === "mouse") return;
+        beginUnifiedRelationTapState({
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pointerId: event.pointerId,
+        });
+      },
+      onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+        const state = unifiedRelationTapStateRef.current;
+        if (
+          !state ||
+          opts?.disabled ||
+          event.pointerType === "mouse" ||
+          state.pointerId !== event.pointerId
+        ) {
+          return;
+        }
+
+        updateUnifiedRelationTapMovement(event.clientX, event.clientY);
+      },
+      onPointerCancel: (event: React.PointerEvent<HTMLElement>) => {
+        const state = unifiedRelationTapStateRef.current;
+        if (!state || state.pointerId !== event.pointerId) return;
+        cancelUnifiedRelationTapState();
+      },
+      onLostPointerCapture: (event: React.PointerEvent<HTMLElement>) => {
+        const state = unifiedRelationTapStateRef.current;
+        if (!state || state.pointerId !== event.pointerId) return;
+        cancelUnifiedRelationTapState();
+      },
+      onTouchStart: (event: React.TouchEvent<HTMLElement>) => {
+        if (opts?.disabled) return;
+        const touch = event.changedTouches.item(0);
+        if (!touch) return;
+        beginUnifiedRelationTapState({
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          touchIdentifier: touch.identifier,
+        });
+      },
+      onTouchMove: (event: React.TouchEvent<HTMLElement>) => {
+        const state = unifiedRelationTapStateRef.current;
+        if (!state || opts?.disabled) return;
+        const touch = getUnifiedRelationTouch(
+          event.touches,
+          state.touchIdentifier,
+        );
+        if (!touch) return;
+        updateUnifiedRelationTapMovement(touch.clientX, touch.clientY);
+      },
+      onTouchEnd: (event: React.TouchEvent<HTMLElement>) => {
+        event.stopPropagation();
+        if (opts?.disabled) return;
+
+        const state = unifiedRelationTapStateRef.current;
+        const touch = state
+          ? getUnifiedRelationTouch(
+              event.changedTouches,
+              state.touchIdentifier,
+            )
+          : null;
+        if (state && touch) {
+          updateUnifiedRelationTapMovement(touch.clientX, touch.clientY);
+        }
+
+        const latestState = unifiedRelationTapStateRef.current;
+        const didScroll = latestState
+          ? (unifiedRelationListRef.current?.scrollTop ?? 0) !==
+            latestState.scrollTop
+          : false;
+        const endedWithinItem = touch
+          ? typeof document === "undefined"
+            ? true
+            : event.currentTarget.contains(
+                document.elementFromPoint(touch.clientX, touch.clientY),
+              )
+          : false;
+        const shouldActivate =
+          latestState !== null &&
+          !latestState.cancelled &&
+          !didScroll &&
+          endedWithinItem;
+
+        clearUnifiedRelationTapState();
+        suppressUnifiedRelationClick();
+        if (!shouldActivate) return;
+
+        event.preventDefault();
+        action();
+      },
+      onTouchCancel: () => {
+        cancelUnifiedRelationTapState();
+      },
+      onClick: (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        if (opts?.disabled) return;
+
+        if (Date.now() < unifiedSheetSuppressClickUntilRef.current) {
+          event.preventDefault();
+          return;
+        }
+
+        action();
+      },
+    }),
+    [
+      beginUnifiedRelationTapState,
+      cancelUnifiedRelationTapState,
+      clearUnifiedRelationTapState,
+      getUnifiedRelationTouch,
+      suppressUnifiedRelationClick,
+      updateUnifiedRelationTapMovement,
+    ],
+  );
+  const handleUnifiedRelationListScroll = useCallback(() => {
+    cancelUnifiedRelationTapState();
+  }, [cancelUnifiedRelationTapState]);
   const resetUnifiedEventInviteDraft = useCallback(() => {
     setUnifiedEventInviteSearch("");
     setUnifiedEventSelectedInvitees([]);
@@ -4582,6 +4790,7 @@ export function Fab({
     setIsUnifiedEventRecurrencePickerOpen(false);
   }, []);
   const resetUnifiedEventDraft = useCallback(() => {
+    setUnifiedEventManualUpgradeSource(null);
     setUnifiedEventTitle("");
     setUnifiedEventDescription("");
     setUnifiedEventLocationName("");
@@ -10435,6 +10644,7 @@ export function Fab({
       setOverlayPickerOpen(false);
       setOverlayPickerSelected(null);
       setIsUnifiedEventSheetOpen(false);
+      setUnifiedEventManualUpgradeSource(null);
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
@@ -11356,6 +11566,7 @@ export function Fab({
   }, []);
 
   const resetFabFormState = useCallback(() => {
+    setUnifiedEventManualUpgradeSource(null);
     setProjectName("");
     setProjectPinned(false);
     setProjectStage("RESEARCH");
@@ -18867,6 +19078,7 @@ export function Fab({
     if (!options?.skipLauncher) {
       void hapticPress();
     }
+    setUnifiedEventManualUpgradeSource(null);
     const originRect = options?.originRect ?? null;
     setActiveFabPage(FAB_PRIMARY_PAGE_INDEX);
     const shouldAttemptNameFocus = !editTarget;
@@ -19021,6 +19233,7 @@ export function Fab({
     if (!creationRequest) return;
     if (handledCreationRequestIdRef.current === creationRequest.id) return;
 
+    setUnifiedEventManualUpgradeSource(null);
     handledCreationRequestIdRef.current = creationRequest.id;
     openingCreationRequestIdRef.current = creationRequest.id;
     resetFabFormState();
@@ -19174,6 +19387,7 @@ export function Fab({
     deferUntilAfterLauncherClose?: boolean;
   }) => {
     void hapticPress();
+    setUnifiedEventManualUpgradeSource(null);
     const defaultSchedule = getNextSolidHourEventDefaults(new Date());
     const initialDate =
       parseDateInputValueLocal(taskExactDate.trim()) ??
@@ -19568,6 +19782,19 @@ export function Fab({
       resetFabViewportState();
       resetTaskFormDraft();
       resetUnifiedEventDraft();
+      const sourceManualMyListItemId =
+        payload.origin === "my-list-upgrade" &&
+        typeof payload.sourceManualMyListItemId === "string"
+          ? payload.sourceManualMyListItemId.trim()
+          : "";
+      setUnifiedEventManualUpgradeSource(
+        sourceManualMyListItemId
+          ? {
+              origin: "manual-my-list-upgrade",
+              itemId: sourceManualMyListItemId,
+            }
+          : null,
+      );
       setSaveError(null);
       setGoalDeleteConfirmTarget(null);
       setActiveCreationMode("main");
@@ -19622,13 +19849,19 @@ export function Fab({
 
       const title =
         typeof payload.title === "string" ? payload.title.trim() : "";
-      if (title) setTaskName(title);
+      if (title) {
+        setTaskName(title);
+        setHabitName(title);
+      }
       if (durationMin !== null) setTaskDuration(String(durationMin));
+      const normalizedEnergy = normalizeFabEnergy(payload.energy);
+      const payloadSkillId =
+        typeof payload.skillId === "string" ? payload.skillId : "";
       setTaskPriority(normalizeFabPriority(payload.priority));
-      setTaskEnergy(normalizeFabEnergy(payload.energy));
-      setTaskSkillId(
-        typeof payload.skillId === "string" ? payload.skillId : "",
-      );
+      setTaskEnergy(normalizedEnergy);
+      setTaskSkillId(payloadSkillId);
+      setHabitEnergy(normalizedEnergy);
+      setHabitSkillId(payloadSkillId);
       if (hasExactSchedule && startDate && endDate) {
         const date = formatDateInputValue(startDate);
         setTaskHasExactDate(true);
@@ -19795,6 +20028,7 @@ export function Fab({
   const closeUnifiedEventSheet = useCallback(() => {
     void hapticSnap();
     const wasEventEdit = editTarget?.entityType === "EVENT";
+    setUnifiedEventManualUpgradeSource(null);
     setSaveError(null);
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
@@ -19871,6 +20105,9 @@ export function Fab({
       if (unifiedCreationMode === mode) return;
       void hapticSoftTick();
       setSaveError(null);
+      if (mode !== "TASKS") {
+        setUnifiedEventManualUpgradeSource(null);
+      }
       setUnifiedCreationMode(mode);
       setUnifiedTimingPickerOpen(null);
       setIsUnifiedEventLocationSheetOpen(false);
@@ -22058,6 +22295,7 @@ export function Fab({
     if (fabSavePendingRef.current || isSavingFab) return;
 
     const setEventSaveError = (message: string) => {
+      setUnifiedEventManualUpgradeSource(null);
       void hapticErrorPattern();
       setSaveError(message);
       toast.error(message);
@@ -22351,6 +22589,7 @@ export function Fab({
       toast.success(`${kind.charAt(0)}${kind.slice(1).toLowerCase()} created`);
     } catch (error: unknown) {
       console.error("Failed to save event", error);
+      setUnifiedEventManualUpgradeSource(null);
       const errorMessage =
         (error as { message?: string })?.message ||
         (error as { error?: { message?: string } })?.error?.message ||
@@ -22408,10 +22647,15 @@ export function Fab({
     const effectiveAddEventTaskGoalId = resolvedAddEventTaskGoalId;
     const isStandaloneUnifiedTaskCreate =
       saveSelected === "TASK" && !activeEditTarget && isStandaloneUnifiedTaskDraft;
+    const manualUpgradeSourceSnapshot =
+      isUnifiedEventSheetOpen && !activeEditTarget
+        ? unifiedEventManualUpgradeSource
+        : null;
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
       const setBlockedSaveError = (message: string) => {
+        setUnifiedEventManualUpgradeSource(null);
         void hapticWarningPattern();
         setSaveError(message);
       };
@@ -23988,6 +24232,29 @@ export function Fab({
                 ? activeCreationRequest.preserveDrawer
                 : null,
           });
+          if (
+            manualUpgradeSourceSnapshot &&
+            (createdType === "TASK" || createdType === "HABIT")
+          ) {
+            try {
+              await consumeManualMyListUpgradeSource({
+                userId: user.id,
+                itemId: manualUpgradeSourceSnapshot.itemId,
+                createdEntityType: createdType,
+                createdEntityId,
+              });
+              setUnifiedEventManualUpgradeSource(null);
+            } catch (cleanupError) {
+              setUnifiedEventManualUpgradeSource(null);
+              const cleanupMessage =
+                cleanupError instanceof Error
+                  ? cleanupError.message
+                  : "Unknown cleanup error.";
+              throw new Error(
+                `${createdType === "TASK" ? "Task" : "Habit"} created, but the original My List to-do could not be removed. ${cleanupMessage}`,
+              );
+            }
+          }
         }
         openingCreationRequestIdRef.current = null;
         resetFabFormState();
@@ -24019,6 +24286,7 @@ export function Fab({
         }
       } catch (error: unknown) {
         console.error("Failed to save item", error);
+        setUnifiedEventManualUpgradeSource(null);
         if (
           process.env.NODE_ENV === "development" &&
           saveSelected === "GOAL" &&
@@ -24132,6 +24400,7 @@ export function Fab({
     taskSkillId,
     taskStage,
     unifiedEventAllDay,
+    unifiedEventManualUpgradeSource,
     unifiedEventEndDate,
     attachSelectedTagsToEntity,
     buildMemoCaptureConfig,
@@ -24179,6 +24448,7 @@ export function Fab({
 
     if (blockReason) {
       void hapticErrorPattern();
+      setUnifiedEventManualUpgradeSource(null);
       setSaveError(blockReason);
       toast.error(blockReason);
       return;
@@ -29200,7 +29470,11 @@ export function Fab({
                                 )}
                               </div>
 
-                              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
+                              <div
+                                ref={unifiedRelationListRef}
+                                onScroll={handleUnifiedRelationListScroll}
+                                className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
+                              >
                                 {isTask &&
                                 unifiedTaskRelationPickerMode ===
                                   "projects" ? (
@@ -29208,7 +29482,7 @@ export function Fab({
                                     <div className="flex justify-center px-2.5 py-1.5">
                                       <button
                                         type="button"
-                                        {...getUnifiedSheetTouchActivationProps(() => {
+                                        {...getUnifiedRelationTapActivationProps(() => {
                                           void hapticSoftTick();
                                           setUnifiedTaskRelationPickerMode(
                                             "goals",
@@ -29242,7 +29516,7 @@ export function Fab({
                                           <button
                                             key={project.id}
                                             type="button"
-                                            {...getUnifiedSheetTouchActivationProps(() => {
+                                            {...getUnifiedRelationTapActivationProps(() => {
                                               void hapticSoftTick();
                                               setTaskProjectId(project.id);
                                               setTaskGoalId(null);
@@ -29323,7 +29597,7 @@ export function Fab({
                                       <div className="flex justify-center px-2.5 py-1.5">
                                         <button
                                           type="button"
-                                          {...getUnifiedSheetTouchActivationProps(() => {
+                                          {...getUnifiedRelationTapActivationProps(() => {
                                             void hapticSoftTick();
                                             setUnifiedTaskRelationPickerMode(
                                               "projects",
@@ -29339,7 +29613,7 @@ export function Fab({
                                     {!isTask ? (
                                       <button
                                         type="button"
-                                        {...getUnifiedSheetTouchActivationProps(() => {
+                                        {...getUnifiedRelationTapActivationProps(() => {
                                           void hapticSoftTick();
                                           setUnifiedGoalId(null);
                                           setIsUnifiedGoalPickerOpen(false);
@@ -29380,7 +29654,7 @@ export function Fab({
                                         <button
                                           key={goal.id}
                                           type="button"
-                                          {...getUnifiedSheetTouchActivationProps(() => {
+                                          {...getUnifiedRelationTapActivationProps(() => {
                                             void hapticSoftTick();
                                             setUnifiedGoalId(goal.id);
                                             setIsUnifiedGoalPickerOpen(false);
