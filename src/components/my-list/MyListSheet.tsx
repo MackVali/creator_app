@@ -69,8 +69,10 @@ import {
 import {
   deleteManualMyListItem,
   loadManualMyListItems,
+  MY_LIST_MANUAL_ITEM_CREATED_EVENT,
   MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
   replaceManualMyListItems,
+  type MyListManualItemCreatedDetail,
   type MyListManualItemConsumedDetail,
 } from "@/lib/my-list/myListItemsStorage";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
@@ -2063,6 +2065,42 @@ export function MyListSheet({
       );
     };
   }, [removePersistedManualRowFromLocalState, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleManualItemCreated = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as Partial<MyListManualItemCreatedDetail>;
+      if (detail.origin !== "manual-my-list-create") return;
+      const createdUserId =
+        typeof detail.userId === "string" ? detail.userId.trim() : "";
+      if (userId && createdUserId && createdUserId !== userId) return;
+
+      const nextRow = sanitizeMyListManualRow(detail.item, defaultPriority.id);
+      if (!nextRow) return;
+
+      setManualRows((currentRows) => {
+        if (currentRows.some((row) => row.id === nextRow.id)) {
+          return currentRows;
+        }
+        const nextRows = [...currentRows, nextRow];
+        persistManualRows(nextRows);
+        return nextRows;
+      });
+    };
+
+    window.addEventListener(
+      MY_LIST_MANUAL_ITEM_CREATED_EVENT,
+      handleManualItemCreated
+    );
+    return () => {
+      window.removeEventListener(
+        MY_LIST_MANUAL_ITEM_CREATED_EVENT,
+        handleManualItemCreated
+      );
+    };
+  }, [defaultPriority.id, persistManualRows, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

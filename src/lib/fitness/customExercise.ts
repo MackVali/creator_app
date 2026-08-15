@@ -7,6 +7,15 @@ export type FitnessCustomExerciseCatalogItem = {
   equipment: string;
   guidance: string;
   notes: string;
+  source: "custom";
+  customExerciseId: string;
+  secondaryMuscleGroup?: string;
+  trackingType?: "reps" | "timed";
+  resistanceType?: "bodyweight" | "weighted" | "assisted" | "machine" | "none";
+  defaultSets?: number;
+  defaultReps?: number;
+  defaultDurationSeconds?: number;
+  tags?: string[];
 };
 
 export function customFitnessExerciseToCatalogItem(
@@ -15,10 +24,18 @@ export function customFitnessExerciseToCatalogItem(
   return {
     name: exercise.name,
     movementType: exercise.movementType,
-    primaryArea: exercise.primaryArea,
+    primaryArea: exercise.primaryMuscleGroup ?? exercise.primaryArea,
     equipment: exercise.equipment,
     guidance: exercise.guidance,
     notes: exercise.notes,
+    source: "custom",
+    customExerciseId: exercise.id,
+    secondaryMuscleGroup: exercise.secondaryMuscleGroup,
+    trackingType: exercise.trackingType,
+    resistanceType: exercise.resistanceType,
+    defaultSets: exercise.defaultSets,
+    defaultReps: exercise.defaultReps,
+    defaultDurationSeconds: exercise.defaultDurationSeconds,
+    tags: exercise.resistanceType === "bodyweight" ? ["bodyweight"] : [],
   };
 }
-

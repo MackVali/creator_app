@@ -29,9 +29,24 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useNutritionRecipes } from "@/hooks/useNutritionRecipes";
-import type { FoodSearchResult } from "@/lib/nutrition/foods";
+import {
+  FOOD_BROWSE_DEPARTMENTS,
+  getFoodBrowsePlacements,
+  type FoodBrowseAisleLabel,
+  type FoodBrowseDepartmentLabel,
+  type FoodBrowsePlacement,
+  type FoodSearchResult,
+} from "@/lib/nutrition/foods";
 import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
 import type { Json } from "@/types/supabase";
 import {
@@ -55,6 +70,21 @@ import {
 
 type FoodResponse = { foods?: FoodSearchResult[]; hasMore?: boolean; error?: string };
 type ResourceResponse = { foodResources?: unknown; error?: string };
+type IngredientBrowseAisleGroup<T> = {
+  key: string;
+  label: string;
+  items: T[];
+};
+type IngredientBrowseDepartmentGroup<T> = {
+  key: string;
+  label: string;
+  count: number;
+  aisles: IngredientBrowseAisleGroup<T>[];
+};
+type IngredientBrowsePlacement = {
+  department: string;
+  aisle: string;
+};
 
 type EditorMode =
   | { type: "create" }
@@ -63,7 +93,8 @@ type EditorMode =
 
 const RECIPE_VALIDATION_SAVE_ERROR = "Fix the highlighted recipe details before saving.";
 const GROCERY_RESOURCE_REQUEST_LIMIT = 200;
-const FOOD_BROWSE_PAGE_SIZE = 25;
+const OTHER_BROWSE_DEPARTMENT_KEY = "other";
+const OTHER_BROWSE_LABEL = "Other";
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -89,6 +120,138 @@ function normalizeResource(value: unknown): FoodResourceRecipeChoice | null {
     metadata: row.metadata,
     catalog_food: row.catalog_food,
   };
+}
+
+function browseKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "-") || "unknown";
+}
+
+function getBrowseDepartmentOrder(label: string) {
+  const index = FOOD_BROWSE_DEPARTMENTS.findIndex((department) => department.label === label);
+  return index >= 0 ? index : Number.POSITIVE_INFINITY;
+}
+
+function getBrowseAisleOrder(departmentLabel: string, aisleLabel: string) {
+  const department = FOOD_BROWSE_DEPARTMENTS.find((candidate) => candidate.label === departmentLabel);
+  if (!department) return Number.POSITIVE_INFINITY;
+  const index = department.aisles.findIndex((aisle) => aisle === aisleLabel);
+  return index >= 0 ? index : Number.POSITIVE_INFINITY;
+}
+
+function sortIngredientBrowseGroups<T>(groups: IngredientBrowseDepartmentGroup<T>[]) {
+  return groups.sort((left, right) => {
+    const departmentDelta =
+      getBrowseDepartmentOrder(left.label) - getBrowseDepartmentOrder(right.label);
+    if (departmentDelta !== 0) return departmentDelta;
+    return left.label.localeCompare(right.label);
+  }).map((group) => ({
+    ...group,
+    aisles: group.aisles.sort((left, right) => {
+      const aisleDelta =
+        getBrowseAisleOrder(group.label, left.label) - getBrowseAisleOrder(group.label, right.label);
+      if (aisleDelta !== 0) return aisleDelta;
+      return left.label.localeCompare(right.label);
+    }),
+  }));
+}
+
+function buildIngredientBrowseGroups<T>(
+  items: readonly T[],
+  getPlacements: (item: T) => IngredientBrowsePlacement[],
+  getItemKey: (item: T) => string,
+): IngredientBrowseDepartmentGroup<T>[] {
+  const departmentMap = new Map<
+    string,
+    {
+      label: string;
+      aisles: Map<string, IngredientBrowseAisleGroup<T>>;
+      seen: Set<string>;
+    }
+  >();
+
+  for (const item of items) {
+    const placements = getPlacements(item);
+    const resolvedPlacements = placements.length > 0
+      ? placements
+      : [{ department: OTHER_BROWSE_LABEL, aisle: OTHER_BROWSE_LABEL }];
+
+    for (const placement of resolvedPlacements) {
+      const departmentLabel = placement.department || OTHER_BROWSE_LABEL;
+      const aisleLabel = placement.aisle || OTHER_BROWSE_LABEL;
+      const departmentKey =
+        departmentLabel === OTHER_BROWSE_LABEL
+          ? OTHER_BROWSE_DEPARTMENT_KEY
+          : browseKey(departmentLabel);
+      const aisleKey = `${departmentKey}:${browseKey(aisleLabel)}`;
+      const seenKey = `${aisleKey}:${getItemKey(item)}`;
+      const existingDepartment = departmentMap.get(departmentKey);
+      const department = existingDepartment ?? {
+        label: departmentLabel,
+        aisles: new Map<string, IngredientBrowseAisleGroup<T>>(),
+        seen: new Set<string>(),
+      };
+      if (!existingDepartment) departmentMap.set(departmentKey, department);
+      if (department.seen.has(seenKey)) continue;
+      department.seen.add(seenKey);
+
+      const existingAisle = department.aisles.get(aisleKey);
+      if (existingAisle) {
+        existingAisle.items.push(item);
+      } else {
+        department.aisles.set(aisleKey, {
+          key: aisleKey,
+          label: aisleLabel,
+          items: [item],
+        });
+      }
+    }
+  }
+
+  return sortIngredientBrowseGroups(
+    [...departmentMap.entries()].map(([key, value]) => {
+      const aisles = [...value.aisles.values()];
+      return {
+        key,
+        label: value.label,
+        count: aisles.reduce((total, aisle) => total + aisle.items.length, 0),
+        aisles,
+      };
+    }),
+  );
+}
+
+function getFoodResultBrowsePlacements(food: FoodSearchResult): FoodBrowsePlacement[] {
+  if (food.browse_department && food.browse_aisle) {
+    return [
+      {
+        department: food.browse_department as FoodBrowseDepartmentLabel,
+        aisle: food.browse_aisle as FoodBrowseAisleLabel,
+      },
+    ];
+  }
+  return getFoodBrowsePlacements(food);
+}
+
+function getGroceryResourceBrowsePlacements(
+  resource: FoodResourceRecipeChoice,
+): FoodBrowsePlacement[] {
+  const catalogFood = record(resource.catalog_food);
+  const placements = getFoodBrowsePlacements({
+    name: resource.name,
+    brand_name: resource.brand_name,
+    normalized_name:
+      typeof catalogFood.normalized_name === "string" ? catalogFood.normalized_name : null,
+    normalized_brand_name:
+      typeof catalogFood.normalized_brand_name === "string"
+        ? catalogFood.normalized_brand_name
+        : null,
+    source: typeof catalogFood.source === "string" ? catalogFood.source : null,
+    metadata: resource.metadata as Json | null | undefined,
+    catalog_metadata: catalogFood.metadata as Json | null | undefined,
+  });
+  const groceryPlacement =
+    placements.find((placement) => placement.department !== "Everyday") ?? placements[0];
+  return groceryPlacement ? [groceryPlacement] : [];
 }
 
 function getRecipeServings(recipe: NutritionRecipeListItem) {
@@ -320,6 +483,100 @@ function GroceryResourceButton({
   );
 }
 
+function IngredientBrowseGroups<T>({
+  groups,
+  expandedDepartments,
+  expandedAisles,
+  onToggleDepartment,
+  onToggleAisle,
+  getItemKey,
+  renderItem,
+}: {
+  groups: IngredientBrowseDepartmentGroup<T>[];
+  expandedDepartments: Set<string>;
+  expandedAisles: Set<string>;
+  onToggleDepartment: (key: string) => void;
+  onToggleAisle: (key: string) => void;
+  getItemKey: (item: T) => string;
+  renderItem: (item: T, context: { departmentKey: string; aisleKey: string }) => ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5 p-1.5">
+      {groups.map((department) => {
+        const isDepartmentOpen = expandedDepartments.has(department.key);
+        return (
+          <section
+            key={department.key}
+            className="overflow-hidden rounded-lg border border-white/[0.05] bg-black/18"
+          >
+            <button
+              type="button"
+              aria-expanded={isDepartmentOpen}
+              onClick={() => onToggleDepartment(department.key)}
+              className="flex min-h-10 w-full items-center gap-2 px-2.5 py-2 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.055]"
+            >
+              <ChevronRight
+                className={`h-3.5 w-3.5 shrink-0 text-white/36 transition-transform ${
+                  isDepartmentOpen ? "rotate-90" : ""
+                }`}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white/74">
+                {department.label}
+              </span>
+              <span className="shrink-0 rounded-full bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/46">
+                {department.count}
+              </span>
+            </button>
+            {isDepartmentOpen ? (
+              <div className="border-t border-white/[0.045]">
+                {department.aisles.map((aisle) => {
+                  const isAisleOpen = expandedAisles.has(aisle.key);
+                  return (
+                    <div key={aisle.key} className="border-b border-white/[0.035] last:border-b-0">
+                      <button
+                        type="button"
+                        aria-expanded={isAisleOpen}
+                        onClick={() => onToggleAisle(aisle.key)}
+                        className="flex min-h-9 w-full items-center gap-2 py-1.5 pl-6 pr-2.5 text-left outline-none transition hover:bg-white/[0.028] focus-visible:bg-white/[0.045]"
+                      >
+                        <ChevronRight
+                          className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${
+                            isAisleOpen ? "rotate-90" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-white/58">
+                          {aisle.label}
+                        </span>
+                        <span className="shrink-0 text-[10px] font-semibold tabular-nums text-white/34">
+                          {aisle.items.length}
+                        </span>
+                      </button>
+                      {isAisleOpen ? (
+                        <div className="border-t border-white/[0.032] bg-black/16 pl-4">
+                          {aisle.items.map((item) => (
+                            <div key={`${aisle.key}:${getItemKey(item)}`}>
+                              {renderItem(item, {
+                                departmentKey: department.key,
+                                aisleKey: aisle.key,
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function getFieldErrors(input: {
   name: string;
   servings: number;
@@ -480,10 +737,21 @@ export function NutritionRecipesPanel({
   const [groceryResources, setGroceryResources] = useState<FoodResourceRecipeChoice[]>([]);
   const [isFoodSearchLoading, setIsFoodSearchLoading] = useState(false);
   const [isFoodBrowseLoading, setIsFoodBrowseLoading] = useState(false);
-  const [isFoodBrowseMoreLoading, setIsFoodBrowseMoreLoading] = useState(false);
   const [hasMoreBrowseFoods, setHasMoreBrowseFoods] = useState(false);
   const [isFoodsSectionOpen, setIsFoodsSectionOpen] = useState(false);
   const [isGrocerySectionOpen, setIsGrocerySectionOpen] = useState(false);
+  const [expandedFoodDepartments, setExpandedFoodDepartments] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedFoodAisles, setExpandedFoodAisles] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedGroceryDepartments, setExpandedGroceryDepartments] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedGroceryAisles, setExpandedGroceryAisles] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasAttemptedSave, setHasAttemptedSave] = useState(false);
@@ -525,26 +793,13 @@ export function NutritionRecipesPanel({
   }, []);
 
   const loadBrowseFoods = useCallback(
-    async ({
-      append,
-      offset,
-      signal,
-    }: {
-      append: boolean;
-      offset: number;
-      signal?: AbortSignal;
-    }) => {
-      if (append) {
-        setIsFoodBrowseMoreLoading(true);
-      } else {
-        setIsFoodBrowseLoading(true);
-      }
+    async ({ signal }: { signal?: AbortSignal }) => {
+      setIsFoodBrowseLoading(true);
       setPickerError(null);
 
       const params = new URLSearchParams({
         mode: "browse",
-        limit: String(FOOD_BROWSE_PAGE_SIZE),
-        offset: String(offset),
+        all: "true",
       });
 
       try {
@@ -554,28 +809,17 @@ export function NutritionRecipesPanel({
         const payload = (await response.json()) as FoodResponse;
         if (!response.ok) throw new Error(payload.error || "Unable to browse foods.");
 
-        const nextFoods = payload.foods ?? [];
-        setBrowseFoodResults((current) => {
-          if (!append) return nextFoods;
-          const seen = new Set(current.map((food) => food.id));
-          return [...current, ...nextFoods.filter((food) => !seen.has(food.id))];
-        });
+        setBrowseFoodResults(payload.foods ?? []);
         setHasMoreBrowseFoods(Boolean(payload.hasMore));
       } catch (error) {
         if (signal?.aborted) return;
         console.error("Failed to browse recipe ingredients", { error });
         setPickerError("Food browse is unavailable right now.");
-        if (!append) {
-          setBrowseFoodResults([]);
-          setHasMoreBrowseFoods(false);
-        }
+        setBrowseFoodResults([]);
+        setHasMoreBrowseFoods(false);
       } finally {
         if (signal?.aborted) return;
-        if (append) {
-          setIsFoodBrowseMoreLoading(false);
-        } else {
-          setIsFoodBrowseLoading(false);
-        }
+        setIsFoodBrowseLoading(false);
       }
     },
     [],
@@ -593,7 +837,7 @@ export function NutritionRecipesPanel({
     const timeout = window.setTimeout(() => {
       setIsFoodSearchLoading(true);
       setPickerError(null);
-      const params = new URLSearchParams({ q: query, limit: "8" });
+      const params = new URLSearchParams({ q: query, limit: "50" });
       fetch(`/api/nutrition/foods/search?${params.toString()}`, {
         signal: controller.signal,
       })
@@ -623,12 +867,11 @@ export function NutritionRecipesPanel({
     if (!editorMode || query || !isFoodsSectionOpen) {
       setBrowseFoodResults([]);
       setIsFoodBrowseLoading(false);
-      setIsFoodBrowseMoreLoading(false);
       setHasMoreBrowseFoods(false);
       return;
     }
     const controller = new AbortController();
-    void loadBrowseFoods({ append: false, offset: 0, signal: controller.signal });
+    void loadBrowseFoods({ signal: controller.signal });
     return () => controller.abort();
   }, [editorMode, ingredientSearch, isFoodsSectionOpen, loadBrowseFoods]);
 
@@ -648,6 +891,26 @@ export function NutritionRecipesPanel({
     );
   }, [groceryResources, ingredientSearch]);
 
+  const browseFoodGroups = useMemo(
+    () =>
+      buildIngredientBrowseGroups(
+        browseFoodResults,
+        getFoodResultBrowsePlacements,
+        (food) => food.id,
+      ),
+    [browseFoodResults],
+  );
+
+  const groceryBrowseGroups = useMemo(
+    () =>
+      buildIngredientBrowseGroups(
+        groceryResources,
+        getGroceryResourceBrowsePlacements,
+        (resource) => resource.id,
+      ),
+    [groceryResources],
+  );
+
   const totals = useMemo(() => getRecipeTotals(ingredients), [ingredients]);
   const perServing = {
     calories: servings > 0 ? totals.calories / servings : 0,
@@ -665,9 +928,17 @@ export function NutritionRecipesPanel({
     }
   }, [hasAttemptedSave, hasBlockingErrors, saveError]);
 
+  function resetIngredientBrowseGroups() {
+    setExpandedFoodDepartments(new Set());
+    setExpandedFoodAisles(new Set());
+    setExpandedGroceryDepartments(new Set());
+    setExpandedGroceryAisles(new Set());
+  }
+
   function resetIngredientPickerSections() {
     setIsFoodsSectionOpen(false);
     setIsGrocerySectionOpen(false);
+    resetIngredientBrowseGroups();
   }
 
   function resetIngredientPicker() {
@@ -677,25 +948,32 @@ export function NutritionRecipesPanel({
     setPickerError(null);
     setIsFoodSearchLoading(false);
     setIsFoodBrowseLoading(false);
-    setIsFoodBrowseMoreLoading(false);
     setHasMoreBrowseFoods(false);
     resetIngredientPickerSections();
   }
 
   function updateIngredientSearch(value: string) {
+    const wasBrowsing = ingredientSearch.trim().length === 0;
+    const nextSearch = value.trim();
     setIngredientSearch(value);
-    if (!value.trim()) {
+    if (!nextSearch) {
       resetIngredientPickerSections();
       setFoodResults([]);
       setPickerError(null);
+    } else if (wasBrowsing) {
+      resetIngredientBrowseGroups();
     }
   }
 
-  function loadMoreBrowseFoods() {
-    if (isFoodBrowseMoreLoading || isFoodBrowseLoading || !hasMoreBrowseFoods) return;
-    void loadBrowseFoods({
-      append: true,
-      offset: browseFoodResults.length,
+  function toggleExpandedSet(
+    setValue: Dispatch<SetStateAction<Set<string>>>,
+    key: string,
+  ) {
+    setValue((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
   }
 
@@ -922,26 +1200,32 @@ export function NutritionRecipesPanel({
                   <div className="border-t border-white/[0.045] bg-black/22">
                     {isFoodBrowseLoading ? (
                       <p className="px-3 py-2.5 text-xs font-medium text-white/42">Loading foods...</p>
-                    ) : browseFoodResults.length > 0 ? (
+                    ) : browseFoodGroups.length > 0 ? (
                       <>
-                        {browseFoodResults.map((food) => (
-                          <FoodResultButton
-                            key={food.id}
-                            food={food}
-                            onAdd={(selectedFood) =>
-                              addIngredient(makeRecipeIngredientFromFood(selectedFood, id()))
-                            }
-                          />
-                        ))}
+                        <IngredientBrowseGroups
+                          groups={browseFoodGroups}
+                          expandedDepartments={expandedFoodDepartments}
+                          expandedAisles={expandedFoodAisles}
+                          onToggleDepartment={(key) =>
+                            toggleExpandedSet(setExpandedFoodDepartments, key)
+                          }
+                          onToggleAisle={(key) =>
+                            toggleExpandedSet(setExpandedFoodAisles, key)
+                          }
+                          getItemKey={(food) => food.id}
+                          renderItem={(food) => (
+                            <FoodResultButton
+                              food={food}
+                              onAdd={(selectedFood) =>
+                                addIngredient(makeRecipeIngredientFromFood(selectedFood, id()))
+                              }
+                            />
+                          )}
+                        />
                         {hasMoreBrowseFoods ? (
-                          <button
-                            type="button"
-                            onClick={loadMoreBrowseFoods}
-                            disabled={isFoodBrowseMoreLoading}
-                            className="flex min-h-10 w-full items-center justify-center border-t border-white/[0.045] px-3 py-2 text-xs font-semibold text-white/58 outline-none transition hover:bg-white/[0.04] hover:text-white/78 disabled:cursor-not-allowed disabled:text-white/28"
-                          >
-                            {isFoodBrowseMoreLoading ? "Loading..." : "Show more"}
-                          </button>
+                          <p className="border-t border-white/[0.045] px-3 py-2 text-xs font-medium text-white/42">
+                            Search to reach additional catalog foods.
+                          </p>
                         ) : null}
                       </>
                     ) : (
@@ -960,14 +1244,25 @@ export function NutritionRecipesPanel({
                 </div>
                 {isGrocerySectionOpen ? (
                   <div className="border-t border-white/[0.045] bg-black/22">
-                    {groceryResources.length > 0 ? (
-                      groceryResources.map((resource) => (
-                        <GroceryResourceButton
-                          key={resource.id}
-                          resource={resource}
-                          onAdd={addIngredient}
-                        />
-                      ))
+                    {groceryBrowseGroups.length > 0 ? (
+                      <IngredientBrowseGroups
+                        groups={groceryBrowseGroups}
+                        expandedDepartments={expandedGroceryDepartments}
+                        expandedAisles={expandedGroceryAisles}
+                        onToggleDepartment={(key) =>
+                          toggleExpandedSet(setExpandedGroceryDepartments, key)
+                        }
+                        onToggleAisle={(key) =>
+                          toggleExpandedSet(setExpandedGroceryAisles, key)
+                        }
+                        getItemKey={(resource) => resource.id}
+                        renderItem={(resource) => (
+                          <GroceryResourceButton
+                            resource={resource}
+                            onAdd={addIngredient}
+                          />
+                        )}
+                      />
                     ) : (
                       <p className="px-3 py-2.5 text-xs font-medium text-white/42">
                         No Grocery foods yet.

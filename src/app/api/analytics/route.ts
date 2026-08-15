@@ -109,7 +109,7 @@ type RawCatRow = {
   icon?: string | null;
 };
 
-type RawXpEventRow = {
+export type RawXpEventRow = {
   id: string;
   created_at: string | null;
   amount?: number | null;
@@ -118,7 +118,7 @@ type RawXpEventRow = {
   completion_event_id?: string | null;
 };
 
-type RawCompletionEventRow = {
+export type RawCompletionEventRow = {
   id: string;
   source_type: string | null;
   source_id: string | null;
@@ -208,7 +208,7 @@ type NormalizedHabitCompletionRow = {
   completed_at: string | null;
 };
 
-type NormalizedCompletionEventRow = {
+export type NormalizedCompletionEventRow = {
   id: string;
   sourceId: string;
   sourceType: OverviewCompletionSummaryType;
@@ -252,7 +252,7 @@ type RawObservedScheduleAnalyticsRow = Pick<
   | "window_id"
 >;
 
-type NormalizedScheduleInstanceRow = {
+export type NormalizedScheduleInstanceRow = {
   id: string;
   sourceId: string;
   sourceType: ScheduleSummaryType;
@@ -268,7 +268,7 @@ type NormalizedScheduleInstanceRow = {
   completedAt: string | null;
 };
 
-type NormalizedObservedScheduleAnalyticsRow = {
+export type NormalizedObservedScheduleAnalyticsRow = {
   id: string;
   sourceId: string;
   sourceType: ScheduleSummaryType;
@@ -359,7 +359,7 @@ type ScheduleInstanceStatus =
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-type OverviewUsableScheduleSource = {
+export type OverviewUsableScheduleSource = {
   generalWindows: OverviewUsableWindowMeta[];
   breakWindowIds: Set<string>;
   breakDayTypeTimeBlockIds: Set<string>;
@@ -393,7 +393,7 @@ type OverviewResolvedDayType = {
   capacitySource: OverviewCapacitySource;
 };
 
-type OverviewUsableWindowDebugDayInternal = Omit<
+export type OverviewUsableWindowDebugDayInternal = Omit<
   AnalyticsOverviewEfficiencyDebugDay,
   "completedMinutes"
 > & {
@@ -406,7 +406,7 @@ type OverviewUsableWindowMinutesResult = {
   perDay: OverviewUsableWindowDebugDayInternal[];
 };
 
-type OverviewDailySeriesCompletedDebug =
+export type OverviewDailySeriesCompletedDebug =
   AnalyticsOverviewEfficiencyCompletedDebug;
 
 export async function GET(request: NextRequest) {
@@ -2070,7 +2070,7 @@ function normalizeObservedScheduleAnalyticsRows(
     .filter((row): row is NormalizedObservedScheduleAnalyticsRow => row !== null);
 }
 
-async function buildOverviewDailySeries({
+export async function buildOverviewDailySeries({
   xpEvents,
   completionEvents,
   completionXpEvents,

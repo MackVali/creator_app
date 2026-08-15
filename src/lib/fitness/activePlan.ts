@@ -39,7 +39,7 @@ export type FitnessActivePlan = {
   version: typeof FITNESS_ACTIVE_PLAN_VERSION;
   planTemplateId: string;
   planTitle: string;
-  source: "creator";
+  source: "creator" | "custom";
   status: "active" | "paused";
   targetDaysPerWeek: number;
   weekdays: FitnessActivePlanWeekday[];
@@ -298,7 +298,7 @@ export function getFitnessPlanFitReasons(
 export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null {
   if (!isRecord(value)) return null;
   if (value.version !== FITNESS_ACTIVE_PLAN_VERSION) return null;
-  if (value.source !== "creator") return null;
+  if (value.source !== "creator" && value.source !== "custom") return null;
   if (value.status !== "active" && value.status !== "paused") return null;
   if (typeof value.planTemplateId !== "string" || !value.planTemplateId.trim()) return null;
   if (typeof value.planTitle !== "string" || !value.planTitle.trim()) return null;
@@ -346,7 +346,7 @@ export function readFitnessActivePlan(value: unknown): FitnessActivePlan | null 
     version: FITNESS_ACTIVE_PLAN_VERSION,
     planTemplateId: value.planTemplateId,
     planTitle: value.planTitle,
-    source: "creator",
+    source: value.source === "custom" ? "custom" : "creator",
     status: value.status,
     targetDaysPerWeek,
     weekdays,
@@ -417,7 +417,7 @@ export function buildFitnessActivePlan({
     version: FITNESS_ACTIVE_PLAN_VERSION,
     planTemplateId: plan.id,
     planTitle: plan.title,
-    source: "creator",
+    source: plan.source === "custom" || plan.id.startsWith("custom-plan") ? "custom" : "creator",
     status: "active",
     targetDaysPerWeek,
     weekdays,
@@ -435,7 +435,12 @@ export function buildFitnessActivePlan({
       ? { linkedFitnessHabitId: resolvedLinkedFitnessHabitId }
       : {}),
     startedAt: preserveProgress?.startedAt ?? now,
-    currentRoutineIndex: preserveProgress?.currentRoutineIndex ?? 0,
+    currentRoutineIndex: preserveProgress
+      ? plan.source === "custom" || plan.id.startsWith("custom-plan")
+        ? preserveProgress.currentRoutineIndex %
+          Math.max(1, routineSequenceSnapshot?.length ?? plan.routineSequence.length)
+        : preserveProgress.currentRoutineIndex
+      : 0,
     completedWorkoutCount: preserveProgress?.completedWorkoutCount ?? 0,
     checkInAfterCompletedWorkouts: targetDaysPerWeek * 4,
     createdAt: preserveProgress?.createdAt ?? now,

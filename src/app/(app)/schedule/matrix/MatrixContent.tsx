@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Icon as IconifyIcon } from "@iconify/react";
 import {
   BadgeAlert,
@@ -2800,6 +2800,7 @@ function MatrixTodoRow({
   disabled = false,
   glyph,
   meta,
+  trailingAction,
   density = "default",
   onToggle,
   onOpen,
@@ -2809,6 +2810,7 @@ function MatrixTodoRow({
   disabled?: boolean;
   glyph?: string | null;
   meta?: string | null;
+  trailingAction?: ReactNode;
   density?: MatrixTodoRowDensity;
   onToggle(source: MatrixXpSourceCapture): void;
   onOpen?: () => void;
@@ -2910,6 +2912,16 @@ function MatrixTodoRow({
           )}
         >
           {meta}
+        </span>
+      ) : null}
+      {trailingAction ? (
+        <span
+          className={cn(
+            "flex shrink-0 items-center justify-center",
+            density === "compact" ? "w-8" : "w-9"
+          )}
+        >
+          {trailingAction}
         </span>
       ) : null}
     </div>
@@ -3406,10 +3418,12 @@ function MatrixDueFitnessWorkoutActionButton({
   habit,
   onOpen,
   density = "default",
+  placement = "overlay",
 }: {
   habit: MatrixHabit;
   onOpen(habit: MatrixHabit): void;
   density?: MatrixTodoRowDensity;
+  placement?: "overlay" | "inline";
 }) {
   const stopActionPropagation = useCallback(
     (
@@ -3461,8 +3475,15 @@ function MatrixDueFitnessWorkoutActionButton({
       onDoubleClick={stopActionActivation}
       onClick={activateFitnessWorkout}
       className={cn(
-        "absolute top-1/2 z-20 grid shrink-0 -translate-y-1/2 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
-        density === "compact" ? "right-1 h-7 w-7" : "right-1.5 h-8 w-8"
+        "z-20 grid shrink-0 touch-manipulation place-items-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:scale-95",
+        placement === "overlay" ? "absolute top-1/2 -translate-y-1/2" : "relative",
+        density === "compact"
+          ? placement === "overlay"
+            ? "right-1 h-7 w-7"
+            : "h-8 w-8"
+          : placement === "overlay"
+            ? "right-1.5 h-8 w-8"
+            : "h-9 w-9"
       )}
     >
       <Dumbbell
@@ -3951,11 +3972,15 @@ function ScheduledEventCard({
     };
   }, [event.goal, isCompleted]);
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
+  const usesCheckboxOnlyTrailingAction =
+    density === "todo" && presentationMode === "checkbox-only";
   const rendersInlineMealNutritionAction =
     density === "row" && (scheduledGoal || event.habit);
   const rendersInlineFitnessWorkoutAction = density === "row" && event.habit;
   const mealNutritionAction =
-    isMatrixMealEvent(event) && !rendersInlineMealNutritionAction ? (
+    isMatrixMealEvent(event) &&
+    !rendersInlineMealNutritionAction &&
+    !usesCheckboxOnlyTrailingAction ? (
       <div
         className={cn(
           "absolute inset-y-0 z-20 flex items-center justify-center",
@@ -3973,7 +3998,9 @@ function ScheduledEventCard({
       </div>
     ) : null;
   const fitnessWorkoutAction =
-    isMatrixFitnessPlanEvent(event) && !rendersInlineFitnessWorkoutAction ? (
+    isMatrixFitnessPlanEvent(event) &&
+    !rendersInlineFitnessWorkoutAction &&
+    !usesCheckboxOnlyTrailingAction ? (
       <div
         className={cn(
           "absolute inset-y-0 z-20 flex items-center justify-center",
@@ -3989,6 +4016,23 @@ function ScheduledEventCard({
         />
       </div>
     ) : null;
+  const todoTrailingAction =
+    usesCheckboxOnlyTrailingAction && isMatrixMealEvent(event) ? (
+      <MatrixMealNutritionActionButton
+        event={event}
+        completed={isCompleted}
+        onOpen={onOpenMealNutritionLog}
+        density={todoRowDensity}
+      />
+    ) : usesCheckboxOnlyTrailingAction && isMatrixFitnessPlanEvent(event) ? (
+      <MatrixFitnessWorkoutActionButton
+        event={event}
+        onOpen={onOpenFitnessWorkout}
+        density={todoRowDensity}
+      />
+    ) : null;
+  const shouldSuppressTodoMeta =
+    usesCheckboxOnlyTrailingAction && Boolean(todoTrailingAction);
 
   const card = density === "todo" && event.routine ? (
     <MatrixRoutineCard
@@ -4023,16 +4067,19 @@ function ScheduledEventCard({
       disabled={completingInstanceIds.has(event.instance.id)}
       density={todoRowDensity}
       meta={
-        isCompleted
-          ? "Complete"
-          : event.routine
-            ? `${event.routine.dueHabitCount} ${event.routine.dueHabitCount === 1 ? "habit" : "habits"}`
-            : event.instance.source_type === "PROJECT"
-              ? "Project"
-              : event.instance.source_type === "EVENT"
-                ? "Event"
-                : scheduledHabitPill
+        shouldSuppressTodoMeta
+          ? null
+          : isCompleted
+            ? "Complete"
+            : event.routine
+              ? `${event.routine.dueHabitCount} ${event.routine.dueHabitCount === 1 ? "habit" : "habits"}`
+              : event.instance.source_type === "PROJECT"
+                ? "Project"
+                : event.instance.source_type === "EVENT"
+                  ? "Event"
+                  : scheduledHabitPill
       }
+      trailingAction={todoTrailingAction}
       onToggle={(source) => completeEvent(source)}
       onOpen={scheduledGoal ? () => onOpenChange(!open) : undefined}
     />
@@ -4164,6 +4211,7 @@ function DueHabitCard({
   habit,
   density,
   todoRowDensity = "default",
+  presentationMode = "default",
   completing,
   onComplete,
   onOpenFitnessWorkout,
@@ -4171,6 +4219,7 @@ function DueHabitCard({
   habit: MatrixHabit;
   density: MatrixCardDensity;
   todoRowDensity?: MatrixTodoRowDensity;
+  presentationMode?: MatrixPresentationMode;
   completing: boolean;
   onComplete(
     habitId: string,
@@ -4193,12 +4242,23 @@ function DueHabitCard({
     habit.dueStatus?.label ?? (habit.duration_minutes ? "DUE" : "DUE TODAY");
   const isCompletedToday = isMatrixDueHabitCompleted(habit);
   const isFitnessPlanManaged = isFitnessPlanManagedHabit(habit);
+  const usesCheckboxOnlyTrailingAction =
+    density === "todo" && presentationMode === "checkbox-only";
   const fitnessWorkoutAction =
-    isFitnessPlanManaged && onOpenFitnessWorkout ? (
+    isFitnessPlanManaged && onOpenFitnessWorkout && !usesCheckboxOnlyTrailingAction ? (
       <MatrixDueFitnessWorkoutActionButton
         habit={habit}
         onOpen={onOpenFitnessWorkout}
         density={density === "todo" ? todoRowDensity : "default"}
+      />
+    ) : null;
+  const todoTrailingAction =
+    usesCheckboxOnlyTrailingAction && isFitnessPlanManaged && onOpenFitnessWorkout ? (
+      <MatrixDueFitnessWorkoutActionButton
+        habit={habit}
+        onOpen={onOpenFitnessWorkout}
+        density={todoRowDensity}
+        placement="inline"
       />
     ) : null;
   const fitnessRoutineTitle =
@@ -4407,12 +4467,15 @@ function DueHabitCard({
               disabled={completing}
               density={todoRowDensity}
               meta={
-                isFitnessPlanManaged
+                todoTrailingAction
+                  ? null
+                  : isFitnessPlanManaged
                   ? fitnessRoutineTitle ?? (isCompletedToday ? "Complete" : dueLabel)
                   : isCompletedToday
                     ? "Complete"
                     : dueLabel
               }
+              trailingAction={todoTrailingAction}
               onToggle={(source) => completeHabit(source)}
             />
             {fitnessWorkoutAction}
@@ -5271,6 +5334,8 @@ function MatrixGridCarousel({
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
+    useState(false);
   const [collapsedMatrixGroupKeys, setCollapsedMatrixGroupKeys] = useState<
     Set<string>
   >(() => new Set());
@@ -5296,6 +5361,7 @@ function MatrixGridCarousel({
   const matrixPanelWheelCooldownRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const prefersReducedMotion = useReducedMotion();
   const matrixPanelDragStartRef = useRef<{
     x: number;
     y: number;
@@ -5309,40 +5375,111 @@ function MatrixGridCarousel({
     axis: MatrixPanelSwipeAxis;
     width: number;
   } | null>(null);
-  const activeScheduledGroups = useMemo(
-    () =>
+  const {
+    activeScheduledGroups,
+    completedScheduledItems,
+  } = useMemo(() => {
+    const completedItems: Array<{
+      group: MatrixMonumentGroup;
+      event: MatrixEvent;
+    }> = [];
+    const activeGroups =
       matrixScope === "pinned"
         ? []
         : groups
-            .map((group) => ({
-              group,
-              items:
+            .map((group) => {
+              const scheduledItems =
                 matrixView === "types"
                   ? group.scheduledItems
                   : sortMatrixScheduledItems(
                       group.scheduledItems,
                       heldScheduledCompletionItemIds
-                    ),
-            }))
-            .filter(({ items }) => items.length > 0),
-    [groups, heldScheduledCompletionItemIds, matrixScope, matrixView]
-  );
-  const activeUnscheduledDueHabitGroups = useMemo(
-    () =>
-      groups
-        .map((group) => ({
+                    );
+
+              if (presentationMode !== "checkbox-only") {
+                return {
+                  group,
+                  items: scheduledItems,
+                };
+              }
+
+              const activeItems: MatrixEvent[] = [];
+              scheduledItems.forEach((event) => {
+                if (isMatrixEventCompleted(event)) {
+                  completedItems.push({ group, event });
+                } else {
+                  activeItems.push(event);
+                }
+              });
+
+              return {
+                group,
+                items: activeItems,
+              };
+            })
+            .filter(({ items }) => items.length > 0);
+
+    return {
+      activeScheduledGroups: activeGroups,
+      completedScheduledItems: completedItems,
+    };
+  }, [
+    groups,
+    heldScheduledCompletionItemIds,
+    matrixScope,
+    matrixView,
+    presentationMode,
+  ]);
+  const {
+    activeUnscheduledDueHabitGroups,
+    completedDueItems,
+  } = useMemo(() => {
+    const completedItems: Array<{
+      group: MatrixMonumentGroup;
+      item: MatrixDueItem;
+    }> = [];
+    const activeGroups = groups
+      .map((group) => {
+        const dueItems =
+          matrixView === "types"
+            ? getVisibleMatrixDueItems(group)
+            : sortMatrixDueItems(
+                getVisibleMatrixDueItems(group),
+                heldDueCompletionItemIds
+              );
+
+        if (presentationMode !== "checkbox-only") {
+          return {
+            group,
+            items: dueItems,
+          };
+        }
+
+        const activeItems: MatrixDueItem[] = [];
+        dueItems.forEach((item) => {
+          if (isMatrixDueItemCompleted(item)) {
+            completedItems.push({ group, item });
+          } else {
+            activeItems.push(item);
+          }
+        });
+
+        return {
           group,
-          items:
-            matrixView === "types"
-              ? getVisibleMatrixDueItems(group)
-              : sortMatrixDueItems(
-                  getVisibleMatrixDueItems(group),
-                  heldDueCompletionItemIds
-                ),
-        }))
-        .filter(({ items }) => items.length > 0),
-    [groups, heldDueCompletionItemIds, matrixView]
-  );
+          items: activeItems,
+        };
+      })
+      .filter(({ items }) => items.length > 0);
+
+    return {
+      activeUnscheduledDueHabitGroups: activeGroups,
+      completedDueItems: completedItems,
+    };
+  }, [groups, heldDueCompletionItemIds, matrixView, presentationMode]);
+  const completedTodoCount =
+    presentationMode === "checkbox-only"
+      ? completedScheduledItems.length + completedDueItems.length
+      : 0;
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
     if (activeScheduledGroups.length > 0 || matrixScope === "pinned") {
@@ -5402,6 +5539,12 @@ function MatrixGridCarousel({
   const isSmallCardDensity = effectiveCardDensity === "small";
   const isRowCardDensity = effectiveCardDensity === "row";
   const isTodoRowDensity = effectiveCardDensity === "todo";
+
+  useEffect(() => {
+    if (completedTodoCount === 0) {
+      setAreCompletedTodosVisible(false);
+    }
+  }, [completedTodoCount]);
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -6103,6 +6246,7 @@ function MatrixGridCarousel({
                                     habit={item.habit}
                                     density={effectiveCardDensity}
                                     todoRowDensity={todoRowDensity}
+                                    presentationMode={presentationMode}
                                     completing={completingDueHabitIds.has(
                                       item.habit.id
                                     )}
@@ -6148,6 +6292,104 @@ function MatrixGridCarousel({
           );
         })}
       </div>
+      {completedTodoCount > 0 ? (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setAreCompletedTodosVisible((current) => !current);
+            }}
+            className="mx-auto block px-3 py-1 text-center text-xs font-medium text-white/38 outline-none transition hover:text-white/58 focus-visible:ring-2 focus-visible:ring-white/30"
+          >
+            {areCompletedTodosVisible ? "Hide completed" : "Show completed"}
+          </button>
+          <AnimatePresence initial={false}>
+            {areCompletedTodosVisible ? (
+              <motion.div
+                key="matrix-completed-todos-rows"
+                initial={
+                  prefersReducedMotion ? false : { height: 0, opacity: 0 }
+                }
+                animate={{ height: "auto", opacity: 1 }}
+                exit={
+                  prefersReducedMotion ? undefined : { height: 0, opacity: 0 }
+                }
+                transition={{
+                  duration: prefersReducedMotion ? 0 : 0.22,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className="overflow-hidden"
+              >
+                <div
+                  className={cn(
+                    "pt-1",
+                    matrixLibraryGridClass,
+                    isSmallCardDensity ? "matrix-event-grid--small-cards" : null
+                  )}
+                >
+                  {completedScheduledItems.map(({ event }) => (
+                    <motion.div
+                      key={`scheduled:${event.instance.id}`}
+                      layout="position"
+                      transition={MATRIX_REORDER_LAYOUT_TRANSITION}
+                      className="h-full min-w-0"
+                    >
+                      <ScheduledEventCard
+                        event={event}
+                        density={effectiveCardDensity}
+                        todoRowDensity={todoRowDensity}
+                        presentationMode={presentationMode}
+                        completingInstanceIds={completingScheduledEventIds}
+                        onComplete={onCompleteScheduledEvent}
+                        onOpenMealNutritionLog={onOpenMealNutritionLog}
+                        onOpenFitnessWorkout={onOpenFitnessWorkout}
+                        open={
+                          Boolean(event.goal?.id) &&
+                          openGoalId === event.goal?.id
+                        }
+                        onOpenChange={(nextOpen) =>
+                          setOpenGoalId(
+                            nextOpen && event.goal?.id ? event.goal.id : null
+                          )
+                        }
+                      />
+                    </motion.div>
+                  ))}
+                  {completedDueItems.map(({ item }) => (
+                    <motion.div
+                      key={`due:${item.id}`}
+                      layout="position"
+                      transition={MATRIX_REORDER_LAYOUT_TRANSITION}
+                      className="h-full min-w-0"
+                    >
+                      {item.kind === "routine" ? (
+                        <MatrixRoutineCard
+                          routine={item.routine}
+                          density={effectiveCardDensity}
+                          todoRowDensity={todoRowDensity}
+                          presentationMode={presentationMode}
+                          onCompleteHabit={onCompleteDueHabit}
+                        />
+                      ) : (
+                        <DueHabitCard
+                          habit={item.habit}
+                          density={effectiveCardDensity}
+                          todoRowDensity={todoRowDensity}
+                          presentationMode={presentationMode}
+                          completing={completingDueHabitIds.has(item.habit.id)}
+                          onComplete={onCompleteDueHabit}
+                          onOpenFitnessWorkout={onOpenDueFitnessWorkout}
+                        />
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
       <style jsx global>{`
         @media (max-width: 520px) {
           .matrix-event-grid--small-cards.goal-grid {

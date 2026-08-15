@@ -193,13 +193,18 @@ import {
   buildFitnessCustomLibraryEntry,
   customFitnessPlanToTemplate,
   customFitnessRoutineToTemplate,
+  deleteCustomFitnessExercise,
+  deleteCustomFitnessPlan,
+  deleteCustomFitnessRoutine,
   getFitnessCustomLibraryEntry,
   getFitnessCustomLibraryFromEntries,
+  normalizeFitnessCustomName,
   upsertCustomFitnessExercise,
   upsertCustomFitnessPlan,
   upsertCustomFitnessRoutine,
   type CustomFitnessExercise,
   type CustomFitnessPlan,
+  type CustomFitnessPlanRoutineSequenceEntry,
   type CustomFitnessRoutine,
   type FitnessCustomLibrary,
 } from "@/lib/fitness/customLibrary";
@@ -511,6 +516,15 @@ type FitnessExerciseSample = {
   equipment: string;
   guidance: string;
   notes: string;
+  source?: "custom";
+  customExerciseId?: string;
+  secondaryMuscleGroup?: string;
+  trackingType?: "reps" | "timed";
+  resistanceType?: "bodyweight" | "weighted" | "assisted" | "machine" | "none";
+  defaultSets?: number;
+  defaultReps?: number;
+  defaultDurationSeconds?: number;
+  tags?: string[];
 };
 type FitnessWorkoutExerciseDetail = {
   sets: string;
@@ -548,31 +562,64 @@ type FitnessWorkoutEntryContext = {
   createdAt: string;
 };
 type FitnessCustomFlow = "hub" | "exercise" | "routine" | "plan";
+type FitnessCustomBuilderType = Exclude<FitnessCustomFlow, "hub">;
+type FitnessCustomBuilderMode = "create" | "edit" | "duplicate";
+type FitnessCustomBuilderState =
+  | { type: "exercise"; mode: FitnessCustomBuilderMode; editingId: string | null }
+  | { type: "routine"; mode: FitnessCustomBuilderMode; editingId: string | null }
+  | { type: "plan"; mode: FitnessCustomBuilderMode; editingId: string | null }
+  | null;
 type FitnessCustomExerciseDraft = {
   name: string;
   movementType: string;
-  primaryArea: string;
+  primaryMuscleGroup: string;
+  secondaryMuscleGroup: string;
   equipment: string;
-  guidance: string;
+  trackingType: "reps" | "timed";
+  resistanceType: "bodyweight" | "weighted" | "assisted" | "machine" | "none";
+  defaultSets: string;
+  defaultReps: string;
+  defaultDurationSeconds: string;
   notes: string;
+};
+type FitnessCustomRoutineExerciseDraft = {
+  exerciseId: string;
+  name: string;
+  source: "built-in" | "custom";
+  sets: string;
+  reps: string;
+  durationSeconds: string;
+  restSeconds: string;
+  role: "warmup" | "main" | "accessory" | "finisher";
+  instruction: string;
 };
 type FitnessCustomRoutineDraft = {
   title: string;
-  goal: FitnessRoutineTemplate["goal"];
+  description: string;
+  goal: string;
   level: FitnessRoutineTemplate["level"];
-  equipment: string;
+  durationMode: "automatic" | "custom";
   durationMinutes: string;
-  exercisesText: string;
+  exercises: FitnessCustomRoutineExerciseDraft[];
+  exerciseSearch: string;
+};
+type FitnessCustomPlanRoutineDraft = {
+  id: string;
+  routineId: string;
+  title: string;
+  source: "creator" | "custom";
 };
 type FitnessCustomPlanDraft = {
   title: string;
   description: string;
   goal: string;
   level: FitnessPlanTemplate["level"];
-  equipment: string;
-  daysPerWeek: string;
-  sessionDurationMinutes: string;
-  routinesText: string;
+  routines: FitnessCustomPlanRoutineDraft[];
+  routineSearch: string;
+  minDaysPerWeek: string;
+  maxDaysPerWeek: string;
+  allowedDaysPerWeek: number[];
+  recommendedDaysPerWeek: number[];
 };
 type FitnessMovementGroupSample = {
   label: string;
@@ -1415,6 +1462,10 @@ function getFitnessExerciseId(exercise: Pick<FitnessExerciseSample, "name">) {
   return exercise.name;
 }
 
+function getFitnessExerciseStableId(exercise: FitnessExerciseSample) {
+  return exercise.customExerciseId ?? getFitnessExerciseId(exercise);
+}
+
 function slugFitnessCustomLibraryId(prefix: string, label: string, now: string) {
   const slug = label
     .trim()
@@ -1429,10 +1480,15 @@ function slugFitnessCustomLibraryId(prefix: string, label: string, now: string) 
 function getDefaultFitnessCustomExerciseDraft(): FitnessCustomExerciseDraft {
   return {
     name: "",
-    movementType: "Custom",
-    primaryArea: "",
+    movementType: "Push",
+    primaryMuscleGroup: "",
+    secondaryMuscleGroup: "",
     equipment: "",
-    guidance: "3 sets x 10 reps",
+    trackingType: "reps",
+    resistanceType: "weighted",
+    defaultSets: "3",
+    defaultReps: "10",
+    defaultDurationSeconds: "45",
     notes: "",
   };
 }
@@ -1440,11 +1496,13 @@ function getDefaultFitnessCustomExerciseDraft(): FitnessCustomExerciseDraft {
 function getDefaultFitnessCustomRoutineDraft(): FitnessCustomRoutineDraft {
   return {
     title: "",
+    description: "",
     goal: "Foundation",
     level: "Beginner",
-    equipment: "Custom",
-    durationMinutes: "45",
-    exercisesText: "",
+    durationMode: "automatic",
+    durationMinutes: "",
+    exercises: [],
+    exerciseSearch: "",
   };
 }
 
@@ -1454,10 +1512,107 @@ function getDefaultFitnessCustomPlanDraft(): FitnessCustomPlanDraft {
     description: "",
     goal: "General fitness",
     level: "Beginner",
-    equipment: "Custom",
-    daysPerWeek: "3",
-    sessionDurationMinutes: "45",
-    routinesText: "",
+    routines: [],
+    routineSearch: "",
+    minDaysPerWeek: "3",
+    maxDaysPerWeek: "3",
+    allowedDaysPerWeek: [3],
+    recommendedDaysPerWeek: [3],
+  };
+}
+
+function getFitnessCustomExerciseDraftFromExercise(
+  exercise: CustomFitnessExercise,
+  mode: FitnessCustomBuilderMode,
+): FitnessCustomExerciseDraft {
+  return {
+    name: mode === "duplicate" ? `${exercise.name} Copy` : exercise.name,
+    movementType: exercise.movementType,
+    primaryMuscleGroup: exercise.primaryMuscleGroup ?? exercise.primaryArea,
+    secondaryMuscleGroup: exercise.secondaryMuscleGroup ?? "",
+    equipment: exercise.equipment,
+    trackingType: exercise.trackingType ?? "reps",
+    resistanceType: exercise.resistanceType ?? "weighted",
+    defaultSets: String(exercise.defaultSets ?? 3),
+    defaultReps: String(exercise.defaultReps ?? 10),
+    defaultDurationSeconds: String(exercise.defaultDurationSeconds ?? 45),
+    notes: exercise.notes,
+  };
+}
+
+function getFitnessCustomRoutineDraftFromRoutine(
+  routine: CustomFitnessRoutine,
+  customExerciseIds: ReadonlySet<string>,
+  mode: FitnessCustomBuilderMode,
+): FitnessCustomRoutineDraft {
+  return {
+    title: mode === "duplicate" ? `${routine.title} Copy` : routine.title,
+    description: routine.description ?? "",
+    goal: routine.goal ?? "Foundation",
+    level: routine.level ?? "Beginner",
+    durationMode: routine.durationMinutes ? "custom" : "automatic",
+    durationMinutes: routine.durationMinutes ? String(routine.durationMinutes) : "",
+    exerciseSearch: "",
+    exercises: routine.exercises.map((exercise) => {
+      return {
+        exerciseId: exercise.exerciseId,
+        name: exercise.name,
+        source: exercise.source ?? (customExerciseIds.has(exercise.exerciseId) ? "custom" : "built-in"),
+        sets: String(exercise.sets),
+        reps: exercise.reps == null ? "" : String(exercise.reps),
+        durationSeconds:
+          exercise.durationSeconds == null ? "" : String(exercise.durationSeconds),
+        restSeconds: exercise.restSeconds == null ? "" : String(exercise.restSeconds),
+        role: exercise.role ?? "main",
+        instruction: exercise.instruction ?? "",
+      };
+    }),
+  };
+}
+
+function getFitnessCustomPlanDraftFromPlan(
+  plan: CustomFitnessPlan,
+  routineTemplates: readonly FitnessRoutineTemplate[],
+  mode: FitnessCustomBuilderMode,
+): FitnessCustomPlanDraft {
+  const allowedDaysPerWeek = [...plan.allowedDaysPerWeek].sort((a, b) => a - b);
+  const minDaysPerWeek = allowedDaysPerWeek[0] ?? 3;
+  const maxDaysPerWeek = allowedDaysPerWeek[allowedDaysPerWeek.length - 1] ?? minDaysPerWeek;
+  return {
+    title: mode === "duplicate" ? `${plan.title} Copy` : plan.title,
+    description: plan.description ?? "",
+    goal: plan.goal ?? "General fitness",
+    level: plan.level ?? "Beginner",
+    routineSearch: "",
+    minDaysPerWeek: String(minDaysPerWeek),
+    maxDaysPerWeek: String(maxDaysPerWeek),
+    allowedDaysPerWeek,
+    recommendedDaysPerWeek: [...plan.recommendedDaysPerWeek],
+    routines: plan.routineSequence
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((entry, index) => {
+      const routine = routineTemplates.find(
+        (template) =>
+          template.id === entry.routineId &&
+          (entry.source === "custom"
+            ? template.group === "custom"
+            : template.group !== "custom"),
+      ) ?? routineTemplates.find((template) => template.id === entry.routineId);
+      return {
+        id:
+          mode === "duplicate"
+            ? slugFitnessCustomLibraryId(
+                "custom-plan-sequence",
+                `${entry.routineId}-${index + 1}`,
+                new Date().toISOString(),
+              )
+            : entry.id,
+        routineId: entry.routineId,
+        title: routine?.title ?? entry.routineId,
+        source: entry.source,
+      };
+    }),
   };
 }
 
@@ -1472,6 +1627,30 @@ function getExactFitnessGuidanceNumber(value: string) {
 function getInitialFitnessWorkoutExerciseDetail(
   exercise: FitnessExerciseSample,
 ): FitnessWorkoutExerciseDetail {
+  if (exercise.source === "custom") {
+    const trackingType = exercise.trackingType ?? "reps";
+    return {
+      sets: String(Math.max(1, exercise.defaultSets ?? 1)),
+      reps:
+        trackingType === "reps" && exercise.defaultReps
+          ? String(Math.max(1, exercise.defaultReps))
+          : "",
+      duration:
+        trackingType === "timed" && exercise.defaultDurationSeconds
+          ? `${Math.max(1, exercise.defaultDurationSeconds)} sec`
+          : "",
+      weight: "",
+      unit:
+        exercise.resistanceType === "bodyweight" || exercise.resistanceType === "none"
+          ? "bodyweight"
+          : exercise.resistanceType === "assisted"
+            ? "assisted"
+            : exercise.resistanceType === "machine"
+              ? "machine"
+              : "lb",
+    };
+  }
+
   const guidanceSets = getFitnessGuidancePart(
     exercise.guidance,
     /\b(\d+(?:-\d+)?)\s*(?:sets?|holds?|rounds?|carries|hangs?|efforts?)\b/i,
@@ -1605,6 +1784,91 @@ function parseFitnessDurationSeconds(value: string) {
   const amount = Number(match[1]);
   if (!Number.isFinite(amount) || amount <= 0) return null;
   return Math.round(amount * (/^min/i.test(match[2] ?? "") ? 60 : 1));
+}
+
+const FITNESS_CUSTOM_ROUTINE_DEFAULT_REST_SECONDS = 60;
+const FITNESS_CUSTOM_ROUTINE_TRANSITION_SECONDS = 30;
+const FITNESS_CUSTOM_ROUTINE_REP_SET_SECONDS = 45;
+
+function usesTimedFitnessPrescription(exercise: FitnessExerciseSample | undefined) {
+  return Boolean(
+    exercise &&
+      (exercise.trackingType === "timed" || shouldUseFitnessDurationDetail(exercise)),
+  );
+}
+
+function getDefaultFitnessRoutineExerciseDraft(
+  exercise: FitnessExerciseSample,
+): FitnessCustomRoutineExerciseDraft {
+  const detail = getInitialFitnessWorkoutExerciseDetail(exercise);
+  const sets = Math.max(1, Math.floor(parsePositiveFitnessNumber(detail.sets) ?? 3));
+  const isTimed = usesTimedFitnessPrescription(exercise);
+  const durationSeconds = isTimed
+    ? parseFitnessDurationSeconds(detail.duration) ?? exercise.defaultDurationSeconds ?? 30
+    : null;
+  const reps = !isTimed
+    ? Math.max(1, Math.floor(parsePositiveFitnessNumber(detail.reps) ?? exercise.defaultReps ?? 10))
+    : null;
+
+  return {
+    exerciseId: getFitnessExerciseStableId(exercise),
+    name: exercise.name,
+    source: exercise.source === "custom" ? "custom" : "built-in",
+    sets: String(sets),
+    reps: reps ? String(reps) : "",
+    durationSeconds: durationSeconds ? String(Math.max(1, durationSeconds)) : "",
+    restSeconds: "",
+    role: "main",
+    instruction: "",
+  };
+}
+
+function formatFitnessRoutineDuration(seconds: number) {
+  return `${seconds} sec`;
+}
+
+function formatFitnessRoutinePrescriptionSummary(
+  exercise: FitnessCustomRoutineExerciseDraft,
+) {
+  const sets = Math.max(1, Math.floor(parsePositiveFitnessNumber(exercise.sets) ?? 1));
+  const durationSeconds = parseFitnessDurationSeconds(exercise.durationSeconds);
+  if (durationSeconds) {
+    return `${sets} sets x ${formatFitnessRoutineDuration(durationSeconds)}`;
+  }
+  const reps = Math.max(1, Math.floor(parsePositiveFitnessNumber(exercise.reps) ?? 1));
+  return `${sets} sets x ${reps} reps`;
+}
+
+function getFitnessRoutineOrderedMetadataValues(
+  exercises: readonly FitnessCustomRoutineExerciseDraft[],
+  catalog: readonly FitnessExerciseSample[],
+  key: "equipment" | "primaryArea",
+) {
+  const selectedIds = new Set(exercises.map((exercise) => exercise.exerciseId));
+  const values = catalog
+    .filter((exercise) => selectedIds.has(getFitnessExerciseStableId(exercise)))
+    .flatMap((exercise) =>
+      exercise[key]
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+  return Array.from(new Set(values));
+}
+
+function estimateFitnessCustomRoutineDurationMinutes(
+  exercises: readonly FitnessCustomRoutineExerciseDraft[],
+) {
+  if (exercises.length === 0) return 0;
+  const totalSeconds = exercises.reduce((seconds, exercise) => {
+    const sets = Math.max(1, Math.floor(parsePositiveFitnessNumber(exercise.sets) ?? 1));
+    const durationSeconds = parseFitnessDurationSeconds(exercise.durationSeconds);
+    const setSeconds = durationSeconds ?? FITNESS_CUSTOM_ROUTINE_REP_SET_SECONDS;
+    const restSeconds =
+      Math.max(0, Math.floor(parsePositiveFitnessNumber(exercise.restSeconds) ?? FITNESS_CUSTOM_ROUTINE_DEFAULT_REST_SECONDS));
+    return seconds + sets * setSeconds + Math.max(0, sets - 1) * restSeconds;
+  }, Math.max(0, exercises.length - 1) * FITNESS_CUSTOM_ROUTINE_TRANSITION_SECONDS);
+  return Math.max(1, Math.ceil(totalSeconds / 60));
 }
 
 function formatFitnessWeightUnitLabel(
@@ -2458,6 +2722,43 @@ function SortableNoteSegment({ id, label, lockedDragSize, children }: SortableNo
         <GripVertical className="h-3.5 w-3.5" />
       </button>
       <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function SortableFitnessRoutineExerciseRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (sortable: {
+    attributes: ReturnType<typeof useSortable>["attributes"];
+    listeners: ReturnType<typeof useSortable>["listeners"];
+    setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
+    isDragging: boolean;
+  }) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: transform ? CSS.Translate.toString(transform) : undefined,
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={isDragging ? "relative z-20 opacity-80" : undefined}
+    >
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
     </div>
   );
 }
@@ -8434,12 +8735,23 @@ export function NoteDatabaseEntrySheet({
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>(DEFAULT_FITNESS_ACTION_TAB_ID);
   const [fitnessCustomFlow, setFitnessCustomFlow] = useState<FitnessCustomFlow>("hub");
+  const [fitnessCustomBuilder, setFitnessCustomBuilder] =
+    useState<FitnessCustomBuilderState>(null);
   const [fitnessCustomExerciseDraft, setFitnessCustomExerciseDraft] =
     useState<FitnessCustomExerciseDraft>(() => getDefaultFitnessCustomExerciseDraft());
   const [fitnessCustomRoutineDraft, setFitnessCustomRoutineDraft] =
     useState<FitnessCustomRoutineDraft>(() => getDefaultFitnessCustomRoutineDraft());
   const [fitnessCustomPlanDraft, setFitnessCustomPlanDraft] =
     useState<FitnessCustomPlanDraft>(() => getDefaultFitnessCustomPlanDraft());
+  const [isFitnessPlanRoutinePickerOpen, setIsFitnessPlanRoutinePickerOpen] = useState(false);
+  const [fitnessPlanRoutineReplaceEntryId, setFitnessPlanRoutineReplaceEntryId] =
+    useState<string | null>(null);
+  const [isFitnessRoutineExercisePickerOpen, setIsFitnessRoutineExercisePickerOpen] =
+    useState(false);
+  const [fitnessCustomRoutineEditingExerciseId, setFitnessCustomRoutineEditingExerciseId] =
+    useState<string | null>(null);
+  const [fitnessCustomRoutineInvalidExerciseIds, setFitnessCustomRoutineInvalidExerciseIds] =
+    useState<Set<string>>(() => new Set());
   const [isFitnessCustomLibrarySaving, setIsFitnessCustomLibrarySaving] =
     useState(false);
   const [fitnessCustomLibraryOverride, setFitnessCustomLibraryOverride] =
@@ -8484,8 +8796,18 @@ export function NoteDatabaseEntrySheet({
     useState<FitnessActivePlan | null>(null);
   const fitnessPlanWeekdayTriggerRef = useRef<HTMLButtonElement | null>(null);
   const fitnessPlanWeekdayMenuRef = useRef<HTMLDivElement | null>(null);
+  const fitnessPlanRoutinePickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const fitnessPlanRoutinePickerRef = useRef<HTMLDivElement | null>(null);
+  const fitnessRoutineExerciseDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+  );
   const [fitnessWorkoutExerciseDetailsById, setFitnessWorkoutExerciseDetailsById] = useState<
     Record<string, FitnessWorkoutExerciseDetail>
+  >({});
+  const [fitnessWorkoutExerciseRolesById, setFitnessWorkoutExerciseRolesById] = useState<
+    Record<string, FitnessCustomRoutineExerciseDraft["role"]>
   >({});
   const [fitnessWorkoutFocusSessionResult, setFitnessWorkoutFocusSessionResult] =
     useState<FitnessWorkoutFocusSessionResultPayload | null>(null);
@@ -8550,6 +8872,20 @@ export function NoteDatabaseEntrySheet({
     () => new Map(allFitnessExercises.map((exercise) => [exercise.name, exercise])),
     [allFitnessExercises],
   );
+  const allFitnessExerciseByStableId = useMemo(
+    () =>
+      new Map(
+        allFitnessExercises.map((exercise) => [getFitnessExerciseStableId(exercise), exercise]),
+      ),
+    [allFitnessExercises],
+  );
+  const customFitnessExerciseIds = useMemo(
+    () =>
+      new Set(
+        activeFitnessCustomLibrary?.exercises.map((exercise) => exercise.id) ?? [],
+      ),
+    [activeFitnessCustomLibrary],
+  );
   const allFitnessExerciseHistoryCatalog = useMemo(
     () =>
       allFitnessExercises.map((exercise) => ({
@@ -8582,8 +8918,42 @@ export function NoteDatabaseEntrySheet({
   );
   const customFitnessRoutineTemplates = useMemo(
     () =>
-      activeFitnessCustomLibrary?.routines.map(customFitnessRoutineToTemplate) ?? [],
-    [activeFitnessCustomLibrary],
+      activeFitnessCustomLibrary?.routines.map((routine) =>
+        customFitnessRoutineToTemplate(routine, {
+          equipment:
+            getFitnessRoutineOrderedMetadataValues(
+              routine.exercises.map((exercise) => ({
+                exerciseId: exercise.exerciseId,
+                name: exercise.name,
+                source: exercise.source,
+                sets: String(exercise.sets),
+                reps: exercise.reps == null ? "" : String(exercise.reps),
+                durationSeconds:
+                  exercise.durationSeconds == null ? "" : String(exercise.durationSeconds),
+                restSeconds: exercise.restSeconds == null ? "" : String(exercise.restSeconds),
+                role: exercise.role,
+                instruction: exercise.instruction ?? "",
+              })),
+              allFitnessExercises,
+              "equipment",
+            ).join(" · ") || "Custom",
+          durationMinutes: estimateFitnessCustomRoutineDurationMinutes(
+            routine.exercises.map((exercise) => ({
+              exerciseId: exercise.exerciseId,
+              name: exercise.name,
+              source: exercise.source,
+              sets: String(exercise.sets),
+              reps: exercise.reps == null ? "" : String(exercise.reps),
+              durationSeconds:
+                exercise.durationSeconds == null ? "" : String(exercise.durationSeconds),
+              restSeconds: exercise.restSeconds == null ? "" : String(exercise.restSeconds),
+              role: exercise.role,
+              instruction: exercise.instruction ?? "",
+            })),
+          ),
+        }),
+      ) ?? [],
+    [activeFitnessCustomLibrary, allFitnessExercises],
   );
   const allFitnessRoutineTemplates = useMemo(
     () => [
@@ -8599,7 +8969,7 @@ export function NoteDatabaseEntrySheet({
             ...FITNESS_ROUTINE_GROUPS,
             {
               id: "custom" as const,
-              title: "Custom",
+              title: "My Routines",
               routines: customFitnessRoutineTemplates,
             },
           ]
@@ -8645,6 +9015,29 @@ export function NoteDatabaseEntrySheet({
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [isFitnessPlanWeekdayMenuOpen]);
+  useEffect(() => {
+    if (!isFitnessPlanRoutinePickerOpen) return;
+
+    const closeIfOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (fitnessPlanRoutinePickerTriggerRef.current?.contains(target)) return;
+      if (fitnessPlanRoutinePickerRef.current?.contains(target)) return;
+      setIsFitnessPlanRoutinePickerOpen(false);
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setIsFitnessPlanRoutinePickerOpen(false);
+    };
+
+    document.addEventListener("mousedown", closeIfOutside);
+    document.addEventListener("touchstart", closeIfOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeIfOutside);
+      document.removeEventListener("touchstart", closeIfOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isFitnessPlanRoutinePickerOpen]);
   const fitnessLoggedSetPerformances = useMemo(
     () => extractFitnessLoggedSetPerformances(entries),
     [entries],
@@ -9931,10 +10324,79 @@ export function NoteDatabaseEntrySheet({
     }
   }
 
-  function openFitnessCustomFlow(flow: FitnessCustomFlow) {
+  function openFitnessCustomFlow(
+    flow: FitnessCustomBuilderType,
+    mode: FitnessCustomBuilderMode = "create",
+    editingId: string | null = null,
+  ) {
     setFitnessCustomFlow(flow);
+    setFitnessCustomBuilder({ type: flow, mode, editingId });
+    setIsFitnessRoutineExercisePickerOpen(false);
+    setIsFitnessPlanRoutinePickerOpen(false);
+    setFitnessPlanRoutineReplaceEntryId(null);
+    setFitnessCustomRoutineEditingExerciseId(null);
+    setFitnessCustomRoutineInvalidExerciseIds(new Set());
     setSubmitError(null);
     void hapticSoftTick();
+  }
+
+  function closeFitnessCustomBuilder() {
+    setFitnessCustomFlow("hub");
+    setFitnessCustomBuilder(null);
+    setIsFitnessRoutineExercisePickerOpen(false);
+    setIsFitnessPlanRoutinePickerOpen(false);
+    setFitnessPlanRoutineReplaceEntryId(null);
+    setFitnessCustomRoutineEditingExerciseId(null);
+    setFitnessCustomRoutineInvalidExerciseIds(new Set());
+    setSubmitError(null);
+    void hapticSnap();
+  }
+
+  function createFitnessCustomBuilder(type: FitnessCustomBuilderType) {
+    if (type === "exercise") setFitnessCustomExerciseDraft(getDefaultFitnessCustomExerciseDraft());
+    if (type === "routine") setFitnessCustomRoutineDraft(getDefaultFitnessCustomRoutineDraft());
+    if (type === "plan") setFitnessCustomPlanDraft(getDefaultFitnessCustomPlanDraft());
+    openFitnessCustomFlow(type, "create", null);
+  }
+
+  function editCustomFitnessExercise(exercise: CustomFitnessExercise) {
+    setFitnessCustomExerciseDraft(getFitnessCustomExerciseDraftFromExercise(exercise, "edit"));
+    openFitnessCustomFlow("exercise", "edit", exercise.id);
+  }
+
+  function duplicateCustomFitnessExercise(exercise: CustomFitnessExercise) {
+    setFitnessCustomExerciseDraft(
+      getFitnessCustomExerciseDraftFromExercise(exercise, "duplicate"),
+    );
+    openFitnessCustomFlow("exercise", "duplicate", exercise.id);
+  }
+
+  function editCustomFitnessRoutine(routine: CustomFitnessRoutine) {
+    setFitnessCustomRoutineDraft(
+      getFitnessCustomRoutineDraftFromRoutine(routine, customFitnessExerciseIds, "edit"),
+    );
+    openFitnessCustomFlow("routine", "edit", routine.id);
+  }
+
+  function duplicateCustomFitnessRoutine(routine: CustomFitnessRoutine) {
+    setFitnessCustomRoutineDraft(
+      getFitnessCustomRoutineDraftFromRoutine(routine, customFitnessExerciseIds, "duplicate"),
+    );
+    openFitnessCustomFlow("routine", "duplicate", routine.id);
+  }
+
+  function editCustomFitnessPlan(plan: CustomFitnessPlan) {
+    setFitnessCustomPlanDraft(
+      getFitnessCustomPlanDraftFromPlan(plan, allFitnessRoutineTemplates, "edit"),
+    );
+    openFitnessCustomFlow("plan", "edit", plan.id);
+  }
+
+  function duplicateCustomFitnessPlan(plan: CustomFitnessPlan) {
+    setFitnessCustomPlanDraft(
+      getFitnessCustomPlanDraftFromPlan(plan, allFitnessRoutineTemplates, "duplicate"),
+    );
+    openFitnessCustomFlow("plan", "duplicate", plan.id);
   }
 
   async function persistFitnessCustomLibrary(library: FitnessCustomLibrary, now: string) {
@@ -9960,77 +10422,83 @@ export function NoteDatabaseEntrySheet({
     }
   }
 
-  function parseFitnessCustomRoutineExercises(text: string) {
-    return text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line, index): FitnessRoutineTemplate["exercises"][number] | null => {
-        const [rawName, rawDetail = ""] = line.split(/\s+[—|]\s+|,\s*/, 2);
-        const name = rawName.trim();
-        if (!name || !allFitnessExerciseByName.has(name)) return null;
-
-        const sets =
-          Number.parseInt(
-            rawDetail.match(/\b(\d+)\s*(?:sets?|x)\b/i)?.[1] ?? "",
-            10,
-          ) || 3;
-        const repsMatch =
-          rawDetail.match(/\bx\s*(\d+)/i)?.[1] ??
-          rawDetail.match(/\b(\d+)\s*reps?\b/i)?.[1];
-        const durationMatch = rawDetail.match(/\b(\d+)\s*(sec|secs|seconds|min|mins|minutes)\b/i);
-        const durationValue = durationMatch
-          ? Number.parseInt(durationMatch[1], 10)
-          : null;
-        const durationUnit = durationMatch?.[2]?.toLowerCase() ?? "";
-        const durationSeconds = durationValue
-          ? durationUnit.startsWith("min")
-            ? durationValue * 60
-            : durationValue
-          : null;
-
-        return {
-          name,
-          sets: Math.max(1, sets),
-          ...(repsMatch ? { reps: Number.parseInt(repsMatch, 10) } : {}),
-          ...(durationSeconds ? { durationSeconds } : {}),
-          role: index === 0 ? "primary" : index === 1 ? "secondary" : "accessory",
-          restSeconds: 60,
-        };
-      });
-  }
-
-  function parseFitnessCustomPlanRoutineIds(text: string) {
-    return text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const normalizedLine = line.toLowerCase();
-        const match = allFitnessRoutineTemplates.find(
-          (routine) =>
-            routine.id.toLowerCase() === normalizedLine ||
-            routine.title.toLowerCase() === normalizedLine,
-        );
-        return match?.id ?? null;
-      });
-  }
-
   async function saveCustomFitnessExercise() {
+    if (isFitnessCustomLibrarySaving) return;
+
     const name = fitnessCustomExerciseDraft.name.trim();
-    const primaryArea = fitnessCustomExerciseDraft.primaryArea.trim();
+    const primaryArea = fitnessCustomExerciseDraft.primaryMuscleGroup.trim();
     const equipment = fitnessCustomExerciseDraft.equipment.trim();
-    const guidance = fitnessCustomExerciseDraft.guidance.trim();
-    if (!name || !primaryArea || !equipment || !guidance) {
-      setSubmitError("Add a name, muscle area, equipment, and guidance.");
+    const defaultSets = Number.parseInt(fitnessCustomExerciseDraft.defaultSets, 10);
+    const defaultReps = Number.parseInt(fitnessCustomExerciseDraft.defaultReps, 10);
+    const defaultDurationSeconds = Number.parseInt(
+      fitnessCustomExerciseDraft.defaultDurationSeconds,
+      10,
+    );
+    if (!name || !primaryArea || !equipment) {
+      setSubmitError("Add a name, primary muscle group, and equipment.");
+      void hapticErrorPattern();
+      return;
+    }
+    if (!Number.isFinite(defaultSets) || defaultSets < 1) {
+      setSubmitError("Default sets must be at least 1.");
+      void hapticErrorPattern();
+      return;
+    }
+    if (
+      fitnessCustomExerciseDraft.trackingType === "reps" &&
+      (!Number.isFinite(defaultReps) || defaultReps < 1)
+    ) {
+      setSubmitError("Default reps must be at least 1.");
+      void hapticErrorPattern();
+      return;
+    }
+    if (
+      fitnessCustomExerciseDraft.trackingType === "timed" &&
+      (!Number.isFinite(defaultDurationSeconds) || defaultDurationSeconds < 1)
+    ) {
+      setSubmitError("Default duration must be positive.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    const editingId =
+      fitnessCustomBuilder?.type === "exercise" ? fitnessCustomBuilder.editingId : null;
+    const normalizedName = normalizeFitnessCustomName(name);
+    const duplicate = activeFitnessCustomLibrary?.exercises.find(
+      (exercise) =>
+        normalizeFitnessCustomName(exercise.name) === normalizedName &&
+        exercise.id !== editingId,
+    );
+    if (duplicate) {
+      setSubmitError("A custom exercise with this name already exists.");
       void hapticErrorPattern();
       return;
     }
 
     const now = new Date().toISOString();
+    const mode = fitnessCustomBuilder?.type === "exercise" ? fitnessCustomBuilder.mode : "create";
+    const id =
+      mode === "edit" && editingId
+        ? editingId
+        : slugFitnessCustomLibraryId("custom-exercise", name, now);
+    const guidance =
+      fitnessCustomExerciseDraft.trackingType === "timed"
+        ? `${defaultSets} sets x ${defaultDurationSeconds} sec`
+        : `${defaultSets} sets x ${defaultReps} reps`;
     const exercise: CustomFitnessExercise = {
-      id: slugFitnessCustomLibraryId("custom-exercise", name, now),
+      id,
       name,
+      primaryMuscleGroup: primaryArea,
+      secondaryMuscleGroup: fitnessCustomExerciseDraft.secondaryMuscleGroup.trim(),
+      trackingType: fitnessCustomExerciseDraft.trackingType,
+      resistanceType: fitnessCustomExerciseDraft.resistanceType,
+      defaultSets,
+      defaultReps:
+        fitnessCustomExerciseDraft.trackingType === "reps" ? defaultReps : undefined,
+      defaultDurationSeconds:
+        fitnessCustomExerciseDraft.trackingType === "timed"
+          ? defaultDurationSeconds
+          : undefined,
       movementType: fitnessCustomExerciseDraft.movementType.trim() || "Custom",
       primaryArea,
       equipment,
@@ -10051,7 +10519,9 @@ export function NoteDatabaseEntrySheet({
       await persistFitnessCustomLibrary(nextLibrary, now);
       setFitnessCustomLibraryOverride(nextLibrary);
       setFitnessCustomExerciseDraft(getDefaultFitnessCustomExerciseDraft());
+      setFitnessCustomBuilder(null);
       setFitnessCustomFlow("hub");
+      setFitnessCustomRoutineInvalidExerciseIds(new Set());
       void hapticComplete();
     } catch (error) {
       console.error("Failed to save custom Fitness exercise", { error });
@@ -10063,30 +10533,120 @@ export function NoteDatabaseEntrySheet({
   }
 
   async function saveCustomFitnessRoutine() {
+    if (isFitnessCustomLibrarySaving) return;
+
     const title = fitnessCustomRoutineDraft.title.trim();
-    const exercises = parseFitnessCustomRoutineExercises(
-      fitnessCustomRoutineDraft.exercisesText,
+    const invalidExerciseIds = new Set<string>();
+    if (!title) {
+      setSubmitError("Add a routine title.");
+      setFitnessCustomRoutineInvalidExerciseIds(invalidExerciseIds);
+      void hapticErrorPattern();
+      return;
+    }
+    if (fitnessCustomRoutineDraft.exercises.length === 0) {
+      setSubmitError("Add at least one exercise.");
+      setFitnessCustomRoutineInvalidExerciseIds(invalidExerciseIds);
+      void hapticErrorPattern();
+      return;
+    }
+    const editingId =
+      fitnessCustomBuilder?.type === "routine" ? fitnessCustomBuilder.editingId : null;
+    const normalizedTitle = normalizeFitnessCustomName(title);
+    const duplicate = activeFitnessCustomLibrary?.routines.find(
+      (routine) =>
+        normalizeFitnessCustomName(routine.title) === normalizedTitle &&
+        routine.id !== editingId,
     );
-    if (!title || exercises.length === 0 || exercises.some((exercise) => !exercise)) {
-      setSubmitError("Add a title and use one known exercise per line.");
+    if (duplicate) {
+      setSubmitError("A custom routine with this title already exists.");
+      setFitnessCustomRoutineInvalidExerciseIds(invalidExerciseIds);
       void hapticErrorPattern();
       return;
     }
 
-    const durationMinutes =
-      Number.parseInt(fitnessCustomRoutineDraft.durationMinutes, 10) || 45;
+    const durationMinutesOverride =
+      fitnessCustomRoutineDraft.durationMode === "custom"
+        ? Number.parseInt(fitnessCustomRoutineDraft.durationMinutes, 10)
+        : undefined;
+    if (
+      fitnessCustomRoutineDraft.durationMode === "custom" &&
+      (durationMinutesOverride === undefined ||
+        !Number.isFinite(durationMinutesOverride) ||
+        durationMinutesOverride < 1)
+    ) {
+      setSubmitError("Custom duration must be at least 1 minute.");
+      setFitnessCustomRoutineInvalidExerciseIds(invalidExerciseIds);
+      void hapticErrorPattern();
+      return;
+    }
+    const persistedDurationMinutes =
+      fitnessCustomRoutineDraft.durationMode === "custom"
+        ? Math.max(1, durationMinutesOverride ?? 1)
+        : undefined;
+
+    const validationError = fitnessCustomRoutineDraft.exercises.find((draftExercise) => {
+      const sourceExercise = allFitnessExerciseByStableId.get(draftExercise.exerciseId);
+      const sets = Number.parseInt(draftExercise.sets, 10);
+      const reps = Number.parseInt(draftExercise.reps, 10);
+      const durationSeconds = Number.parseInt(draftExercise.durationSeconds, 10);
+      const usesDuration = usesTimedFitnessPrescription(sourceExercise);
+
+      if (!sourceExercise) return true;
+      if (!Number.isFinite(sets) || sets < 1) return true;
+      if (usesDuration) return !Number.isFinite(durationSeconds) || durationSeconds < 1;
+      return !Number.isFinite(reps) || reps < 1;
+    });
+    if (validationError) {
+      invalidExerciseIds.add(validationError.exerciseId);
+      const sourceExercise = allFitnessExerciseByStableId.get(validationError.exerciseId);
+      setSubmitError(
+        !sourceExercise
+          ? `Resolve ${validationError.name} before saving.`
+          : `Fix the prescription for ${validationError.name}.`,
+      );
+      setFitnessCustomRoutineInvalidExerciseIds(invalidExerciseIds);
+      void hapticErrorPattern();
+      return;
+    }
+
     const now = new Date().toISOString();
+    const mode = fitnessCustomBuilder?.type === "routine" ? fitnessCustomBuilder.mode : "create";
+    const id =
+      mode === "edit" && editingId
+        ? editingId
+        : slugFitnessCustomLibraryId("custom-routine", title, now);
+    const exercises = fitnessCustomRoutineDraft.exercises.map((draftExercise, index) => {
+      const sourceExercise = allFitnessExerciseByStableId.get(draftExercise.exerciseId);
+      const usesDuration = usesTimedFitnessPrescription(sourceExercise);
+      const sets = Number.parseInt(draftExercise.sets, 10);
+      const reps = Number.parseInt(draftExercise.reps, 10);
+      const durationSeconds = Number.parseInt(draftExercise.durationSeconds, 10);
+      const restSeconds = Number.parseInt(draftExercise.restSeconds, 10);
+      return {
+        exerciseId: draftExercise.exerciseId,
+        source: draftExercise.source,
+        order: index + 1,
+        name: draftExercise.name,
+        sets: Number.isFinite(sets) ? Math.max(1, sets) : 1,
+        ...(!usesDuration && Number.isFinite(reps) && reps > 0 ? { reps } : {}),
+        ...(usesDuration && Number.isFinite(durationSeconds) && durationSeconds > 0
+          ? { durationSeconds }
+          : {}),
+        ...(Number.isFinite(restSeconds) && restSeconds > 0 ? { restSeconds } : {}),
+        role: draftExercise.role,
+        ...(draftExercise.instruction.trim()
+          ? { instruction: draftExercise.instruction.trim() }
+          : {}),
+      };
+    });
     const routine: CustomFitnessRoutine = {
-      id: slugFitnessCustomLibraryId("custom-routine", title, now),
+      id,
       title,
-      goal: fitnessCustomRoutineDraft.goal,
+      description: fitnessCustomRoutineDraft.description.trim() || undefined,
+      goal: fitnessCustomRoutineDraft.goal as FitnessRoutineTemplate["goal"],
       level: fitnessCustomRoutineDraft.level,
-      equipment: fitnessCustomRoutineDraft.equipment.trim() || "Custom",
-      durationMinutes: Math.max(1, durationMinutes),
-      exercises: exercises.filter(
-        (exercise): exercise is FitnessRoutineTemplate["exercises"][number] =>
-          Boolean(exercise),
-      ),
+      durationMinutes: persistedDurationMinutes,
+      exercises,
       createdAt: now,
       updatedAt: now,
     };
@@ -10102,7 +10662,11 @@ export function NoteDatabaseEntrySheet({
       await persistFitnessCustomLibrary(nextLibrary, now);
       setFitnessCustomLibraryOverride(nextLibrary);
       setFitnessCustomRoutineDraft(getDefaultFitnessCustomRoutineDraft());
+      setFitnessCustomBuilder(null);
       setFitnessCustomFlow("hub");
+      setIsFitnessRoutineExercisePickerOpen(false);
+      setFitnessCustomRoutineEditingExerciseId(null);
+      setFitnessCustomRoutineInvalidExerciseIds(new Set());
       void hapticComplete();
     } catch (error) {
       console.error("Failed to save custom Fitness routine", { error });
@@ -10114,45 +10678,194 @@ export function NoteDatabaseEntrySheet({
   }
 
   async function saveCustomFitnessPlan() {
+    if (isFitnessCustomLibrarySaving) return;
+
     const title = fitnessCustomPlanDraft.title.trim();
-    const routineSequence = parseFitnessCustomPlanRoutineIds(
-      fitnessCustomPlanDraft.routinesText,
-    );
-    if (!title || routineSequence.length === 0 || routineSequence.some((id) => !id)) {
-      setSubmitError("Add a title and use one known routine per line.");
+    if (!title) {
+      setSubmitError("Add a plan title.");
       void hapticErrorPattern();
       return;
     }
-
-    const daysPerWeek =
-      Number.parseInt(fitnessCustomPlanDraft.daysPerWeek, 10) || 3;
-    const sessionDurationMinutes =
-      Number.parseInt(fitnessCustomPlanDraft.sessionDurationMinutes, 10) || 45;
-    const safeDaysPerWeek = Math.max(1, Math.min(7, daysPerWeek));
+    if (fitnessCustomPlanDraft.routines.length === 0) {
+      setSubmitError("Add at least one routine.");
+      void hapticErrorPattern();
+      return;
+    }
+    const minDaysPerWeek = Number.parseInt(fitnessCustomPlanDraft.minDaysPerWeek, 10);
+    const maxDaysPerWeek = Number.parseInt(fitnessCustomPlanDraft.maxDaysPerWeek, 10);
+    if (
+      !Number.isInteger(minDaysPerWeek) ||
+      !Number.isInteger(maxDaysPerWeek) ||
+      minDaysPerWeek < 1 ||
+      maxDaysPerWeek > 7 ||
+      minDaysPerWeek > maxDaysPerWeek
+    ) {
+      setSubmitError("Choose a valid minimum and maximum frequency.");
+      void hapticErrorPattern();
+      return;
+    }
+    const allowedDaysPerWeek = Array.from(
+      { length: maxDaysPerWeek - minDaysPerWeek + 1 },
+      (_, index) => minDaysPerWeek + index,
+    );
+    const recommendedDaysPerWeek = fitnessCustomPlanDraft.recommendedDaysPerWeek
+      .filter((day) => allowedDaysPerWeek.includes(day))
+      .sort((a, b) => a - b);
+    if (allowedDaysPerWeek.length === 0) {
+      setSubmitError("Choose at least one allowed training frequency.");
+      void hapticErrorPattern();
+      return;
+    }
+    if (recommendedDaysPerWeek.length === 0) {
+      setSubmitError("Choose at least one recommended frequency.");
+      void hapticErrorPattern();
+      return;
+    }
+    if (!recommendedDaysPerWeek.every((day) => allowedDaysPerWeek.includes(day))) {
+      setSubmitError("Recommended days must be allowed days.");
+      void hapticErrorPattern();
+      return;
+    }
+    const unresolvedRoutine = fitnessCustomPlanDraft.routines.find(
+      (routine) => !getFitnessRoutineByPlanDraftEntry(routine),
+    );
+    if (unresolvedRoutine) {
+      setSubmitError(`Resolve ${unresolvedRoutine.title} before saving.`);
+      void hapticErrorPattern();
+      return;
+    }
+    const editingId =
+      fitnessCustomBuilder?.type === "plan" ? fitnessCustomBuilder.editingId : null;
+    const normalizedTitle = normalizeFitnessCustomName(title);
+    const duplicate = activeFitnessCustomLibrary?.plans.find(
+      (plan) =>
+        normalizeFitnessCustomName(plan.title) === normalizedTitle &&
+        plan.id !== editingId,
+    );
+    if (duplicate) {
+      setSubmitError("A custom plan with this title already exists.");
+      void hapticErrorPattern();
+      return;
+    }
     const now = new Date().toISOString();
+    const mode = fitnessCustomBuilder?.type === "plan" ? fitnessCustomBuilder.mode : "create";
+    const id =
+      mode === "edit" && editingId
+        ? editingId
+        : slugFitnessCustomLibraryId("custom-plan", title, now);
+    const routineSequence: CustomFitnessPlanRoutineSequenceEntry[] =
+      fitnessCustomPlanDraft.routines.map((routine, index) => ({
+        id:
+          mode === "edit"
+            ? routine.id
+            : slugFitnessCustomLibraryId(
+                "custom-plan-sequence",
+                `${title}-${routine.routineId}-${index + 1}`,
+                now,
+              ),
+        routineId: routine.routineId,
+        source: routine.source,
+        order: index + 1,
+      }));
     const plan: CustomFitnessPlan = {
-      id: slugFitnessCustomLibraryId("custom-plan", title, now),
+      id,
       title,
       description: fitnessCustomPlanDraft.description.trim() || undefined,
-      goal: fitnessCustomPlanDraft.goal.trim() || "General fitness",
+      goal: fitnessCustomPlanDraft.goal.trim() || undefined,
       level: fitnessCustomPlanDraft.level,
-      equipment: fitnessCustomPlanDraft.equipment.trim() || "Custom",
-      recommendedDaysPerWeek: [safeDaysPerWeek],
-      allowedDaysPerWeek: [safeDaysPerWeek],
-      sessionLengthOptions: [Math.max(1, sessionDurationMinutes)],
-      routineSequence: routineSequence.filter((id): id is string => Boolean(id)),
+      source: "custom",
+      recommendedDaysPerWeek,
+      allowedDaysPerWeek,
+      routineSequence,
       createdAt: now,
       updatedAt: now,
     };
     const nextLibrary = upsertCustomFitnessPlan(activeFitnessCustomLibrary, plan, now);
+    const isEditingActiveCustomPlan =
+      mode === "edit" && activeFitnessPlan?.source === "custom" && activeFitnessPlan.planTemplateId === id;
+    const updateActiveCustomPlan =
+      isEditingActiveCustomPlan &&
+      window.confirm(
+        "Update the active plan to use this new routine rotation? Cancel keeps the current active version.",
+      );
 
     setIsFitnessCustomLibrarySaving(true);
     setSubmitError(null);
     try {
       await persistFitnessCustomLibrary(nextLibrary, now);
+      if (updateActiveCustomPlan && activeFitnessPlan) {
+        const nextPlanTemplate = customFitnessPlanToTemplate(plan);
+        const routineSequenceSnapshot = getFitnessPlanRoutineSequenceSnapshot(nextPlanTemplate);
+        const draftActivePlan = buildFitnessActivePlan({
+          plan: nextPlanTemplate,
+          targetDaysPerWeek: activeFitnessPlan.targetDaysPerWeek,
+          weekdays: activeFitnessPlan.weekdays,
+          sessionDurationMinutes: activeFitnessPlan.sessionDurationMinutes,
+          equipmentProfile: activeFitnessPlan.equipmentProfile,
+          exerciseOverrides: activeFitnessPlan.exerciseOverrides,
+          routineSequenceSnapshot,
+          now,
+          existingActivePlan: activeFitnessPlan,
+          linkedFitnessHabitId: activeFitnessPlan.linkedFitnessHabitId ?? null,
+        });
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          throw new Error("Supabase client not available.");
+        }
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) {
+          throw new Error("You need to be signed in to update the active plan.");
+        }
+        const routeContext = readCurrentNoteDatabaseRouteContext(databaseDefinition.id);
+        const linkedFitnessHabitId = await ensureFitnessActivePlanHabit({
+          userId: user.id,
+          plan: nextPlanTemplate,
+          activePlan: draftActivePlan,
+          previousActivePlan: activeFitnessPlan,
+          skillId: routeContext.skillId ?? null,
+          client: supabase,
+        });
+        const nextActivePlan = buildFitnessActivePlan({
+          plan: nextPlanTemplate,
+          targetDaysPerWeek: activeFitnessPlan.targetDaysPerWeek,
+          weekdays: activeFitnessPlan.weekdays,
+          sessionDurationMinutes: activeFitnessPlan.sessionDurationMinutes,
+          equipmentProfile: activeFitnessPlan.equipmentProfile,
+          exerciseOverrides: activeFitnessPlan.exerciseOverrides,
+          routineSequenceSnapshot,
+          now,
+          existingActivePlan: activeFitnessPlan,
+          linkedFitnessHabitId,
+        });
+        const nextEntry = buildFitnessActivePlanEntry({
+          databaseId: databaseDefinition.id,
+          existingEntry: fitnessProfileEntry ?? fitnessActivePlanEntry,
+          activePlan: nextActivePlan,
+          now,
+        });
+        await onSaveEntry(nextEntry);
+        if (routeContext.noteId) {
+          const persisted = await upsertFitnessWorkoutDatabaseEntryInNote({
+            noteId: routeContext.noteId,
+            databaseId: routeContext.databaseId,
+            entry: nextEntry,
+          });
+          if (!persisted.success) {
+            console.error("Failed to persist Fitness active plan", persisted.error);
+          }
+        }
+        setFitnessActivePlanOverride(nextActivePlan);
+      }
       setFitnessCustomLibraryOverride(nextLibrary);
       setFitnessCustomPlanDraft(getDefaultFitnessCustomPlanDraft());
+      setFitnessCustomBuilder(null);
       setFitnessCustomFlow("hub");
+      setIsFitnessPlanRoutinePickerOpen(false);
+      setFitnessPlanRoutineReplaceEntryId(null);
       void hapticComplete();
     } catch (error) {
       console.error("Failed to save custom Fitness plan", { error });
@@ -10161,6 +10874,69 @@ export function NoteDatabaseEntrySheet({
     } finally {
       setIsFitnessCustomLibrarySaving(false);
     }
+  }
+
+  async function persistNextFitnessCustomLibrary(nextLibrary: FitnessCustomLibrary, now: string) {
+    setIsFitnessCustomLibrarySaving(true);
+    setSubmitError(null);
+    try {
+      await persistFitnessCustomLibrary(nextLibrary, now);
+      setFitnessCustomLibraryOverride(nextLibrary);
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to update Fitness custom library", { error });
+      setSubmitError("Unable to update custom library right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsFitnessCustomLibrarySaving(false);
+    }
+  }
+
+  async function removeCustomFitnessExercise(exercise: CustomFitnessExercise) {
+    if (!activeFitnessCustomLibrary || isFitnessCustomLibrarySaving) return;
+    const now = new Date().toISOString();
+    const result = deleteCustomFitnessExercise(activeFitnessCustomLibrary, exercise.id, now);
+    if (!result.ok) {
+      setSubmitError(
+        `Cannot delete ${exercise.name}. Referenced by: ${result.references
+          .map((routine) => routine.title)
+          .join(", ")}.`,
+      );
+      void hapticErrorPattern();
+      return;
+    }
+    await persistNextFitnessCustomLibrary(result.library, now);
+  }
+
+  async function removeCustomFitnessRoutine(routine: CustomFitnessRoutine) {
+    if (!activeFitnessCustomLibrary || isFitnessCustomLibrarySaving) return;
+    const now = new Date().toISOString();
+    const result = deleteCustomFitnessRoutine(activeFitnessCustomLibrary, routine.id, now);
+    if (!result.ok) {
+      setSubmitError(
+        `Cannot delete ${routine.title}. Referenced by: ${result.references
+          .map((plan) => plan.title)
+          .join(", ")}.`,
+      );
+      void hapticErrorPattern();
+      return;
+    }
+    await persistNextFitnessCustomLibrary(result.library, now);
+  }
+
+  async function removeCustomFitnessPlan(plan: CustomFitnessPlan) {
+    if (!activeFitnessCustomLibrary || isFitnessCustomLibrarySaving) return;
+    if (activeFitnessPlan?.planTemplateId === plan.id) {
+      setSubmitError(`Cannot delete ${plan.title} while it is the active plan.`);
+      void hapticErrorPattern();
+      return;
+    }
+    if (!window.confirm(`Delete ${plan.title}? Completed workout history will be kept.`)) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const result = deleteCustomFitnessPlan(activeFitnessCustomLibrary, plan.id, now);
+    await persistNextFitnessCustomLibrary(result.library, now);
   }
 
   function selectFitnessActionByOffset(offset: -1 | 1) {
@@ -10308,6 +11084,7 @@ export function NoteDatabaseEntrySheet({
         const plannedDurationSeconds = parseFitnessDurationSeconds(detail.duration);
         const weight = parseFitnessWeightNumber(detail.weight);
         const unit = detail.unit === "bodyweight" || weight !== null ? detail.unit : null;
+        const isWarmup = fitnessWorkoutExerciseRolesById[exerciseId] === "warmup";
         const focusSets = fitnessWorkoutFocusSessionResult?.workoutName === workoutName
           ? fitnessWorkoutFocusSessionResult.sets
               .filter(
@@ -10351,7 +11128,7 @@ export function NoteDatabaseEntrySheet({
                     set.status === "completed" || set.status === "dismissed"
                       ? set.completedAt ?? now
                       : null,
-                  isWarmup: false,
+                  isWarmup,
                   rpe: null,
                 };
               })
@@ -10368,7 +11145,7 @@ export function NoteDatabaseEntrySheet({
                   options?.status === "in_progress" ? "pending" : "completed",
                 completedAt:
                   options?.status === "in_progress" ? null : options?.completedAt ?? now,
-                isWarmup: false,
+                isWarmup,
                 rpe: null,
               })),
         };
@@ -10397,6 +11174,11 @@ export function NoteDatabaseEntrySheet({
         delete nextDetails[exerciseId];
         return nextDetails;
       });
+      setFitnessWorkoutExerciseRolesById((currentRoles) => {
+        const nextRoles = { ...currentRoles };
+        delete nextRoles[exerciseId];
+        return nextRoles;
+      });
       delete fitnessWeightEditsByExerciseIdRef.current[exerciseId];
       void hapticSnap();
       return;
@@ -10413,6 +11195,11 @@ export function NoteDatabaseEntrySheet({
           getInitialFitnessWorkoutExerciseDetail(exercise),
         ),
       };
+    });
+    setFitnessWorkoutExerciseRolesById((currentRoles) => {
+      const nextRoles = { ...currentRoles };
+      delete nextRoles[exerciseId];
+      return nextRoles;
     });
     void hapticSoftTick();
   }
@@ -10447,6 +11234,11 @@ export function NoteDatabaseEntrySheet({
       delete nextDetails[exerciseId];
       return nextDetails;
     });
+    setFitnessWorkoutExerciseRolesById((currentRoles) => {
+      const nextRoles = { ...currentRoles };
+      delete nextRoles[exerciseId];
+      return nextRoles;
+    });
     delete fitnessWeightEditsByExerciseIdRef.current[exerciseId];
     void hapticSnap();
   }
@@ -10457,6 +11249,7 @@ export function NoteDatabaseEntrySheet({
     setSelectedFitnessSourceRoutineName(null);
     setSelectedFitnessPlanName(null);
     setFitnessWorkoutExerciseDetailsById({});
+    setFitnessWorkoutExerciseRolesById({});
     fitnessWeightEditsByExerciseIdRef.current = {};
     setIsFitnessWorkoutReviewOpen(false);
     void hapticSnap();
@@ -10468,7 +11261,13 @@ export function NoteDatabaseEntrySheet({
     workoutName = routine.title,
   ) {
     const routineExercises = routine.exercises.map((prescription) => {
-      const exercise = allFitnessExerciseByName.get(prescription.name);
+      const exerciseRef =
+        typeof (prescription as { exerciseId?: unknown }).exerciseId === "string"
+          ? (prescription as { exerciseId: string }).exerciseId
+          : prescription.name;
+      const exercise =
+        allFitnessExerciseByStableId.get(exerciseRef) ??
+        allFitnessExerciseByName.get(prescription.name);
 
       if (!exercise) {
         throw new Error(`Routine exercise is missing from fitness library: ${prescription.name}`);
@@ -10479,7 +11278,13 @@ export function NoteDatabaseEntrySheet({
     const routineDetails = routine.exercises.reduce<
       Record<string, FitnessWorkoutExerciseDetail>
     >((details, prescription) => {
-      const exercise = allFitnessExerciseByName.get(prescription.name);
+      const exerciseRef =
+        typeof (prescription as { exerciseId?: unknown }).exerciseId === "string"
+          ? (prescription as { exerciseId: string }).exerciseId
+          : prescription.name;
+      const exercise =
+        allFitnessExerciseByStableId.get(exerciseRef) ??
+        allFitnessExerciseByName.get(prescription.name);
       const prescribedDetail = {
         ...routinePrescriptionToWorkoutDetail(prescription),
         weight: "",
@@ -10487,14 +11292,33 @@ export function NoteDatabaseEntrySheet({
           ? ("bodyweight" as const)
           : ("lb" as const),
       };
-      details[prescription.name] = exercise
+      const detailKey = exercise ? getFitnessExerciseId(exercise) : prescription.name;
+      details[detailKey] = exercise
         ? initializeFitnessWorkoutTargetFromHistory(exercise, prescribedDetail)
         : prescribedDetail;
       return details;
     }, {});
+    const routineRoles = routine.exercises.reduce<
+      Record<string, FitnessCustomRoutineExerciseDraft["role"]>
+    >((roles, prescription) => {
+      const exerciseRef =
+        typeof (prescription as { exerciseId?: unknown }).exerciseId === "string"
+          ? (prescription as { exerciseId: string }).exerciseId
+          : prescription.name;
+      const exercise =
+        allFitnessExerciseByStableId.get(exerciseRef) ??
+        allFitnessExerciseByName.get(prescription.name);
+      const detailKey = exercise ? getFitnessExerciseId(exercise) : prescription.name;
+      if (prescription.role === "warmup") roles[detailKey] = "warmup";
+      else if (prescription.role === "finisher") roles[detailKey] = "finisher";
+      else if (prescription.role === "main") roles[detailKey] = "main";
+      else roles[detailKey] = "accessory";
+      return roles;
+    }, {});
 
     setSelectedFitnessWorkoutExercises(routineExercises);
     setFitnessWorkoutExerciseDetailsById(routineDetails);
+    setFitnessWorkoutExerciseRolesById(routineRoles);
     fitnessWeightEditsByExerciseIdRef.current = {};
     setFitnessWorkoutFocusSessionResult(null);
     setSelectedFitnessRoutineName(workoutName);
@@ -10529,6 +11353,28 @@ export function NoteDatabaseEntrySheet({
   function getFitnessPlanById(planId: string | null) {
     if (!planId) return null;
     return allFitnessPlanTemplates.find((plan) => plan.id === planId) ?? null;
+  }
+
+  function getFitnessRoutineByPlanDraftEntry(
+    entry: Pick<FitnessCustomPlanRoutineDraft, "routineId" | "source">,
+  ) {
+    return (
+      allFitnessRoutineTemplates.find(
+        (routine) =>
+          routine.id === entry.routineId &&
+          (entry.source === "custom" ? routine.group === "custom" : routine.group !== "custom"),
+      ) ?? allFitnessRoutineTemplates.find((routine) => routine.id === entry.routineId) ?? null
+    );
+  }
+
+  function getFitnessPlanRoutineSequenceSnapshot(plan: FitnessPlanTemplate) {
+    return resolveFitnessPlanRoutineSequence(
+      plan,
+      allFitnessRoutineTemplates,
+    ).map((routine) => ({
+      fitnessRoutineTemplateId: routine.id,
+      fitnessRoutineTitle: routine.title,
+    }));
   }
 
   function getFitnessPlanDaysLabel(daysPerWeek: readonly number[]) {
@@ -10658,6 +11504,31 @@ export function NoteDatabaseEntrySheet({
 
   function getFitnessActivePlanNextRoutine(plan: FitnessActivePlan) {
     const template = getFitnessPlanById(plan.planTemplateId);
+    if (!template && !plan.routineSequenceSnapshot?.length) return null;
+
+    const snapshot = plan.routineSequenceSnapshot ?? [];
+    if (plan.source === "custom" && snapshot.length > 0) {
+      const snapshotEntry =
+        snapshot[plan.currentRoutineIndex % snapshot.length] ?? snapshot[0];
+      if (snapshotEntry) {
+        return (
+          allFitnessRoutineTemplates.find(
+            (routine) => routine.id === snapshotEntry.fitnessRoutineTemplateId,
+          ) ??
+          ({
+            id: snapshotEntry.fitnessRoutineTemplateId,
+            group: "custom",
+            title: snapshotEntry.fitnessRoutineTitle,
+            goal: "Foundation",
+            level: "Beginner",
+            equipment: "Custom",
+            durationMinutes: plan.sessionDurationMinutes,
+            exercises: [],
+          } satisfies FitnessRoutineTemplate)
+        );
+      }
+    }
+
     if (!template) return null;
 
     return resolveFitnessPlanRoutineAtIndex(
@@ -10863,13 +11734,7 @@ export function NoteDatabaseEntrySheet({
     const now = new Date().toISOString();
     const { replacements } = getFitnessPlanResolvedRoutines(plan);
     const exerciseOverrides = getFitnessPlanPersistedExerciseOverrides(replacements);
-    const routineSequenceSnapshot = resolveFitnessPlanRoutineSequence(
-      plan,
-      allFitnessRoutineTemplates,
-    ).map((routine) => ({
-      fitnessRoutineTemplateId: routine.id,
-      fitnessRoutineTitle: routine.title,
-    }));
+    const routineSequenceSnapshot = getFitnessPlanRoutineSequenceSnapshot(plan);
     const draftActivePlan = buildFitnessActivePlan({
       plan,
       targetDaysPerWeek,
@@ -12441,6 +13306,12 @@ export function NoteDatabaseEntrySheet({
                                     const isFavorite = favoriteFitnessExerciseIds.has(
                                       exercise.name,
                                     );
+                                    const customExercise =
+                                      exercise.customExerciseId && activeFitnessCustomLibrary
+                                        ? activeFitnessCustomLibrary.exercises.find(
+                                            (item) => item.id === exercise.customExerciseId,
+                                          )
+                                        : null;
 
                                     return (
                                       <div
@@ -12506,6 +13377,37 @@ export function NoteDatabaseEntrySheet({
                                           {isSelected
                                             ? renderFitnessWorkoutDetailControls(exercise)
                                             : null}
+                                          {customExercise ? (
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  editCustomFitnessExercise(customExercise)
+                                                }
+                                                className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  duplicateCustomFitnessExercise(customExercise)
+                                                }
+                                                className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                                              >
+                                                Duplicate
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  void removeCustomFitnessExercise(customExercise)
+                                                }
+                                                className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[11px] font-semibold text-red-100/70"
+                                              >
+                                                Delete
+                                              </button>
+                                            </div>
+                                          ) : null}
                                         </div>
                                         <button
                                           type="button"
@@ -12661,7 +13563,7 @@ export function NoteDatabaseEntrySheet({
       description,
       Icon,
     }: {
-      flow: FitnessCustomFlow;
+      flow: FitnessCustomBuilderType;
       title: string;
       description: string;
       Icon: LucideIcon;
@@ -12670,7 +13572,7 @@ export function NoteDatabaseEntrySheet({
       return (
         <button
           type="button"
-          onClick={() => openFitnessCustomFlow(flow)}
+          onClick={() => createFitnessCustomBuilder(flow)}
           className={cn(
             "flex w-full items-center gap-3 rounded-xl border p-3 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/18",
             isSelected
@@ -12785,27 +13687,38 @@ export function NoteDatabaseEntrySheet({
 
     function renderFlowActions(onSave: () => void) {
       return (
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => {
-              setFitnessCustomFlow("hub");
-              setSubmitError(null);
-              void hapticSnap();
-            }}
-            disabled={isFitnessCustomLibrarySaving}
-            className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.065] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isFitnessCustomLibrarySaving}
-            className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.32] bg-white/72 px-3 text-xs font-semibold text-zinc-950 outline-none transition hover:border-white/[0.5] hover:bg-white/82 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {isFitnessCustomLibrarySaving ? "Saving..." : "Save"}
-          </button>
+        <div className="sticky bottom-0 -mx-3 -mb-3 mt-2 border-t border-white/[0.045] bg-[#090909]/96 px-3 pb-3 pt-2 backdrop-blur-xl">
+          <div className="h-[50px] py-2">
+            {submitError ? (
+              <p className="rounded-lg border border-red-300/15 bg-red-500/10 px-3 py-2 text-xs font-medium leading-4 text-red-100/82">
+                {submitError}
+              </p>
+            ) : (
+              <div aria-hidden="true" className="h-8" />
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={closeFitnessCustomBuilder}
+              disabled={isFitnessCustomLibrarySaving}
+              className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.065] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isFitnessCustomLibrarySaving}
+              className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.32] bg-white/72 px-3 text-xs font-semibold text-zinc-950 outline-none transition hover:border-white/[0.5] hover:bg-white/82 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {isFitnessCustomLibrarySaving
+                ? "Saving..."
+                : fitnessCustomBuilder?.mode === "edit"
+                  ? "Save"
+                  : "Create"}
+            </button>
+          </div>
         </div>
       );
     }
@@ -12816,6 +13729,7 @@ export function NoteDatabaseEntrySheet({
           <p className="text-sm font-semibold text-white/82">Create Fitness Content</p>
           <p className="mt-0.5 text-xs font-medium text-white/38">{customCounts}</p>
         </div>
+        {fitnessCustomFlow === "hub" ? (
         <div className="grid gap-2">
           {renderHubRow({
             flow: "exercise",
@@ -12836,6 +13750,41 @@ export function NoteDatabaseEntrySheet({
             Icon: Calendar,
           })}
         </div>
+        ) : null}
+
+        {fitnessCustomFlow !== "hub" && fitnessCustomBuilder ? (
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.055] bg-black/42 px-3 py-2">
+            <button
+              type="button"
+              onClick={closeFitnessCustomBuilder}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+              aria-label="Back to custom Fitness"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white/86">
+                {fitnessCustomBuilder.mode === "edit"
+                  ? "Edit"
+                  : fitnessCustomBuilder.mode === "duplicate"
+                    ? "Duplicate"
+                    : "Create"}{" "}
+                {fitnessCustomBuilder.type}
+              </p>
+              <p className="truncate text-xs font-medium text-white/38">
+                Custom Fitness builder
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeFitnessCustomBuilder}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+              aria-label="Close custom builder"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
 
         {fitnessCustomFlow === "exercise" ? (
           <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
@@ -12866,19 +13815,68 @@ export function NoteDatabaseEntrySheet({
               })}
             </div>
             {renderTextInput({
-              label: "Primary Area",
-              value: fitnessCustomExerciseDraft.primaryArea,
-              placeholder: "Rear delts, upper back",
-              onChange: (primaryArea) =>
-                setFitnessCustomExerciseDraft((draft) => ({ ...draft, primaryArea })),
+              label: "Primary muscle group",
+              value: fitnessCustomExerciseDraft.primaryMuscleGroup,
+              placeholder: "Rear delts",
+              onChange: (primaryMuscleGroup) =>
+                setFitnessCustomExerciseDraft((draft) => ({
+                  ...draft,
+                  primaryMuscleGroup,
+                })),
             })}
             {renderTextInput({
-              label: "Default Guidance",
-              value: fitnessCustomExerciseDraft.guidance,
-              placeholder: "3 sets x 12 reps",
-              onChange: (guidance) =>
-                setFitnessCustomExerciseDraft((draft) => ({ ...draft, guidance })),
+              label: "Secondary muscle group",
+              value: fitnessCustomExerciseDraft.secondaryMuscleGroup,
+              placeholder: "Upper back",
+              onChange: (secondaryMuscleGroup) =>
+                setFitnessCustomExerciseDraft((draft) => ({
+                  ...draft,
+                  secondaryMuscleGroup,
+                })),
             })}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderSelect({
+                label: "Tracking type",
+                value: fitnessCustomExerciseDraft.trackingType,
+                options: ["reps", "timed"] as const,
+                onChange: (trackingType) =>
+                  setFitnessCustomExerciseDraft((draft) => ({ ...draft, trackingType })),
+              })}
+              {renderSelect({
+                label: "Resistance type",
+                value: fitnessCustomExerciseDraft.resistanceType,
+                options: ["bodyweight", "weighted", "assisted", "machine", "none"] as const,
+                onChange: (resistanceType) =>
+                  setFitnessCustomExerciseDraft((draft) => ({ ...draft, resistanceType })),
+              })}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {renderTextInput({
+                label: "Default sets",
+                value: fitnessCustomExerciseDraft.defaultSets,
+                type: "number",
+                onChange: (defaultSets) =>
+                  setFitnessCustomExerciseDraft((draft) => ({ ...draft, defaultSets })),
+              })}
+              {fitnessCustomExerciseDraft.trackingType === "timed"
+                ? renderTextInput({
+                    label: "Default duration seconds",
+                    value: fitnessCustomExerciseDraft.defaultDurationSeconds,
+                    type: "number",
+                    onChange: (defaultDurationSeconds) =>
+                      setFitnessCustomExerciseDraft((draft) => ({
+                        ...draft,
+                        defaultDurationSeconds,
+                      })),
+                  })
+                : renderTextInput({
+                    label: "Default reps",
+                    value: fitnessCustomExerciseDraft.defaultReps,
+                    type: "number",
+                    onChange: (defaultReps) =>
+                      setFitnessCustomExerciseDraft((draft) => ({ ...draft, defaultReps })),
+                  })}
+            </div>
             {renderTextarea({
               label: "Notes",
               value: fitnessCustomExerciseDraft.notes,
@@ -12890,149 +13888,1069 @@ export function NoteDatabaseEntrySheet({
           </section>
         ) : null}
 
-        {fitnessCustomFlow === "routine" ? (
-          <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
-            {renderTextInput({
-              label: "Title",
-              value: fitnessCustomRoutineDraft.title,
-              placeholder: "Upper Pull Accessories",
-              onChange: (title) =>
-                setFitnessCustomRoutineDraft((draft) => ({ ...draft, title })),
-            })}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {renderSelect({
-                label: "Goal",
-                value: fitnessCustomRoutineDraft.goal,
-                options: [
-                  "Foundation",
-                  "Hypertrophy",
-                  "Strength",
-                  "Power",
-                  "Conditioning",
-                  "Mobility",
-                  "Recovery",
-                ] as const,
-                onChange: (goal) =>
-                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, goal })),
-              })}
-              {renderSelect({
-                label: "Level",
-                value: fitnessCustomRoutineDraft.level,
-                options: ["Beginner", "Intermediate", "Advanced"] as const,
-                onChange: (level) =>
-                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, level })),
-              })}
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {renderTextInput({
-                label: "Equipment",
-                value: fitnessCustomRoutineDraft.equipment,
-                placeholder: "Full gym",
-                onChange: (equipment) =>
-                  setFitnessCustomRoutineDraft((draft) => ({ ...draft, equipment })),
-              })}
-              {renderTextInput({
-                label: "Minutes",
-                value: fitnessCustomRoutineDraft.durationMinutes,
-                type: "number",
-                onChange: (durationMinutes) =>
-                  setFitnessCustomRoutineDraft((draft) => ({
-                    ...draft,
-                    durationMinutes,
-                  })),
-              })}
-            </div>
-            {renderTextarea({
-              label: "Exercises",
-              value: fitnessCustomRoutineDraft.exercisesText,
-              rows: 5,
-              placeholder: "Pull-up, 4 x 6\nCable Y Raise, 3 x 12\nPlank, 3 x 45 sec",
-              onChange: (exercisesText) =>
+        {fitnessCustomFlow === "routine"
+          ? (() => {
+              const selectedExerciseIds = new Set(
+                fitnessCustomRoutineDraft.exercises.map((exercise) => exercise.exerciseId),
+              );
+              const query = fitnessCustomRoutineDraft.exerciseSearch.trim().toLowerCase();
+              const matchesQuery = (exercise: FitnessExerciseSample) =>
+                !query ||
+                `${exercise.name} ${exercise.movementType} ${exercise.primaryArea} ${exercise.equipment}`
+                  .toLowerCase()
+                  .includes(query);
+              const myExercises = customFitnessExercises.filter(matchesQuery);
+              const favoriteExercises = allFitnessExercises.filter(
+                (exercise) =>
+                  favoriteFitnessExerciseIds.has(getFitnessExerciseId(exercise)) &&
+                  matchesQuery(exercise),
+              );
+              const builtInExerciseGroups = FITNESS_MOVEMENT_GROUP_SAMPLES.map((group) => ({
+                ...group,
+                exercises: group.subcategories
+                  .flatMap((subcategory) => subcategory.exercises)
+                  .map((name) => allFitnessExerciseByName.get(name))
+                  .filter((exercise): exercise is FitnessExerciseSample =>
+                    Boolean(exercise && matchesQuery(exercise)),
+                  ),
+              })).filter((group) => group.exercises.length > 0);
+              const estimatedDuration = estimateFitnessCustomRoutineDurationMinutes(
+                fitnessCustomRoutineDraft.exercises,
+              );
+              const equipmentSummary = getFitnessRoutineOrderedMetadataValues(
+                fitnessCustomRoutineDraft.exercises,
+                allFitnessExercises,
+                "equipment",
+              );
+              const muscleSummary = getFitnessRoutineOrderedMetadataValues(
+                fitnessCustomRoutineDraft.exercises,
+                allFitnessExercises,
+                "primaryArea",
+              );
+              const editingIndex = fitnessCustomRoutineDraft.exercises.findIndex(
+                (exercise) => exercise.exerciseId === fitnessCustomRoutineEditingExerciseId,
+              );
+              const editingExercise =
+                editingIndex >= 0 ? fitnessCustomRoutineDraft.exercises[editingIndex] : null;
+              const editingSourceExercise = editingExercise
+                ? allFitnessExerciseByStableId.get(editingExercise.exerciseId)
+                : undefined;
+              const editingUsesDuration = usesTimedFitnessPrescription(editingSourceExercise);
+              const updateRoutineExercise = (
+                index: number,
+                patch: Partial<FitnessCustomRoutineExerciseDraft>,
+              ) =>
                 setFitnessCustomRoutineDraft((draft) => ({
                   ...draft,
-                  exercisesText,
-                })),
-            })}
-            {renderFlowActions(() => void saveCustomFitnessRoutine())}
-          </section>
-        ) : null}
-
-        {fitnessCustomFlow === "plan" ? (
-          <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
-            {!canCreatePlan ? (
-              <p className="rounded-xl border border-dashed border-white/[0.08] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
-                Create a routine before creating a plan.
-              </p>
-            ) : null}
-            {renderTextInput({
-              label: "Title",
-              value: fitnessCustomPlanDraft.title,
-              placeholder: "Three Day Strength",
-              onChange: (title) =>
-                setFitnessCustomPlanDraft((draft) => ({ ...draft, title })),
-            })}
-            {renderTextarea({
-              label: "Description",
-              value: fitnessCustomPlanDraft.description,
-              placeholder: "A compact three-day strength rotation.",
-              onChange: (description) =>
-                setFitnessCustomPlanDraft((draft) => ({ ...draft, description })),
-            })}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {renderTextInput({
-                label: "Goal",
-                value: fitnessCustomPlanDraft.goal,
-                placeholder: "Strength",
-                onChange: (goal) =>
-                  setFitnessCustomPlanDraft((draft) => ({ ...draft, goal })),
-              })}
-              {renderSelect({
-                label: "Level",
-                value: fitnessCustomPlanDraft.level,
-                options: ["Beginner", "Intermediate", "Advanced"] as const,
-                onChange: (level) =>
-                  setFitnessCustomPlanDraft((draft) => ({ ...draft, level })),
-              })}
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {renderTextInput({
-                label: "Equipment",
-                value: fitnessCustomPlanDraft.equipment,
-                placeholder: "Full gym",
-                onChange: (equipment) =>
-                  setFitnessCustomPlanDraft((draft) => ({ ...draft, equipment })),
-              })}
-              {renderTextInput({
-                label: "Days/Week",
-                value: fitnessCustomPlanDraft.daysPerWeek,
-                type: "number",
-                onChange: (daysPerWeek) =>
-                  setFitnessCustomPlanDraft((draft) => ({ ...draft, daysPerWeek })),
-              })}
-              {renderTextInput({
-                label: "Minutes",
-                value: fitnessCustomPlanDraft.sessionDurationMinutes,
-                type: "number",
-                onChange: (sessionDurationMinutes) =>
-                  setFitnessCustomPlanDraft((draft) => ({
+                  exercises: draft.exercises.map((exercise, exerciseIndex) =>
+                    exerciseIndex === index ? { ...exercise, ...patch } : exercise,
+                  ),
+                }));
+              const addRoutineExercise = (exercise: FitnessExerciseSample) => {
+                setFitnessCustomRoutineDraft((draft) => {
+                  const exerciseId = getFitnessExerciseStableId(exercise);
+                  if (draft.exercises.some((item) => item.exerciseId === exerciseId)) {
+                    return draft;
+                  }
+                  return {
                     ...draft,
-                    sessionDurationMinutes,
-                  })),
-              })}
-            </div>
-            {renderTextarea({
-              label: "Routine Sequence",
-              value: fitnessCustomPlanDraft.routinesText,
-              rows: 5,
-              placeholder: "Upper Body\nLower Body\nFull Body Foundation",
-              onChange: (routinesText) =>
-                setFitnessCustomPlanDraft((draft) => ({ ...draft, routinesText })),
-            })}
-            {renderFlowActions(() => void saveCustomFitnessPlan())}
-          </section>
-        ) : null}
+                    exercises: [
+                      ...draft.exercises,
+                      getDefaultFitnessRoutineExerciseDraft(exercise),
+                    ],
+                  };
+                });
+              };
+              const renderPickerExercise = (exercise: FitnessExerciseSample) => {
+                const exerciseId = getFitnessExerciseStableId(exercise);
+                const isSelected = selectedExerciseIds.has(exerciseId);
+                return (
+                  <button
+                    key={exerciseId}
+                    type="button"
+                    disabled={isSelected}
+                    onClick={() => addRoutineExercise(exercise)}
+                    className={cn(
+                      "flex min-h-11 w-full items-center gap-2 border-t border-white/[0.04] px-2.5 py-2 text-left outline-none transition first:border-t-0 focus-visible:ring-1 focus-visible:ring-white/16",
+                      isSelected
+                        ? "bg-white/[0.055] text-white/58"
+                        : "hover:bg-white/[0.035] text-white/82",
+                    )}
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54">
+                      {isSelected ? (
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {exercise.name}
+                      </span>
+                      <span className="block truncate text-[11px] font-medium text-white/38">
+                        {exercise.equipment} · {exercise.primaryArea}
+                      </span>
+                    </span>
+                  </button>
+                );
+              };
 
-        {activeFitnessCustomLibrary &&
+              return (
+                <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+                  {renderTextInput({
+                    label: "Routine name",
+                    value: fitnessCustomRoutineDraft.title,
+                    placeholder: "Upper Pull Accessories",
+                    onChange: (title) =>
+                      setFitnessCustomRoutineDraft((draft) => ({ ...draft, title })),
+                  })}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/38">
+                        Workout exercises
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsFitnessRoutineExercisePickerOpen(true)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
+                      >
+                        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                        Add exercise
+                      </button>
+                    </div>
+
+                    {isFitnessRoutineExercisePickerOpen ? (
+                      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/34">
+                        <div className="flex items-center gap-2 border-b border-white/[0.05] p-2">
+                          <Search className="h-4 w-4 shrink-0 text-white/34" aria-hidden="true" />
+                          <input
+                            value={fitnessCustomRoutineDraft.exerciseSearch}
+                            placeholder="Search exercises"
+                            onChange={(event) =>
+                              setFitnessCustomRoutineDraft((draft) => ({
+                                ...draft,
+                                exerciseSearch: event.target.value,
+                              }))
+                            }
+                            className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.07] bg-black/36 px-3 text-sm font-medium text-white/82 outline-none placeholder:text-white/24 focus:border-white/[0.16]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsFitnessRoutineExercisePickerOpen(false)}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58"
+                            aria-label="Done adding exercises"
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto">
+                          {myExercises.length > 0 ? (
+                            <div>
+                              <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                                My Exercises
+                              </p>
+                              {myExercises.map(renderPickerExercise)}
+                            </div>
+                          ) : null}
+                          {favoriteExercises.length > 0 ? (
+                            <div className="border-t border-white/[0.045]">
+                              <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                                Favorites
+                              </p>
+                              {favoriteExercises.map(renderPickerExercise)}
+                            </div>
+                          ) : null}
+                          {builtInExerciseGroups.map((group) => (
+                            <div key={group.label} className="border-t border-white/[0.045]">
+                              <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                                {group.label}
+                              </p>
+                              {group.exercises.slice(0, 18).map(renderPickerExercise)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {fitnessCustomRoutineDraft.exercises.length > 0 ? (
+                      <DndContext
+                        sensors={fitnessRoutineExerciseDragSensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(event) => {
+                          const { active, over } = event;
+                          if (!over || active.id === over.id) return;
+                          setFitnessCustomRoutineDraft((draft) => {
+                            const oldIndex = draft.exercises.findIndex(
+                              (exercise) => exercise.exerciseId === active.id,
+                            );
+                            const newIndex = draft.exercises.findIndex(
+                              (exercise) => exercise.exerciseId === over.id,
+                            );
+                            if (oldIndex < 0 || newIndex < 0) return draft;
+                            return {
+                              ...draft,
+                              exercises: arrayMove(draft.exercises, oldIndex, newIndex),
+                            };
+                          });
+                        }}
+                      >
+                        <SortableContext
+                          items={fitnessCustomRoutineDraft.exercises.map(
+                            (exercise) => exercise.exerciseId,
+                          )}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-2">
+                            {fitnessCustomRoutineDraft.exercises.map((exercise, index) => {
+                              const sourceExercise = allFitnessExerciseByStableId.get(
+                                exercise.exerciseId,
+                              );
+                              const isInvalid = fitnessCustomRoutineInvalidExerciseIds.has(
+                                exercise.exerciseId,
+                              );
+                              return (
+                                <SortableFitnessRoutineExerciseRow
+                                  key={exercise.exerciseId}
+                                  id={exercise.exerciseId}
+                                >
+                                  {({ attributes, listeners, setActivatorNodeRef }) => (
+                                    <div
+                                      className={cn(
+                                        "rounded-xl border bg-black/28 p-2.5",
+                                        isInvalid
+                                          ? "border-red-300/35"
+                                          : "border-white/[0.055]",
+                                      )}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          ref={setActivatorNodeRef}
+                                          {...attributes}
+                                          {...listeners}
+                                          className="flex h-8 w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-white/38 outline-none hover:bg-white/[0.05] hover:text-white/72 active:cursor-grabbing"
+                                          aria-label={`Reorder ${exercise.name}`}
+                                        >
+                                          <GripVertical className="h-4 w-4" aria-hidden="true" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setFitnessCustomRoutineEditingExerciseId(
+                                              exercise.exerciseId,
+                                            )
+                                          }
+                                          className="min-w-0 flex-1 text-left outline-none"
+                                        >
+                                          <span className="block truncate text-sm font-semibold text-white/84">
+                                            {exercise.name}
+                                          </span>
+                                          <span className="mt-0.5 block truncate text-xs font-medium text-white/42">
+                                            {formatFitnessRoutinePrescriptionSummary(exercise)}
+                                          </span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setFitnessCustomRoutineEditingExerciseId(
+                                              exercise.exerciseId,
+                                            )
+                                          }
+                                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54"
+                                          aria-label={`Edit ${exercise.name}`}
+                                        >
+                                          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setFitnessCustomRoutineDraft((draft) => ({
+                                              ...draft,
+                                              exercises: draft.exercises.filter(
+                                                (item) =>
+                                                  item.exerciseId !== exercise.exerciseId,
+                                              ),
+                                            }))
+                                          }
+                                          aria-label={`Remove ${exercise.name}`}
+                                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-300/10 bg-red-500/[0.06] text-red-100/70"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                        </button>
+                                      </div>
+                                      <div className="mt-2 flex items-center justify-between gap-2 pl-9">
+                                        <p className="min-w-0 truncate text-[11px] font-medium text-white/36">
+                                          {sourceExercise?.equipment ?? exercise.source} ·{" "}
+                                          {sourceExercise?.primaryArea ?? "Unresolved"}
+                                        </p>
+                                        <div className="flex shrink-0 gap-1">
+                                          <button
+                                            type="button"
+                                            disabled={index === 0}
+                                            onClick={() =>
+                                              setFitnessCustomRoutineDraft((draft) => ({
+                                                ...draft,
+                                                exercises: arrayMove(
+                                                  draft.exercises,
+                                                  index,
+                                                  Math.max(0, index - 1),
+                                                ),
+                                              }))
+                                            }
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54 disabled:opacity-30"
+                                            aria-label={`Move ${exercise.name} up`}
+                                          >
+                                            <ChevronLeft
+                                              className="h-3.5 w-3.5 rotate-90"
+                                              aria-hidden="true"
+                                            />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              index ===
+                                              fitnessCustomRoutineDraft.exercises.length - 1
+                                            }
+                                            onClick={() =>
+                                              setFitnessCustomRoutineDraft((draft) => ({
+                                                ...draft,
+                                                exercises: arrayMove(
+                                                  draft.exercises,
+                                                  index,
+                                                  Math.min(
+                                                    draft.exercises.length - 1,
+                                                    index + 1,
+                                                  ),
+                                                ),
+                                              }))
+                                            }
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54 disabled:opacity-30"
+                                            aria-label={`Move ${exercise.name} down`}
+                                          >
+                                            <ChevronLeft
+                                              className="h-3.5 w-3.5 -rotate-90"
+                                              aria-hidden="true"
+                                            />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </SortableFitnessRoutineExerciseRow>
+                              );
+                            })}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                    ) : (
+                      <p className="rounded-xl border border-dashed border-white/[0.08] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
+                        Add exercises to build this routine.
+                      </p>
+                    )}
+                  </div>
+
+                  {editingExercise ? (
+                    <div className="rounded-xl border border-white/[0.06] bg-black/34 p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-white/84">
+                            {editingExercise.name}
+                          </p>
+                          <p className="text-xs font-medium text-white/38">
+                            {formatFitnessRoutinePrescriptionSummary(editingExercise)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFitnessCustomRoutineEditingExerciseId(null)}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58"
+                          aria-label="Close prescription editor"
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {renderTextInput({
+                          label: "Sets",
+                          value: editingExercise.sets,
+                          type: "number",
+                          onChange: (sets) => updateRoutineExercise(editingIndex, { sets }),
+                        })}
+                        {editingUsesDuration
+                          ? renderTextInput({
+                              label: "Target duration",
+                              value: editingExercise.durationSeconds,
+                              type: "number",
+                              onChange: (durationSeconds) =>
+                                updateRoutineExercise(editingIndex, {
+                                  durationSeconds,
+                                  reps: "",
+                                }),
+                            })
+                          : renderTextInput({
+                              label: "Target reps",
+                              value: editingExercise.reps,
+                              type: "number",
+                              onChange: (reps) =>
+                                updateRoutineExercise(editingIndex, {
+                                  reps,
+                                  durationSeconds: "",
+                                }),
+                            })}
+                      </div>
+                      <details className="mt-3 rounded-xl border border-white/[0.055] bg-white/[0.025] p-2">
+                        <summary className="cursor-pointer select-none text-xs font-semibold text-white/58">
+                          Advanced
+                        </summary>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {renderSelect({
+                            label: "Role",
+                            value: editingExercise.role,
+                            options: ["warmup", "main", "accessory", "finisher"] as const,
+                            onChange: (role) => updateRoutineExercise(editingIndex, { role }),
+                          })}
+                          {renderTextInput({
+                            label: "Rest seconds",
+                            value: editingExercise.restSeconds,
+                            type: "number",
+                            onChange: (restSeconds) =>
+                              updateRoutineExercise(editingIndex, { restSeconds }),
+                          })}
+                        </div>
+                        <div className="mt-2">
+                          {renderTextarea({
+                            label: "Instruction",
+                            value: editingExercise.instruction,
+                            rows: 2,
+                            placeholder: "Pause at the top.",
+                            onChange: (instruction) =>
+                              updateRoutineExercise(editingIndex, { instruction }),
+                          })}
+                        </div>
+                      </details>
+                    </div>
+                  ) : null}
+
+                  <details className="rounded-xl border border-white/[0.06] bg-black/28 p-3">
+                    <summary className="cursor-pointer select-none text-sm font-semibold text-white/76">
+                      Routine details
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      {renderTextarea({
+                        label: "Description",
+                        value: fitnessCustomRoutineDraft.description,
+                        placeholder: "A compact upper-body session.",
+                        onChange: (description) =>
+                          setFitnessCustomRoutineDraft((draft) => ({
+                            ...draft,
+                            description,
+                          })),
+                      })}
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {renderSelect({
+                          label: "Goal",
+                          value: fitnessCustomRoutineDraft.goal,
+                          options: [
+                            "Foundation",
+                            "Hypertrophy",
+                            "Strength",
+                            "Power",
+                            "Conditioning",
+                            "Mobility",
+                            "Recovery",
+                          ] as const,
+                          onChange: (goal) =>
+                            setFitnessCustomRoutineDraft((draft) => ({ ...draft, goal })),
+                        })}
+                        {renderSelect({
+                          label: "Level",
+                          value: fitnessCustomRoutineDraft.level,
+                          options: ["Beginner", "Intermediate", "Advanced"] as const,
+                          onChange: (level) =>
+                            setFitnessCustomRoutineDraft((draft) => ({ ...draft, level })),
+                        })}
+                      </div>
+                      <div className="space-y-2">
+                        <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+                          Duration
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(["automatic", "custom"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() =>
+                                setFitnessCustomRoutineDraft((draft) => ({
+                                  ...draft,
+                                  durationMode: mode,
+                                  durationMinutes:
+                                    mode === "custom"
+                                      ? draft.durationMinutes || String(estimatedDuration)
+                                      : "",
+                                }))
+                              }
+                              className={cn(
+                                "h-9 rounded-lg border px-3 text-xs font-semibold capitalize outline-none",
+                                fitnessCustomRoutineDraft.durationMode === mode
+                                  ? "border-white/[0.18] bg-white/[0.11] text-white/84"
+                                  : "border-white/[0.06] bg-white/[0.035] text-white/54",
+                              )}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                        {fitnessCustomRoutineDraft.durationMode === "custom"
+                          ? renderTextInput({
+                              label: "Custom duration",
+                              value: fitnessCustomRoutineDraft.durationMinutes,
+                              type: "number",
+                              onChange: (durationMinutes) =>
+                                setFitnessCustomRoutineDraft((draft) => ({
+                                  ...draft,
+                                  durationMinutes,
+                                })),
+                            })
+                          : null}
+                      </div>
+                      <div className="space-y-1 rounded-lg border border-white/[0.055] bg-white/[0.025] p-2.5 text-xs font-medium text-white/48">
+                        <p>Estimated duration: {estimatedDuration} min</p>
+                        <p>
+                          Equipment:{" "}
+                          {equipmentSummary.length > 0 ? equipmentSummary.join(" · ") : "None"}
+                        </p>
+                        <p>
+                          Emphasis:{" "}
+                          {muscleSummary.length > 0 ? muscleSummary.join(" · ") : "None"}
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                  {renderFlowActions(() => void saveCustomFitnessRoutine())}
+                </section>
+              );
+            })()
+          : null}
+
+        {fitnessCustomFlow === "plan"
+          ? (() => {
+              const planRoutineEntries = fitnessCustomPlanDraft.routines.map((entry) => ({
+                entry,
+                routine: getFitnessRoutineByPlanDraftEntry(entry),
+              }));
+              const sequenceLabel =
+                planRoutineEntries.map(({ entry, routine }) => routine?.title ?? entry.title).join(" → ") ||
+                "No routines selected";
+              const minDaysPerWeek = Number.parseInt(fitnessCustomPlanDraft.minDaysPerWeek, 10);
+              const maxDaysPerWeek = Number.parseInt(fitnessCustomPlanDraft.maxDaysPerWeek, 10);
+              const allowedDaysPerWeek =
+                Number.isInteger(minDaysPerWeek) &&
+                Number.isInteger(maxDaysPerWeek) &&
+                minDaysPerWeek <= maxDaysPerWeek
+                  ? Array.from(
+                      { length: maxDaysPerWeek - minDaysPerWeek + 1 },
+                      (_, index) => minDaysPerWeek + index,
+                    ).filter((day) => day >= 1 && day <= 7)
+                  : [];
+              const recommendationLabel =
+                fitnessCustomPlanDraft.recommendedDaysPerWeek.length === 0
+                  ? "Select recommendation"
+                  : fitnessCustomPlanDraft.recommendedDaysPerWeek.length === 1
+                    ? `${fitnessCustomPlanDraft.recommendedDaysPerWeek[0]} days`
+                    : `${fitnessCustomPlanDraft.recommendedDaysPerWeek.join(" and ")} days`;
+              const routineDurations = planRoutineEntries
+                .map(({ routine }) => routine?.durationMinutes)
+                .filter((duration): duration is number => Boolean(duration && duration > 0));
+              const averageDuration =
+                routineDurations.length > 0
+                  ? Math.round(
+                      routineDurations.reduce((sum, duration) => sum + duration, 0) /
+                        routineDurations.length,
+                    )
+                  : null;
+              const fullRotationDuration =
+                routineDurations.length > 0
+                  ? routineDurations.reduce((sum, duration) => sum + duration, 0)
+                  : null;
+              const metadataValues = (field: "equipment" | "primaryArea") => {
+                const values: string[] = [];
+                planRoutineEntries.forEach(({ routine }) => {
+                  routine?.exercises.forEach((exercise) => {
+                    const sourceExercise =
+                      (exercise.exerciseId
+                        ? allFitnessExerciseByStableId.get(exercise.exerciseId)
+                        : undefined) ?? allFitnessExerciseByName.get(exercise.name);
+                    const rawValue =
+                      field === "equipment" ? sourceExercise?.equipment : sourceExercise?.primaryArea;
+                    rawValue
+                      ?.split(/[,/·]+/)
+                      .map((value) => value.trim())
+                      .filter(Boolean)
+                      .forEach((value) => {
+                        if (!values.some((current) => current.toLowerCase() === value.toLowerCase())) {
+                          values.push(value);
+                        }
+                      });
+                  });
+                });
+                return values.slice(0, 6);
+              };
+              const equipmentSummary = metadataValues("equipment");
+              const muscleSummary = metadataValues("primaryArea");
+              const query = fitnessCustomPlanDraft.routineSearch.trim().toLowerCase();
+              const matchesRoutineQuery = (routine: FitnessRoutineTemplate) =>
+                !query ||
+                `${routine.title} ${routine.goal} ${routine.level} ${routine.equipment}`
+                  .toLowerCase()
+                  .includes(query);
+              const pickerGroups = [
+                ...(customFitnessRoutineTemplates.length > 0
+                  ? [
+                      {
+                        id: "custom" as const,
+                        title: "My Routines",
+                        routines: customFitnessRoutineTemplates.filter(matchesRoutineQuery),
+                      },
+                    ]
+                  : []),
+                ...FITNESS_ROUTINE_GROUPS.map((group) => ({
+                  ...group,
+                  routines: group.routines.filter(matchesRoutineQuery),
+                })),
+              ].filter((group) => group.routines.length > 0);
+              const addPlanRoutine = (
+                routine: FitnessRoutineTemplate,
+                allowDuplicate = false,
+              ) => {
+                setFitnessCustomPlanDraft((draft) => {
+                  const source = routine.group === "custom" ? "custom" : "creator";
+                  const selectedAlready = draft.routines.some(
+                    (entry) => entry.routineId === routine.id && entry.source === source,
+                  );
+                  if (!allowDuplicate && !fitnessPlanRoutineReplaceEntryId && selectedAlready) {
+                    return draft;
+                  }
+                  const nextEntry: FitnessCustomPlanRoutineDraft = {
+                    id: fitnessPlanRoutineReplaceEntryId
+                      ? fitnessPlanRoutineReplaceEntryId
+                      : slugFitnessCustomLibraryId(
+                          "custom-plan-sequence",
+                          `${routine.id}-${draft.routines.length + 1}`,
+                          new Date().toISOString(),
+                        ),
+                    routineId: routine.id,
+                    title: routine.title,
+                    source,
+                  };
+                  return {
+                    ...draft,
+                    routineSearch: "",
+                    routines: fitnessPlanRoutineReplaceEntryId
+                      ? draft.routines.map((entry) =>
+                          entry.id === fitnessPlanRoutineReplaceEntryId ? nextEntry : entry,
+                        )
+                      : [...draft.routines, nextEntry],
+                  };
+                });
+                setFitnessPlanRoutineReplaceEntryId(null);
+                void hapticSoftTick();
+              };
+              const moveRoutine = (from: number, to: number) => {
+                setFitnessCustomPlanDraft((draft) => ({
+                  ...draft,
+                  routines: arrayMove(draft.routines, from, to),
+                }));
+              };
+
+              return (
+                <section className="flex min-h-[68dvh] flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03]">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 [-webkit-overflow-scrolling:touch]">
+                    {!canCreatePlan ? (
+                      <p className="rounded-xl border border-dashed border-white/[0.08] bg-black/28 px-3 py-3 text-xs font-medium text-white/42">
+                        Create a routine before creating a plan.
+                      </p>
+                    ) : null}
+                    {renderTextInput({
+                      label: "Plan name",
+                      value: fitnessCustomPlanDraft.title,
+                      placeholder: "Three Day Strength",
+                      onChange: (title) =>
+                        setFitnessCustomPlanDraft((draft) => ({ ...draft, title })),
+                    })}
+
+                    <section className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 px-1">
+                        <p className="text-sm font-semibold text-white/82">Routine rotation</p>
+                        <button
+                          ref={fitnessPlanRoutinePickerTriggerRef}
+                          type="button"
+                          onClick={() => setIsFitnessPlanRoutinePickerOpen((isOpen) => !isOpen)}
+                          className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.055] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.08] focus-visible:ring-1 focus-visible:ring-white/18"
+                        >
+                          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                          Add routine
+                        </button>
+                      </div>
+                      {isFitnessPlanRoutinePickerOpen ? (
+                        <div
+                          ref={fitnessPlanRoutinePickerRef}
+                          className="rounded-xl border border-white/[0.075] bg-zinc-950/96 p-2 shadow-[0_20px_54px_-24px_rgba(0,0,0,1)]"
+                        >
+                          {renderTextInput({
+                            label: "Search routines",
+                            value: fitnessCustomPlanDraft.routineSearch,
+                            placeholder: "Search My Routines and built-in groups",
+                            onChange: (routineSearch) =>
+                              setFitnessCustomPlanDraft((draft) => ({ ...draft, routineSearch })),
+                          })}
+                          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+                            {pickerGroups.map((group) => (
+                              <div key={group.id}>
+                                <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/34">
+                                  {group.title}
+                                </p>
+                                <div className="overflow-hidden rounded-lg border border-white/[0.055] bg-black/28">
+                                  {group.routines.map((routine) => {
+                                    const source = routine.group === "custom" ? "custom" : "creator";
+                                    const isSelected = fitnessCustomPlanDraft.routines.some(
+                                      (entry) => entry.routineId === routine.id && entry.source === source,
+                                    );
+                                    const muscles = routine.exercises
+                                      .map((exercise) =>
+                                        ((exercise.exerciseId
+                                          ? allFitnessExerciseByStableId.get(exercise.exerciseId)
+                                          : undefined) ?? allFitnessExerciseByName.get(exercise.name))?.primaryArea,
+                                      )
+                                      .filter((value): value is string => Boolean(value))
+                                      .slice(0, 3)
+                                      .join(" / ");
+                                    return (
+                                      <div
+                                        key={`${source}-${routine.id}`}
+                                        className="flex min-h-12 items-center gap-2 border-t border-white/[0.04] px-2 py-2 first:border-t-0"
+                                      >
+                                        <button
+                                          type="button"
+                                          disabled={isSelected && !fitnessPlanRoutineReplaceEntryId}
+                                          onClick={() => addPlanRoutine(routine)}
+                                          className={cn(
+                                            "flex min-w-0 flex-1 items-center gap-2 text-left outline-none transition",
+                                            isSelected && !fitnessPlanRoutineReplaceEntryId
+                                              ? "text-white/48"
+                                              : "text-white/82 hover:text-white",
+                                          )}
+                                        >
+                                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54">
+                                            {isSelected ? (
+                                              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                                            ) : (
+                                              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                                            )}
+                                          </span>
+                                          <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-sm font-semibold">
+                                              {routine.title}
+                                            </span>
+                                            <span className="block truncate text-[11px] font-medium text-white/38">
+                                              {routine.exercises.length} exercises · {routine.durationMinutes} min
+                                              {muscles ? ` · ${muscles}` : ""}
+                                            </span>
+                                          </span>
+                                        </button>
+                                        {isSelected && !fitnessPlanRoutineReplaceEntryId ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => addPlanRoutine(routine, true)}
+                                            className="h-7 shrink-0 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/62"
+                                          >
+                                            Add another occurrence
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                            {pickerGroups.length === 0 ? (
+                              <p className="rounded-lg border border-dashed border-white/[0.07] bg-black/24 px-3 py-3 text-xs font-medium text-white/42">
+                                No routines match that search.
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFitnessPlanRoutinePickerOpen(false);
+                              setFitnessPlanRoutineReplaceEntryId(null);
+                            }}
+                            className="mt-2 flex h-8 w-full items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.055] text-[11px] font-semibold text-white/68"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <DndContext
+                        sensors={fitnessRoutineExerciseDragSensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(event: DragEndEvent) => {
+                          const activeId = String(event.active.id);
+                          const overId = event.over ? String(event.over.id) : null;
+                          if (!overId || activeId === overId) return;
+                          setFitnessCustomPlanDraft((draft) => {
+                            const oldIndex = draft.routines.findIndex((entry) => entry.id === activeId);
+                            const newIndex = draft.routines.findIndex((entry) => entry.id === overId);
+                            if (oldIndex < 0 || newIndex < 0) return draft;
+                            return { ...draft, routines: arrayMove(draft.routines, oldIndex, newIndex) };
+                          });
+                        }}
+                      >
+                        <SortableContext
+                          items={fitnessCustomPlanDraft.routines.map((routine) => routine.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-2">
+                            {planRoutineEntries.map(({ entry, routine }, index) => (
+                              <SortableFitnessRoutineExerciseRow key={entry.id} id={entry.id}>
+                                {({ attributes, listeners, setActivatorNodeRef }) => (
+                                  <div className="flex items-start gap-2 rounded-xl border border-white/[0.055] bg-black/28 p-2.5">
+                                    <button
+                                      type="button"
+                                      ref={setActivatorNodeRef}
+                                      {...attributes}
+                                      {...listeners}
+                                      aria-label={`Reorder ${routine?.title ?? entry.title}`}
+                                      className="mt-0.5 flex h-8 w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.035] text-white/42"
+                                    >
+                                      <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold text-white/84">
+                                        {routine?.title ?? entry.title}
+                                      </p>
+                                      <p className="truncate text-[11px] font-medium text-white/36">
+                                        {routine
+                                          ? `${routine.exercises.length} exercises · ${routine.durationMinutes} min`
+                                          : "Routine unavailable"}
+                                        {entry.source === "custom" ? " · Custom" : ""}
+                                      </p>
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        <button
+                                          type="button"
+                                          disabled={!routine}
+                                          onClick={() => routine && loadFitnessRoutineTemplate(routine)}
+                                          className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60 disabled:opacity-35"
+                                        >
+                                          Preview Routine
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setFitnessPlanRoutineReplaceEntryId(entry.id);
+                                            setIsFitnessPlanRoutinePickerOpen(true);
+                                          }}
+                                          className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                                        >
+                                          Replace Routine
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => routine && addPlanRoutine(routine, true)}
+                                          disabled={!routine}
+                                          className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60 disabled:opacity-35"
+                                        >
+                                          Add another occurrence
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => moveRoutine(index, Math.max(0, index - 1))}
+                                          disabled={index === 0}
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54 disabled:opacity-30"
+                                          aria-label={`Move ${routine?.title ?? entry.title} up`}
+                                        >
+                                          <ChevronLeft className="h-3.5 w-3.5 rotate-90" aria-hidden="true" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            moveRoutine(
+                                              index,
+                                              Math.min(fitnessCustomPlanDraft.routines.length - 1, index + 1),
+                                            )
+                                          }
+                                          disabled={index === fitnessCustomPlanDraft.routines.length - 1}
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54 disabled:opacity-30"
+                                          aria-label={`Move ${routine?.title ?? entry.title} down`}
+                                        >
+                                          <ChevronLeft className="h-3.5 w-3.5 -rotate-90" aria-hidden="true" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setFitnessCustomPlanDraft((draft) => ({
+                                              ...draft,
+                                              routines: draft.routines.filter((item) => item.id !== entry.id),
+                                            }))
+                                          }
+                                          aria-label={`Remove ${routine?.title ?? entry.title}`}
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-300/10 bg-red-500/[0.06] text-red-100/70"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </SortableFitnessRoutineExerciseRow>
+                            ))}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                      <div className="rounded-xl border border-white/[0.055] bg-white/[0.026] px-3 py-2 text-xs font-semibold leading-5 text-white/66">
+                        {sequenceLabel} → repeat
+                        <span className="mt-0.5 block text-[11px] font-medium text-white/38">
+                          This rotation repeats continuously with no calendar-week reset.
+                        </span>
+                      </div>
+                    </section>
+
+                    <section className="space-y-2">
+                      <p className="px-1 text-sm font-semibold text-white/82">Frequency</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {renderSelect({
+                          label: "Minimum days per week",
+                          value: fitnessCustomPlanDraft.minDaysPerWeek,
+                          options: ["1", "2", "3", "4", "5", "6", "7"] as const,
+                          onChange: (minDaysPerWeek) =>
+                            setFitnessCustomPlanDraft((draft) => {
+                              const min = Number(minDaysPerWeek);
+                              const max = Math.max(min, Number.parseInt(draft.maxDaysPerWeek, 10) || min);
+                              const allowed = Array.from({ length: max - min + 1 }, (_, index) => min + index);
+                              return {
+                                ...draft,
+                                minDaysPerWeek,
+                                maxDaysPerWeek: String(max),
+                                allowedDaysPerWeek: allowed,
+                                recommendedDaysPerWeek: draft.recommendedDaysPerWeek.filter((day) =>
+                                  allowed.includes(day),
+                                ),
+                              };
+                            }),
+                        })}
+                        {renderSelect({
+                          label: "Maximum days per week",
+                          value: fitnessCustomPlanDraft.maxDaysPerWeek,
+                          options: ["1", "2", "3", "4", "5", "6", "7"] as const,
+                          onChange: (maxDaysPerWeek) =>
+                            setFitnessCustomPlanDraft((draft) => {
+                              const max = Number(maxDaysPerWeek);
+                              const min = Math.min(max, Number.parseInt(draft.minDaysPerWeek, 10) || max);
+                              const allowed = Array.from({ length: max - min + 1 }, (_, index) => min + index);
+                              return {
+                                ...draft,
+                                minDaysPerWeek: String(min),
+                                maxDaysPerWeek,
+                                allowedDaysPerWeek: allowed,
+                                recommendedDaysPerWeek: draft.recommendedDaysPerWeek.filter((day) =>
+                                  allowed.includes(day),
+                                ),
+                              };
+                            }),
+                        })}
+                      </div>
+                      <details className="rounded-xl border border-white/[0.06] bg-black/28 p-3">
+                        <summary className="cursor-pointer select-none text-xs font-semibold text-white/72">
+                          Recommended frequency: {recommendationLabel}
+                        </summary>
+                        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                          {allowedDaysPerWeek.map((day) => (
+                            <label
+                              key={`plan-recommended-${day}`}
+                              className="flex h-8 cursor-pointer items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.035] text-xs font-semibold text-white/68"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={fitnessCustomPlanDraft.recommendedDaysPerWeek.includes(day)}
+                                onChange={() =>
+                                  setFitnessCustomPlanDraft((draft) => ({
+                                    ...draft,
+                                    recommendedDaysPerWeek: draft.recommendedDaysPerWeek.includes(day)
+                                      ? draft.recommendedDaysPerWeek.filter((value) => value !== day)
+                                      : [...draft.recommendedDaysPerWeek, day].sort((a, b) => a - b),
+                                  }))
+                                }
+                                className="sr-only"
+                              />
+                              {day} {day === 1 ? "day" : "days"}
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                    </section>
+
+                    <section className="rounded-xl border border-white/[0.055] bg-white/[0.025] p-3 text-xs font-medium leading-5 text-white/58">
+                      <p className="mb-1 text-sm font-semibold text-white/82">Derived Plan summary</p>
+                      <p>{fitnessCustomPlanDraft.routines.length} workouts per rotation</p>
+                      {averageDuration ? <p>Average session: {averageDuration} min</p> : null}
+                      {fullRotationDuration ? (
+                        <p>Full rotation: approximately {fullRotationDuration} min</p>
+                      ) : null}
+                      {equipmentSummary.length > 0 ? (
+                        <p>Equipment: {equipmentSummary.join(" · ")}</p>
+                      ) : null}
+                      {muscleSummary.length > 0 ? (
+                        <p>Emphasis: {muscleSummary.join(" · ")}</p>
+                      ) : null}
+                    </section>
+
+                    <details className="rounded-xl border border-white/[0.06] bg-black/28 p-3">
+                      <summary className="cursor-pointer select-none text-sm font-semibold text-white/76">
+                        Plan details
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        {renderTextarea({
+                          label: "Description",
+                          value: fitnessCustomPlanDraft.description,
+                          placeholder: "A compact three-day strength rotation.",
+                          onChange: (description) =>
+                            setFitnessCustomPlanDraft((draft) => ({ ...draft, description })),
+                        })}
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {renderSelect({
+                            label: "Goal",
+                            value: fitnessCustomPlanDraft.goal,
+                            options: [
+                              "General fitness",
+                              "Build muscle",
+                              "Strength",
+                              "Athleticism",
+                              "Mobility",
+                            ] as const,
+                            onChange: (goal) =>
+                              setFitnessCustomPlanDraft((draft) => ({ ...draft, goal })),
+                          })}
+                          {renderSelect({
+                            label: "Level",
+                            value: fitnessCustomPlanDraft.level,
+                            options: ["Beginner", "Intermediate", "Advanced"] as const,
+                            onChange: (level) =>
+                              setFitnessCustomPlanDraft((draft) => ({ ...draft, level })),
+                          })}
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                  {renderFlowActions(() => void saveCustomFitnessPlan())}
+                </section>
+              );
+            })()
+          : null}
+
+        {fitnessCustomFlow === "hub" &&
+        activeFitnessCustomLibrary &&
         (activeFitnessCustomLibrary.exercises.length > 0 ||
           activeFitnessCustomLibrary.routines.length > 0 ||
           activeFitnessCustomLibrary.plans.length > 0) ? (
@@ -13118,7 +15036,11 @@ export function NoteDatabaseEntrySheet({
                 </button>
                 {isGroupOpen ? (
                   <div className="space-y-2 border-t border-white/[0.045] bg-black/20 p-2">
-                    {routineGroup.routines.map((routine) => (
+                    {routineGroup.routines.map((routine) => {
+                      const customRoutine = activeFitnessCustomLibrary?.routines.find(
+                        (item) => item.id === routine.id,
+                      );
+                      return (
                       <div
                         key={routine.id}
                         className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
@@ -13139,8 +15061,34 @@ export function NoteDatabaseEntrySheet({
                             Use
                           </button>
                         </div>
+                        {customRoutine ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => editCustomFitnessRoutine(customRoutine)}
+                              className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => duplicateCustomFitnessRoutine(customRoutine)}
+                              className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeCustomFitnessRoutine(customRoutine)}
+                              className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[11px] font-semibold text-red-100/70"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 ) : null}
               </Fragment>
@@ -13219,13 +15167,19 @@ export function NoteDatabaseEntrySheet({
         <div className="space-y-2">
           {allFitnessPlanTemplates.map((plan) => {
             const matchLabel = getFitnessPlanMatchLabel(plan, activeFitnessProfile);
+            const customPlan = activeFitnessCustomLibrary?.plans.find(
+              (item) => item.id === plan.id,
+            );
 
             return (
-              <button
+              <div
                 key={plan.id}
+                className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
+              >
+              <button
                 type="button"
                 onClick={() => openFitnessPlanPreview(plan)}
-                className="w-full rounded-xl border border-white/[0.055] bg-black/42 p-3 text-left outline-none transition hover:border-white/[0.1] hover:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-white/18"
+                className="w-full text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/18"
               >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -13260,6 +15214,32 @@ export function NoteDatabaseEntrySheet({
                 </span>
               </div>
             </button>
+            {customPlan ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => editCustomFitnessPlan(customPlan)}
+                  className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => duplicateCustomFitnessPlan(customPlan)}
+                  className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void removeCustomFitnessPlan(customPlan)}
+                  className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[11px] font-semibold text-red-100/70"
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
+            </div>
             );
           })}
         </div>
@@ -14343,6 +16323,17 @@ export function NoteDatabaseEntrySheet({
       },
       {},
     );
+    const nextRoles = log.exercises.reduce<
+      Record<string, FitnessCustomRoutineExerciseDraft["role"]>
+    >((roles, exerciseValue) => {
+      const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
+      const exerciseId =
+        typeof exerciseValue.exerciseId === "string" ? exerciseValue.exerciseId : exerciseName;
+      if (exerciseValue.sets?.some((set) => set.isWarmup === true)) {
+        roles[exerciseId] = "warmup";
+      }
+      return roles;
+    }, {});
     const resultSets: FitnessWorkoutFocusSessionResultPayload["sets"] =
       log.exercises.flatMap((exerciseValue) => {
       const exerciseName = typeof exerciseValue.name === "string" ? exerciseValue.name : "";
@@ -14371,6 +16362,7 @@ export function NoteDatabaseEntrySheet({
 
     setSelectedFitnessWorkoutExercises(nextExercises);
     setFitnessWorkoutExerciseDetailsById(nextDetails);
+    setFitnessWorkoutExerciseRolesById(nextRoles);
     setSelectedFitnessRoutineName(log.workoutName ?? "Workout");
     setSelectedFitnessSourceRoutineName(log.sourceRoutineName ?? null);
     setFitnessWorkoutEntryContext(context);

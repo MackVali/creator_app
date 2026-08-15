@@ -2066,11 +2066,48 @@ const overviewXpChartConfig = {
     label: "Total XP",
     color: "#86efac",
   },
+  xpGained: {
+    label: "XP Gained",
+    color: "#67e8f9",
+  },
 } satisfies ChartConfig;
+
+type OverviewXpChartMode = "totalXp" | "xpGained";
+
+const OVERVIEW_XP_CHART_MODES: Array<{
+  value: OverviewXpChartMode;
+  label: string;
+  heading: string;
+  seriesLabel: string;
+  summarySuffix: string;
+  emptyCopy: string;
+}> = [
+  {
+    value: "totalXp",
+    label: "TOTAL XP",
+    heading: "Total XP over time",
+    seriesLabel: "Total XP",
+    summarySuffix: "XP total",
+    emptyCopy: "No XP recorded in this range",
+  },
+  {
+    value: "xpGained",
+    label: "XP GAINED",
+    heading: "XP gained over time",
+    seriesLabel: "XP Gained",
+    summarySuffix: "XP gained",
+    emptyCopy: "No XP gained in this range",
+  },
+];
+
+const OVERVIEW_XP_CHART_MODE_META = Object.fromEntries(
+  OVERVIEW_XP_CHART_MODES.map((mode) => [mode.value, mode])
+) as Record<OverviewXpChartMode, (typeof OVERVIEW_XP_CHART_MODES)[number]>;
 
 type OverviewXpChartDataPoint = {
   date: string;
   totalXp: number;
+  xpGained: number;
   point: AnalyticsOverviewDailyPoint;
 };
 
@@ -2081,6 +2118,7 @@ type OverviewXpTooltipContentProps = {
   }>;
   label?: string | number;
   range: AnalyticsRange;
+  mode: OverviewXpChartMode;
 };
 
 function stopOverviewChartGesturePropagation(
@@ -2089,7 +2127,7 @@ function stopOverviewChartGesturePropagation(
   event.stopPropagation();
 }
 
-function OverviewLineChart({
+export function OverviewLineChart({
   points,
   range,
   onSelectedPointIndexChange,
@@ -2098,28 +2136,40 @@ function OverviewLineChart({
   range: AnalyticsRange;
   onSelectedPointIndexChange: (index: number | null) => void;
 }) {
+  const [mode, setMode] = useState<OverviewXpChartMode>("totalXp");
+  const modeMeta = OVERVIEW_XP_CHART_MODE_META[mode];
   const totalXp =
     points.length > 0
       ? Math.max(0, Number(points[points.length - 1]?.totalXp ?? 0))
       : 0;
-  const totalXpValues = useMemo(
-    () => points.map((point) => Math.max(0, Number(point.totalXp ?? 0))),
+  const xpGainedTotal = useMemo(
+    () =>
+      points.reduce(
+        (sum, point) => sum + Math.max(0, Number(point.xpGained ?? 0)),
+        0
+      ),
     [points]
   );
-  const rawMaxValue = Math.max(0, ...totalXpValues);
+  const chartValues = useMemo(
+    () => points.map((point) => Math.max(0, Number(point[mode] ?? 0))),
+    [mode, points]
+  );
+  const summaryValue = mode === "totalXp" ? totalXp : xpGainedTotal;
+  const rawMaxValue = Math.max(0, ...chartValues);
   const isEmpty = rawMaxValue <= 0;
   const chartData = useMemo<OverviewXpChartDataPoint[]>(
     () =>
-      points.map((point, index) => ({
+      points.map((point) => ({
         date: point.date,
-        totalXp: totalXpValues[index] ?? 0,
+        totalXp: Math.max(0, Number(point.totalXp ?? 0)),
+        xpGained: Math.max(0, Number(point.xpGained ?? 0)),
         point,
       })),
-    [points, totalXpValues]
+    [points]
   );
   const yAxisScale = useMemo(() => {
-    return getTotalXpYAxisScale(totalXpValues);
-  }, [totalXpValues]);
+    return getTotalXpYAxisScale(chartValues);
+  }, [chartValues]);
   const xAxisTicks = useMemo(
     () =>
       getTrendAxisLabelIndices(range, points)
@@ -2143,21 +2193,48 @@ function OverviewLineChart({
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <div className="text-sm font-medium text-zinc-100 sm:text-base">
-              Total XP over time
+              {modeMeta.heading}
             </div>
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
-              {formatAnalyticsRangeLabel(range)} · {formatCompactNumber(totalXp)} XP
+              {formatAnalyticsRangeLabel(range)} ·{" "}
+              {formatCompactNumber(summaryValue)} {modeMeta.summarySuffix}
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-medium text-zinc-500 sm:text-[11px]">
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="h-1.5 w-4 rounded-full shadow-[0_0_12px_rgba(255,255,255,0.12)]"
-                style={{ backgroundColor: overviewXpChartConfig.totalXp.color }}
+                style={{ backgroundColor: overviewXpChartConfig[mode].color }}
               />
-              {overviewXpChartConfig.totalXp.label}
+              {modeMeta.seriesLabel}
             </span>
           </div>
+        </div>
+        <div
+          className="inline-flex w-fit shrink-0 rounded-full border border-white/[0.08] bg-black/30 p-0.5"
+          aria-label="XP chart mode"
+        >
+          {OVERVIEW_XP_CHART_MODES.map((option) => {
+            const isActive = option.value === mode;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isActive}
+                aria-label={`Show ${option.seriesLabel}`}
+                onClick={() => setMode(option.value)}
+                className={classNames(
+                  "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase leading-none transition-colors sm:px-3",
+                  isActive
+                    ? "bg-zinc-100 text-zinc-950 shadow-[0_6px_16px_rgba(255,255,255,0.12)]"
+                    : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -2178,6 +2255,7 @@ function OverviewLineChart({
           <ChartContainer
             config={overviewXpChartConfig}
             className="h-[214px] w-full aspect-auto sm:h-[230px] md:h-[238px]"
+            aria-label={`${modeMeta.seriesLabel} chart`}
           >
             <AreaChart
               accessibilityLayer
@@ -2191,17 +2269,17 @@ function OverviewLineChart({
                 <linearGradient id="fillTotalXp" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="var(--color-totalXp)"
+                    stopColor={`var(--color-${mode})`}
                     stopOpacity={0.34}
                   />
                   <stop
                     offset="56%"
-                    stopColor="var(--color-totalXp)"
+                    stopColor={`var(--color-${mode})`}
                     stopOpacity={0.11}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--color-totalXp)"
+                    stopColor={`var(--color-${mode})`}
                     stopOpacity={0}
                   />
                 </linearGradient>
@@ -2241,15 +2319,16 @@ function OverviewLineChart({
                   <OverviewXpTooltipContent
                     {...props}
                     range={range}
+                    mode={mode}
                   />
                 )}
               />
               <Area
-                dataKey="totalXp"
-                name="Total XP"
+                dataKey={mode}
+                name={modeMeta.seriesLabel}
                 type="natural"
                 fill="url(#fillTotalXp)"
-                stroke="var(--color-totalXp)"
+                stroke={`var(--color-${mode})`}
                 strokeWidth={2.5}
                 dot={false}
                 activeDot={{
@@ -2266,7 +2345,7 @@ function OverviewLineChart({
           <div className="pointer-events-none absolute inset-0 select-none">
             {isEmpty ? (
               <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium text-zinc-400/90">
-                No XP recorded in this range
+                {modeMeta.emptyCopy}
               </div>
             ) : null}
           </div>
@@ -2285,8 +2364,10 @@ function OverviewXpTooltipContent({
   payload,
   label,
   range,
+  mode,
 }: OverviewXpTooltipContentProps) {
   const point = payload?.[0]?.payload as OverviewXpChartDataPoint | undefined;
+  const modeMeta = OVERVIEW_XP_CHART_MODE_META[mode];
 
   if (!active || !point) {
     return null;
@@ -2302,8 +2383,11 @@ function OverviewXpTooltipContent({
         formatter={(value) => (
           <div className="flex flex-1 items-center justify-between gap-3 leading-none">
             <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-400">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[--color-totalXp]" />
-              <span className="truncate">Total XP</span>
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: overviewXpChartConfig[mode].color }}
+              />
+              <span className="truncate">{modeMeta.seriesLabel}</span>
             </span>
             <span className="font-medium tabular-nums text-zinc-100">
               {formatCompactNumber(Number(value))} XP

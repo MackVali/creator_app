@@ -4,6 +4,8 @@ export const MY_LIST_ITEMS_MIGRATION_STORAGE_PREFIX =
   "creator:my-list:items-migrated-to-supabase";
 export const MY_LIST_MANUAL_ITEM_CONSUMED_EVENT =
   "creator:my-list:manual-item-consumed";
+export const MY_LIST_MANUAL_ITEM_CREATED_EVENT =
+  "creator:my-list:manual-item-created";
 
 const MY_LIST_SOURCE_TYPES = ["GOAL", "PROJECT", "TASK", "HABIT"] as const;
 const MY_LIST_VALID_UUID_PATTERN =
@@ -18,6 +20,11 @@ export type MyListManualItemConsumedDetail = {
   itemId: string;
   createdEntityType: "TASK" | "HABIT";
   createdEntityId: string;
+};
+export type MyListManualItemCreatedDetail = {
+  origin: "manual-my-list-create";
+  userId: string;
+  item: MyListManualStorageItem;
 };
 
 export type MyListManualStorageItem = {
@@ -342,6 +349,103 @@ export async function replaceManualMyListItems({
   }
 }
 
+export async function createManualMyListItem({
+  userId,
+  text,
+  skillId = null,
+  skillName = null,
+  skillIcon = "",
+  priorityId = "MEDIUM",
+  dayBucketId = null,
+  insertAfterRowKey = null,
+}: {
+  userId: string;
+  text: string;
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  priorityId?: string;
+  dayBucketId?: MyListStorageDayBucketId | null;
+  insertAfterRowKey?: string | null;
+}) {
+  const trimmedText = text.trim();
+  if (!trimmedText) {
+    throw new Error("Manual My List item requires text.");
+  }
+
+  const client = getClient();
+  if (!client) throw new Error("Supabase client not available");
+
+  const existingRows = await fetchManualRows(userId);
+  const row: MyListManualStorageItem = {
+    id: createUuid(),
+    done: false,
+    completedAt: null,
+    skillId: skillId?.trim() || null,
+    skillName: skillName?.trim() || null,
+    skillIcon: skillIcon?.trim() || "",
+    priorityId: priorityId.trim() || "MEDIUM",
+    dayBucketId,
+    text: trimmedText,
+    insertAfterRowKey,
+  };
+
+  const { data, error } = await client
+    .from("my_list_items")
+    .insert(manualRowToWrite(userId, row, existingRows.length))
+    .select("*");
+
+  if (error) throw error;
+
+  const savedRow = Array.isArray(data) ? data[0] : null;
+  const savedItem = savedRow
+    ? rowToManualItem(savedRow, row.priorityId) ?? row
+    : row;
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<MyListManualItemCreatedDetail>(
+        MY_LIST_MANUAL_ITEM_CREATED_EVENT,
+        {
+          detail: {
+            origin: "manual-my-list-create",
+            userId,
+            item: savedItem,
+          },
+        }
+      )
+    );
+  }
+
+  return savedItem;
+}
+
+async function resolveManualMyListStorageItemId({
+  userId,
+  itemId,
+}: {
+  userId: string;
+  itemId: string;
+}) {
+  if (isValidMyListUuid(itemId)) return itemId;
+
+  const matchingRows = (await fetchManualRows(userId)).filter((row) => {
+    const metadata = readMetadata(row.metadata);
+    return metadata.local_row_id === itemId;
+  });
+
+  if (matchingRows.length === 1) return matchingRows[0].id;
+  if (matchingRows.length === 0) {
+    throw new Error(
+      `Manual My List delete found no persisted row for local row id ${itemId}`
+    );
+  }
+
+  throw new Error(
+    `Manual My List delete found multiple persisted rows for local row id ${itemId}`
+  );
+}
+
 export async function deleteManualMyListItem({
   userId,
   itemId,
@@ -349,15 +453,18 @@ export async function deleteManualMyListItem({
   userId: string;
   itemId: string;
 }) {
-  const storageItemId = typeof itemId === "string" ? itemId.trim() : "";
-  if (!isValidMyListUuid(storageItemId)) {
-    throw new Error(
-      `Manual My List delete requires a persisted my_list_items.id, received "${itemId}"`
-    );
+  const normalizedItemId = typeof itemId === "string" ? itemId.trim() : "";
+  if (!normalizedItemId) {
+    throw new Error("Manual My List delete requires an item id.");
   }
 
   const client = getClient();
   if (!client) throw new Error("Supabase client not available");
+
+  const storageItemId = await resolveManualMyListStorageItemId({
+    userId,
+    itemId: normalizedItemId,
+  });
 
   const { data, error } = await client
     .from("my_list_items")

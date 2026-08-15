@@ -31,11 +31,11 @@ function isAwardForOccurrence(awardKey: string, stems: string[]) {
   });
 }
 
-function isReversalKey(awardKey: string) {
+export function isReversalKey(awardKey: string) {
   return awardKey.startsWith("reverse:");
 }
 
-function reversalKeyFor(awardKey: string) {
+export function reversalKeyFor(awardKey: string) {
   return `reverse:${awardKey}`;
 }
 

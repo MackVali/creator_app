@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
+  getFoodBrowsePlacements,
   getFoodBrowsePlacementForSection,
   normalizeFoodBrowseAisle,
   normalizeFoodBrowseDepartment,
@@ -18,6 +19,7 @@ const MAX_LIMIT = 50;
 const MAX_SEARCH_FETCH_LIMIT = 80;
 const BROWSE_SCAN_BATCH_SIZE = 200;
 const MAX_BROWSE_SCAN_LIMIT = 5_000;
+const MAX_BROWSE_ALL_LIMIT = 5_000;
 
 type FoodSearchRow = FoodSearchResult & {
   normalized_name: string;
@@ -143,6 +145,59 @@ export async function GET(request: NextRequest) {
   );
 
   if (mode === "browse") {
+    if (searchParams.get("all") === "true") {
+      const foods: FoodSearchResult[] = [];
+      let scannedRows = 0;
+      let reachedEnd = false;
+
+      while (scannedRows < MAX_BROWSE_ALL_LIMIT) {
+        const batchSize = Math.min(
+          BROWSE_SCAN_BATCH_SIZE,
+          MAX_BROWSE_ALL_LIMIT - scannedRows,
+        );
+        const from = scannedRows;
+        const to = from + batchSize - 1;
+        const { data, error } = await supabase
+          .from("foods")
+          .select(
+            "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name,source,metadata",
+          )
+          .eq("is_active", true)
+          .eq("source", "catalog")
+          .is("created_by_user_id", null)
+          .order("name", { ascending: true })
+          .range(from, to);
+
+        if (error) {
+          console.error("Failed to browse all nutrition foods", { error });
+          return NextResponse.json({ error: "Unable to browse foods" }, { status: 500 });
+        }
+
+        const rows = (data ?? []) as FoodSearchRow[];
+        for (const row of rows) {
+          const placements = getFoodBrowsePlacements(row);
+          if (placements.length === 0) {
+            foods.push(mapFoodRow(row));
+            continue;
+          }
+          for (const placement of placements) {
+            foods.push(mapFoodRow(row, placement));
+          }
+        }
+
+        scannedRows += rows.length;
+        if (rows.length < batchSize) {
+          reachedEnd = true;
+          break;
+        }
+      }
+
+      return NextResponse.json({
+        foods,
+        hasMore: !reachedEnd && scannedRows >= MAX_BROWSE_ALL_LIMIT,
+      });
+    }
+
     const department =
       normalizeFoodBrowseDepartment(searchParams.get("department")) ?? "Everyday";
     const aisle =

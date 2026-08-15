@@ -26,6 +26,8 @@ import {
   RefreshCw,
   ShoppingBag,
   Shield,
+  Smartphone,
+  Timer,
   Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -36,6 +38,25 @@ import {
   hapticSoftTick,
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
+import {
+  updateFocusGateSettings,
+  useFocusGateStatus,
+} from "@/lib/focus-gate/client";
+import {
+  getFocusGateAuthorizationStatus,
+  getFocusGateEnforcementState,
+  getFocusGateNativeAvailability,
+  getFocusGateSelectionSummary,
+  presentFocusGateActivityPicker,
+  requestFocusGateAuthorization,
+  syncFocusGateAllowance,
+  type FocusGateNativeAvailability,
+  type FocusGateSelectionSummary,
+} from "@/lib/focus-gate/focusGateNative";
+import type {
+  FocusGateNativeAuthorizationStatus,
+  FocusGateNativeEnforcementState,
+} from "@/lib/focus-gate/types";
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -460,6 +481,8 @@ export default function SettingsPage() {
           />
         </SettingsCard>
       </section>
+
+      <FocusGateSettingsCard />
 
       <section className="grid gap-6 lg:grid-cols-2">
         <SettingsCard
@@ -932,6 +955,436 @@ function SettingsStaticRow({ icon: Icon, title, description, value }: SettingsSt
       )}
     </div>
   );
+}
+
+function FocusGateSettingsCard() {
+  const { status, isLoading, isRefreshing, error, invalidate } = useFocusGateStatus();
+  const [minutesPerXp, setMinutesPerXp] = useState("5");
+  const [dailyMaxMinutes, setDailyMaxMinutes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [availability, setAvailability] =
+    useState<FocusGateNativeAvailability | null>(null);
+  const [authorizationStatus, setAuthorizationStatus] =
+    useState<FocusGateNativeAuthorizationStatus>("unavailable");
+  const [selectionSummary, setSelectionSummary] =
+    useState<FocusGateSelectionSummary | null>(null);
+  const [enforcementState, setEnforcementState] =
+    useState<FocusGateNativeEnforcementState | null>(null);
+  const [nativeBusy, setNativeBusy] = useState(false);
+  const [nativeError, setNativeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!status) return;
+    setMinutesPerXp(String(status.minutesPerXp));
+    setDailyMaxMinutes(
+      status.dailyMaxMinutes === null ? "" : String(status.dailyMaxMinutes)
+    );
+  }, [status]);
+
+  useEffect(() => {
+    const nextAvailability = getFocusGateNativeAvailability();
+    setAvailability(nextAvailability);
+    if (!nextAvailability.canUse) return;
+
+    const loadNativeState = async () => {
+      const [authorization, selection, enforcement] = await Promise.all([
+        getFocusGateAuthorizationStatus(),
+        getFocusGateSelectionSummary(),
+        getFocusGateEnforcementState(),
+      ]);
+      setAuthorizationStatus(authorization.status);
+      setSelectionSummary(selection);
+      setEnforcementState(enforcement);
+    };
+
+    void loadNativeState().catch((error) => {
+      console.error("Failed to load Focus Gate native state:", error);
+      setNativeError(
+        error instanceof Error ? error.message : "Unable to load native Focus Gate state."
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!status) return;
+    const nativeAvailability = getFocusGateNativeAvailability();
+    if (!nativeAvailability.canUse) return;
+
+    void syncFocusGateAllowance({
+        enabled: status.enabled,
+        xpToday: status.xpToday,
+        allowedMinutes: status.allowedMinutes,
+        creatorDayStartsAt: status.creatorDay.startsAt,
+        creatorDayEndsAt: status.creatorDay.endsAt,
+        timezone: status.creatorDay.timezone,
+      })
+      .then((result) => {
+        if (result.ok) {
+          setEnforcementState(result.state);
+          setAuthorizationStatus(result.state.authorizationStatus);
+          setSelectionSummary({
+            selectionStatus: result.state.selectionStatus,
+            hasSelection: result.state.selectionStatus === "configured",
+            applicationCount: result.state.applicationCount ?? null,
+            categoryCount: result.state.categoryCount ?? null,
+            webDomainCount: result.state.webDomainCount ?? null,
+            totalTokenCount: result.state.totalTokenCount ?? null,
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to sync Focus Gate allowance:", error);
+        setNativeError(
+          error instanceof Error ? error.message : "Unable to sync native Focus Gate."
+        );
+      });
+  }, [status]);
+
+  const refreshNativeState = async () => {
+    const [authorization, selection, enforcement] = await Promise.all([
+      getFocusGateAuthorizationStatus(),
+      getFocusGateSelectionSummary(),
+      getFocusGateEnforcementState(),
+    ]);
+    setAuthorizationStatus(authorization.status);
+    setSelectionSummary(selection);
+    setEnforcementState(enforcement);
+  };
+
+  const requestNativeAuthorization = async () => {
+    if (nativeBusy) return;
+    setNativeBusy(true);
+    setNativeError(null);
+    try {
+      const authorization = await requestFocusGateAuthorization();
+      setAuthorizationStatus(authorization.status);
+      await refreshNativeState();
+    } catch (error) {
+      console.error("Failed to request Screen Time authorization:", error);
+      setNativeError(
+        error instanceof Error ? error.message : "Unable to request Screen Time authorization."
+      );
+    } finally {
+      setNativeBusy(false);
+    }
+  };
+
+  const chooseProtectedApps = async () => {
+    if (nativeBusy) return;
+    setNativeBusy(true);
+    setNativeError(null);
+    try {
+      let authorization = authorizationStatus;
+      if (authorization !== "approved") {
+        const result = await requestFocusGateAuthorization();
+        authorization = result.status;
+        setAuthorizationStatus(result.status);
+      }
+      if (authorization !== "approved") {
+        setNativeError("Screen Time authorization is required before choosing protected apps.");
+        return;
+      }
+
+      const result = await presentFocusGateActivityPicker();
+      if (result.ok) {
+        setSelectionSummary(result.summary);
+      }
+      await refreshNativeState();
+      if (status) {
+        const synced = await syncFocusGateAllowance({
+          enabled: status.enabled,
+          xpToday: status.xpToday,
+          allowedMinutes: status.allowedMinutes,
+          creatorDayStartsAt: status.creatorDay.startsAt,
+          creatorDayEndsAt: status.creatorDay.endsAt,
+          timezone: status.creatorDay.timezone,
+        });
+        if (synced.ok) {
+          setEnforcementState(synced.state);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to choose protected apps:", error);
+      setNativeError(
+        error instanceof Error ? error.message : "Unable to choose protected apps."
+      );
+    } finally {
+      setNativeBusy(false);
+    }
+  };
+
+  const saveSettings = async (
+    updates: Parameters<typeof updateFocusGateSettings>[0]
+  ) => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateFocusGateSettings(updates);
+      await invalidate();
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to save Focus Gate settings:", error);
+      void hapticErrorPattern();
+      setSaveError(
+        error instanceof Error ? error.message : "Unable to save Focus Gate."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const commitMinutesPerXp = () => {
+    const parsed = Number(minutesPerXp);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
+      setMinutesPerXp(String(status?.minutesPerXp ?? 5));
+      setSaveError("Minutes per XP must be between 1 and 120.");
+      void hapticWarningPattern();
+      return;
+    }
+    if (parsed !== status?.minutesPerXp) {
+      void saveSettings({ minutesPerXp: parsed });
+    }
+  };
+
+  const commitDailyMax = () => {
+    const trimmed = dailyMaxMinutes.trim();
+    if (!trimmed) {
+      if (status?.dailyMaxMinutes !== null) {
+        void saveSettings({ dailyMaxMinutes: null });
+      }
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1440) {
+      setDailyMaxMinutes(
+        status?.dailyMaxMinutes === null ? "" : String(status?.dailyMaxMinutes ?? "")
+      );
+      setSaveError("Daily maximum must be between 1 and 1440 minutes.");
+      void hapticWarningPattern();
+      return;
+    }
+    if (parsed !== status?.dailyMaxMinutes) {
+      void saveSettings({ dailyMaxMinutes: parsed });
+    }
+  };
+
+  const capReached =
+    status?.dailyMaxMinutes !== null &&
+    status !== null &&
+    status.baseAllowedMinutes >= status.dailyMaxMinutes;
+  const nativeLabel = availability?.canUse
+    ? "iPhone native bridge available"
+    : "iPhone Screen Time setup required";
+  const nativeStatusLabel = focusGateNativeStatusLabel({
+    availability,
+    authorizationStatus,
+    selectionSummary,
+    enforcementState,
+    enabled: status?.enabled ?? false,
+  });
+  const protectedSelectionLabel =
+    selectionSummary?.totalTokenCount === null ||
+    selectionSummary?.totalTokenCount === undefined
+      ? "Not configured"
+      : selectionSummary.totalTokenCount > 0
+        ? `${selectionSummary.totalTokenCount} protected selections`
+        : "No protected apps";
+
+  return (
+    <SettingsCard
+      title="Focus Gate"
+      description="Convert today's XP into a cumulative protected-app allowance."
+    >
+      {error || saveError || nativeError ? (
+        <p className="px-6 pt-4 text-sm text-red-400">
+          {saveError ?? error ?? nativeError}
+        </p>
+      ) : null}
+      <SettingsToggleRow
+        icon={Shield}
+        title="Enabled"
+        description="Screen Time enforcement will use this allowance on iPhone."
+        checked={status?.enabled ?? false}
+        onChange={() => {
+          void hapticSoftTick();
+          void saveSettings({ enabled: !(status?.enabled ?? false) });
+        }}
+        ariaLabel="Toggle Focus Gate"
+        disabled={isLoading || saving}
+      />
+      <div className="grid gap-0 divide-y divide-[var(--border)] md:grid-cols-2 md:divide-x md:divide-y-0">
+        <div className="px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <SettingsIcon icon={Timer} />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                Screen Time Rate
+              </p>
+              <p className="text-sm font-medium text-[var(--text)]">
+                {status?.minutesPerXp ?? 5} minutes per XP
+              </p>
+            </div>
+          </div>
+          <label className="mt-3 block text-xs font-medium text-[var(--muted)]" htmlFor="focus-gate-minutes-per-xp">
+            Minutes per XP
+          </label>
+          <input
+            id="focus-gate-minutes-per-xp"
+            inputMode="numeric"
+            type="number"
+            min={1}
+            max={120}
+            value={minutesPerXp}
+            disabled={isLoading || saving}
+            onChange={(event) => setMinutesPerXp(event.target.value)}
+            onBlur={commitMinutesPerXp}
+            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          />
+        </div>
+        <div className="px-5 py-4 sm:px-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            Daily Limit
+          </p>
+          <p className="mt-1 text-sm font-medium text-[var(--text)]">
+            {status?.dailyMaxMinutes === null || !status
+              ? "No daily limit"
+              : `${status.dailyMaxMinutes} min maximum`}
+          </p>
+          <label className="mt-3 block text-xs font-medium text-[var(--muted)]" htmlFor="focus-gate-daily-max">
+            Optional daily maximum
+          </label>
+          <input
+            id="focus-gate-daily-max"
+            inputMode="numeric"
+            type="number"
+            min={1}
+            max={1440}
+            placeholder="No limit"
+            value={dailyMaxMinutes}
+            disabled={isLoading || saving}
+            onChange={(event) => setDailyMaxMinutes(event.target.value)}
+            onBlur={commitDailyMax}
+            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          />
+        </div>
+      </div>
+      <div className="grid gap-0 divide-y divide-[var(--border)] md:grid-cols-3 md:divide-x md:divide-y-0">
+        <FocusGateMetric label="XP Today" value={isLoading ? "..." : `${status?.xpToday ?? 0} XP`} />
+        <FocusGateMetric
+          label="Screen Time Earned"
+          value={isLoading ? "..." : `${status?.baseAllowedMinutes ?? 0} min`}
+        />
+        <FocusGateMetric
+          label="Today"
+          value={
+            isLoading
+              ? "..."
+              : capReached
+                ? "Daily maximum reached"
+                : `${status?.allowedMinutes ?? 0} min earned today`
+          }
+        />
+      </div>
+      <div className="divide-y divide-[var(--border)]">
+        <SettingsStaticRow
+          icon={Smartphone}
+          title="Native Enforcement"
+          description={nativeLabel}
+          value={isRefreshing ? "Refreshing" : nativeStatusLabel}
+        />
+        <SettingsStaticRow
+          icon={Shield}
+          title="Screen Time Authorization"
+          description="Uses Apple's individual authorization flow."
+          value={focusGateAuthorizationLabel(authorizationStatus)}
+        />
+        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <SettingsIcon icon={Lock} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--text)]">Protected Apps</p>
+              <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">
+                {protectedSelectionLabel}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {authorizationStatus !== "approved" && availability?.canUse ? (
+              <button
+                type="button"
+                disabled={nativeBusy}
+                onClick={requestNativeAuthorization}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--subtle-surface)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Authorize
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={!availability?.canUse || nativeBusy}
+              onClick={chooseProtectedApps}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-3 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Choose
+            </button>
+          </div>
+        </div>
+      </div>
+    </SettingsCard>
+  );
+}
+
+function FocusGateMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-5 py-4 sm:px-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-semibold leading-tight text-[var(--text)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function focusGateAuthorizationLabel(status: FocusGateNativeAuthorizationStatus) {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "notDetermined":
+      return "Not requested";
+    case "denied":
+      return "Denied";
+    case "restricted":
+      return "Restricted";
+    case "unavailable":
+      return "Unavailable";
+  }
+}
+
+function focusGateNativeStatusLabel({
+  availability,
+  authorizationStatus,
+  selectionSummary,
+  enforcementState,
+  enabled,
+}: {
+  availability: FocusGateNativeAvailability | null;
+  authorizationStatus: FocusGateNativeAuthorizationStatus;
+  selectionSummary: FocusGateSelectionSummary | null;
+  enforcementState: FocusGateNativeEnforcementState | null;
+  enabled: boolean;
+}) {
+  if (!availability?.canUse) return "Unavailable on this device";
+  if (!enabled) return "Disabled";
+  if (authorizationStatus !== "approved") return "Authorization required";
+  if (!selectionSummary?.hasSelection) return "No protected apps";
+  if (enforcementState?.shielded === true) return "Locked";
+  if (enforcementState?.shielded === false) return "Access available";
+  return "Setup required";
 }
 
 type SettingsIconProps = {

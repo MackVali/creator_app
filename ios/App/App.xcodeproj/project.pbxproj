@@ -31,6 +31,21 @@
 		7BC3E1FC2FE9D4920015FD93 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */; };
 		7BC3E1FE2FE9D4920015FD93 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FD2FE9D4920015FD93 /* SwiftUI.framework */; };
 		7BC3E20D2FE9D4960015FD93 /* CreatorLiveActivitiesExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7BD100012FF0000000C0D3EA /* FocusGatePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100102FF0000000C0D3EA /* FocusGatePlugin.swift */; };
+		7BD100022FF0000000C0D3EA /* FocusGateSharedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100112FF0000000C0D3EA /* FocusGateSharedState.swift */; };
+		7BD100032FF0000000C0D3EA /* FocusGateShielding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100122FF0000000C0D3EA /* FocusGateShielding.swift */; };
+		7BD100042FF0000000C0D3EA /* FocusGateDeviceActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100132FF0000000C0D3EA /* FocusGateDeviceActivity.swift */; };
+		7BD100052FF0000000C0D3EA /* FocusGateSharedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100112FF0000000C0D3EA /* FocusGateSharedState.swift */; };
+		7BD100062FF0000000C0D3EA /* FocusGateShielding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100122FF0000000C0D3EA /* FocusGateShielding.swift */; };
+		7BD100072FF0000000C0D3EA /* FocusGateDeviceActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD100132FF0000000C0D3EA /* FocusGateDeviceActivity.swift */; };
+		7BD100082FF0000000C0D3EA /* CreatorFocusGateMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7BD100092FF0000000C0D3EA /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100152FF0000000C0D3EA /* FamilyControls.framework */; };
+		7BD1000A2FF0000000C0D3EA /* DeviceActivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100162FF0000000C0D3EA /* DeviceActivity.framework */; };
+		7BD1000B2FF0000000C0D3EA /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100172FF0000000C0D3EA /* ManagedSettings.framework */; };
+		7BD1000C2FF0000000C0D3EA /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FD2FE9D4920015FD93 /* SwiftUI.framework */; };
+		7BD1000D2FF0000000C0D3EA /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100152FF0000000C0D3EA /* FamilyControls.framework */; };
+		7BD1000E2FF0000000C0D3EA /* DeviceActivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100162FF0000000C0D3EA /* DeviceActivity.framework */; };
+		7BD1000F2FF0000000C0D3EA /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100172FF0000000C0D3EA /* ManagedSettings.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +55,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7BC3E1F92FE9D4920015FD93;
 			remoteInfo = CreatorLiveActivitiesExtension;
+		};
+		7BD100262FF0000000C0D3EA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7BD100202FF0000000C0D3EA;
+			remoteInfo = CreatorFocusGateMonitor;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -51,6 +73,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				7BC3E20D2FE9D4960015FD93 /* CreatorLiveActivitiesExtension.appex in Embed Foundation Extensions */,
+				7BD100082FF0000000C0D3EA /* CreatorFocusGateMonitor.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -78,6 +101,14 @@
 		7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CreatorLiveActivitiesExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		7BC3E1FD2FE9D4920015FD93 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		7BD100102FF0000000C0D3EA /* FocusGatePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusGatePlugin.swift; sourceTree = "<group>"; };
+		7BD100112FF0000000C0D3EA /* FocusGateSharedState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusGateSharedState.swift; sourceTree = "<group>"; };
+		7BD100122FF0000000C0D3EA /* FocusGateShielding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusGateShielding.swift; sourceTree = "<group>"; };
+		7BD100132FF0000000C0D3EA /* FocusGateDeviceActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusGateDeviceActivity.swift; sourceTree = "<group>"; };
+		7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CreatorFocusGateMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7BD100152FF0000000C0D3EA /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
+		7BD100162FF0000000C0D3EA /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
+		7BD100172FF0000000C0D3EA /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -89,10 +120,18 @@
 			);
 			target = 7BC3E1F92FE9D4920015FD93 /* CreatorLiveActivitiesExtension */;
 		};
+		7BD100192FF0000000C0D3EA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7BC3E1FF2FE9D4920015FD93 /* CreatorLiveActivities */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7BC3E2112FE9D4960015FD93 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = CreatorLiveActivities; sourceTree = "<group>"; };
+		7BD100182FF0000000C0D3EA /* CreatorFocusGateMonitor */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7BD100192FF0000000C0D3EA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = CreatorFocusGateMonitor; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +139,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7BD1000C2FF0000000C0D3EA /* SwiftUI.framework in Frameworks */,
+				7BD1000B2FF0000000C0D3EA /* ManagedSettings.framework in Frameworks */,
+				7BD1000A2FF0000000C0D3EA /* DeviceActivity.framework in Frameworks */,
+				7BD100092FF0000000C0D3EA /* FamilyControls.framework in Frameworks */,
 				7BA47B222FEE2D1700C0D3EA /* AppIntents.framework in Frameworks */,
 				7BA47B212FEE2D1700C0D3EA /* ActivityKit.framework in Frameworks */,
 				7BA47B1A2FECA00100C0D3EA /* WidgetKit.framework in Frameworks */,
@@ -119,6 +162,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7BD100222FF0000000C0D3EA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BD1000F2FF0000000C0D3EA /* ManagedSettings.framework in Frameworks */,
+				7BD1000E2FF0000000C0D3EA /* DeviceActivity.framework in Frameworks */,
+				7BD1000D2FF0000000C0D3EA /* FamilyControls.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -129,6 +182,7 @@
 				504EC3061FED79650016851F /* App */,
 				7BA47B252FEE2D1700C0D3EA /* Shared */,
 				7BC3E1FF2FE9D4920015FD93 /* CreatorLiveActivities */,
+				7BD100182FF0000000C0D3EA /* CreatorFocusGateMonitor */,
 				7B8023352FE754BB00BEFB36 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -139,6 +193,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */,
+				7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -152,6 +207,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				7BA47B1C2FECA00100C0D3EA /* CreatorBridgeViewController.swift */,
 				7BA47B182FECA00100C0D3EA /* CreatorWidgetPlugin.swift */,
+				7BD100102FF0000000C0D3EA /* FocusGatePlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -165,6 +221,9 @@
 		7B8023352FE754BB00BEFB36 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				7BD100172FF0000000C0D3EA /* ManagedSettings.framework */,
+				7BD100162FF0000000C0D3EA /* DeviceActivity.framework */,
+				7BD100152FF0000000C0D3EA /* FamilyControls.framework */,
 				7BA47B292FEE2D1700C0D3EA /* AppIntents.framework */,
 				7BA47B282FEE2D1700C0D3EA /* ActivityKit.framework */,
 				7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */,
@@ -176,6 +235,9 @@
 		7BA47B252FEE2D1700C0D3EA /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				7BD100132FF0000000C0D3EA /* FocusGateDeviceActivity.swift */,
+				7BD100122FF0000000C0D3EA /* FocusGateShielding.swift */,
+				7BD100112FF0000000C0D3EA /* FocusGateSharedState.swift */,
 				7BA47B262FEE2D1700C0D3EA /* FocusPomoLiveActivityIntents.swift */,
 				7BA47B272FEE2D1700C0D3EA /* GenericAttributes.swift */,
 			);
@@ -198,6 +260,7 @@
 			);
 			dependencies = (
 				7BC3E20C2FE9D4960015FD93 /* PBXTargetDependency */,
+				7BD100272FF0000000C0D3EA /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -230,6 +293,28 @@
 			productReference = 7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7BD100242FF0000000C0D3EA /* Build configuration list for PBXNativeTarget "CreatorFocusGateMonitor" */;
+			buildPhases = (
+				7BD100212FF0000000C0D3EA /* Sources */,
+				7BD100222FF0000000C0D3EA /* Frameworks */,
+				7BD100232FF0000000C0D3EA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7BD100182FF0000000C0D3EA /* CreatorFocusGateMonitor */,
+			);
+			name = CreatorFocusGateMonitor;
+			packageProductDependencies = (
+			);
+			productName = CreatorFocusGateMonitor;
+			productReference = 7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -245,6 +330,9 @@
 						ProvisioningStyle = Automatic;
 					};
 					7BC3E1F92FE9D4920015FD93 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					7BD100202FF0000000C0D3EA = {
 						CreatedOnToolsVersion = 26.5;
 					};
 				};
@@ -268,6 +356,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				7BC3E1F92FE9D4920015FD93 /* CreatorLiveActivitiesExtension */,
+				7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */,
 			);
 		};
 /* End PBXProject section */
@@ -294,6 +383,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7BD100232FF0000000C0D3EA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -302,6 +398,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				7BD100042FF0000000C0D3EA /* FocusGateDeviceActivity.swift in Sources */,
+				7BD100032FF0000000C0D3EA /* FocusGateShielding.swift in Sources */,
+				7BD100022FF0000000C0D3EA /* FocusGateSharedState.swift in Sources */,
+				7BD100012FF0000000C0D3EA /* FocusGatePlugin.swift in Sources */,
 				7BA47B1D2FEE2D1700C0D3EA /* FocusPomoLiveActivityIntents.swift in Sources */,
 				7BA47B1B2FECA00100C0D3EA /* CreatorBridgeViewController.swift in Sources */,
 				7BA47B1E2FEE2D1700C0D3EA /* GenericAttributes.swift in Sources */,
@@ -318,6 +418,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7BD100212FF0000000C0D3EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BD100072FF0000000C0D3EA /* FocusGateDeviceActivity.swift in Sources */,
+				7BD100062FF0000000C0D3EA /* FocusGateShielding.swift in Sources */,
+				7BD100052FF0000000C0D3EA /* FocusGateSharedState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -325,6 +435,11 @@
 			isa = PBXTargetDependency;
 			target = 7BC3E1F92FE9D4920015FD93 /* CreatorLiveActivitiesExtension */;
 			targetProxy = 7BC3E20B2FE9D4960015FD93 /* PBXContainerItemProxy */;
+		};
+		7BD100272FF0000000C0D3EA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */;
+			targetProxy = 7BD100262FF0000000C0D3EA /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -591,6 +706,86 @@
 			};
 			name = Release;
 		};
+		7BD100252FF0000000C0D3EA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = CreatorFocusGateMonitor/CreatorFocusGateMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 18;
+				DEVELOPMENT_TEAM = 6QCVLRAYU8;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CreatorFocusGateMonitor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CreatorFocusGateMonitor;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.trycreator.creator.CreatorFocusGateMonitor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7BD100282FF0000000C0D3EA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = CreatorFocusGateMonitor/CreatorFocusGateMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 18;
+				DEVELOPMENT_TEAM = 6QCVLRAYU8;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CreatorFocusGateMonitor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CreatorFocusGateMonitor;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0.3;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.trycreator.creator.CreatorFocusGateMonitor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -617,6 +812,15 @@
 			buildConfigurations = (
 				7BC3E20F2FE9D4960015FD93 /* Debug */,
 				7BC3E2102FE9D4960015FD93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7BD100242FF0000000C0D3EA /* Build configuration list for PBXNativeTarget "CreatorFocusGateMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7BD100252FF0000000C0D3EA /* Debug */,
+				7BD100282FF0000000C0D3EA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

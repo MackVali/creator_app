@@ -1203,6 +1203,7 @@ export type Database = {
           fat_g: number | null
           id: string
           is_active: boolean
+          is_catalog_visible: boolean
           metadata: Json
           name: string
           normalized_barcode: string | null
@@ -1228,6 +1229,7 @@ export type Database = {
           fat_g?: number | null
           id?: string
           is_active?: boolean
+          is_catalog_visible?: boolean
           metadata?: Json
           name: string
           normalized_barcode?: string | null
@@ -1253,6 +1255,7 @@ export type Database = {
           fat_g?: number | null
           id?: string
           is_active?: boolean
+          is_catalog_visible?: boolean
           metadata?: Json
           name?: string
           normalized_barcode?: string | null
@@ -4736,6 +4739,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      focus_gate_settings: {
+        Row: {
+          created_at: string
+          daily_max_minutes: number | null
+          enabled: boolean
+          minutes_per_xp: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_max_minutes?: number | null
+          enabled?: boolean
+          minutes_per_xp?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_max_minutes?: number | null
+          enabled?: boolean
+          minutes_per_xp?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       xp_events: {
         Row: {

@@ -1,6 +1,5 @@
 import type { FitnessPlanTemplate } from "@/lib/fitness/planTemplates";
 import type {
-  FitnessRoutineExercisePrescription,
   FitnessRoutineLevel,
   FitnessRoutineTemplate,
 } from "@/lib/fitness/routineTemplates";
@@ -16,6 +15,13 @@ export const FITNESS_CUSTOM_LIBRARY_VERSION = 1;
 export type CustomFitnessExercise = {
   id: string;
   name: string;
+  primaryMuscleGroup?: string;
+  secondaryMuscleGroup?: string;
+  trackingType?: "reps" | "timed";
+  resistanceType?: "bodyweight" | "weighted" | "assisted" | "machine" | "none";
+  defaultSets?: number;
+  defaultReps?: number;
+  defaultDurationSeconds?: number;
   movementType: string;
   primaryArea: string;
   equipment: string;
@@ -25,29 +31,50 @@ export type CustomFitnessExercise = {
   updatedAt: string;
 };
 
+export type CustomFitnessRoutineExerciseRole = "warmup" | "main" | "accessory" | "finisher";
+
+export type CustomFitnessRoutineExercisePrescription = {
+  exerciseId: string;
+  source: "built-in" | "custom";
+  order: number;
+  name: string;
+  sets: number;
+  reps?: number;
+  durationSeconds?: number;
+  role: CustomFitnessRoutineExerciseRole;
+  restSeconds?: number;
+  instruction?: string;
+};
+
 export type CustomFitnessRoutine = {
   id: string;
   title: string;
-  goal: FitnessRoutineTemplate["goal"];
-  level: FitnessRoutineLevel;
-  equipment: string;
-  durationMinutes: number;
-  exercises: FitnessRoutineExercisePrescription[];
+  description?: string;
+  goal?: FitnessRoutineTemplate["goal"];
+  level?: FitnessRoutineLevel;
+  durationMinutes?: number;
+  exercises: CustomFitnessRoutineExercisePrescription[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type CustomFitnessPlanRoutineSequenceEntry = {
+  id: string;
+  routineId: string;
+  source: "creator" | "custom";
+  order: number;
 };
 
 export type CustomFitnessPlan = {
   id: string;
   title: string;
   description?: string;
-  goal: string;
-  level: FitnessPlanTemplate["level"];
-  equipment: string;
+  goal?: string;
+  level?: FitnessPlanTemplate["level"];
+  source: "custom";
   recommendedDaysPerWeek: number[];
   allowedDaysPerWeek: number[];
-  sessionLengthOptions: number[];
-  routineSequence: string[];
+  routineSequence: CustomFitnessPlanRoutineSequenceEntry[];
   createdAt: string;
   updatedAt: string;
 };
@@ -95,31 +122,97 @@ function readNumberArray(value: unknown) {
   ).sort((a, b) => a - b);
 }
 
-function readStringArray(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map(readString)
-    .filter((item): item is string => Boolean(item));
+function readRoutineSource(value: unknown, routineId: string): CustomFitnessPlanRoutineSequenceEntry["source"] {
+  if (value === "custom") return "custom";
+  if (value === "creator" || value === "built-in") return "creator";
+  return routineId.startsWith("custom-routine") ? "custom" : "creator";
 }
 
-function readRoutineExercise(value: unknown): FitnessRoutineExercisePrescription | null {
+function buildLegacyPlanSequenceEntry(
+  routineId: string,
+  index: number,
+): CustomFitnessPlanRoutineSequenceEntry {
+  return {
+    id: `legacy-${index + 1}-${routineId}`,
+    routineId,
+    source: readRoutineSource(undefined, routineId),
+    order: index + 1,
+  };
+}
+
+function readPlanRoutineSequenceEntry(
+  value: unknown,
+  index = 0,
+): CustomFitnessPlanRoutineSequenceEntry | null {
+  if (typeof value === "string") {
+    const routineId = readString(value);
+    return routineId ? buildLegacyPlanSequenceEntry(routineId, index) : null;
+  }
+  if (!isRecord(value)) return null;
+
+  const routineId = readString(value.routineId);
+  if (!routineId) return null;
+
+  return {
+    id: readString(value.id) ?? buildLegacyPlanSequenceEntry(routineId, index).id,
+    routineId,
+    source: readRoutineSource(value.source, routineId),
+    order: readPositiveInteger(value.order) ?? index + 1,
+  };
+}
+
+function readPlanRoutineSequence(value: unknown): CustomFitnessPlanRoutineSequenceEntry[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map(readPlanRoutineSequenceEntry)
+    .filter((entry): entry is CustomFitnessPlanRoutineSequenceEntry => Boolean(entry))
+    .sort((a, b) => a.order - b.order)
+    .map((entry, index) => ({ ...entry, order: index + 1 }));
+}
+
+function readRoutineExercise(value: unknown, index = 0): CustomFitnessRoutineExercisePrescription | null {
   if (!isRecord(value)) return null;
   const name = readString(value.name);
+  const rawExerciseId = readString(value.exerciseId);
+  const exerciseId = rawExerciseId ?? name;
   const sets = readPositiveInteger(value.sets);
-  const role = readString(value.role) as FitnessRoutineExercisePrescription["role"] | null;
-  if (!name || !sets || !role) return null;
+  if (!name || !exerciseId || !sets) return null;
 
   const reps = readPositiveInteger(value.reps);
   const durationSeconds = readPositiveInteger(value.durationSeconds);
   const restSeconds = readPositiveInteger(value.restSeconds);
+  const rawRole = readString(value.role);
+  const role: CustomFitnessRoutineExerciseRole =
+    rawRole === "warmup" ||
+    rawRole === "main" ||
+    rawRole === "accessory" ||
+    rawRole === "finisher"
+      ? rawRole
+      : rawRole === "primary"
+        ? "main"
+        : rawRole === "conditioning" || rawRole === "recovery"
+          ? "finisher"
+          : "accessory";
+  const source =
+    value.source === "custom" || (typeof exerciseId === "string" && exerciseId.startsWith("custom-exercise-"))
+      ? "custom"
+      : "built-in";
+  const order = readPositiveInteger(value.order) ?? index + 1;
 
   return {
+    exerciseId,
+    source,
+    order,
     name,
     sets,
     ...(reps ? { reps } : {}),
     ...(durationSeconds ? { durationSeconds } : {}),
     ...(restSeconds ? { restSeconds } : {}),
     role,
+    ...(readOptionalString(value.instruction)
+      ? { instruction: readOptionalString(value.instruction) }
+      : {}),
   };
 }
 
@@ -137,9 +230,33 @@ function readCustomExercise(value: unknown): CustomFitnessExercise | null {
     return null;
   }
 
+  const defaultSets = readPositiveInteger(value.defaultSets);
+  const defaultReps = readPositiveInteger(value.defaultReps);
+  const defaultDurationSeconds = readPositiveInteger(value.defaultDurationSeconds);
+
   return {
     id,
     name,
+    ...(readOptionalString(value.primaryMuscleGroup)
+      ? { primaryMuscleGroup: readOptionalString(value.primaryMuscleGroup) }
+      : {}),
+    ...(readOptionalString(value.secondaryMuscleGroup)
+      ? { secondaryMuscleGroup: readOptionalString(value.secondaryMuscleGroup) }
+      : {}),
+    ...(value.trackingType === "timed" || value.trackingType === "reps"
+      ? { trackingType: value.trackingType }
+      : {}),
+    ...(
+      value.resistanceType === "bodyweight" ||
+      value.resistanceType === "weighted" ||
+      value.resistanceType === "assisted" ||
+      value.resistanceType === "machine" ||
+      value.resistanceType === "none"
+        ? { resistanceType: value.resistanceType }
+        : {}),
+    ...(defaultSets ? { defaultSets } : {}),
+    ...(defaultReps ? { defaultReps } : {}),
+    ...(defaultDurationSeconds ? { defaultDurationSeconds } : {}),
     movementType,
     primaryArea,
     equipment,
@@ -156,26 +273,27 @@ function readCustomRoutine(value: unknown): CustomFitnessRoutine | null {
   const title = readString(value.title);
   const goal = readString(value.goal) as CustomFitnessRoutine["goal"] | null;
   const level = readString(value.level) as FitnessRoutineLevel | null;
-  const equipment = readString(value.equipment);
   const durationMinutes = readPositiveInteger(value.durationMinutes);
   const createdAt = readString(value.createdAt);
   const updatedAt = readString(value.updatedAt);
   const exercises = Array.isArray(value.exercises)
     ? value.exercises
         .map(readRoutineExercise)
-        .filter((exercise): exercise is FitnessRoutineExercisePrescription => Boolean(exercise))
+        .filter((exercise): exercise is CustomFitnessRoutineExercisePrescription => Boolean(exercise))
+        .sort((a, b) => a.order - b.order)
+        .map((exercise, index) => ({ ...exercise, order: index + 1 }))
     : [];
-  if (!id || !title || !goal || !level || !equipment || !durationMinutes || !createdAt || !updatedAt || exercises.length === 0) {
+  if (!id || !title || !createdAt || !updatedAt || exercises.length === 0) {
     return null;
   }
 
   return {
     id,
     title,
-    goal,
-    level,
-    equipment,
-    durationMinutes,
+    description: readOptionalString(value.description),
+    ...(goal ? { goal } : {}),
+    ...(level ? { level } : {}),
+    ...(durationMinutes ? { durationMinutes } : {}),
     exercises,
     createdAt,
     updatedAt,
@@ -186,25 +304,19 @@ function readCustomPlan(value: unknown): CustomFitnessPlan | null {
   if (!isRecord(value)) return null;
   const id = readString(value.id);
   const title = readString(value.title);
-  const goal = readString(value.goal);
+  const goal = readOptionalString(value.goal);
   const level = readString(value.level) as CustomFitnessPlan["level"] | null;
-  const equipment = readString(value.equipment);
   const createdAt = readString(value.createdAt);
   const updatedAt = readString(value.updatedAt);
-  const routineSequence = readStringArray(value.routineSequence);
-  const sessionLengthOptions = readNumberArray(value.sessionLengthOptions);
+  const routineSequence = readPlanRoutineSequence(value.routineSequence);
   const allowedDaysPerWeek = readNumberArray(value.allowedDaysPerWeek);
   const recommendedDaysPerWeek = readNumberArray(value.recommendedDaysPerWeek);
   if (
     !id ||
     !title ||
-    !goal ||
-    !level ||
-    !equipment ||
     !createdAt ||
     !updatedAt ||
     routineSequence.length === 0 ||
-    sessionLengthOptions.length === 0 ||
     allowedDaysPerWeek.length === 0
   ) {
     return null;
@@ -214,13 +326,12 @@ function readCustomPlan(value: unknown): CustomFitnessPlan | null {
     id,
     title,
     description: readOptionalString(value.description),
-    goal,
-    level,
-    equipment,
+    ...(goal ? { goal } : {}),
+    ...(level ? { level } : {}),
+    source: "custom",
     recommendedDaysPerWeek:
       recommendedDaysPerWeek.length > 0 ? recommendedDaysPerWeek : [allowedDaysPerWeek[0]],
     allowedDaysPerWeek,
-    sessionLengthOptions,
     routineSequence,
     createdAt,
     updatedAt,
@@ -326,11 +437,15 @@ export function upsertCustomFitnessExercise(
   now: string,
 ) {
   const base = library ?? createEmptyFitnessCustomLibrary(now);
+  const existing = base.exercises.find((item) => item.id === exercise.id);
+  const nextExercise = existing
+    ? { ...exercise, createdAt: existing.createdAt, updatedAt: now }
+    : exercise;
   return {
     ...base,
     exercises: [
       ...base.exercises.filter((item) => item.id !== exercise.id),
-      exercise,
+      nextExercise,
     ],
     updatedAt: now,
   };
@@ -342,11 +457,15 @@ export function upsertCustomFitnessRoutine(
   now: string,
 ) {
   const base = library ?? createEmptyFitnessCustomLibrary(now);
+  const existing = base.routines.find((item) => item.id === routine.id);
+  const nextRoutine = existing
+    ? { ...routine, createdAt: existing.createdAt, updatedAt: now }
+    : routine;
   return {
     ...base,
     routines: [
       ...base.routines.filter((item) => item.id !== routine.id),
-      routine,
+      nextRoutine,
     ],
     updatedAt: now,
   };
@@ -358,11 +477,13 @@ export function upsertCustomFitnessPlan(
   now: string,
 ) {
   const base = library ?? createEmptyFitnessCustomLibrary(now);
+  const existing = base.plans.find((item) => item.id === plan.id);
+  const nextPlan = existing ? { ...plan, createdAt: existing.createdAt, updatedAt: now } : plan;
   return {
     ...base,
     plans: [
       ...base.plans.filter((item) => item.id !== plan.id),
-      plan,
+      nextPlan,
     ],
     updatedAt: now,
   };
@@ -370,16 +491,34 @@ export function upsertCustomFitnessPlan(
 
 export function customFitnessRoutineToTemplate(
   routine: CustomFitnessRoutine,
+  metadata?: {
+    equipment?: string;
+    durationMinutes?: number;
+  },
 ): FitnessRoutineTemplate {
   return {
     id: routine.id,
     group: "custom",
     title: routine.title,
-    goal: routine.goal,
-    level: routine.level,
-    equipment: routine.equipment,
-    durationMinutes: routine.durationMinutes,
-    exercises: routine.exercises,
+    goal: routine.goal ?? "Foundation",
+    level: routine.level ?? "Beginner",
+    equipment: metadata?.equipment ?? "Custom",
+    durationMinutes: routine.durationMinutes ?? metadata?.durationMinutes ?? 1,
+    exercises: routine.exercises
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((exercise) => ({
+        name: exercise.name,
+        exerciseId: exercise.exerciseId,
+        source: exercise.source,
+        order: exercise.order,
+        sets: exercise.sets,
+        ...(exercise.reps ? { reps: exercise.reps } : {}),
+        ...(exercise.durationSeconds ? { durationSeconds: exercise.durationSeconds } : {}),
+        ...(exercise.restSeconds ? { restSeconds: exercise.restSeconds } : {}),
+        role: exercise.role,
+        ...(exercise.instruction ? { instruction: exercise.instruction } : {}),
+      })),
   };
 }
 
@@ -388,13 +527,99 @@ export function customFitnessPlanToTemplate(plan: CustomFitnessPlan): FitnessPla
     id: plan.id,
     title: plan.title,
     description: plan.description,
-    goal: plan.goal,
-    level: plan.level,
-    equipment: plan.equipment,
+    source: "custom",
+    goal: plan.goal ?? "General fitness",
+    level: plan.level ?? "Beginner",
+    equipment: "Custom",
     recommendedDaysPerWeek: plan.recommendedDaysPerWeek,
     allowedDaysPerWeek: plan.allowedDaysPerWeek,
-    sessionLengthOptions: plan.sessionLengthOptions,
-    routineSequence: plan.routineSequence,
+    sessionLengthOptions: [30, 45, 60, 75, 90],
+    routineSequence: plan.routineSequence
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.routineId),
   };
 }
 
+export function normalizeFitnessCustomName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function getCustomFitnessExerciseReferences(
+  library: FitnessCustomLibrary | null,
+  exerciseId: string,
+) {
+  if (!library) return [];
+  return library.routines.filter((routine) =>
+    routine.exercises.some((exercise) => {
+      const referencedId =
+        typeof exercise.exerciseId === "string" ? exercise.exerciseId : exercise.name;
+      return referencedId === exerciseId;
+    }),
+  );
+}
+
+export function getCustomFitnessRoutineReferences(
+  library: FitnessCustomLibrary | null,
+  routineId: string,
+) {
+  if (!library) return [];
+  return library.plans.filter((plan) =>
+    plan.routineSequence.some((entry) => entry.routineId === routineId),
+  );
+}
+
+export function deleteCustomFitnessExercise(
+  library: FitnessCustomLibrary,
+  exerciseId: string,
+  now: string,
+) {
+  const references = getCustomFitnessExerciseReferences(library, exerciseId);
+  if (references.length > 0) {
+    return { ok: false as const, references };
+  }
+
+  return {
+    ok: true as const,
+    library: {
+      ...library,
+      exercises: library.exercises.filter((exercise) => exercise.id !== exerciseId),
+      updatedAt: now,
+    },
+  };
+}
+
+export function deleteCustomFitnessRoutine(
+  library: FitnessCustomLibrary,
+  routineId: string,
+  now: string,
+) {
+  const references = getCustomFitnessRoutineReferences(library, routineId);
+  if (references.length > 0) {
+    return { ok: false as const, references };
+  }
+
+  return {
+    ok: true as const,
+    library: {
+      ...library,
+      routines: library.routines.filter((routine) => routine.id !== routineId),
+      updatedAt: now,
+    },
+  };
+}
+
+export function deleteCustomFitnessPlan(
+  library: FitnessCustomLibrary,
+  planId: string,
+  now: string,
+) {
+  return {
+    ok: true as const,
+    library: {
+      ...library,
+      plans: library.plans.filter((plan) => plan.id !== planId),
+      updatedAt: now,
+    },
+  };
+}

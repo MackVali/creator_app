@@ -748,6 +748,7 @@ export interface Database {
           dedupe_key: string | null;
           created_by_user_id: string | null;
           is_active: boolean;
+          is_catalog_visible: boolean;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -773,6 +774,7 @@ export interface Database {
           dedupe_key?: string | null;
           created_by_user_id?: string | null;
           is_active?: boolean;
+          is_catalog_visible?: boolean;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -798,6 +800,7 @@ export interface Database {
           dedupe_key?: string | null;
           created_by_user_id?: string | null;
           is_active?: boolean;
+          is_catalog_visible?: boolean;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -2324,6 +2327,32 @@ export interface Database {
           monument_id?: string | null;
           award_key?: string | null;
           source?: string | null;
+        };
+      };
+      focus_gate_settings: {
+        Row: {
+          user_id: string;
+          enabled: boolean;
+          minutes_per_xp: number;
+          daily_max_minutes: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          enabled?: boolean;
+          minutes_per_xp?: number;
+          daily_max_minutes?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          enabled?: boolean;
+          minutes_per_xp?: number;
+          daily_max_minutes?: number | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       skill_progress: {
