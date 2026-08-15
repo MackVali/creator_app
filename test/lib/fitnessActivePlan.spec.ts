@@ -62,6 +62,47 @@ describe("Fitness active plan metadata", () => {
     expect(formatFitnessActivePlanSchedule(activePlan)).toBe("Mon · Tue · Thu · Fri · 60 min");
   });
 
+  it("round-trips active custom plans with routine snapshots", () => {
+    const activePlan = buildFitnessActivePlan({
+      plan: {
+        ...upperLower,
+        id: "custom-plan-upper-lower",
+        title: "Custom Upper Lower",
+        source: "custom",
+      },
+      targetDaysPerWeek: 4,
+      weekdays: ["Mon", "Tue", "Thu", "Fri"],
+      sessionDurationMinutes: 60,
+      equipmentProfile: "Full gym",
+      routineSequenceSnapshot: [
+        {
+          fitnessRoutineTemplateId: "upper-body",
+          fitnessRoutineTitle: "Upper Body",
+        },
+        {
+          fitnessRoutineTemplateId: "lower-body",
+          fitnessRoutineTitle: "Lower Body",
+        },
+      ],
+      now,
+    });
+
+    expect(readFitnessActivePlanFromMetadata({ fitnessActivePlan: activePlan })).toMatchObject({
+      planTemplateId: "custom-plan-upper-lower",
+      source: "custom",
+      routineSequenceSnapshot: [
+        {
+          fitnessRoutineTemplateId: "upper-body",
+          fitnessRoutineTitle: "Upper Body",
+        },
+        {
+          fitnessRoutineTemplateId: "lower-body",
+          fitnessRoutineTitle: "Lower Body",
+        },
+      ],
+    });
+  });
+
   it("rejects new plans with the wrong weekday count", () => {
     const activePlan = buildFitnessActivePlan({
       plan: upperLower,

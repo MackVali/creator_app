@@ -7,6 +7,7 @@ export type FitnessPlanTemplate = {
   id: string;
   title: string;
   description?: string;
+  source?: "creator" | "custom";
   goal: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   equipment: string;
@@ -148,4 +149,4 @@ export function resolveFitnessPlanRoutineAtIndex(
   );
 }
 
-FITNESS_PLAN_TEMPLATES.forEach(resolveFitnessPlanRoutineSequence);
+FITNESS_PLAN_TEMPLATES.forEach((plan) => resolveFitnessPlanRoutineSequence(plan));

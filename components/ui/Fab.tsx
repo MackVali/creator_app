@@ -152,7 +152,10 @@ import {
   isSourceItemPinned,
   setSourceItemPinned,
 } from "@/lib/my-list/pinnedSourceItems";
-import { consumeManualMyListUpgradeSource } from "@/lib/my-list/myListItemsStorage";
+import {
+  consumeManualMyListUpgradeSource,
+  createManualMyListItem,
+} from "@/lib/my-list/myListItemsStorage";
 import {
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
@@ -187,6 +190,8 @@ type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
 type FabEditEntityType = CreationType | "EVENT";
 type UnifiedCreationMode = "EVENTS" | "TASKS";
 type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
+type UnifiedTaskSideSelectedType = "AUTO" | "TO_DO" | CreationType;
+type UnifiedTaskSideSaveType = Exclude<UnifiedTaskSideSelectedType, "AUTO">;
 type UnifiedEventDraftBlocksTime = "DEFAULT" | "BLOCKS" | "FREE";
 type UnifiedEventDraftMeetingProvider = "URL" | "CREATOR_VIDEO";
 type UnifiedEventDraftRecurrence = string;
@@ -244,6 +249,17 @@ const UNIFIED_TASK_TITLE_PLACEHOLDERS = [
 const UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS = 3200;
 const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
+export const UNIFIED_TASK_SIDE_TYPE_OPTIONS = [
+  { value: "AUTO", label: "AUTO" },
+  { value: "TO_DO", label: "TO DO" },
+  { value: "TASK", label: "TASK" },
+  { value: "HABIT", label: "HABIT" },
+  { value: "PROJECT", label: "PROJECT" },
+  { value: "GOAL", label: "GOAL" },
+] as const satisfies readonly {
+  value: UnifiedTaskSideSelectedType;
+  label: string;
+}[];
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
   id: string;
@@ -1822,6 +1838,96 @@ const resolveAddEventSourceType = ({
   }
 
   return hasSubActions ? "ROUTINE" : "HABIT";
+};
+
+const isUnifiedTaskSideRecurrenceActive = ({
+  unifiedEventType,
+  habitRecurrence,
+}: {
+  unifiedEventType: UnifiedEventType;
+  habitRecurrence: string;
+}) => {
+  const normalizedRecurrence = habitRecurrence.trim().toLowerCase();
+  return (
+    unifiedEventType === "HABIT" &&
+    normalizedRecurrence.length > 0 &&
+    normalizedRecurrence !== "__never__" &&
+    normalizedRecurrence !== "never"
+  );
+};
+
+const hasGoalSpecificUnifiedTaskSideDraft = ({
+  goalName,
+  goalRelationType,
+  goalRelationId,
+}: {
+  goalName: string;
+  goalRelationType: GoalRelationType;
+  goalRelationId: string;
+}) =>
+  goalName.trim().length > 0 &&
+  Boolean(goalRelationType) &&
+  goalRelationId.trim().length > 0;
+
+const hasLightweightManualMyListDraft = ({
+  taskPinned,
+  taskDuration,
+  taskDue,
+  taskNotes,
+  taskProjectId,
+  taskGoalId,
+  activeTaskCreationGoalId,
+  projectTaskStack,
+  taskExactTimingTouched,
+  addEventTimingMode,
+  unifiedEventAllDay,
+  selectedTagCount,
+  hasManualUpgradeSource,
+}: {
+  taskPinned: boolean;
+  taskDuration: string;
+  taskDue: string;
+  taskNotes: string;
+  taskProjectId: string;
+  taskGoalId: string | null;
+  activeTaskCreationGoalId: string | null;
+  projectTaskStack: ProjectTaskStackState | null;
+  taskExactTimingTouched: boolean;
+  addEventTimingMode: AddEventTimingMode;
+  unifiedEventAllDay: boolean;
+  selectedTagCount: number;
+  hasManualUpgradeSource: boolean;
+}) =>
+  !taskPinned &&
+  taskDuration.trim().length === 0 &&
+  taskDue.trim().length === 0 &&
+  taskNotes.trim().length === 0 &&
+  taskProjectId.trim().length === 0 &&
+  !taskGoalId &&
+  !activeTaskCreationGoalId &&
+  !projectTaskStack &&
+  !taskExactTimingTouched &&
+  addEventTimingMode === "manual" &&
+  !unifiedEventAllDay &&
+  selectedTagCount === 0 &&
+  !hasManualUpgradeSource;
+
+const resolveAutomaticUnifiedTaskSideSaveType = ({
+  addEventSourceType,
+  hasGoalSpecificDraft,
+  hasLightweightManualDraft,
+}: {
+  addEventSourceType: AddEventSourceType;
+  hasGoalSpecificDraft: boolean;
+  hasLightweightManualDraft: boolean;
+}): UnifiedTaskSideSaveType => {
+  if (addEventSourceType === "PROJECT" || addEventSourceType === "ROUTINE") {
+    return "PROJECT";
+  }
+  if (addEventSourceType === "HABIT") return "HABIT";
+  if (hasGoalSpecificDraft) return "GOAL";
+  if (hasLightweightManualDraft) return "TO_DO";
+  return "TASK";
 };
 
 const AddEventPriorityDisplay = ({
@@ -4411,6 +4517,8 @@ export function Fab({
     useState<UnifiedCreationMode>("EVENTS");
   const [unifiedEventType, setUnifiedEventType] =
     useState<UnifiedEventType>("TASK");
+  const [selectedType, setSelectedType] =
+    useState<UnifiedTaskSideSelectedType>("AUTO");
   const [unifiedEventTitle, setUnifiedEventTitle] = useState("");
   const [unifiedEventDescription, setUnifiedEventDescription] = useState("");
   const [unifiedEventLocationName, setUnifiedEventLocationName] = useState("");
@@ -4791,6 +4899,7 @@ export function Fab({
   }, []);
   const resetUnifiedEventDraft = useCallback(() => {
     setUnifiedEventManualUpgradeSource(null);
+    setSelectedType("AUTO");
     setUnifiedEventTitle("");
     setUnifiedEventDescription("");
     setUnifiedEventLocationName("");
@@ -6780,40 +6889,6 @@ export function Fab({
       }),
     [addEventSubActions.length, unifiedEventType],
   );
-  const resolvedUnifiedAddEventSaveSelected = useMemo<CreationType | null>(() => {
-    if (!isUnifiedEventSheetOpen) return null;
-    if (unifiedCreationMode === "EVENTS") return null;
-    if (derivedUnifiedAddEventSourceType === "TASK") return "TASK";
-    if (derivedUnifiedAddEventSourceType === "HABIT") return "HABIT";
-    return null;
-  }, [
-    derivedUnifiedAddEventSourceType,
-    isUnifiedEventSheetOpen,
-    unifiedCreationMode,
-  ]);
-  const resolvedAddEventTaskGoalId =
-    isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK"
-      ? (taskGoalId ?? activeTaskCreationGoalId)
-      : taskGoalId;
-  const isStandaloneUnifiedTaskDraft = useMemo(
-    () =>
-      isUnifiedEventSheetOpen &&
-      unifiedCreationMode === "TASKS" &&
-      derivedUnifiedAddEventSourceType === "TASK" &&
-      resolvedUnifiedAddEventSaveSelected === "TASK" &&
-      !resolvedAddEventTaskGoalId &&
-      !taskProjectId &&
-      !projectTaskStack,
-    [
-      derivedUnifiedAddEventSourceType,
-      isUnifiedEventSheetOpen,
-      projectTaskStack,
-      resolvedAddEventTaskGoalId,
-      resolvedUnifiedAddEventSaveSelected,
-      taskProjectId,
-      unifiedCreationMode,
-    ],
-  );
   const [unifiedGoalSearch, setUnifiedGoalSearch] = useState("");
   const [showUnifiedGoalFilters, setShowUnifiedGoalFilters] = useState(false);
   const [unifiedGoalFilterMonumentId, setUnifiedGoalFilterMonumentId] =
@@ -7056,6 +7131,95 @@ export function Fab({
   const [habitType, setHabitType] = useState(defaultHabitType);
   const [habitRecurrence, setHabitRecurrence] = useState(
     defaultHabitRecurrence,
+  );
+  const resolvedUnifiedAddEventSaveSelected =
+    useMemo<UnifiedTaskSideSaveType | null>(() => {
+      if (!isUnifiedEventSheetOpen) return null;
+      if (unifiedCreationMode === "EVENTS") return null;
+      if (selectedType === "AUTO") {
+        return resolveAutomaticUnifiedTaskSideSaveType({
+          addEventSourceType: resolveAddEventSourceType({
+            recurrenceEffectivelyNever: !isUnifiedTaskSideRecurrenceActive({
+              unifiedEventType,
+              habitRecurrence,
+            }),
+            hasSubActions: addEventSubActions.length > 0,
+          }),
+          hasGoalSpecificDraft: hasGoalSpecificUnifiedTaskSideDraft({
+            goalName,
+            goalRelationType,
+            goalRelationId,
+          }),
+          hasLightweightManualDraft: hasLightweightManualMyListDraft({
+            taskPinned,
+            taskDuration,
+            taskDue,
+            taskNotes,
+            taskProjectId,
+            taskGoalId,
+            activeTaskCreationGoalId,
+            projectTaskStack,
+            taskExactTimingTouched,
+            addEventTimingMode,
+            unifiedEventAllDay,
+            selectedTagCount: selectedTagIds.length,
+            hasManualUpgradeSource: Boolean(unifiedEventManualUpgradeSource),
+          }),
+        });
+      }
+      return selectedType;
+    }, [
+      activeTaskCreationGoalId,
+      addEventSubActions.length,
+      addEventTimingMode,
+      goalName,
+      goalRelationId,
+      goalRelationType,
+      habitRecurrence,
+      isUnifiedEventSheetOpen,
+      projectTaskStack,
+      selectedType,
+      selectedTagIds.length,
+      taskDue,
+      taskDuration,
+      taskExactTimingTouched,
+      taskGoalId,
+      taskNotes,
+      taskPinned,
+      taskProjectId,
+      unifiedEventAllDay,
+      unifiedEventManualUpgradeSource,
+      unifiedEventType,
+      unifiedCreationMode,
+    ]);
+  const visibleUnifiedAddEventSaveSelected =
+    useMemo<UnifiedTaskSideSaveType | null>(() => {
+      if (!isUnifiedEventSheetOpen) return null;
+      if (unifiedCreationMode === "EVENTS") return null;
+      return selectedType === "AUTO" ? "TASK" : selectedType;
+    }, [isUnifiedEventSheetOpen, selectedType, unifiedCreationMode]);
+  const resolvedAddEventTaskGoalId =
+    isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK"
+      ? (taskGoalId ?? activeTaskCreationGoalId)
+      : taskGoalId;
+  const isStandaloneUnifiedTaskDraft = useMemo(
+    () =>
+      isUnifiedEventSheetOpen &&
+      unifiedCreationMode === "TASKS" &&
+      derivedUnifiedAddEventSourceType === "TASK" &&
+      visibleUnifiedAddEventSaveSelected === "TASK" &&
+      !resolvedAddEventTaskGoalId &&
+      !taskProjectId &&
+      !projectTaskStack,
+    [
+      derivedUnifiedAddEventSourceType,
+      isUnifiedEventSheetOpen,
+      projectTaskStack,
+      resolvedAddEventTaskGoalId,
+      taskProjectId,
+      unifiedCreationMode,
+      visibleUnifiedAddEventSaveSelected,
+    ],
   );
   const [memoCaptureActions, setMemoCaptureActions] =
     useState<MemoCaptureActionDraft>({
@@ -11567,6 +11731,7 @@ export function Fab({
 
   const resetFabFormState = useCallback(() => {
     setUnifiedEventManualUpgradeSource(null);
+    setSelectedType("AUTO");
     setProjectName("");
     setProjectPinned(false);
     setProjectStage("RESEARCH");
@@ -19446,6 +19611,7 @@ export function Fab({
     setProjectTaskStack(null);
     setGoalProjectStack(null);
     setUnifiedEventType("TASK");
+    setSelectedType("AUTO");
     setUnifiedEventAllDay(false);
     setAddEventTimingMode("manual");
     setSelected("TASK");
@@ -19687,6 +19853,7 @@ export function Fab({
       setGoalProjectStack(null);
       setUnifiedCreationMode("EVENTS");
       setUnifiedEventType("TASK");
+      setSelectedType("AUTO");
       setSelected("TASK");
       setNormalNexusExpanded(false);
       setUnifiedEventAllDay(eventRow?.all_day === true);
@@ -19840,6 +20007,7 @@ export function Fab({
       setGoalProjectStack(null);
       setUnifiedCreationMode("TASKS");
       setUnifiedEventType("TASK");
+      setSelectedType("AUTO");
       setSelected("TASK");
       setNormalNexusExpanded(false);
       setUnifiedEventAllDay(false);
@@ -20029,6 +20197,7 @@ export function Fab({
     void hapticSnap();
     const wasEventEdit = editTarget?.entityType === "EVENT";
     setUnifiedEventManualUpgradeSource(null);
+    setSelectedType("AUTO");
     setSaveError(null);
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
@@ -22194,21 +22363,21 @@ export function Fab({
     if (!isUnifiedEventSheetOpen) return null;
     if (unifiedCreationMode === "EVENTS") return null;
 
-    if (derivedUnifiedAddEventSourceType === "PROJECT") {
-      return "Project events with sub-events are not ready to save yet.";
-    }
-    if (derivedUnifiedAddEventSourceType === "ROUTINE") {
-      return "Routine events with sub-events are not ready to save yet.";
-    }
-
     const saveSelected = resolvedUnifiedAddEventSaveSelected;
     if (!saveSelected) return "Unable to resolve this event type.";
-    if (isAddEventTimingInvalid && !isStandaloneUnifiedTaskDraft) {
+    if (
+      saveSelected === "TASK" &&
+      isAddEventTimingInvalid &&
+      !isStandaloneUnifiedTaskDraft
+    ) {
       return "End time must be after start time.";
     }
 
     const isDynamicAddEvent = addEventTimingMode === "dynamic";
-    if (isDynamicAddEvent) {
+    if (
+      isDynamicAddEvent &&
+      (saveSelected === "TASK" || saveSelected === "HABIT")
+    ) {
       const parsedDuration = Number.parseInt(addEventDynamicDuration, 10);
       if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
         return "Enter a duration before saving.";
@@ -22216,12 +22385,20 @@ export function Fab({
     }
 
     const trimmedName =
-      saveSelected === "PROJECT"
+      saveSelected === "TO_DO"
+        ? taskName.trim()
+        : saveSelected === "PROJECT"
         ? projectName.trim()
         : saveSelected === "TASK"
           ? taskName.trim()
+          : saveSelected === "GOAL"
+            ? goalName.trim()
           : habitName.trim();
     if (trimmedName.length === 0) return "Please enter a name.";
+
+    if (saveSelected === "TO_DO") {
+      return null;
+    }
 
     if (saveSelected === "PROJECT") {
       if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
@@ -22638,7 +22815,9 @@ export function Fab({
       return;
     const createdType = saveSelected;
     const activeEditTarget =
-      editTarget?.entityType === saveSelected && editTarget.entityId
+      saveSelected !== "TO_DO" &&
+      editTarget?.entityType === saveSelected &&
+      editTarget.entityId
         ? editTarget
         : null;
     const selectedTagIdsSnapshot = [...selectedTagIds];
@@ -22646,7 +22825,9 @@ export function Fab({
       isUnifiedEventSheetOpen && addEventTimingMode === "dynamic";
     const effectiveAddEventTaskGoalId = resolvedAddEventTaskGoalId;
     const isStandaloneUnifiedTaskCreate =
-      saveSelected === "TASK" && !activeEditTarget && isStandaloneUnifiedTaskDraft;
+      saveSelected === "TASK" &&
+      !activeEditTarget &&
+      isStandaloneUnifiedTaskDraft;
     const manualUpgradeSourceSnapshot =
       isUnifiedEventSheetOpen && !activeEditTarget
         ? unifiedEventManualUpgradeSource
@@ -22659,12 +22840,19 @@ export function Fab({
         void hapticWarningPattern();
         setSaveError(message);
       };
-      if (isAddEventTimingInvalid && !isStandaloneUnifiedTaskCreate) {
+      if (
+        saveSelected === "TASK" &&
+        isAddEventTimingInvalid &&
+        !isStandaloneUnifiedTaskCreate
+      ) {
         setSaveError(null);
         return;
       }
       let parsedDynamicDuration: number | null = null;
-      if (isDynamicAddEvent) {
+      if (
+        isDynamicAddEvent &&
+        (saveSelected === "TASK" || saveSelected === "HABIT")
+      ) {
         const parsedDuration = Number.parseInt(addEventDynamicDuration, 10);
         if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
           setBlockedSaveError("Enter a duration before saving.");
@@ -22696,7 +22884,9 @@ export function Fab({
         return;
       }
       const trimmedName =
-        saveSelected === "GOAL"
+        saveSelected === "TO_DO"
+          ? taskName.trim()
+          : saveSelected === "GOAL"
           ? goalName.trim()
           : saveSelected === "PROJECT"
             ? projectName.trim()
@@ -23042,7 +23232,20 @@ export function Fab({
           return belongsToSelectedContext ? goalCampaignId : null;
         };
 
-        if (saveSelected === "PROJECT" && goalProjectStack) {
+        if (saveSelected === "TO_DO") {
+          const selectedSkill = taskSkillId
+            ? skills.find((skill) => skill.id === taskSkillId)
+            : null;
+          const createdItem = await createManualMyListItem({
+            userId: user.id,
+            text: trimmedName,
+            skillId: taskSkillId || null,
+            skillName: selectedSkill?.name ?? null,
+            skillIcon: selectedSkill?.icon ?? "",
+            priorityId: normalizeFabPriority(taskPriority),
+          });
+          createdEntityId = createdItem.id;
+        } else if (saveSelected === "PROJECT" && goalProjectStack) {
           const durationMin =
             typeof projectDuration === "number" &&
             Number.isFinite(projectDuration)
@@ -24018,7 +24221,11 @@ export function Fab({
           createdEntityId = habitData?.id ?? null;
           createdRoutineId = routineIdToUse;
         }
-        if (createdEntityId && selectedTagIdsSnapshot.length > 0) {
+        if (
+          createdType !== "TO_DO" &&
+          createdEntityId &&
+          selectedTagIdsSnapshot.length > 0
+        ) {
           try {
             await attachSelectedTagsToEntity({
               supabase,
@@ -24192,7 +24399,7 @@ export function Fab({
               childErrors[0] ?? "Some draft tasks could not be saved.";
           }
         }
-        if (createdEntityId) {
+        if (createdEntityId && createdType !== "TO_DO") {
           setSourceItemPinned({
             userId: user.id,
             sourceType: createdType,
@@ -24260,7 +24467,9 @@ export function Fab({
         resetFabFormState();
         closeExpandedPanel({ notifyEditClose: false });
         const successLabel =
-          createdType === "GOAL"
+          createdType === "TO_DO"
+            ? "To-Do"
+            : createdType === "GOAL"
             ? "Goal"
             : createdType === "PROJECT"
               ? "Project"
@@ -24271,7 +24480,9 @@ export function Fab({
               : "Item";
         void hapticComplete();
         toast.success(
-          isStandaloneUnifiedTaskCreate
+          createdType === "TO_DO"
+            ? "To-Do created"
+            : isStandaloneUnifiedTaskCreate
             ? "To-Do created"
             : `${successLabel} created`,
         );
@@ -24410,6 +24621,7 @@ export function Fab({
     onEditSaved,
     resetFabFormState,
     toast,
+    skills,
   ]);
 
   const isUnifiedAddEventSubmitHardDisabled =
@@ -26575,11 +26787,17 @@ export function Fab({
       blocksTime: unifiedEventBlocksTime,
     });
     const inferredUnifiedEventSubmitLabel = `add ${inferredUnifiedEventKind}`;
+    const selectedTypeLabel =
+      UNIFIED_TASK_SIDE_TYPE_OPTIONS.find(
+        (option) => option.value === selectedType,
+      )?.label ?? "TASK";
+    const resolvedTypeLabel =
+      UNIFIED_TASK_SIDE_TYPE_OPTIONS.find(
+        (option) => option.value === resolvedUnifiedAddEventSaveSelected,
+      )?.label ?? "TO DO";
     const unifiedSubmitLabel = isEventsMode
       ? inferredUnifiedEventSubmitLabel
-      : isStandaloneUnifiedTaskDraft
-        ? "add TO-DO"
-      : `add ${addEventSourceTypeLabel.toUpperCase()}`;
+      : `add ${resolvedTypeLabel}`;
     const unifiedAddEventSaveBlockReason =
       getUnifiedAddEventSaveBlockReason();
     const addAddEventSubAction = () => {
@@ -30604,6 +30822,56 @@ export function Fab({
                         </div>
                       </div>
                     </div>
+
+                    {!editTarget ? (
+                      <div
+                        className={detailCardClass}
+                        data-unified-task-side-type-row
+                      >
+                        <div
+                          className={
+                            isTask ? taskDetailRowClass : detailRowClass
+                          }
+                        >
+                          <Label className={detailLabelClass}>Type</Label>
+                          <div className={detailControlWrapClass}>
+                            <Select
+                              value={selectedType}
+                              onValueChange={(value) => {
+                                void hapticSoftTick();
+                                setSaveError(null);
+                                setSelectedType(
+                                  value as UnifiedTaskSideSelectedType,
+                                );
+                              }}
+                              triggerClassName={detailInlineSelectTriggerClass}
+                              trigger={
+                                <span className="block max-w-[9rem] truncate text-right">
+                                  {selectedTypeLabel}
+                                </span>
+                              }
+                              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                              contentAlign="end"
+                              minContentWidth={180}
+                            >
+                              <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                                {UNIFIED_TASK_SIDE_TYPE_OPTIONS.map((option) => (
+                                  <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                    className={fabCreationSelectItemClass(
+                                      selectedType === option.value,
+                                    )}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                   </section>
                   )}

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TextOverrideProvider from "./TextOverrideProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { FocusGateXpRefreshBridge } from "@/components/focus-gate/FocusGateXpRefreshBridge";
 
 export default function ClientProviders({
   children,
@@ -32,6 +33,7 @@ export default function ClientProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <FocusGateXpRefreshBridge />
         <TextOverrideProvider>{children}</TextOverrideProvider>
       </ThemeProvider>
     </QueryClientProvider>

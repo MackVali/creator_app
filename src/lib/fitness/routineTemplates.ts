@@ -15,7 +15,10 @@ export type FitnessExerciseRole =
   | "core"
   | "conditioning"
   | "mobility"
-  | "recovery";
+  | "recovery"
+  | "warmup"
+  | "main"
+  | "finisher";
 
 export type FitnessRoutineGoal =
   | "Foundation"
@@ -30,12 +33,16 @@ export type FitnessRoutineLevel = "Beginner" | "Intermediate" | "Advanced";
 
 export type FitnessRoutineExercisePrescription = {
   name: string;
+  exerciseId?: string;
+  source?: "built-in" | "custom";
+  order?: number;
   sets: number;
   reps?: number;
   durationSeconds?: number;
   repRange?: readonly [number, number];
   restSeconds?: number;
   role: FitnessExerciseRole;
+  instruction?: string;
 };
 
 export type FitnessRoutineTemplate = {

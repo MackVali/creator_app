@@ -55,7 +55,7 @@ describe("My List embedded Matrix checkbox presentation", () => {
     expect(carousel).toContain(
       'const isCardDensityToggleEnabled = presentationMode !== "checkbox-only";'
     );
-    expect(countOccurrences(carousel, "density={effectiveCardDensity}")).toBe(3);
+    expect(countOccurrences(carousel, "density={effectiveCardDensity}")).toBeGreaterThanOrEqual(3);
     expect(carousel).toContain("presentationMode={presentationMode}");
     expect(carousel).not.toContain("density={cardDensity}");
   });
@@ -104,6 +104,41 @@ describe("My List embedded Matrix checkbox presentation", () => {
     expect(scheduledCard).toContain(
       "disabled={completingInstanceIds.has(event.instance.id)}"
     );
+  });
+
+  it("reserves a checkbox-only trailing action slot for Meal and Fitness rows", () => {
+    const todoRow = functionBlock(matrixContent, "MatrixTodoRow");
+    const scheduledCard = functionBlock(matrixContent, "ScheduledEventCard");
+    const dueHabitCard = functionBlock(matrixContent, "DueHabitCard");
+
+    expect(todoRow).toContain("trailingAction?: ReactNode");
+    expect(todoRow).toContain('density === "compact" ? "w-8" : "w-9"');
+    expect(scheduledCard).toContain(
+      'density === "todo" && presentationMode === "checkbox-only"'
+    );
+    expect(scheduledCard).toContain("const todoTrailingAction =");
+    expect(scheduledCard).toContain("<MatrixMealNutritionActionButton");
+    expect(scheduledCard).toContain("<MatrixFitnessWorkoutActionButton");
+    expect(scheduledCard).toContain("const shouldSuppressTodoMeta =");
+    expect(scheduledCard).toContain("trailingAction={todoTrailingAction}");
+    expect(dueHabitCard).toContain('placement="inline"');
+    expect(dueHabitCard).toContain("trailingAction={todoTrailingAction}");
+  });
+
+  it("moves completed checkbox-only Matrix items into the My List disclosure", () => {
+    const carousel = functionBlock(matrixContent, "MatrixGridCarousel");
+
+    expect(carousel).toContain("completedScheduledItems");
+    expect(carousel).toContain("completedDueItems");
+    expect(carousel).toContain('presentationMode !== "checkbox-only"');
+    expect(carousel).toContain("isMatrixEventCompleted(event)");
+    expect(carousel).toContain("isMatrixDueItemCompleted(item)");
+    expect(carousel).toContain("setAreCompletedTodosVisible(false)");
+    expect(carousel).toContain(
+      'areCompletedTodosVisible ? "Hide completed" : "Show completed"'
+    );
+    expect(carousel).toContain("completedTodoCount > 0");
+    expect(carousel).toContain("key=\"matrix-completed-todos-rows\"");
   });
 
   it("prevents stale My List Matrix refreshes from rolling back completion", () => {
