@@ -26,7 +26,6 @@ import {
   RefreshCw,
   ShoppingBag,
   Shield,
-  Smartphone,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -1170,182 +1169,169 @@ function FocusGateSettingsCard() {
     }
   };
 
-  const capReached =
-    status?.dailyMaxMinutes !== null &&
-    status !== null &&
-    status.baseAllowedMinutes >= status.dailyMaxMinutes;
-  const nativeLabel = availability?.canUse
-    ? "iPhone native bridge available"
-    : "iPhone Screen Time setup required";
-  const nativeStatusLabel = focusGateNativeStatusLabel({
+  const protectedSelectionLabel = focusGateSelectionLabel(selectionSummary);
+  const focusGateStatusLabel = focusGateEnabledStatusLabel({
     availability,
     authorizationStatus,
     selectionSummary,
     enforcementState,
     enabled: status?.enabled ?? false,
   });
-  const protectedSelectionLabel =
-    selectionSummary?.totalTokenCount === null ||
-    selectionSummary?.totalTokenCount === undefined
-      ? "Not configured"
-      : selectionSummary.totalTokenCount > 0
-        ? `${selectionSummary.totalTokenCount} protected selections`
-        : "No protected apps";
+  const screenTimeEarnedLabel = isLoading
+    ? "..."
+    : `${status?.allowedMinutes ?? 0} min earned`;
 
   return (
-    <SettingsCard
-      title="Focus Gate"
-      description="Convert today's XP into a cumulative protected-app allowance."
-    >
+    <section className="app-settings-surface overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3 sm:px-6">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold leading-tight text-[var(--text)]">Focus Gate</h2>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">
+            XP-backed Screen Time allowance.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            {status?.enabled ? "On" : "Off"}
+          </span>
+          <ToggleSwitch
+            checked={status?.enabled ?? false}
+            onChange={() => {
+              void hapticSoftTick();
+              void saveSettings({ enabled: !(status?.enabled ?? false) });
+            }}
+            ariaLabel="Toggle Focus Gate"
+            disabled={isLoading || saving}
+          />
+        </div>
+      </div>
       {error || saveError || nativeError ? (
-        <p className="px-6 pt-4 text-sm text-red-400">
+        <p className="border-b border-[var(--border)] px-5 py-3 text-sm text-red-400 sm:px-6">
           {saveError ?? error ?? nativeError}
         </p>
       ) : null}
-      <SettingsToggleRow
-        icon={Shield}
-        title="Enabled"
-        description="Screen Time enforcement will use this allowance on iPhone."
-        checked={status?.enabled ?? false}
-        onChange={() => {
-          void hapticSoftTick();
-          void saveSettings({ enabled: !(status?.enabled ?? false) });
-        }}
-        ariaLabel="Toggle Focus Gate"
-        disabled={isLoading || saving}
-      />
-      <div className="grid gap-0 divide-y divide-[var(--border)] md:grid-cols-2 md:divide-x md:divide-y-0">
-        <div className="px-5 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <SettingsIcon icon={Timer} />
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-                Screen Time Rate
-              </p>
-              <p className="text-sm font-medium text-[var(--text)]">
-                {status?.minutesPerXp ?? 5} minutes per XP
-              </p>
-            </div>
-          </div>
-          <label className="mt-3 block text-xs font-medium text-[var(--muted)]" htmlFor="focus-gate-minutes-per-xp">
-            Minutes per XP
-          </label>
-          <input
-            id="focus-gate-minutes-per-xp"
-            inputMode="numeric"
-            type="number"
-            min={1}
-            max={120}
-            value={minutesPerXp}
-            disabled={isLoading || saving}
-            onChange={(event) => setMinutesPerXp(event.target.value)}
-            onBlur={commitMinutesPerXp}
-            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </div>
-        <div className="px-5 py-4 sm:px-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-            Daily Limit
-          </p>
-          <p className="mt-1 text-sm font-medium text-[var(--text)]">
-            {status?.dailyMaxMinutes === null || !status
-              ? "No daily limit"
-              : `${status.dailyMaxMinutes} min maximum`}
-          </p>
-          <label className="mt-3 block text-xs font-medium text-[var(--muted)]" htmlFor="focus-gate-daily-max">
-            Optional daily maximum
-          </label>
-          <input
-            id="focus-gate-daily-max"
-            inputMode="numeric"
-            type="number"
-            min={1}
-            max={1440}
-            placeholder="No limit"
-            value={dailyMaxMinutes}
-            disabled={isLoading || saving}
-            onChange={(event) => setDailyMaxMinutes(event.target.value)}
-            onBlur={commitDailyMax}
-            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </div>
+      <div className="grid gap-2 border-b border-[var(--border)] px-5 py-3 sm:grid-cols-2 sm:px-6">
+        <FocusGateStatusPill label={focusGateStatusLabel} />
+        <FocusGateStatusPill label={focusGateAuthorizationStatusLabel(authorizationStatus)} />
       </div>
-      <div className="grid gap-0 divide-y divide-[var(--border)] md:grid-cols-3 md:divide-x md:divide-y-0">
+      <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-b border-[var(--border)]">
         <FocusGateMetric label="XP Today" value={isLoading ? "..." : `${status?.xpToday ?? 0} XP`} />
-        <FocusGateMetric
-          label="Screen Time Earned"
-          value={isLoading ? "..." : `${status?.baseAllowedMinutes ?? 0} min`}
-        />
-        <FocusGateMetric
-          label="Today"
-          value={
-            isLoading
-              ? "..."
-              : capReached
-                ? "Daily maximum reached"
-                : `${status?.allowedMinutes ?? 0} min earned today`
-          }
-        />
+        <FocusGateMetric label="Screen Time" value={screenTimeEarnedLabel} />
       </div>
-      <div className="divide-y divide-[var(--border)]">
-        <SettingsStaticRow
-          icon={Smartphone}
-          title="Native Enforcement"
-          description={nativeLabel}
-          value={isRefreshing ? "Refreshing" : nativeStatusLabel}
-        />
-        <SettingsStaticRow
-          icon={Shield}
-          title="Screen Time Authorization"
-          description="Uses Apple's individual authorization flow."
-          value={focusGateAuthorizationLabel(authorizationStatus)}
-        />
-        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <SettingsIcon icon={Lock} />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-[var(--text)]">Protected Apps</p>
-              <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">
-                {protectedSelectionLabel}
-              </p>
-            </div>
+      <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-b border-[var(--border)]">
+        <div className="min-w-0 px-4 py-3 sm:px-6">
+          <label
+            className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]"
+            htmlFor="focus-gate-minutes-per-xp"
+          >
+            Rate
+          </label>
+          <div className="mt-2 flex min-h-10 items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] pr-2 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]">
+            <Timer className="ml-3 h-3.5 w-3.5 shrink-0 text-[var(--muted)]" aria-hidden="true" />
+            <input
+              id="focus-gate-minutes-per-xp"
+              inputMode="numeric"
+              type="number"
+              min={1}
+              max={120}
+              value={minutesPerXp}
+              disabled={isLoading || saving}
+              onChange={(event) => setMinutesPerXp(event.target.value)}
+              onBlur={commitMinutesPerXp}
+              aria-label="Screen Time Rate minutes per XP"
+              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm font-semibold text-[var(--text)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+              min/XP
+            </span>
           </div>
-          <div className="flex shrink-0 gap-2">
-            {authorizationStatus !== "approved" && availability?.canUse ? (
-              <button
-                type="button"
-                disabled={nativeBusy}
-                onClick={requestNativeAuthorization}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--subtle-surface)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Authorize
-              </button>
+        </div>
+        <div className="min-w-0 px-4 py-3 sm:px-6">
+          <label
+            className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]"
+            htmlFor="focus-gate-daily-max"
+          >
+            Daily Limit
+          </label>
+          <div className="mt-2 flex min-h-10 items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] pr-2 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]">
+            <input
+              id="focus-gate-daily-max"
+              inputMode="numeric"
+              type="number"
+              min={1}
+              max={1440}
+              placeholder="No limit"
+              value={dailyMaxMinutes}
+              disabled={isLoading || saving}
+              onChange={(event) => setDailyMaxMinutes(event.target.value)}
+              onBlur={commitDailyMax}
+              aria-label="Focus Gate daily limit"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-semibold text-[var(--text)] outline-none placeholder:text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {dailyMaxMinutes.trim() ? (
+              <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                min
+              </span>
             ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 px-5 py-3 sm:px-6">
+        <SettingsIcon icon={Lock} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-[var(--text)]">Protected Apps</p>
+          <p className="mt-0.5 truncate text-xs leading-5 text-[var(--muted)]">
+            {protectedSelectionLabel}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {authorizationStatus !== "approved" && availability?.canUse ? (
             <button
               type="button"
-              disabled={!availability?.canUse || nativeBusy}
-              onClick={chooseProtectedApps}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-3 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={nativeBusy}
+              onClick={requestNativeAuthorization}
+              className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--subtle-surface)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-              Choose
+              Authorize
             </button>
-          </div>
+          ) : null}
+          <button
+            type="button"
+            disabled={!availability?.canUse || nativeBusy}
+            onClick={chooseProtectedApps}
+            className="inline-flex min-h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-3 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Edit
+          </button>
         </div>
       </div>
-    </SettingsCard>
+      {isRefreshing ? (
+        <p className="border-t border-[var(--border)] px-5 py-2 text-xs text-[var(--muted)] sm:px-6">
+          Refreshing Focus Gate status.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
 function FocusGateMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-5 py-4 sm:px-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+    <div className="min-w-0 px-4 py-3 sm:px-6">
+      <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold leading-tight text-[var(--text)]">
+      <p className="mt-1 truncate text-base font-semibold leading-tight text-[var(--text)] sm:text-lg">
         {value}
       </p>
+    </div>
+  );
+}
+
+function FocusGateStatusPill({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3">
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+      <span className="min-w-0 truncate text-xs font-medium text-[var(--text)]">{label}</span>
     </div>
   );
 }
@@ -1365,7 +1351,12 @@ function focusGateAuthorizationLabel(status: FocusGateNativeAuthorizationStatus)
   }
 }
 
-function focusGateNativeStatusLabel({
+function focusGateAuthorizationStatusLabel(status: FocusGateNativeAuthorizationStatus) {
+  if (status === "approved") return "Screen Time Authorized";
+  return `Screen Time ${focusGateAuthorizationLabel(status)}`;
+}
+
+function focusGateEnabledStatusLabel({
   availability,
   authorizationStatus,
   selectionSummary,
@@ -1378,13 +1369,38 @@ function focusGateNativeStatusLabel({
   enforcementState: FocusGateNativeEnforcementState | null;
   enabled: boolean;
 }) {
-  if (!availability?.canUse) return "Unavailable on this device";
-  if (!enabled) return "Disabled";
-  if (authorizationStatus !== "approved") return "Authorization required";
-  if (!selectionSummary?.hasSelection) return "No protected apps";
-  if (enforcementState?.shielded === true) return "Locked";
-  if (enforcementState?.shielded === false) return "Access available";
-  return "Setup required";
+  if (!availability?.canUse) return "Focus Gate Unavailable";
+  if (!enabled) return "Focus Gate Off";
+  if (authorizationStatus !== "approved") return "Focus Gate Needs Authorization";
+  if (!selectionSummary?.hasSelection) return "Focus Gate Needs Apps";
+  if (enforcementState?.shielded === true) return "Focus Gate Active: Locked";
+  return "Focus Gate Active";
+}
+
+function focusGateSelectionLabel(selectionSummary: FocusGateSelectionSummary | null) {
+  if (
+    selectionSummary?.totalTokenCount === null ||
+    selectionSummary?.totalTokenCount === undefined
+  ) {
+    return "Not configured";
+  }
+
+  if (selectionSummary.totalTokenCount <= 0) {
+    return "No protected apps";
+  }
+
+  const pieces = [
+    focusGateCountLabel(selectionSummary.applicationCount, "app"),
+    focusGateCountLabel(selectionSummary.categoryCount, "category"),
+    focusGateCountLabel(selectionSummary.webDomainCount, "website"),
+  ].filter(Boolean);
+
+  return pieces.length > 0 ? pieces.join(" · ") : `${selectionSummary.totalTokenCount} selected`;
+}
+
+function focusGateCountLabel(value: number | null | undefined, singular: string) {
+  if (!value) return null;
+  return `${value} ${singular}${value === 1 ? "" : "s"} selected`;
 }
 
 type SettingsIconProps = {

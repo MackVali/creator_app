@@ -30,6 +30,7 @@ enum FocusGateShielding {
             source: "shield",
             message: "applied",
             details: [
+                "storeName": storeName,
                 "applicationCount": "\(summary.applicationCount)",
                 "categoryCount": "\(summary.categoryCount)",
                 "webDomainCount": "\(summary.webDomainCount)"
@@ -44,6 +45,10 @@ enum FocusGateShielding {
         store.shield.webDomains = nil
         store.shield.webDomainCategories = nil
 
-        FocusGateSharedState.recordDebugEvent(source: "shield", message: "cleared")
+        FocusGateSharedState.recordDebugEvent(
+            source: "shield",
+            message: "clearShield_called",
+            details: ["storeName": storeName]
+        )
     }
 }

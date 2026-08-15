@@ -46,6 +46,9 @@
 		7BD1000D2FF0000000C0D3EA /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100152FF0000000C0D3EA /* FamilyControls.framework */; };
 		7BD1000E2FF0000000C0D3EA /* DeviceActivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100162FF0000000C0D3EA /* DeviceActivity.framework */; };
 		7BD1000F2FF0000000C0D3EA /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100172FF0000000C0D3EA /* ManagedSettings.framework */; };
+		7BD200012FF1000000C0D3EA /* ManagedSettingsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD200102FF1000000C0D3EA /* ManagedSettingsUI.framework */; };
+		7BD200022FF1000000C0D3EA /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BD100172FF0000000C0D3EA /* ManagedSettings.framework */; };
+		7BD200032FF1000000C0D3EA /* CreatorFocusGateShield.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BD200112FF1000000C0D3EA /* CreatorFocusGateShield.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +66,13 @@
 			remoteGlobalIDString = 7BD100202FF0000000C0D3EA;
 			remoteInfo = CreatorFocusGateMonitor;
 		};
+		7BD200262FF1000000C0D3EA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7BD200202FF1000000C0D3EA;
+			remoteInfo = CreatorFocusGateShield;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -74,6 +84,7 @@
 			files = (
 				7BC3E20D2FE9D4960015FD93 /* CreatorLiveActivitiesExtension.appex in Embed Foundation Extensions */,
 				7BD100082FF0000000C0D3EA /* CreatorFocusGateMonitor.appex in Embed Foundation Extensions */,
+				7BD200032FF1000000C0D3EA /* CreatorFocusGateShield.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -109,6 +120,8 @@
 		7BD100152FF0000000C0D3EA /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 		7BD100162FF0000000C0D3EA /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		7BD100172FF0000000C0D3EA /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
+		7BD200102FF1000000C0D3EA /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = System/Library/Frameworks/ManagedSettingsUI.framework; sourceTree = SDKROOT; };
+		7BD200112FF1000000C0D3EA /* CreatorFocusGateShield.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CreatorFocusGateShield.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -127,11 +140,19 @@
 			);
 			target = 7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */;
 		};
+		7BD200192FF1000000C0D3EA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7BD200202FF1000000C0D3EA /* CreatorFocusGateShield */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7BC3E1FF2FE9D4920015FD93 /* CreatorLiveActivities */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7BC3E2112FE9D4960015FD93 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = CreatorLiveActivities; sourceTree = "<group>"; };
 		7BD100182FF0000000C0D3EA /* CreatorFocusGateMonitor */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7BD100192FF0000000C0D3EA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = CreatorFocusGateMonitor; sourceTree = "<group>"; };
+		7BD200182FF1000000C0D3EA /* CreatorFocusGateShield */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7BD200192FF1000000C0D3EA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = CreatorFocusGateShield; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +193,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7BD200222FF1000000C0D3EA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BD200012FF1000000C0D3EA /* ManagedSettingsUI.framework in Frameworks */,
+				7BD200022FF1000000C0D3EA /* ManagedSettings.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -183,6 +213,7 @@
 				7BA47B252FEE2D1700C0D3EA /* Shared */,
 				7BC3E1FF2FE9D4920015FD93 /* CreatorLiveActivities */,
 				7BD100182FF0000000C0D3EA /* CreatorFocusGateMonitor */,
+				7BD200182FF1000000C0D3EA /* CreatorFocusGateShield */,
 				7B8023352FE754BB00BEFB36 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -194,6 +225,7 @@
 				504EC3041FED79650016851F /* App.app */,
 				7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */,
 				7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */,
+				7BD200112FF1000000C0D3EA /* CreatorFocusGateShield.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -221,6 +253,7 @@
 		7B8023352FE754BB00BEFB36 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				7BD200102FF1000000C0D3EA /* ManagedSettingsUI.framework */,
 				7BD100172FF0000000C0D3EA /* ManagedSettings.framework */,
 				7BD100162FF0000000C0D3EA /* DeviceActivity.framework */,
 				7BD100152FF0000000C0D3EA /* FamilyControls.framework */,
@@ -261,6 +294,7 @@
 			dependencies = (
 				7BC3E20C2FE9D4960015FD93 /* PBXTargetDependency */,
 				7BD100272FF0000000C0D3EA /* PBXTargetDependency */,
+				7BD200272FF1000000C0D3EA /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -315,6 +349,28 @@
 			productReference = 7BD100142FF0000000C0D3EA /* CreatorFocusGateMonitor.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		7BD200202FF1000000C0D3EA /* CreatorFocusGateShield */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7BD200242FF1000000C0D3EA /* Build configuration list for PBXNativeTarget "CreatorFocusGateShield" */;
+			buildPhases = (
+				7BD200212FF1000000C0D3EA /* Sources */,
+				7BD200222FF1000000C0D3EA /* Frameworks */,
+				7BD200232FF1000000C0D3EA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7BD200182FF1000000C0D3EA /* CreatorFocusGateShield */,
+			);
+			name = CreatorFocusGateShield;
+			packageProductDependencies = (
+			);
+			productName = CreatorFocusGateShield;
+			productReference = 7BD200112FF1000000C0D3EA /* CreatorFocusGateShield.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -333,6 +389,9 @@
 						CreatedOnToolsVersion = 26.5;
 					};
 					7BD100202FF0000000C0D3EA = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					7BD200202FF1000000C0D3EA = {
 						CreatedOnToolsVersion = 26.5;
 					};
 				};
@@ -357,6 +416,7 @@
 				504EC3031FED79650016851F /* App */,
 				7BC3E1F92FE9D4920015FD93 /* CreatorLiveActivitiesExtension */,
 				7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */,
+				7BD200202FF1000000C0D3EA /* CreatorFocusGateShield */,
 			);
 		};
 /* End PBXProject section */
@@ -384,6 +444,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7BD100232FF0000000C0D3EA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7BD200232FF1000000C0D3EA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -428,6 +495,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7BD200212FF1000000C0D3EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -440,6 +514,11 @@
 			isa = PBXTargetDependency;
 			target = 7BD100202FF0000000C0D3EA /* CreatorFocusGateMonitor */;
 			targetProxy = 7BD100262FF0000000C0D3EA /* PBXContainerItemProxy */;
+		};
+		7BD200272FF1000000C0D3EA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7BD200202FF1000000C0D3EA /* CreatorFocusGateShield */;
+			targetProxy = 7BD200262FF1000000C0D3EA /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -786,6 +865,88 @@
 			};
 			name = Release;
 		};
+		7BD200252FF1000000C0D3EA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = CreatorFocusGateShield/CreatorFocusGateShield.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 18;
+				DEVELOPMENT_TEAM = 6QCVLRAYU8;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CreatorFocusGateShield/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CreatorFocusGateShield;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.trycreator.creator.CreatorFocusGateShield;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7BD200282FF1000000C0D3EA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = CreatorFocusGateShield/CreatorFocusGateShield.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 18;
+				DEVELOPMENT_TEAM = 6QCVLRAYU8;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CreatorFocusGateShield/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CreatorFocusGateShield;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0.3;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.trycreator.creator.CreatorFocusGateShield;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -821,6 +982,15 @@
 			buildConfigurations = (
 				7BD100252FF0000000C0D3EA /* Debug */,
 				7BD100282FF0000000C0D3EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7BD200242FF1000000C0D3EA /* Build configuration list for PBXNativeTarget "CreatorFocusGateShield" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7BD200252FF1000000C0D3EA /* Debug */,
+				7BD200282FF1000000C0D3EA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

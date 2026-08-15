@@ -31,9 +31,26 @@ enum FocusGateDeviceActivity {
                 selection: selection,
                 thresholdMinutes: state.allowedMinutes
             )
+            FocusGateSharedState.recordDebugEvent(
+                source: "deviceActivity",
+                message: "monitoring_threshold_registered",
+                details: [
+                    "thresholdMinutes": "\(state.allowedMinutes)",
+                    "includesPastActivity": "true"
+                ]
+            )
         }
 
         let center = DeviceActivityCenter()
+        FocusGateSharedState.recordDebugEvent(
+            source: "deviceActivity",
+            message: "monitoring_reconfigure_started",
+            details: [
+                "allowedMinutes": "\(state.allowedMinutes)",
+                "lastReachedThresholdMinutes": "\(state.lastReachedThresholdMinutes)",
+                "eventRegistered": registerUsageEvent ? "true" : "false"
+            ]
+        )
         center.stopMonitoring([activityName])
         try center.startMonitoring(activityName, during: schedule, events: events)
 
