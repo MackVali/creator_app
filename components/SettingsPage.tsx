@@ -968,7 +968,7 @@ function FocusGateSettingsCard() {
     useState<FocusGateNativeAuthorizationStatus>("unavailable");
   const [selectionSummary, setSelectionSummary] =
     useState<FocusGateSelectionSummary | null>(null);
-  const [enforcementState, setEnforcementState] =
+  const [, setEnforcementState] =
     useState<FocusGateNativeEnforcementState | null>(null);
   const [nativeBusy, setNativeBusy] = useState(false);
   const [nativeError, setNativeError] = useState<string | null>(null);
@@ -1170,13 +1170,6 @@ function FocusGateSettingsCard() {
   };
 
   const protectedSelectionLabel = focusGateSelectionLabel(selectionSummary);
-  const focusGateStatusLabel = focusGateEnabledStatusLabel({
-    availability,
-    authorizationStatus,
-    selectionSummary,
-    enforcementState,
-    enabled: status?.enabled ?? false,
-  });
   const screenTimeEarnedLabel = isLoading
     ? "..."
     : `${status?.allowedMinutes ?? 0} min earned`;
@@ -1210,10 +1203,6 @@ function FocusGateSettingsCard() {
           {saveError ?? error ?? nativeError}
         </p>
       ) : null}
-      <div className="grid gap-2 border-b border-[var(--border)] px-5 py-3 sm:grid-cols-2 sm:px-6">
-        <FocusGateStatusPill label={focusGateStatusLabel} />
-        <FocusGateStatusPill label={focusGateAuthorizationStatusLabel(authorizationStatus)} />
-      </div>
       <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-b border-[var(--border)]">
         <FocusGateMetric label="XP Today" value={isLoading ? "..." : `${status?.xpToday ?? 0} XP`} />
         <FocusGateMetric label="Screen Time" value={screenTimeEarnedLabel} />
@@ -1325,56 +1314,6 @@ function FocusGateMetric({ label, value }: { label: string; value: string }) {
       </p>
     </div>
   );
-}
-
-function FocusGateStatusPill({ label }: { label: string }) {
-  return (
-    <div className="flex min-h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3">
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-      <span className="min-w-0 truncate text-xs font-medium text-[var(--text)]">{label}</span>
-    </div>
-  );
-}
-
-function focusGateAuthorizationLabel(status: FocusGateNativeAuthorizationStatus) {
-  switch (status) {
-    case "approved":
-      return "Approved";
-    case "notDetermined":
-      return "Not requested";
-    case "denied":
-      return "Denied";
-    case "restricted":
-      return "Restricted";
-    case "unavailable":
-      return "Unavailable";
-  }
-}
-
-function focusGateAuthorizationStatusLabel(status: FocusGateNativeAuthorizationStatus) {
-  if (status === "approved") return "Screen Time Authorized";
-  return `Screen Time ${focusGateAuthorizationLabel(status)}`;
-}
-
-function focusGateEnabledStatusLabel({
-  availability,
-  authorizationStatus,
-  selectionSummary,
-  enforcementState,
-  enabled,
-}: {
-  availability: FocusGateNativeAvailability | null;
-  authorizationStatus: FocusGateNativeAuthorizationStatus;
-  selectionSummary: FocusGateSelectionSummary | null;
-  enforcementState: FocusGateNativeEnforcementState | null;
-  enabled: boolean;
-}) {
-  if (!availability?.canUse) return "Focus Gate Unavailable";
-  if (!enabled) return "Focus Gate Off";
-  if (authorizationStatus !== "approved") return "Focus Gate Needs Authorization";
-  if (!selectionSummary?.hasSelection) return "Focus Gate Needs Apps";
-  if (enforcementState?.shielded === true) return "Focus Gate Active: Locked";
-  return "Focus Gate Active";
 }
 
 function focusGateSelectionLabel(selectionSummary: FocusGateSelectionSummary | null) {
