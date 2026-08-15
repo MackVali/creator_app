@@ -66,6 +66,24 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
             return
         }
 
+        let state = FocusGateSharedState.loadState()
+        if
+            let creatorDayEndsAt = FocusGateSharedState.date(from: state.creatorDayEndsAt),
+            Date() < creatorDayEndsAt
+        {
+            FocusGateSharedState.recordDebugEvent(
+                source: "monitorExtension",
+                message: "interval_ended_before_creator_day_end",
+                details: [
+                    "allowedMinutes": "\(state.allowedMinutes)",
+                    "lastReachedThresholdMinutes": "\(state.lastReachedThresholdMinutes)",
+                    "shielded": state.shielded ? "true" : "false",
+                    "creatorDayEndsAt": state.creatorDayEndsAt
+                ]
+            )
+            return
+        }
+
         FocusGateSharedState.recordDebugEvent(
             source: "monitorExtension",
             message: "interval_ended"

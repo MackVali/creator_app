@@ -162,6 +162,9 @@ enum FocusGateSharedState {
             message: message,
             details: details
         )
+        #if DEBUG
+        NSLog("[CREATOR_FOCUS_GATE] \(source).\(message) details=\(details)")
+        #endif
         let next = Array((current + [event]).suffix(debugEventLimit))
         guard let data = try? JSONEncoder().encode(next) else {
             return

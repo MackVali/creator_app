@@ -18,8 +18,8 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getEnforcementState", returnType: CAPPluginReturnPromise)
     ]
 
-    private var activePickerCall: CAPPluginCall?
-    private var activePickerController: UIViewController?
+    @MainActor private var activePickerCall: CAPPluginCall?
+    @MainActor private var activePickerController: UIViewController?
     @MainActor private var activeAuthorizationCalls: [UUID: CAPPluginCall] = [:]
 
     @objc func isAvailable(_ call: CAPPluginCall) {
@@ -60,24 +60,40 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @MainActor @objc func presentActivityPicker(_ call: CAPPluginCall) {
+    @objc func presentActivityPicker(_ call: CAPPluginCall) {
+        Self.recordPickerDebugEvent(
+            "presentActivityPicker_called",
+            mainActorStatus: "entry_not_isolated"
+        )
+        performSelector(
+            onMainThread: #selector(presentActivityPickerOnMainThread(_:)),
+            with: call,
+            waitUntilDone: Thread.isMainThread
+        )
+    }
+
+    @MainActor @objc private func presentActivityPickerOnMainThread(_ call: CAPPluginCall) {
         guard nativeAvailable() else {
-            call.reject("Focus Gate requires iOS 17.4 or newer.")
+            rejectPickerCall(call, "Focus Gate requires iOS 17.4 or newer.", reason: "unavailable")
             return
         }
 
         guard authorizationStatusString() == "approved" else {
-            call.reject("Screen Time authorization is required before choosing protected apps.")
+            rejectPickerCall(
+                call,
+                "Screen Time authorization is required before choosing protected apps.",
+                reason: "authorization_required"
+            )
             return
         }
 
         guard activePickerCall == nil else {
-            call.reject("Protected app picker is already open.")
+            rejectPickerCall(call, "Protected app picker is already open.", reason: "already_open")
             return
         }
 
         guard let presentingController = bridge?.viewController else {
-            call.reject("Unable to present protected app picker.")
+            rejectPickerCall(call, "Unable to present protected app picker.", reason: "missing_presenter")
             return
         }
 
@@ -86,29 +102,23 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         let pickerView = FocusGateActivityPickerView(
             selection: initialSelection,
             onCancel: { [weak self] in
-                self?.dismissPicker(resolveWith: FocusGateSharedState.selectionSummary().dictionary())
+                self?.cancelPicker()
             },
             onComplete: { [weak self] selection in
-                guard let self else { return }
-                FocusGateSharedState.saveSelection(selection)
-                FocusGateSharedState.recordDebugEvent(
-                    source: "selection",
-                    message: "saved",
-                    details: [
-                        "applicationCount": "\(selection.applicationTokens.count)",
-                        "categoryCount": "\(selection.categoryTokens.count)",
-                        "webDomainCount": "\(selection.webDomainTokens.count)"
-                    ]
-                )
-                _ = self.reconcileCachedStateAfterSelectionChange(selection: selection)
-                self.dismissPicker(resolveWith: FocusGateSharedState.selectionSummary(selection).dictionary())
+                self?.completePicker(selection: selection)
             }
         )
 
         let hostingController = UIHostingController(rootView: pickerView)
         hostingController.modalPresentationStyle = .formSheet
         activePickerController = hostingController
-        presentingController.present(hostingController, animated: true)
+        Self.recordPickerDebugEvent(
+            "before_presenting_hosting_controller",
+            mainActorStatus: "main_actor_isolated"
+        )
+        presentingController.present(hostingController, animated: true) {
+            Self.recordPickerDebugEvent("picker_presented", mainActorStatus: "main_actor_isolated")
+        }
     }
 
     @objc func getSelectionSummary(_ call: CAPPluginCall) {
@@ -128,8 +138,19 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func syncAllowance(_ call: CAPPluginCall) {
+        FocusGateSharedState.recordDebugEvent(
+            source: "sync",
+            message: "syncAllowance_entry"
+        )
+
         guard nativeAvailable() else {
-            call.resolve(enforcementStateDictionary(nativeAvailable: false))
+            let result = enforcementStateDictionary(nativeAvailable: false)
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "syncAllowance_resulting_enforcement_state",
+                details: Self.enforcementDebugDetails(result)
+            )
+            call.resolve(result)
             return
         }
 
@@ -141,6 +162,11 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
             let creatorDayEndsAt = call.getString("creatorDayEndsAt"),
             let timezone = call.getString("timezone")
         else {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "syncAllowance_rejected",
+                details: ["reason": "missing_input"]
+            )
             call.reject("Missing Focus Gate allowance sync input.")
             return
         }
@@ -170,30 +196,81 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         let selection = FocusGateSharedState.loadSelection()
         let selectionSummary = FocusGateSharedState.selectionSummary(selection)
         let authorizationStatus = authorizationStatusString()
+        let baseDebugDetails = [
+            "enabled": enabled ? "true" : "false",
+            "authorizationStatus": authorizationStatus,
+            "applicationCount": "\(selectionSummary.applicationCount)",
+            "categoryCount": "\(selectionSummary.categoryCount)",
+            "webDomainCount": "\(selectionSummary.webDomainCount)",
+            "previousAllowedMinutes": "\(previous.allowedMinutes)",
+            "incomingAllowedMinutes": "\(allowedMinutes)",
+            "lastReachedThresholdMinutes": "\(previousThreshold)",
+            "previousShielded": previous.shielded ? "true" : "false",
+            "dayChanged": dayChanged ? "true" : "false"
+        ]
+        FocusGateSharedState.recordDebugEvent(
+            source: "sync",
+            message: "syncAllowance_state_loaded",
+            details: baseDebugDetails
+        )
 
         if !enabled {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "branch_clear_shield",
+                details: baseDebugDetails.merging(["reason": "disabled"]) { _, new in new }
+            )
             FocusGateShielding.clearShield()
             FocusGateDeviceActivity.stopMonitoring()
             nextState.shielded = false
             FocusGateSharedState.saveState(nextState)
-            call.resolve(enforcementStateDictionary(state: nextState))
+            let result = enforcementStateDictionary(state: nextState)
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "syncAllowance_resulting_enforcement_state",
+                details: Self.enforcementDebugDetails(result)
+            )
+            call.resolve(result)
             return
         }
 
         guard authorizationStatus == "approved" else {
-            FocusGateDeviceActivity.stopMonitoring()
-            nextState.shielded = false
-            FocusGateSharedState.saveState(nextState)
-            call.resolve(enforcementStateDictionary(state: nextState))
-            return
-        }
-
-        guard selectionSummary.hasSelection else {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "branch_clear_shield",
+                details: baseDebugDetails.merging(["reason": "authorization_not_approved"]) { _, new in new }
+            )
             FocusGateShielding.clearShield()
             FocusGateDeviceActivity.stopMonitoring()
             nextState.shielded = false
             FocusGateSharedState.saveState(nextState)
-            call.resolve(enforcementStateDictionary(state: nextState))
+            let result = enforcementStateDictionary(state: nextState)
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "syncAllowance_resulting_enforcement_state",
+                details: Self.enforcementDebugDetails(result)
+            )
+            call.resolve(result)
+            return
+        }
+
+        guard selectionSummary.hasSelection else {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "branch_clear_shield",
+                details: baseDebugDetails.merging(["reason": "selection_missing"]) { _, new in new }
+            )
+            FocusGateShielding.clearShield()
+            FocusGateDeviceActivity.stopMonitoring()
+            nextState.shielded = false
+            FocusGateSharedState.saveState(nextState)
+            let result = enforcementStateDictionary(state: nextState)
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "syncAllowance_resulting_enforcement_state",
+                details: Self.enforcementDebugDetails(result)
+            )
+            call.resolve(result)
             return
         }
 
@@ -201,9 +278,21 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         let shouldRegisterUsageEvent = allowedMinutes > 0 && previousThreshold < allowedMinutes
 
         if shouldShield {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "branch_apply_shield",
+                details: baseDebugDetails.merging([
+                    "reason": allowedMinutes <= 0 ? "no_allowance" : "threshold_already_reached"
+                ]) { _, new in new }
+            )
             FocusGateShielding.applyShield(selection: selection)
             nextState.shielded = true
         } else {
+            FocusGateSharedState.recordDebugEvent(
+                source: "sync",
+                message: "branch_clear_shield",
+                details: baseDebugDetails.merging(["reason": "new_allowance_available"]) { _, new in new }
+            )
             FocusGateShielding.clearShield()
             nextState.shielded = false
         }
@@ -238,7 +327,13 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
                 "usageEventRegistered": shouldRegisterUsageEvent ? "true" : "false"
             ]
         )
-        call.resolve(enforcementStateDictionary(state: nextState))
+        let result = enforcementStateDictionary(state: nextState)
+        FocusGateSharedState.recordDebugEvent(
+            source: "sync",
+            message: "syncAllowance_resulting_enforcement_state",
+            details: Self.enforcementDebugDetails(result)
+        )
+        call.resolve(result)
     }
 
     @objc func getEnforcementState(_ call: CAPPluginCall) {
@@ -319,16 +414,58 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["status": authorizationStatusString()])
     }
 
-    private func dismissPicker(resolveWith payload: [String: Any]) {
+    @MainActor private func cancelPicker() {
+        dismissPicker(resolveWith: FocusGateSharedState.selectionSummary().dictionary())
+    }
+
+    @MainActor private func completePicker(selection: FamilyActivitySelection) {
+        let didSave = FocusGateSharedState.saveSelection(selection)
+        let selectionCounts = [
+            "applicationCount": "\(selection.applicationTokens.count)",
+            "categoryCount": "\(selection.categoryTokens.count)",
+            "webDomainCount": "\(selection.webDomainTokens.count)"
+        ]
+        var debugSelectionCounts = selectionCounts
+        debugSelectionCounts["saved"] = didSave ? "true" : "false"
+        Self.recordPickerDebugEvent(
+            "selection_saved",
+            mainActorStatus: "main_actor_isolated",
+            details: debugSelectionCounts
+        )
+        FocusGateSharedState.recordDebugEvent(
+            source: "selection",
+            message: "saved",
+            details: selectionCounts
+        )
+        _ = reconcileCachedStateAfterSelectionChange(selection: selection)
+        dismissPicker(resolveWith: FocusGateSharedState.selectionSummary(selection).dictionary())
+    }
+
+    @MainActor private func rejectPickerCall(_ call: CAPPluginCall, _ message: String, reason: String) {
+        Self.recordPickerDebugEvent(
+            "capacitor_call_rejected",
+            mainActorStatus: "main_actor_isolated",
+            details: ["reason": reason]
+        )
+        call.reject(message)
+    }
+
+    @MainActor private func dismissPicker(resolveWith payload: [String: Any]) {
         let call = activePickerCall
         activePickerCall = nil
+        let controller = activePickerController
+        activePickerController = nil
 
-        let finish = { [weak self] in
-            self?.activePickerController = nil
+        let finish = {
+            Self.recordPickerDebugEvent("picker_dismissed", mainActorStatus: "main_actor_isolated")
             call?.resolve(payload)
+            Self.recordPickerDebugEvent(
+                "capacitor_call_resolved",
+                mainActorStatus: "main_actor_isolated"
+            )
         }
 
-        guard let controller = activePickerController else {
+        guard let controller else {
             finish()
             return
         }
@@ -385,17 +522,69 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
             "totalTokenCount": nativeAvailable ? summary.totalTokenCount : NSNull()
         ]
     }
+
+    private static func enforcementDebugDetails(_ state: [String: Any]) -> [String: String] {
+        let keys = [
+            "nativeAvailable",
+            "authorizationStatus",
+            "selectionStatus",
+            "shielded",
+            "setupStatus",
+            "enabled",
+            "xpToday",
+            "allowedMinutes",
+            "lastReachedThresholdMinutes",
+            "applicationCount",
+            "categoryCount",
+            "webDomainCount",
+            "totalTokenCount"
+        ]
+
+        var details: [String: String] = [:]
+        for key in keys {
+            guard let value = state[key] else {
+                continue
+            }
+            if value is NSNull {
+                details[key] = "null"
+            } else {
+                details[key] = String(describing: value)
+            }
+        }
+        return details
+    }
+
+    private static func recordPickerDebugEvent(
+        _ message: String,
+        mainActorStatus: String,
+        details: [String: String] = [:]
+    ) {
+        #if DEBUG
+        var debugDetails = details
+        debugDetails["isMainThread"] = Thread.isMainThread ? "true" : "false"
+        debugDetails["mainActorStatus"] = mainActorStatus
+        FocusGateSharedState.recordDebugEvent(
+            source: "picker",
+            message: message,
+            details: debugDetails
+        )
+        NSLog(
+            "[CREATOR_FOCUS_GATE_PICKER] \(message) isMainThread=\(debugDetails["isMainThread"] ?? "false") mainActorStatus=\(mainActorStatus) details=\(details)"
+        )
+        #endif
+    }
 }
 
+@MainActor
 private struct FocusGateActivityPickerView: View {
     @State private var selection: FamilyActivitySelection
-    let onCancel: () -> Void
-    let onComplete: (FamilyActivitySelection) -> Void
+    let onCancel: @MainActor () -> Void
+    let onComplete: @MainActor (FamilyActivitySelection) -> Void
 
     init(
         selection: FamilyActivitySelection,
-        onCancel: @escaping () -> Void,
-        onComplete: @escaping (FamilyActivitySelection) -> Void
+        onCancel: @escaping @MainActor () -> Void,
+        onComplete: @escaping @MainActor (FamilyActivitySelection) -> Void
     ) {
         _selection = State(initialValue: selection)
         self.onCancel = onCancel
