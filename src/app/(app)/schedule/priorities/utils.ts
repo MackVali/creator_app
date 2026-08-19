@@ -38,6 +38,7 @@ export type RoadmapPriorityGoal = {
   name: string;
   emoji?: string | null;
   monumentId?: string | null;
+  areaId?: string | null;
   monumentName?: string | null;
   monumentIcon?: string | null;
   monumentEmoji?: string | null;
@@ -94,6 +95,7 @@ export type RoadmapPriorityCampaign = {
   emoji?: string | null;
   description?: string | null;
   monumentId?: string | null;
+  areaId?: string | null;
   monumentName?: string | null;
   monumentIcon?: string | null;
   priority: PriorityBucketId;

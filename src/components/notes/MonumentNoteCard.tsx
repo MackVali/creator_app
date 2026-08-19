@@ -142,6 +142,8 @@ const lucideNoteIcons: Record<string, LucideIcon> = {
 interface MonumentNoteCardProps {
   note: MonumentNote;
   monumentId: string;
+  areaId?: string;
+  sourceType?: "monument" | "area";
   onToggleBookmark?: (noteId: string) => void;
   density?: NoteCardDensity;
 }
@@ -203,6 +205,8 @@ function getMonumentNoteIcon(
 export function MonumentNoteCard({
   note,
   monumentId,
+  areaId,
+  sourceType = "monument",
   onToggleBookmark,
   density = "large",
 }: MonumentNoteCardProps) {
@@ -211,12 +215,15 @@ export function MonumentNoteCard({
     "Open this note to add a title.";
 
   const noteIcon = getMonumentNoteIcon(note.icon);
-  const NoteIcon = noteIcon.kind === "lucide" ? noteIcon.Icon : null;
   const isSmall = density === "small";
 
   return (
     <Link
-      href={`/monuments/${monumentId}/notes/${note.id}`}
+      href={
+        sourceType === "area"
+          ? `/areas/${areaId}/notes/${note.id}`
+          : `/monuments/${monumentId}/notes/${note.id}`
+      }
       className={cn(
         monumentNoteTileOuterClass,
         isSmall ? "aspect-square min-h-[70px] rounded-xl p-2 sm:min-h-[78px] sm:p-2.5" : ""
@@ -255,14 +262,19 @@ export function MonumentNoteCard({
               isSmall ? "h-7 w-7 rounded-md text-[9px] sm:h-8 sm:w-8 sm:text-[10px]" : ""
             )}
           >
-            {NoteIcon ? (
-              <NoteIcon
-                className={cn(
-                  "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
-                  isSmall ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
-                )}
-                aria-hidden="true"
-              />
+            {noteIcon.kind === "lucide" ? (
+              (() => {
+                const Icon = noteIcon.Icon;
+                return (
+                  <Icon
+                    className={cn(
+                      "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
+                      isSmall ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
+                    )}
+                    aria-hidden="true"
+                  />
+                );
+              })()
             ) : (
               <span aria-hidden="true">{noteIcon.emoji}</span>
             )}

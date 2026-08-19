@@ -186,6 +186,7 @@ export async function reverseActiveXpAwards({
       completion_event_id: event.completion_event_id,
       skill_id: event.skill_id,
       monument_id: event.monument_id,
+      area_id: event.area_id,
       award_key: reversalKeyFor(event.award_key),
       source: event.source,
     })

@@ -135,7 +135,7 @@ import {
 } from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 
-export type FocusPomoSourceType = "monument" | "skill";
+export type FocusPomoSourceType = "monument" | "skill" | "area";
 
 export interface FocusPomoSource {
   sourceType: FocusPomoSourceType;
@@ -2182,6 +2182,13 @@ function annotateScopeWorkItem(
     } as FocusPomoQueueItem;
   }
 
+  if (scopeSource.sourceType === "area") {
+    return {
+      ...item,
+      areas: mergeScopeOptionArrays(record.areas, [scopeOption]),
+    } as FocusPomoQueueItem;
+  }
+
   return {
     ...item,
     skills: mergeScopeOptionArrays(record.skills, [scopeOption]),
@@ -2212,6 +2219,7 @@ function mergeScopeQueueItems(
         existingRecord.monuments,
         itemRecord.monuments
       ),
+      areas: mergeScopeOptionArrays(existingRecord.areas, itemRecord.areas),
       skills: mergeScopeOptionArrays(existingRecord.skills, itemRecord.skills),
     } as FocusPomoQueueItem);
   }
@@ -3090,6 +3098,26 @@ function getFocusPomoCompletionMonumentIds(item: FocusPomoQueueItem): string[] {
   ]);
 }
 
+function getFocusPomoCompletionAreaIds(item: FocusPomoQueueItem): string[] {
+  const record = item as unknown as Record<string, unknown>;
+  const source = readNestedScopeRecord(record, "source");
+  const raw = readNestedScopeRecord(record, "raw");
+
+  return uniqueScopeValues([
+    readScopeString(record.area_id),
+    readScopeString(record.areaId),
+    readScopeString(record.goal_area_id),
+    readScopeString(record.goalAreaId),
+    readScopeString(record.campaign_area_id),
+    readScopeString(record.campaignAreaId),
+    readScopeString(source?.area_id),
+    readScopeString(source?.areaId),
+    readScopeString(raw?.area_id),
+    readScopeString(raw?.areaId),
+    ...readScopeArrayValues(item, ["areas", "areaIds", "area_ids"], ["id"]),
+  ]);
+}
+
 function buildFocusPomoAwardKeyBase({
   item,
   kind,
@@ -3130,6 +3158,7 @@ async function awardFocusPomoCompletionXp({
   const sourceType = readFocusPomoCompletionSourceType(kind);
   const skillIds = getFocusPomoCompletionSkillIds(item);
   const monumentIds = getFocusPomoCompletionMonumentIds(item);
+  const areaIds = getFocusPomoCompletionAreaIds(item);
   const body: Record<string, unknown> = {
     kind,
     amount: kind === "project" ? 3 : 1,
@@ -3160,6 +3189,9 @@ async function awardFocusPomoCompletionXp({
   }
   if (monumentIds.length > 0) {
     body.monumentIds = monumentIds;
+  }
+  if (areaIds.length > 0) {
+    body.areaIds = areaIds;
   }
 
   try {
@@ -3208,6 +3240,7 @@ async function awardFocusPomoCompletionUndoXp({
   const sourceType = readFocusPomoCompletionSourceType(kind);
   const skillIds = getFocusPomoCompletionSkillIds(item);
   const monumentIds = getFocusPomoCompletionMonumentIds(item);
+  const areaIds = getFocusPomoCompletionAreaIds(item);
   const body: Record<string, unknown> = {
     kind,
     amount: kind === "project" ? -3 : -1,
@@ -3238,6 +3271,9 @@ async function awardFocusPomoCompletionUndoXp({
   }
   if (monumentIds.length > 0) {
     body.monumentIds = monumentIds;
+  }
+  if (areaIds.length > 0) {
+    body.areaIds = areaIds;
   }
 
   try {
@@ -5065,10 +5101,18 @@ export default function FocusPomo({
       return;
     }
 
-    setSelectedSkillIds([source.sourceId]);
+    if (source.sourceType === "skill") {
+      setSelectedSkillIds([source.sourceId]);
+      setSelectedMonumentIds([]);
+      setDraftSelectedSkillIds([source.sourceId]);
+      setDraftSelectedMonumentIds([]);
+      return;
+    }
+
     setSelectedMonumentIds([]);
-    setDraftSelectedSkillIds([source.sourceId]);
+    setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
+    setDraftSelectedSkillIds([]);
   }, [open, source?.sourceId, source?.sourceType]);
 
   useEffect(() => {
@@ -6339,12 +6383,14 @@ export default function FocusPomo({
             subtitle: isTimeBlockStartLaunchMode
               ? `${timeBlockStartLaunch?.blockLabel ?? "This Time Block"} has no scheduled Events in this occurrence.`
               : displaySource
-                ? "Add habits or projects to this Monument/Skill to run them from FocusPomo."
+                ? displaySource.sourceType === "area"
+                  ? "Add Area goals with projects to run them from FocusPomo."
+                  : "Add habits or projects to this source to run them from FocusPomo."
                 : "Add scheduled work to run it from FocusPomo.",
             tone: "empty",
           };
 
-  const endActiveFocusPomoLiveActivity = (
+  const endActiveFocusPomoLiveActivity = useCallback((
     status: "completed" | "canceled",
     title?: string
   ): Promise<void> => {
@@ -6362,7 +6408,7 @@ export default function FocusPomo({
         sessionId: activeSession?.sessionId,
       }),
     ]).then(() => undefined);
-  };
+  }, [activeFitnessWorkoutSession]);
 
   const startLiveActivityForItem = async (
     item: FocusPomoQueueItem,
@@ -6594,7 +6640,7 @@ export default function FocusPomo({
     if (isRunning || !focusPomoLiveActivityRef.current) return;
 
     void endActiveFocusPomoLiveActivity("canceled");
-  }, [isRunning]);
+  }, [endActiveFocusPomoLiveActivity, isRunning]);
 
   useEffect(() => {
     if (!isRunning) return;

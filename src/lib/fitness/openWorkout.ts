@@ -3,7 +3,7 @@ export const CREATOR_OPEN_FITNESS_WORKOUT_EVENT =
 
 export type CreatorOpenFitnessWorkoutDetail = {
   requestId: string;
-  source: "schedule" | "matrix";
+  source: "schedule" | "matrix" | "body";
   scheduleInstanceId?: string | null;
   habitId?: string | null;
   fitnessPlanTemplateId?: string | null;

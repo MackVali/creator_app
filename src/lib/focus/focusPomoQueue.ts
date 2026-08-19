@@ -61,6 +61,8 @@ export interface FocusPomoQueueItem {
   goal_updated_at?: string | null;
   goalMonumentId?: string | null;
   goal_monument_id?: string | null;
+  goalAreaId?: string | null;
+  goal_area_id?: string | null;
   goalMonumentName?: string | null;
   goal_monument_name?: string | null;
   goalMonumentIcon?: string | null;
@@ -133,6 +135,7 @@ export interface FocusPomoQueueItem {
   campaign_goal_ids?: string[];
   campaign_monument_id?: string | null;
   campaign_circle_id?: string | null;
+  campaign_area_id?: string | null;
   campaign_roadmap_id?: string | null;
   routine?: FocusPomoQueueRelation | null;
   routineId?: string | null;
@@ -141,7 +144,7 @@ export interface FocusPomoQueueItem {
   routine_name?: string | null;
 }
 
-type QueueSourceType = "monument" | "skill";
+type QueueSourceType = "monument" | "skill" | "area";
 
 type SupabaseBrowserClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
 
@@ -213,6 +216,7 @@ type SkillRow = {
   icon?: string | null;
   emoji?: string | null;
   monument_id?: string | null;
+  area_id?: string | null;
 };
 
 type GoalRow = {
@@ -224,6 +228,7 @@ type GoalRow = {
   icon?: string | null;
   symbol?: string | null;
   monument_id?: string | null;
+  area_id?: string | null;
   monument?: {
     id?: string | null;
     name?: string | null;
@@ -255,7 +260,9 @@ type CampaignRow = {
   monument_id?: string | null;
   primary_monument_id?: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   primary_circle_id?: string | null;
+  primary_area_id?: string | null;
   roadmap_id?: string | null;
 };
 
@@ -1168,11 +1175,14 @@ function mapHabit(
   const goalMonumentId = readGoalMonumentId(goal);
   const goalMonumentName = readGoalMonumentName(goal);
   const goalMonumentIcon = readGoalMonumentIcon(goal);
+  const goalAreaId = readString(goal?.area_id);
   const campaignName =
     readString(campaign?.title) ?? readString(campaign?.name);
   const campaignIcon = readRelationIcon(campaign);
   const campaignMonumentId =
     readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id);
+  const campaignAreaId =
+    readString(campaign?.primary_area_id) ?? readString(campaign?.area_id);
   const monumentIds = Array.from(
     new Set(
       [goalMonumentId, campaignMonumentId, skillMonumentId].filter(
@@ -1231,6 +1241,8 @@ function mapHabit(
     goal_updated_at: readString(goal?.updated_at),
     goalMonumentId,
     goal_monument_id: goalMonumentId,
+    goalAreaId,
+    goal_area_id: goalAreaId,
     goalMonumentName,
     goal_monument_name: goalMonumentName,
     goalMonumentIcon,
@@ -1249,6 +1261,7 @@ function mapHabit(
     campaign_monument_id: campaignMonumentId,
     campaign_circle_id:
       readString(campaign?.primary_circle_id) ?? readString(campaign?.circle_id),
+    campaign_area_id: campaignAreaId,
     campaign_roadmap_id: readString(campaign?.roadmap_id),
     campaign: buildRelation(campaignId, campaignName, campaignIcon),
     routineId,
@@ -1305,6 +1318,7 @@ function mapProject(
   const goalMonumentId = readGoalMonumentId(goal);
   const goalMonumentName = readGoalMonumentName(goal);
   const goalMonumentIcon = readGoalMonumentIcon(goal);
+  const goalAreaId = readString(goal?.area_id);
   const campaignId = readString(row.campaign_id);
   const campaign = campaignId ? options.campaignById.get(campaignId) : undefined;
   const campaignName =
@@ -1325,6 +1339,8 @@ function mapProject(
   );
   const campaignMonumentId =
     readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id);
+  const campaignAreaId =
+    readString(campaign?.primary_area_id) ?? readString(campaign?.area_id);
   const monumentIds = Array.from(
     new Set(
       [goalMonumentId, campaignMonumentId, ...skillMonumentIds].filter(
@@ -1406,6 +1422,8 @@ function mapProject(
     goal_updated_at: readString(goal?.updated_at),
     goalMonumentId,
     goal_monument_id: goalMonumentId,
+    goalAreaId,
+    goal_area_id: goalAreaId,
     goalMonumentName,
     goal_monument_name: goalMonumentName,
     goalMonumentIcon,
@@ -1424,6 +1442,7 @@ function mapProject(
     campaign_monument_id: campaignMonumentId,
     campaign_circle_id:
       readString(campaign?.primary_circle_id) ?? readString(campaign?.circle_id),
+    campaign_area_id: campaignAreaId,
     campaign_roadmap_id: readString(campaign?.roadmap_id),
     campaign: buildRelation(campaignId, campaignName, campaignIcon),
     tags: readTagOptions(row.tags),
@@ -1465,11 +1484,11 @@ async function fetchGoalMetadata(
   if (ids.length === 0) return new Map();
 
   const selects = [
-    "id, name, title, emoji, icon_emoji, icon, symbol, monument_id, circle_id, roadmap_id, priority_rank, global_rank, due_date, created_at, updated_at, monument:monuments(id, title, emoji)",
-    "id, name, title, emoji, icon_emoji, icon, symbol, monument_id, circle_id, roadmap_id, priority_rank, global_rank, due_date, created_at, updated_at",
-    "id, name, title, emoji, monument_id, circle_id, roadmap_id, priority_rank, global_rank, due_date, created_at",
-    "id, name, title, emoji, monument_id, circle_id, roadmap_id",
-    "id, name, emoji, monument_id, circle_id, roadmap_id",
+    "id, name, title, emoji, icon_emoji, icon, symbol, monument_id, circle_id, area_id, roadmap_id, priority_rank, global_rank, due_date, created_at, updated_at, monument:monuments(id, title, emoji)",
+    "id, name, title, emoji, icon_emoji, icon, symbol, monument_id, circle_id, area_id, roadmap_id, priority_rank, global_rank, due_date, created_at, updated_at",
+    "id, name, title, emoji, monument_id, circle_id, area_id, roadmap_id, priority_rank, global_rank, due_date, created_at",
+    "id, name, title, emoji, monument_id, circle_id, area_id, roadmap_id",
+    "id, name, emoji, monument_id, circle_id, area_id, roadmap_id",
     "id, name, emoji",
     "id, name",
   ];
@@ -1548,9 +1567,9 @@ async function fetchCampaignMetadata(
   if (ids.length === 0) return new Map();
 
   const selects = [
-    "id, name, title, emoji, icon_emoji, icon, symbol, goal_id, monument_id, primary_monument_id, circle_id, primary_circle_id, roadmap_id",
-    "id, name, title, emoji, primary_monument_id, primary_circle_id, roadmap_id",
-    "id, name, emoji, primary_monument_id, primary_circle_id, roadmap_id",
+    "id, name, title, emoji, icon_emoji, icon, symbol, goal_id, monument_id, primary_monument_id, circle_id, primary_circle_id, primary_area_id, roadmap_id",
+    "id, name, title, emoji, primary_monument_id, primary_circle_id, primary_area_id, roadmap_id",
+    "id, name, emoji, primary_monument_id, primary_circle_id, primary_area_id, roadmap_id",
     "id, name, emoji",
     "id, name",
   ];
@@ -1671,6 +1690,24 @@ async function fetchGoalIdsForMonument(
     .select("id")
     .eq("user_id", userId)
     .eq("monument_id", monumentId);
+
+  if (error) throw error;
+
+  return (data ?? [])
+    .map((row) => readString((row as { id?: string | null }).id))
+    .filter((id): id is string => Boolean(id));
+}
+
+async function fetchGoalIdsForArea(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  areaId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("goals")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("area_id", areaId);
 
   if (error) throw error;
 
@@ -1852,10 +1889,12 @@ async function fetchProjects(
   params:
     | { sourceType: "all" }
     | { sourceType: "monument"; goalIds: string[] }
+    | { sourceType: "area"; goalIds: string[] }
     | { sourceType: "skill"; projectIds: string[] }
 ): Promise<FocusPomoQueueItem[]> {
   if (
     (params.sourceType === "monument" && params.goalIds.length === 0) ||
+    (params.sourceType === "area" && params.goalIds.length === 0) ||
     (params.sourceType === "skill" && params.projectIds.length === 0)
   ) {
     return [];
@@ -1873,7 +1912,7 @@ async function fetchProjects(
       query = query.is("completed_at", null);
     }
 
-    if (params.sourceType === "monument") {
+    if (params.sourceType === "monument" || params.sourceType === "area") {
       query = query.in("goal_id", params.goalIds);
     } else if (params.sourceType === "skill") {
       query = query.in("id", params.projectIds);
@@ -1984,6 +2023,7 @@ export async function fetchFocusPomoQueue(params: {
   let skillIds: string[];
   let projectScope:
     | { sourceType: "monument"; goalIds: string[] }
+    | { sourceType: "area"; goalIds: string[] }
     | { sourceType: "skill"; projectIds: string[] };
 
   if (params.sourceType === "skill") {
@@ -1991,6 +2031,12 @@ export async function fetchFocusPomoQueue(params: {
     projectScope = {
       sourceType: "skill",
       projectIds: await fetchProjectIdsForSkill(supabase, sourceId),
+    };
+  } else if (params.sourceType === "area") {
+    skillIds = [];
+    projectScope = {
+      sourceType: "area",
+      goalIds: await fetchGoalIdsForArea(supabase, user.id, sourceId),
     };
   } else {
     skillIds = await fetchSkillIdsForMonument(supabase, user.id, sourceId);

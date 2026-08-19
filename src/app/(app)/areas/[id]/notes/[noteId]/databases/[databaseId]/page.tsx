@@ -1,0 +1,219 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import {
+  NoteDatabaseFocusedView,
+  removeNoteDatabaseSegment,
+  type NoteDatabaseDefinitions,
+  type NoteDatabaseEntries,
+} from "@/components/notes/NoteSlashTextarea";
+import { getAreaNote, updateAreaNote } from "@/lib/monumentNotesStorage";
+import type { MonumentNote } from "@/lib/types/monument-note";
+
+function getMetadataDatabases(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseDefinitions {
+  const databases = metadata?.databases;
+  return databases && typeof databases === "object" && !Array.isArray(databases)
+    ? (databases as NoteDatabaseDefinitions)
+    : {};
+}
+
+function getMetadataDatabaseEntries(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseEntries {
+  const databaseEntries = metadata?.databaseEntries;
+  return databaseEntries && typeof databaseEntries === "object" && !Array.isArray(databaseEntries)
+    ? (databaseEntries as NoteDatabaseEntries)
+    : {};
+}
+
+function getNoteTitle(note: MonumentNote | null) {
+  if (!note) return "Note";
+  return (
+    note.title?.trim() ||
+    note.content
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ||
+    "Note"
+  );
+}
+
+export default function AreaNoteDatabasePage() {
+  const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const areaId = params.id as string;
+  const noteId = params.noteId as string;
+  const databaseId = params.databaseId as string;
+  const addEntryRequestKey = searchParams.get("addEntry");
+  const [note, setNote] = useState<MonumentNote | null>(null);
+  const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    setIsLoading(true);
+    (async () => {
+      try {
+        const fetchedNote = await getAreaNote(areaId, noteId);
+        if (!isMounted) return;
+
+        setNote(fetchedNote);
+        setNoteMetadata(fetchedNote?.metadata ?? null);
+        setLastSavedSnapshot(JSON.stringify(fetchedNote?.metadata ?? null));
+      } catch (error) {
+        console.error("Failed to load area note database", {
+          error,
+          areaId,
+          noteId,
+          databaseId,
+        });
+        if (!isMounted) return;
+        setNote(null);
+        setNoteMetadata(null);
+        setLastSavedSnapshot("");
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [areaId, databaseId, noteId]);
+
+  useEffect(() => {
+    if (isLoading || isSaving || !note) return;
+
+    const nextSnapshot = JSON.stringify(noteMetadata ?? null);
+    if (nextSnapshot === lastSavedSnapshot) return;
+
+    const timer = setTimeout(async () => {
+      setIsSaving(true);
+      try {
+        const saved = await updateAreaNote(areaId, note.id, {
+          title: note.title ?? "Untitled",
+          content: note.content ?? "",
+          metadata: noteMetadata,
+        });
+
+        if (!saved) return;
+
+        setNote(saved);
+        setNoteMetadata(saved.metadata ?? noteMetadata);
+        setLastSavedSnapshot(JSON.stringify(saved.metadata ?? noteMetadata ?? null));
+        window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+      } catch (error) {
+        console.error("Failed to save area note database", {
+          error,
+          areaId,
+          noteId,
+          databaseId,
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [areaId, databaseId, isLoading, isSaving, lastSavedSnapshot, note, noteId, noteMetadata]);
+
+  function handleBack() {
+    router.push(`/areas/${areaId}/notes/${noteId}`);
+  }
+
+  function handleDatabaseDefinitionsChange(databases: NoteDatabaseDefinitions) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
+  }
+
+  function handleDatabaseEntriesChange(databaseEntries: NoteDatabaseEntries) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
+  }
+
+  async function handleDeleteDatabase() {
+    if (!note) return;
+
+    const removal = removeNoteDatabaseSegment({
+      content: note.content ?? "",
+      databaseDefinitions: getMetadataDatabases(noteMetadata),
+      databaseEntries: getMetadataDatabaseEntries(noteMetadata),
+      databaseId,
+    });
+
+    if (removal.locked) {
+      console.warn("This system database is locked.", {
+        databaseId: removal.databaseId,
+        systemDatabaseKey: removal.systemDatabaseKey,
+      });
+      return;
+    }
+
+    if (!removal.removed) return;
+
+    const nextMetadata = {
+      ...(noteMetadata ?? {}),
+      databases: removal.databaseDefinitions,
+      databaseEntries: removal.databaseEntries,
+    };
+
+    setIsSaving(true);
+    try {
+      const saved = await updateAreaNote(areaId, note.id, {
+        title: note.title ?? "Untitled",
+        content: removal.content,
+        metadata: nextMetadata,
+      });
+
+      if (!saved) return;
+
+      setNote(saved);
+      setNoteMetadata(saved.metadata ?? nextMetadata);
+      setLastSavedSnapshot(JSON.stringify(saved.metadata ?? nextMetadata ?? null));
+      window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+      router.push(`/areas/${areaId}/notes/${noteId}`);
+    } catch (error) {
+      console.error("Failed to delete area note database", {
+        error,
+        areaId,
+        noteId,
+        databaseId,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-[#020202] px-3 pb-[calc(6rem_+_env(safe-area-inset-bottom,0px))] text-white sm:px-5 lg:px-8">
+      <div className="flex min-h-[calc(100vh-7rem)] w-full flex-col">
+        {isLoading ? (
+          <section className="w-full rounded-[18px] border border-white/[0.08] bg-[#050505]/92 p-4 text-sm text-white/60 sm:p-5">
+            Loading database...
+          </section>
+        ) : (
+          <NoteDatabaseFocusedView
+            autosaveLabel={isSaving ? "Saving..." : "Autosaved"}
+            databaseDefinitions={getMetadataDatabases(noteMetadata)}
+            databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
+            databaseId={databaseId}
+            openEntrySheetKey={addEntryRequestKey}
+            noteContent={note?.content ?? ""}
+            noteTitle={getNoteTitle(note)}
+            onBack={handleBack}
+            onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
+            onDatabaseEntriesChange={handleDatabaseEntriesChange}
+            onDeleteDatabase={handleDeleteDatabase}
+          />
+        )}
+      </div>
+    </main>
+  );
+}

@@ -108,6 +108,7 @@ import {
 
 type GoalRowWithRelations = GoalRow & {
   circle_id?: string | null;
+  area_id?: string | null;
   due_date?: string | null;
   priority_code?: string | null;
   priority_order?: number | string | null;
@@ -148,7 +149,7 @@ type GoalPanelSwipeAxis = "horizontal" | "vertical" | null;
 type GoalCardDensity = "large" | "small";
 
 const GOAL_RELATIONS_BASE_SELECT =
-  "id, name, priority, energy, priority_code, priority_order, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank, global_rank";
+  "id, name, priority, energy, priority_code, priority_order, energy_code, why, created_at, active, status, monument_id, circle_id, area_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank, global_rank";
 const GOAL_RELATIONS_SELECT = `
   ${GOAL_RELATIONS_BASE_SELECT},
   projects (
@@ -713,7 +714,41 @@ function toSchedulerProject(project: {
   };
 }
 
-type GoalsSourceType = "monument" | "circle";
+type GoalsSourceType = "monument" | "circle" | "area";
+
+function getGoalOwnerColumn(sourceType: GoalsSourceType) {
+  if (sourceType === "circle") return "circle_id";
+  if (sourceType === "area") return "area_id";
+  return "monument_id";
+}
+
+function getGoalsOwnerLabel(sourceType: GoalsSourceType) {
+  if (sourceType === "circle") return "Circle";
+  if (sourceType === "area") return "area";
+  return "monument";
+}
+
+function isGoalLinkedToSource(
+  sourceType: GoalsSourceType,
+  sourceId: string | null,
+  goal: {
+    monumentId?: string | null;
+    circleId?: string | null;
+    areaId?: string | null;
+    monument_id?: string | null;
+    circle_id?: string | null;
+    area_id?: string | null;
+  }
+) {
+  if (!sourceId) return false;
+  if (sourceType === "circle") {
+    return (goal.circleId ?? goal.circle_id ?? null) === sourceId;
+  }
+  if (sourceType === "area") {
+    return (goal.areaId ?? goal.area_id ?? null) === sourceId;
+  }
+  return (goal.monumentId ?? goal.monument_id ?? null) === sourceId;
+}
 
 async function fetchGoalsWithRelationsForSource(
   sourceType: GoalsSourceType,
@@ -723,7 +758,7 @@ async function fetchGoalsWithRelationsForSource(
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
 
-  const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
+  const ownerColumn = getGoalOwnerColumn(sourceType);
   const { data, error } = await supabase
     .from("goals")
     .select(GOAL_RELATIONS_BASE_SELECT)
@@ -746,8 +781,8 @@ async function fetchGoalsFullRelationsForSource(
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
 
-  const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
-  const ownerLabel = sourceType === "circle" ? "Circle" : "Monument";
+  const ownerColumn = getGoalOwnerColumn(sourceType);
+  const ownerLabel = getGoalsOwnerLabel(sourceType);
   const runQuery = (select: string) =>
     supabase
       .from("goals")
@@ -794,7 +829,7 @@ async function fetchGoalWithRelationsById(
   const supabase = getSupabaseBrowser();
   if (!supabase) return null;
 
-  const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
+  const ownerColumn = getGoalOwnerColumn(sourceType);
   const runQuery = (select: string) =>
     supabase
       .from("goals")
@@ -880,6 +915,7 @@ type MonumentPriorityGoalRow = {
   emoji?: string | null;
   monument_id?: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   roadmap_id?: string | null;
   status?: string | null;
   priority?: string | null;
@@ -905,6 +941,7 @@ type MonumentPriorityCampaignRow = {
   roadmap_id?: string | null;
   primary_monument_id?: string | null;
   primary_circle_id?: string | null;
+  primary_area_id?: string | null;
   created_at?: string | null;
 };
 
@@ -914,6 +951,54 @@ type MonumentPriorityCampaignGoalRow = {
   position?: number | string | null;
   created_at?: string | null;
 };
+
+async function fetchAreaPriorityRoadmapItems(
+  userId: string,
+  areaId: string
+): Promise<GlobalPriorityRoadmapItem[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("goals")
+    .select(
+      "id,name,emoji,monument_id,circle_id,area_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+    )
+    .eq("user_id", userId)
+    .eq("area_id", areaId)
+    .order("priority_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching Area priority goals:", error);
+    return [];
+  }
+
+  const goalRows = ((data ?? []) as MonumentPriorityGoalRow[]).filter(
+    (goal) => normalizeGoalStatus(goal.status) !== "COMPLETED"
+  );
+
+  return sortGlobalPriorityItems(
+    goalRows.map((goal) => {
+      const normalizedGoal = normalizeMonumentPriorityGoal(goal);
+
+      return {
+        id: goal.id,
+        type: "goal" as const,
+        name: normalizedGoal.name,
+        emoji: normalizedGoal.emoji,
+        monumentId: normalizedGoal.monumentId,
+        areaId: normalizedGoal.areaId,
+        monumentEmoji: normalizedGoal.monumentEmoji,
+        priority: normalizedGoal.priority,
+        priorityOrder: normalizedGoal.priorityOrder,
+        globalRank: normalizedGoal.globalRank,
+        priorityRank: normalizedGoal.priorityRank,
+        createdAt: normalizedGoal.createdAt,
+      };
+    })
+  );
+}
 
 type CircleHabitSkillRow = {
   id?: string | null;
@@ -973,6 +1058,7 @@ function normalizeMonumentPriorityGoal(
     name: (goal.name ?? "").trim() || "Untitled Goal",
     emoji: goal.emoji ?? null,
     monumentId: goal.monument_id ?? null,
+    areaId: goal.area_id ?? null,
     monumentEmoji: goal.monument?.emoji ?? null,
     priority: normalizePriority(goal.priority_code ?? goal.priority),
     status: goal.status ?? null,
@@ -1375,14 +1461,14 @@ async function fetchMonumentPriorityRoadmapItems(
     supabase
       .from("goals")
       .select(
-        "id,name,emoji,monument_id,circle_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+        "id,name,emoji,monument_id,circle_id,area_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
       )
       .eq("user_id", userId)
       .is("circle_id", null),
     supabase
       .from("campaigns")
       .select(
-        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,created_at"
+        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,primary_area_id,created_at"
       )
       .eq("user_id", userId)
       .order("position", { ascending: true, nullsFirst: false })
@@ -1517,14 +1603,14 @@ async function fetchCirclePriorityRoadmapItems(
     supabase
       .from("goals")
       .select(
-        "id,name,emoji,monument_id,circle_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+        "id,name,emoji,monument_id,circle_id,area_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
       )
       .eq("user_id", userId)
       .eq("circle_id", circleId),
     supabase
       .from("campaigns")
       .select(
-        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,created_at"
+        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,primary_area_id,created_at"
       )
       .eq("user_id", userId)
       .eq("primary_circle_id", circleId)
@@ -2430,6 +2516,7 @@ export function MonumentGoalsList({
   sourceType = "monument",
   sourceId,
   circleId,
+  areaId,
   monumentEmoji,
   monumentView = "goals",
   goalSection = "active",
@@ -2440,6 +2527,7 @@ export function MonumentGoalsList({
   sourceType?: GoalsSourceType;
   sourceId?: string;
   circleId?: string;
+  areaId?: string;
   monumentEmoji?: string | null;
   monumentView?: "goals" | "roadmap";
   goalSection?: GoalPanel;
@@ -2450,6 +2538,8 @@ export function MonumentGoalsList({
   const resolvedSourceId =
     resolvedSourceType === "circle"
       ? circleId ?? sourceId ?? null
+      : resolvedSourceType === "area"
+        ? areaId ?? sourceId ?? null
       : sourceId ?? monumentId ?? null;
   const goalsSourceKey = `${resolvedSourceType}:${resolvedSourceId ?? "none"}`;
   const resolvedMonumentId =
@@ -2462,7 +2552,7 @@ export function MonumentGoalsList({
   const [roadmapsDisplayReadyKey, setRoadmapsDisplayReadyKey] = useState<
     string | null
   >(null);
-  const ownerLabel = resolvedSourceType === "circle" ? "Circle" : "monument";
+  const ownerLabel = getGoalsOwnerLabel(resolvedSourceType);
   const creationContext = useFabCreation();
   const toast = useToastHelpers();
   const [loading, setLoading] = useState(true);
@@ -2495,6 +2585,8 @@ export function MonumentGoalsList({
         ? finalizeMonumentPriorityRoadmapItems(enrichedItems, resolvedSourceId)
         : resolvedSourceType === "circle"
           ? sortGlobalPriorityItems(enrichedItems)
+          : resolvedSourceType === "area"
+            ? sortGlobalPriorityItems(enrichedItems)
           : [];
     },
     [goals, monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
@@ -3346,6 +3438,7 @@ export function MonumentGoalsList({
         projects: projList,
         monumentId: goalRow.monument_id ?? fallback?.monumentId ?? null,
         circleId: goalRow.circle_id ?? fallback?.circleId ?? null,
+        areaId: goalRow.area_id ?? fallback?.areaId ?? null,
         monumentEmoji: fallback?.monumentEmoji ?? monumentEmoji ?? null,
         roadmapId: goalRow.roadmap_id ?? fallback?.roadmapId ?? null,
         priorityCode: normalizedGoalPriorityCode,
@@ -3384,6 +3477,9 @@ export function MonumentGoalsList({
             circleId:
               fallback.circleId ??
               (resolvedSourceType === "circle" ? resolvedSourceId : null),
+            areaId:
+              fallback.areaId ??
+              (resolvedSourceType === "area" ? resolvedSourceId : null),
             monumentEmoji: fallback.monumentEmoji ?? monumentEmoji ?? null,
             roadmapId: fallback.roadmapId ?? null,
             priorityCode: fallback.priorityCode ?? "NO",
@@ -3469,9 +3565,11 @@ export function MonumentGoalsList({
     ] = await Promise.all([
       resolvedSourceType === "circle"
         ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
-        : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
-            reconcile: true,
-          }),
+        : resolvedSourceType === "area"
+          ? Promise.resolve([] as RoadmapWithItems[])
+          : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
+              reconcile: true,
+            }),
       resolvedSourceType === "circle"
         ? listGoalCampaignCards(user.id).catch((err) => {
             console.error("Error refreshing Circle campaign cards", err);
@@ -3492,6 +3590,13 @@ export function MonumentGoalsList({
                 return [] as GlobalPriorityRoadmapItem[];
               }
             )
+          : resolvedSourceType === "area"
+            ? fetchAreaPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                (err) => {
+                  console.error("Error refreshing Area priority roadmap", err);
+                  return [] as GlobalPriorityRoadmapItem[];
+                }
+              )
           : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
       resolvedSourceType === "circle"
         ? fetchCircleHabitRoadmapItems(user.id, resolvedSourceId).catch(
@@ -3546,9 +3651,11 @@ export function MonumentGoalsList({
       ] = await Promise.all([
         resolvedSourceType === "circle"
           ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
-          : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
-              reconcile: true,
-            }),
+          : resolvedSourceType === "area"
+            ? Promise.resolve([] as RoadmapWithItems[])
+            : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
+                reconcile: true,
+              }),
         resolvedSourceType === "circle"
           ? listGoalCampaignCards(user.id).catch((err) => {
               console.error("Error refreshing Circle campaign cards", err);
@@ -3567,6 +3674,13 @@ export function MonumentGoalsList({
                   return [] as GlobalPriorityRoadmapItem[];
                 }
               )
+            : resolvedSourceType === "area"
+              ? fetchAreaPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                  (err) => {
+                    console.error("Error refreshing Area priority roadmap", err);
+                    return [] as GlobalPriorityRoadmapItem[];
+                  }
+                )
             : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
         resolvedSourceType === "circle"
           ? fetchCircleHabitRoadmapItems(user.id, resolvedSourceId)
@@ -3634,22 +3748,20 @@ export function MonumentGoalsList({
   ]);
 
   const isGoalLinkedToCurrentSource = useCallback(
-    (goal: { monumentId?: string | null; circleId?: string | null }) => {
-      if (!resolvedSourceId) return false;
-      return resolvedSourceType === "circle"
-        ? goal.circleId === resolvedSourceId
-        : goal.monumentId === resolvedSourceId;
-    },
+    (goal: {
+      monumentId?: string | null;
+      circleId?: string | null;
+      areaId?: string | null;
+    }) => isGoalLinkedToSource(resolvedSourceType, resolvedSourceId, goal),
     [resolvedSourceId, resolvedSourceType]
   );
 
   const isRoadmapGoalLinkedToCurrentSource = useCallback(
-    (goal: { monument_id?: string | null; circle_id?: string | null }) => {
-      if (!resolvedSourceId) return false;
-      return resolvedSourceType === "circle"
-        ? goal.circle_id === resolvedSourceId
-        : goal.monument_id === resolvedSourceId;
-    },
+    (goal: {
+      monument_id?: string | null;
+      circle_id?: string | null;
+      area_id?: string | null;
+    }) => isGoalLinkedToSource(resolvedSourceType, resolvedSourceId, goal),
     [resolvedSourceId, resolvedSourceType]
   );
 
@@ -3674,6 +3786,7 @@ export function MonumentGoalsList({
           action?: string;
           monumentId?: string | null;
           circleId?: string | null;
+          areaId?: string | null;
           campaignId?: string | null;
           goalId?: string | null;
           projectId?: string | null;
@@ -3699,6 +3812,7 @@ export function MonumentGoalsList({
         const eventGoal = {
           monumentId: detail.monumentId ?? null,
           circleId: detail.circleId ?? null,
+          areaId: detail.areaId ?? null,
         };
         if (!isGoalLinkedToCurrentSource(eventGoal)) {
           setGoals((current) =>
@@ -3888,6 +4002,8 @@ export function MonumentGoalsList({
           (
             resolvedSourceType === "circle"
               ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
+              : resolvedSourceType === "area"
+                ? Promise.resolve([] as RoadmapWithItems[])
               : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
                   reconcile: true,
                 })
@@ -3922,6 +4038,13 @@ export function MonumentGoalsList({
                     return [] as GlobalPriorityRoadmapItem[];
                   }
                 )
+              : resolvedSourceType === "area"
+                ? fetchAreaPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                    (err) => {
+                      console.error("Error loading Area priority roadmap", err);
+                      return [] as GlobalPriorityRoadmapItem[];
+                    }
+                  )
               : Promise.resolve([] as GlobalPriorityRoadmapItem[]);
         const circleHabitRoadmapItemsPromise =
           resolvedSourceType === "circle"
@@ -4337,6 +4460,13 @@ export function MonumentGoalsList({
     });
   }, [creationContext, resolvedMonumentId]);
 
+  const handleAreaAddGoal = useCallback(() => {
+    if (resolvedSourceType !== "area" || !resolvedSourceId) return;
+    creationContext?.requestGoalCreation(null, null, {
+      areaId: resolvedSourceId,
+    });
+  }, [creationContext, resolvedSourceId, resolvedSourceType]);
+
   const handleManualGoalComplete = useCallback(
     async (goal: Goal, sourceRect?: DOMRect | null) => {
       const supabase = getSupabaseBrowser();
@@ -4541,6 +4671,7 @@ export function MonumentGoalsList({
             projects: [],
             monumentId: roadmap.monument_id ?? resolvedMonumentId,
             circleId: roadmap.circle_id ?? null,
+            areaId: roadmap.area_id ?? (resolvedSourceType === "area" ? resolvedSourceId : null),
             monumentEmoji:
               standaloneRoadmapGoal.monumentEmoji ?? monumentEmoji ?? null,
             roadmapId: standaloneRoadmapGoal.roadmap_id ?? roadmap.id,
@@ -4585,6 +4716,7 @@ export function MonumentGoalsList({
             projects: [],
             monumentId: roadmap.monument_id ?? resolvedMonumentId,
             circleId: roadmap.circle_id ?? null,
+            areaId: roadmap.area_id ?? (resolvedSourceType === "area" ? resolvedSourceId : null),
             monumentEmoji: campaignGoal.monumentEmoji ?? monumentEmoji ?? null,
             roadmapId: roadmap.id,
             priorityCode: "NO",
@@ -4622,6 +4754,8 @@ export function MonumentGoalsList({
       monumentEmoji,
       monumentRoadmapsWithItems,
       resolvedMonumentId,
+      resolvedSourceId,
+      resolvedSourceType,
     ]
   );
 
@@ -5274,6 +5408,9 @@ export function MonumentGoalsList({
         circleId:
           campaign.primary_circle_id ??
           (resolvedSourceType === "circle" ? resolvedSourceId : null),
+        areaId:
+          campaign.primary_area_id ??
+          (resolvedSourceType === "area" ? resolvedSourceId : null),
         monumentEmoji: campaignGoal.monumentEmoji ?? monumentEmoji ?? null,
         roadmapId: campaign.roadmap_id ?? null,
         priorityCode: "NO",
@@ -5570,7 +5707,8 @@ export function MonumentGoalsList({
           ? roadmapOpenGoal
           : null;
       const shouldShowGoalAddCard =
-        resolvedSourceType === "monument" && section === "active";
+        (resolvedSourceType === "monument" || resolvedSourceType === "area") &&
+        section === "active";
       const goalAddCard = shouldShowGoalAddCard ? (
         <div
           className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
@@ -5579,7 +5717,11 @@ export function MonumentGoalsList({
             type="button"
             className={GOAL_ADD_CARD_OUTER_CLASS}
             data-variant="compact"
-            onClick={handleMonumentAddGoal}
+            onClick={
+              resolvedSourceType === "area"
+                ? handleAreaAddGoal
+                : handleMonumentAddGoal
+            }
             aria-label="Add goal"
           >
             <div className={cn(GOAL_ADD_CARD_INNER_CLASS, "w-full min-w-0")}>
@@ -5937,6 +6079,7 @@ export function MonumentGoalsList({
     handleManualGoalUndo,
     handleGoalOpenChange,
     handleCampaignAddGoal,
+    handleAreaAddGoal,
     handleMonumentAddGoal,
     handleNewCampaignGoalRevealComplete,
     handleNewProjectRevealComplete,

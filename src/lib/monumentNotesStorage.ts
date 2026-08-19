@@ -21,7 +21,7 @@ type UpdateMonumentNoteOptions = {
 };
 
 const MONUMENT_NOTE_SELECT =
-  "id, title, content, monument_id, created_at, updated_at, metadata, parent_note_id, sibling_order";
+  "id, title, content, monument_id, area_id, created_at, updated_at, metadata, parent_note_id, sibling_order";
 
 function mapRowToMonumentNote(row: NoteRow): MonumentNote {
   const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
@@ -30,6 +30,7 @@ function mapRowToMonumentNote(row: NoteRow): MonumentNote {
   return {
     id: row.id,
     monumentId: row.monument_id ?? "",
+    areaId: row.area_id ?? null,
     title: row.title,
     content: row.content,
     createdAt: row.created_at,
@@ -94,6 +95,7 @@ function getSafeNoteInsertSnapshot(payload: NoteInsert) {
   return {
     user_id: payload.user_id ? "[present]" : null,
     monument_id: payload.monument_id ?? null,
+    area_id: payload.area_id ?? null,
     skill_id: payload.skill_id ?? null,
     title: payload.title ?? null,
     content_length: payload.content?.length ?? 0,
@@ -111,11 +113,12 @@ export async function getMonumentNotes(
 
   const supabase = getSupabaseBrowser();
   if (!supabase) return [];
+  const db = supabase as any;
 
   const userId = await getCurrentUserId();
   if (!userId) return [];
 
-  let query = supabase
+  let query = db
     .from(NOTES_TABLE)
     .select(MONUMENT_NOTE_SELECT)
     .eq("user_id", userId)
@@ -151,11 +154,12 @@ export async function getMonumentNote(
 
   const supabase = getSupabaseBrowser();
   if (!supabase) return null;
+  const db = supabase as any;
 
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(NOTES_TABLE)
     .select(MONUMENT_NOTE_SELECT)
     .eq("user_id", userId)
@@ -165,6 +169,76 @@ export async function getMonumentNote(
 
   if (error) {
     console.error("Failed to load monument note", { error, monumentId, noteId });
+    return null;
+  }
+
+  return data ? mapRowToMonumentNote(data) : null;
+}
+
+export async function getAreaNotes(
+  areaId: string,
+  options?: { parentNoteId?: string | null },
+): Promise<MonumentNote[]> {
+  if (!areaId) return [];
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+  const db = supabase as any;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  let query = db
+    .from(NOTES_TABLE)
+    .select(MONUMENT_NOTE_SELECT)
+    .eq("user_id", userId)
+    .eq("area_id", areaId);
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "parentNoteId")) {
+    const parentFilter = options.parentNoteId ?? null;
+    if (parentFilter === null) {
+      query = query.is("parent_note_id", null);
+    } else {
+      query = query.eq("parent_note_id", parentFilter);
+    }
+  }
+
+  const { data, error } = await query
+    .order("parent_note_id", { ascending: true, nullsFirst: true })
+    .order("sibling_order", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Failed to load area notes", { error, areaId });
+    return [];
+  }
+
+  return (data ?? []).map(mapRowToMonumentNote);
+}
+
+export async function getAreaNote(
+  areaId: string,
+  noteId: string
+): Promise<MonumentNote | null> {
+  if (!areaId || !noteId) return null;
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+  const db = supabase as any;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await db
+    .from(NOTES_TABLE)
+    .select(MONUMENT_NOTE_SELECT)
+    .eq("user_id", userId)
+    .eq("area_id", areaId)
+    .eq("id", noteId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to load area note", { error, areaId, noteId });
     return null;
   }
 
@@ -184,6 +258,7 @@ export async function createMonumentNote(
 
   const supabase = getSupabaseBrowser();
   if (!supabase) return null;
+  const db = supabase as any;
 
   const userId = await getCurrentUserId();
   if (!userId) return null;
@@ -208,7 +283,7 @@ export async function createMonumentNote(
     sibling_order: options?.siblingOrder ?? null,
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(NOTES_TABLE)
     .insert(insertPayload)
     .select(MONUMENT_NOTE_SELECT)
@@ -218,6 +293,66 @@ export async function createMonumentNote(
     console.error("Failed to create monument note", {
       error: getSupabaseErrorFields(error),
       monumentId,
+      insertPayload: getSafeNoteInsertSnapshot(insertPayload),
+      parentNoteId: insertPayload.parent_note_id ?? null,
+      siblingOrder: insertPayload.sibling_order ?? null,
+    });
+    return null;
+  }
+
+  return mapRowToMonumentNote(data);
+}
+
+export async function createAreaNote(
+  areaId: string,
+  note: {
+    title?: string | null;
+    content: string;
+    metadata?: Record<string, unknown> | null;
+  },
+  options?: CreateMonumentNoteOptions,
+): Promise<MonumentNote | null> {
+  if (!areaId) return null;
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+  const db = supabase as any;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const derivedTitle =
+    normalizeText(note.title) ??
+    note.content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ??
+    null;
+
+  const hasMeaningfulContent = note.content.trim().length > 0;
+  const contentToStore = hasMeaningfulContent ? note.content : null;
+  const insertPayload: NoteInsert = {
+    user_id: userId,
+    area_id: areaId,
+    monument_id: null,
+    skill_id: null,
+    title: derivedTitle,
+    content: contentToStore,
+    metadata: toJsonMetadata(options?.metadata ?? note.metadata),
+    parent_note_id: options?.parentNoteId ?? null,
+    sibling_order: options?.siblingOrder ?? null,
+  };
+
+  const { data, error } = await db
+    .from(NOTES_TABLE)
+    .insert(insertPayload)
+    .select(MONUMENT_NOTE_SELECT)
+    .single();
+
+  if (error) {
+    console.error("Failed to create area note", {
+      error: getSupabaseErrorFields(error),
+      areaId,
       insertPayload: getSafeNoteInsertSnapshot(insertPayload),
       parentNoteId: insertPayload.parent_note_id ?? null,
       siblingOrder: insertPayload.sibling_order ?? null,
@@ -242,6 +377,7 @@ export async function updateMonumentNote(
 
   const supabase = getSupabaseBrowser();
   if (!supabase) return null;
+  const db = supabase as any;
 
   const userId = await getCurrentUserId();
   if (!userId) return null;
@@ -272,7 +408,7 @@ export async function updateMonumentNote(
     updatePayload.sibling_order = options.siblingOrder ?? null;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(NOTES_TABLE)
     .update(updatePayload)
     .eq("user_id", userId)
@@ -285,6 +421,72 @@ export async function updateMonumentNote(
     console.error("Failed to update monument note", {
       error,
       monumentId,
+      noteId,
+    });
+    return null;
+  }
+
+  return data ? mapRowToMonumentNote(data) : null;
+}
+
+export async function updateAreaNote(
+  areaId: string,
+  noteId: string,
+  note: {
+    title?: string | null;
+    content: string;
+    metadata?: Record<string, unknown> | null;
+  },
+  options?: UpdateMonumentNoteOptions,
+): Promise<MonumentNote | null> {
+  if (!areaId || !noteId) return null;
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+  const db = supabase as any;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const derivedTitle =
+    normalizeText(note.title) ??
+    note.content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ??
+    null;
+
+  const hasMeaningfulContent = note.content.trim().length > 0;
+  const contentToStore = hasMeaningfulContent ? note.content : null;
+
+  const updatePayload: Database["public"]["Tables"]["notes"]["Update"] = {
+    title: derivedTitle,
+    content: contentToStore,
+    metadata: toJsonMetadata(note.metadata),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "parentNoteId")) {
+    updatePayload.parent_note_id = options.parentNoteId ?? null;
+  }
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "siblingOrder")) {
+    updatePayload.sibling_order = options.siblingOrder ?? null;
+  }
+
+  const { data, error } = await db
+    .from(NOTES_TABLE)
+    .update(updatePayload)
+    .eq("user_id", userId)
+    .eq("area_id", areaId)
+    .eq("id", noteId)
+    .select(MONUMENT_NOTE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to update area note", {
+      error,
+      areaId,
       noteId,
     });
     return null;

@@ -7,7 +7,12 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
-import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
+import {
+  getAreaNotes,
+  getMonumentNotes,
+  updateAreaNote,
+  updateMonumentNote,
+} from "@/lib/monumentNotesStorage";
 import { MonumentNoteCard } from "./MonumentNoteCard";
 import {
   NotesHeaderControls,
@@ -15,7 +20,9 @@ import {
 } from "./NotesHeaderControls";
 
 interface MonumentNotesGridProps {
-  monumentId: string;
+  monumentId?: string;
+  areaId?: string;
+  sourceType?: "monument" | "area";
   initialNotes: MonumentNote[];
 }
 
@@ -31,7 +38,12 @@ const monumentNoteGridClass =
 const monumentNoteSmallGridClass =
   "-mx-3 grid grid-cols-4 gap-2 px-3 sm:grid-cols-5 sm:gap-2.5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
 
-export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
+export function MonumentNotesGrid({
+  monumentId,
+  areaId,
+  sourceType = "monument",
+  initialNotes,
+}: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,18 +56,23 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     latestInitialNotesRef.current = initialNotes ?? [];
   }, [initialNotes]);
 
+  const sourceId = sourceType === "area" ? areaId : monumentId;
+
   useEffect(() => {
     setShowAllNotes(false);
     setSearchQuery("");
     setNotes(latestInitialNotesRef.current);
-  }, [monumentId]);
+  }, [sourceId]);
 
   useEffect(() => {
     let isMounted = true;
     async function loadNotes() {
-      if (!monumentId) return;
+      if (!sourceId) return;
       setIsLoading(true);
-      const fetched = await getMonumentNotes(monumentId);
+      const fetched =
+        sourceType === "area"
+          ? await getAreaNotes(sourceId)
+          : await getMonumentNotes(sourceId);
       if (!isMounted) return;
       setNotes((currentNotes) => {
         if (fetched.length > 0) return fetched;
@@ -70,7 +87,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     return () => {
       isMounted = false;
     };
-  }, [monumentId]);
+  }, [sourceId, sourceType]);
 
   const filteredNotes = notes.filter((note) => {
     const title = note.title?.toLowerCase() ?? "";
@@ -96,11 +113,16 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     if (!target) return;
     const next = !target.isBookmarked;
     setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: next } : n)));
-    const saved = await updateMonumentNote(monumentId, noteId, {
+    if (!sourceId) return;
+    const payload = {
       title: target.title,
       content: target.content ?? "",
       metadata: { ...(target.metadata ?? {}), bookmarked: next },
-    });
+    };
+    const saved =
+      sourceType === "area"
+        ? await updateAreaNote(sourceId, noteId, payload)
+        : await updateMonumentNote(sourceId, noteId, payload);
     if (!saved) {
       setNotes((prev) =>
         prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: target.isBookmarked } : n))
@@ -136,7 +158,9 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           <MonumentNoteCard
             key={note.id}
             note={note}
-            monumentId={monumentId}
+            monumentId={monumentId ?? ""}
+            areaId={areaId}
+            sourceType={sourceType}
             onToggleBookmark={handleToggleBookmark}
             density={noteCardDensity}
           />
@@ -145,7 +169,11 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         {(() => {
           return (
             <Link
-              href={`/monuments/${monumentId}/notes/new`}
+              href={
+                sourceType === "area"
+                  ? `/areas/${areaId}/notes/new`
+                  : `/monuments/${monumentId}/notes/new`
+              }
               className={cn(
                 monumentNoteActionOuterClass,
                 isSmallNoteCardDensity

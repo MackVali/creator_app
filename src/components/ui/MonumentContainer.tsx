@@ -15,54 +15,66 @@ export type MonumentContainerHandle = {
   refresh: () => Promise<void>;
 };
 
-export const MonumentContainer = forwardRef<MonumentContainerHandle>(
-  function MonumentContainer(_props, ref) {
-    const monumentsListRef = useRef<MonumentsListHandle | null>(null);
+type MonumentContainerProps = {
+  embedded?: boolean;
+};
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        refresh: async () => {
-          await monumentsListRef.current?.refresh();
-        },
-      }),
-      [],
-    );
+export const MonumentContainer = forwardRef<
+  MonumentContainerHandle,
+  MonumentContainerProps
+>(function MonumentContainer({ embedded = false }, ref) {
+  const monumentsListRef = useRef<MonumentsListHandle | null>(null);
 
-    return (
-      <section className="section app-dashboard-section mt-2">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="h-label block">
-            Monuments
-          </h2>
-        </div>
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh: async () => {
+        await monumentsListRef.current?.refresh();
+      },
+    }),
+    [],
+  );
 
-        <MonumentsList
-          ref={monumentsListRef}
-          limit={MAX_MONUMENTS}
-          createHref="/monuments/new"
-          renderEmptyChildren
-        >
-          {(monuments, saveMonumentOrder) => {
-            const canAddMonument = monuments.length < MAX_MONUMENTS;
-            return (
-              <div className="app-dashboard-monuments-panel px-4">
-                <MonumentGridWithSharedTransition
-                  monuments={monuments.map<MonumentCard>((m) => ({
-                    id: m.id,
-                    emoji: m.emoji ?? null,
-                    title: m.title,
-                    stats: `${m.goalCount} Goal${m.goalCount === 1 ? "" : "s"}`,
-                  }))}
-                  showNewCard={canAddMonument}
-                  onReorder={saveMonumentOrder}
-                />
-                {canAddMonument && <AddMonumentDialog />}
-              </div>
-            );
-          }}
-        </MonumentsList>
-      </section>
-    );
-  },
-);
+  const monumentContent = (
+    <MonumentsList
+      ref={monumentsListRef}
+      limit={MAX_MONUMENTS}
+      createHref="/monuments/new"
+      renderEmptyChildren
+    >
+      {(monuments, saveMonumentOrder) => {
+        const canAddMonument = monuments.length < MAX_MONUMENTS;
+
+        return (
+          <div className="app-dashboard-monuments-panel px-4">
+            <MonumentGridWithSharedTransition
+              monuments={monuments.map<MonumentCard>((m) => ({
+                id: m.id,
+                emoji: m.emoji ?? null,
+                title: m.title,
+                stats: `${m.goalCount} Goal${m.goalCount === 1 ? "" : "s"}`,
+              }))}
+              showNewCard={canAddMonument}
+              onReorder={saveMonumentOrder}
+            />
+            {canAddMonument && <AddMonumentDialog />}
+          </div>
+        );
+      }}
+    </MonumentsList>
+  );
+
+  if (embedded) {
+    return monumentContent;
+  }
+
+  return (
+    <section className="section app-dashboard-section mt-2">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="h-label block">Monuments</h2>
+      </div>
+
+      {monumentContent}
+    </section>
+  );
+});

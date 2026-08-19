@@ -13,10 +13,12 @@ type GroceryChoice = { id: string; food_id: string | null; name: string; quantit
 export function SharedMealPlanPanel({
   surface,
   creatorDayDate,
+  showNutritionTarget = true,
   onNutritionTargetSetupOpenChange,
 }: {
   surface: MealPlanSurface;
   creatorDayDate?: string | null;
+  showNutritionTarget?: boolean;
   onNutritionTargetSetupOpenChange?: (open: boolean) => void;
 }) {
   const { plan, isLoading, isRefreshing, error, backgroundError, loggingItemId, refresh, addItem, updateItem, removeItem, logItem } = useMealPlanDay(surface, creatorDayDate);
@@ -76,7 +78,7 @@ export function SharedMealPlanPanel({
 
   return <section className={targetSetupOpen && surface === "nutrition" ? "contents" : "mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]"} aria-label="Meal Plan">
     {!targetSetupOpen ? <header className="flex items-center gap-3 border-b border-white/[0.055] px-3 py-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/66"><Calendar className="h-4 w-4" aria-hidden="true" /></span><div className="min-w-0 flex-1"><h3 className="text-sm font-semibold text-white/88">Meal Plan</h3><p className="text-[11px] font-medium text-white/38">{plan ? `${plan.creator_day_date} · ${plan.items.length} ${plan.items.length === 1 ? "item" : "items"}` : creatorDayDate ?? "Current Creator day"}</p></div></header> : null}
-    {surface === "nutrition" ? <NutritionTargetPanel key="nutrition-target-panel" creatorDayDate={creatorDayDate} presentation="compact" onSetupOpenChange={handleTargetSetupOpenChange} /> : null}
+    {surface === "nutrition" && showNutritionTarget ? <NutritionTargetPanel key="nutrition-target-panel" creatorDayDate={creatorDayDate} presentation="compact" onSetupOpenChange={handleTargetSetupOpenChange} /> : null}
     {!targetSetupOpen ? <>
     {isLoading && !plan ? <div className="flex items-center gap-2 px-4 py-4 text-xs text-white/44"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading Meal Plan...</div> : null}
     {!isLoading && error ? <div className="p-4"><p className="text-xs text-red-200/80">{error}</p><button type="button" onClick={() => void refresh()} className="mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-semibold text-white/70"><RotateCcw className="h-3.5 w-3.5" /> Retry</button></div> : null}

@@ -13,6 +13,7 @@ export interface RoadmapGoal {
   emoji: string | null;
   monument_id: string | null;
   circle_id: string | null;
+  area_id?: string | null;
   monumentEmoji: string | null;
   roadmap_id: string | null;
   status: string | null;
@@ -27,6 +28,7 @@ export interface Roadmap {
   emoji: string | null;
   monument_id?: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   goals: RoadmapGoal[];
 }
 
@@ -45,6 +47,7 @@ export interface RoadmapCampaignGoal {
   emoji: string | null;
   monument_id: string | null;
   circle_id: string | null;
+  area_id?: string | null;
   monumentEmoji: string | null;
   position: number;
   status: string | null;
@@ -63,6 +66,7 @@ export interface RoadmapCampaign {
   roadmap_id?: string | null;
   primary_monument_id: string | null;
   primary_circle_id?: string | null;
+  primary_area_id?: string | null;
   goals: RoadmapCampaignGoal[];
 }
 
@@ -78,6 +82,7 @@ export interface RoadmapMixedItem {
 export interface RoadmapWithItems extends Roadmap {
   monument_id: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   items: RoadmapMixedItem[];
 }
 
@@ -112,6 +117,7 @@ export interface GoalCampaignCardData {
   roadmap_id: string | null;
   primary_monument_id: string | null;
   primary_circle_id: string | null;
+  primary_area_id?: string | null;
   goals: GoalCampaignCardGoal[];
 }
 
@@ -126,6 +132,7 @@ type RoadmapGoalRow = {
   emoji?: string | null;
   monument_id?: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   roadmap_id?: string | null;
   status?: string | null;
   global_rank?: number | null;
@@ -187,6 +194,7 @@ function normalizeRoadmapGoal(
     emoji: goal.emoji ?? null,
     monument_id: goal.monument_id ?? null,
     circle_id: goal.circle_id ?? null,
+    area_id: goal.area_id ?? null,
     monumentEmoji: goal.monument?.emoji ?? null,
     roadmap_id: goal.roadmap_id ?? null,
     status: goal.status ?? null,
@@ -220,11 +228,22 @@ function isRoadmapGoalCompleted(goal: {
 }
 
 function isRoadmapGoalLinkedToContext(
-  goal: { monument_id?: string | null; circle_id?: string | null },
-  context: { monument_id?: string | null; circle_id?: string | null }
+  goal: {
+    monument_id?: string | null;
+    circle_id?: string | null;
+    area_id?: string | null;
+  },
+  context: {
+    monument_id?: string | null;
+    circle_id?: string | null;
+    area_id?: string | null;
+  }
 ): boolean {
   if (context.circle_id) {
     return goal.circle_id === context.circle_id;
+  }
+  if (context.area_id) {
+    return goal.area_id === context.area_id;
   }
   if (context.monument_id) {
     return goal.monument_id === context.monument_id;
@@ -385,8 +404,9 @@ export async function listRoadmaps(
       emoji,
       monument_id,
       circle_id,
+      area_id,
       created_at,
-      goals:goals(id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
+      goals:goals(id, name, emoji, monument_id, circle_id, area_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -402,6 +422,7 @@ export async function listRoadmaps(
     emoji: row.emoji ?? null,
     monument_id: row.monument_id ?? null,
     circle_id: row.circle_id ?? null,
+    area_id: row.area_id ?? null,
     goals: (row.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   }));
 }
@@ -416,7 +437,7 @@ export async function listRoadmapsWithItems(
 
   const { data: roadmapRows, error: roadmapsError } = await supabase
     .from("roadmaps")
-    .select("id, title, emoji, created_at, monument_id, circle_id")
+    .select("id, title, emoji, created_at, monument_id, circle_id, area_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -431,6 +452,7 @@ export async function listRoadmapsWithItems(
     emoji: row.emoji ?? null,
     monument_id: row.monument_id ?? null,
     circle_id: row.circle_id ?? null,
+    area_id: row.area_id ?? null,
   }));
 
   if (roadmaps.length === 0) {
@@ -441,7 +463,7 @@ export async function listRoadmapsWithItems(
 
   const { data: legacyGoalRows, error: legacyGoalsError } = await supabase
     .from("goals")
-    .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+    .select("id, name, emoji, monument_id, circle_id, area_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
     .in("roadmap_id", roadmapIds)
     .order("priority_rank", { ascending: true, nullsFirst: false });
 
@@ -490,7 +512,7 @@ export async function listRoadmapsWithItems(
     roadmapGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+          .select("id, name, emoji, monument_id, circle_id, area_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
           .in("id", roadmapGoalIds)
       : { data: [], error: null };
 
@@ -504,7 +526,7 @@ export async function listRoadmapsWithItems(
       ? await supabase
           .from("campaigns")
           .select(
-            "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id"
+            "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id"
           )
           .in("id", campaignIds)
       : { data: [], error: null };
@@ -540,7 +562,7 @@ export async function listRoadmapsWithItems(
     campaignGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+          .select("id, name, emoji, monument_id, circle_id, area_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
           .in("id", campaignGoalIds)
       : { data: [], error: null };
 
@@ -612,6 +634,7 @@ export async function listRoadmapsWithItems(
       {
         monument_id: campaign.primary_monument_id ?? null,
         circle_id: campaign.primary_circle_id ?? null,
+        area_id: campaign.primary_area_id ?? null,
       },
     ])
   );
@@ -637,6 +660,7 @@ export async function listRoadmapsWithItems(
       emoji: goal.emoji ?? null,
       monument_id: goal.monument_id ?? null,
       circle_id: goal.circle_id ?? null,
+      area_id: goal.area_id ?? null,
       monumentEmoji: goal.monumentEmoji ?? null,
       position: campaignGoal.position,
       status: goal.status ?? null,
@@ -677,6 +701,7 @@ export async function listRoadmapsWithItems(
         roadmap_id: campaign.roadmap_id ?? null,
         primary_monument_id: campaign.primary_monument_id ?? null,
         primary_circle_id: campaign.primary_circle_id ?? null,
+        primary_area_id: campaign.primary_area_id ?? null,
         goals: sortCampaignGoalsByPosition(
           campaignGoalsByCampaignId.get(campaign.id) ?? []
         ),
@@ -743,6 +768,7 @@ export async function listRoadmapsWithItems(
       emoji: roadmap.emoji,
       monument_id: roadmap.monument_id,
       circle_id: roadmap.circle_id,
+      area_id: roadmap.area_id,
       goals: goalItems,
       items,
     };
@@ -771,8 +797,9 @@ export async function createRoadmap(
       emoji,
       monument_id,
       circle_id,
+      area_id,
       created_at,
-      goals:goals(id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
+      goals:goals(id, name, emoji, monument_id, circle_id, area_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
     .single();
 
@@ -787,6 +814,7 @@ export async function createRoadmap(
     emoji: data.emoji ?? null,
     monument_id: data.monument_id ?? null,
     circle_id: data.circle_id ?? null,
+    area_id: data.area_id ?? null,
     goals: (data.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   };
 }
@@ -802,7 +830,7 @@ export async function listGoalCampaignCards(
   const { data: campaignRows, error: campaignsError } = await supabase
     .from("campaigns")
     .select(
-      "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id"
+      "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id"
     )
     .eq("user_id", userId)
     .order("position", { ascending: true, nullsFirst: false })
@@ -850,6 +878,7 @@ export async function listGoalCampaignCards(
     roadmap_id: campaign.roadmap_id ?? null,
     primary_monument_id: campaign.primary_monument_id ?? null,
     primary_circle_id: campaign.primary_circle_id ?? null,
+    primary_area_id: campaign.primary_area_id ?? null,
     goals: sortCampaignGoalsByPosition(goalsByCampaignId.get(campaign.id) ?? []),
   }));
 }
@@ -860,6 +889,7 @@ export async function createCampaign(
     roadmapId?: string | null;
     primaryMonumentId?: string | null;
     primaryCircleId?: string | null;
+    primaryAreaId?: string | null;
     name: string;
     description?: string | null;
     emoji?: string | null;
@@ -880,6 +910,7 @@ export async function createCampaign(
       roadmap_id: input.roadmapId ?? null,
       primary_monument_id: input.primaryMonumentId ?? null,
       primary_circle_id: input.primaryCircleId ?? null,
+      primary_area_id: input.primaryAreaId ?? null,
       name: input.name.trim(),
       description: input.description?.trim() || null,
       emoji: input.emoji?.trim() || null,
@@ -890,7 +921,7 @@ export async function createCampaign(
       position: input.position ?? null,
     })
     .select(
-      "id, name, description, emoji, scheduling_state, position, primary_monument_id, primary_circle_id"
+      "id, name, description, emoji, scheduling_state, position, primary_monument_id, primary_circle_id, primary_area_id"
     )
     .single();
 
@@ -908,6 +939,7 @@ export async function createCampaign(
     position: data.position ?? null,
     primary_monument_id: data.primary_monument_id ?? null,
     primary_circle_id: data.primary_circle_id ?? null,
+    primary_area_id: data.primary_area_id ?? null,
     goals: [],
   };
 }

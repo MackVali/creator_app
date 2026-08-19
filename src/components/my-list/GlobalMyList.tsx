@@ -19,6 +19,7 @@ import { getCatsForUser } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  deleteStandaloneMyListTask,
   fetchReadyTasks,
   updateMyListTaskCompletion,
   updateTaskSkill,
@@ -190,6 +191,7 @@ export function GlobalMyList({
   const [pendingTaskIds, setPendingTaskIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [myListReloadKey, setMyListReloadKey] = useState(0);
   const previousStageRef = useRef<Map<string, TaskLite["stage"]>>(new Map());
 
   useEffect(() => {
@@ -856,7 +858,7 @@ export function GlobalMyList({
         handleCreatorEntitySaved,
       );
     };
-  }, [ready, user?.id]);
+  }, [myListReloadKey, ready, user?.id]);
 
   const pinnedTaskIds = useMemo(
     () =>
@@ -944,8 +946,10 @@ export function GlobalMyList({
   );
 
   const handleTogglePinnedSourceCompletion = useCallback(
-    (row: MyListPinnedSourceRow, completedAt: string | null) => {
-      if (!user?.id) return;
+    async (row: MyListPinnedSourceRow, completedAt: string | null) => {
+      if (!user?.id) return false;
+
+      const previousCompletedAt = row.completedAt ?? null;
 
       setPinnedSourceRows((currentRows) =>
         currentRows.map((currentRow) =>
@@ -975,15 +979,48 @@ export function GlobalMyList({
         }))
       );
 
-      void updatePinnedSourceMyListItemCompletion({
-        userId: user.id,
-        sourceType: row.sourceType,
-        sourceId: row.id,
-        done: Boolean(completedAt),
-        completedAt,
-      }).catch((error) => {
+      try {
+        await updatePinnedSourceMyListItemCompletion({
+          userId: user.id,
+          sourceType: row.sourceType,
+          sourceId: row.id,
+          done: Boolean(completedAt),
+          completedAt,
+        });
+        return true;
+      } catch (error) {
         console.error("Failed to persist pinned My List completion", error);
-      });
+
+        setPinnedSourceRows((currentRows) =>
+          currentRows.map((currentRow) =>
+            currentRow.sourceType === row.sourceType &&
+            currentRow.id === row.id
+              ? { ...currentRow, completedAt: previousCompletedAt }
+              : currentRow
+          )
+        );
+        setPinnedGoalRows((currentRows) =>
+          currentRows.map((goal) => ({
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.sourceType === row.sourceType && project.id === row.id
+                ? { ...project, completedAt: previousCompletedAt }
+                : project
+            ),
+            tasks: goal.tasks?.map((task) =>
+              task.sourceType === row.sourceType && task.id === row.id
+                ? { ...task, completedAt: previousCompletedAt }
+                : task
+            ),
+            habits: goal.habits?.map((habit) =>
+              habit.sourceType === row.sourceType && habit.id === row.id
+                ? { ...habit, completedAt: previousCompletedAt }
+                : habit
+            ),
+          }))
+        );
+        return false;
+      }
     },
     [user?.id]
   );
@@ -1099,6 +1136,56 @@ export function GlobalMyList({
     });
   }, []);
 
+  const handleRemoveTask = useCallback(
+    async (taskId: string) => {
+      if (!user?.id) return false;
+      if (pendingTaskIds.has(taskId)) return false;
+
+      const task = myListTasks.find((item) => item.id === taskId);
+      if (!task) {
+        setMyListReloadKey((key) => key + 1);
+        return false;
+      }
+
+      if (
+        task.goal_id ||
+        task.project_id ||
+        scheduledTaskIds.has(taskId) ||
+        pinnedTaskIds.has(taskId)
+      ) {
+        setMyListReloadKey((key) => key + 1);
+        return false;
+      }
+
+      try {
+        const result = await deleteStandaloneMyListTask({
+          taskId,
+          userId: user.id,
+        });
+
+        if (!result.deleted) {
+          console.warn("Standalone My List Task delete skipped", {
+            taskId,
+            reason: result.reason,
+          });
+          setMyListReloadKey((key) => key + 1);
+          return false;
+        }
+
+        previousStageRef.current.delete(taskId);
+        setTasks((currentTasks) =>
+          currentTasks.filter((item) => item.id !== taskId)
+        );
+        return true;
+      } catch (error) {
+        console.error("Failed to delete standalone My List Task", error);
+        setMyListReloadKey((key) => key + 1);
+        return false;
+      }
+    },
+    [myListTasks, pendingTaskIds, pinnedTaskIds, scheduledTaskIds, user?.id]
+  );
+
   const handleToggleTask = useCallback(
     async (
       taskId: string,
@@ -1106,10 +1193,10 @@ export function GlobalMyList({
       xpContext: MyListTaskXpContext
     ) => {
       const task = tasks.find((item) => item.id === taskId);
-      if (!task) return;
+      if (!task) return false;
       if (pendingTaskIds.has(taskId)) {
         void hapticWarningPattern();
-        return;
+        return false;
       }
 
       const currentStage = task.stage;
@@ -1126,7 +1213,7 @@ export function GlobalMyList({
 
       if (nextStage === currentStage) {
         if (!isCurrentlyCompleted) snapshots.delete(taskId);
-        return;
+        return true;
       }
 
       const selectedSkillId = xpContext.skillId?.trim() || task.skill_id?.trim();
@@ -1136,7 +1223,7 @@ export function GlobalMyList({
       if (!isCurrentlyCompleted && !selectedSkillId) {
         snapshots.delete(taskId);
         void hapticWarningPattern();
-        return;
+        return false;
       }
 
       setPendingTaskIds((currentIds) => {
@@ -1162,7 +1249,7 @@ export function GlobalMyList({
               item.id === taskId ? { ...item, stage: nextStage } : item
             )
           );
-          return;
+          return true;
         }
 
         await reverseMyListTaskXp(taskId);
@@ -1231,6 +1318,7 @@ export function GlobalMyList({
         }
 
         void hapticComplete();
+        return true;
       } catch (error) {
         console.error("My List task completion failed", error);
         if (!isCurrentlyCompleted) {
@@ -1254,6 +1342,7 @@ export function GlobalMyList({
         }
         if (!isCurrentlyCompleted) snapshots.delete(taskId);
         void hapticWarningPattern();
+        return false;
       } finally {
         setPendingTaskIds((currentIds) => {
           const nextIds = new Set(currentIds);
@@ -1284,6 +1373,7 @@ export function GlobalMyList({
       onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
       onUpdatePinnedSourceMetadata={handleUpdatePinnedSourceMetadata}
       onReorderPinnedSourceRows={handleReorderPinnedSourceRows}
+      onRemoveTask={handleRemoveTask}
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {
