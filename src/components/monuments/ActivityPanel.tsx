@@ -15,11 +15,14 @@ import {
   type MonumentLevelHistoryPoint,
   type MonumentActivityNote,
   type MonumentXpSkillMixPoint,
-  useMonumentActivity,
+  useCreatorActivity,
 } from "@/lib/hooks/useMonumentActivity";
 
 interface ActivityPanelProps {
-  monumentId: string;
+  monumentId?: string;
+  areaId?: string;
+  sourceType?: "monument" | "area";
+  sourceLabel?: string;
 }
 
 function formatRelativeTime(date: Date) {
@@ -1065,13 +1068,19 @@ function MonumentXpMixDonut({
   );
 }
 
-export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
+export default function ActivityPanel({
+  monumentId,
+  areaId,
+  sourceType = "monument",
+  sourceLabel,
+}: ActivityPanelProps) {
+  const sourceId = sourceType === "area" ? areaId ?? "" : monumentId ?? "";
   const { loading, error, notes, levelHistory, xpSkillMix } =
-    useMonumentActivity(monumentId);
+    useCreatorActivity(sourceType, sourceId);
 
   const storageKey = useMemo(
-    () => `monument:${monumentId}:pinned-insights`,
-    [monumentId]
+    () => `${sourceType}:${sourceId}:pinned-insights`,
+    [sourceId, sourceType]
   );
 
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
@@ -1284,7 +1293,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                   <div className="min-w-0">
                     <header>
                       <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
-                        Monument analytics
+                        {sourceLabel ?? (sourceType === "area" ? "Area" : "Monument")} analytics
                       </p>
 
                       <dl className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">

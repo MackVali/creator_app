@@ -62,6 +62,7 @@ const awardRequestSchema = z.object({
   amount: z.number().int().optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   monumentIds: z.array(z.string().min(1)).optional(),
+  areaIds: z.array(z.string().min(1)).optional(),
   awardKeyBase: z.string().min(1).optional(),
   source: z.string().optional(),
   reversible: z
@@ -172,6 +173,7 @@ function buildEvents(
     completion_event_id: completionEventId,
     skill_id: null,
     monument_id: null,
+    area_id: null,
     award_key: awardKeyBase,
     source: request.source ?? null,
   } satisfies AwardEvent;
@@ -191,6 +193,14 @@ function buildEvents(
       ...base,
       monument_id: monumentId,
       award_key: `${awardKeyBase}:mon:${monumentId}`,
+    });
+  }
+
+  for (const areaId of request.areaIds ?? []) {
+    events.push({
+      ...base,
+      area_id: areaId,
+      award_key: `${awardKeyBase}:area:${areaId}`,
     });
   }
 

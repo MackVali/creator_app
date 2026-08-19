@@ -6,12 +6,9 @@ import {
   CommandCirclesSection,
   type CommandCirclesSectionHandle,
 } from "@/components/command/CommandCirclesSection";
+import { AreasContainer } from "@/components/areas/AreasContainer";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner, type LevelBannerHandle } from "@/components/ui/LevelBanner";
-import {
-  MonumentContainer,
-  type MonumentContainerHandle,
-} from "@/components/ui/MonumentContainer";
 import { CommandPullRefreshShell } from "@/components/command/CommandPullRefreshShell";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
@@ -21,13 +18,11 @@ export default function CommandTabContent() {
   const { user } = useAuth();
   const canUseCommandManagement = userHasAppManagerAccess(user);
   const levelBannerRef = useRef<LevelBannerHandle | null>(null);
-  const monumentContainerRef = useRef<MonumentContainerHandle | null>(null);
   const skillsCarouselRef = useRef<SkillsCarouselHandle | null>(null);
   const commandSectionRef = useRef<CommandCirclesSectionHandle | null>(null);
   const handleRefresh = useCallback(async () => {
     await Promise.all([
       levelBannerRef.current?.refresh(),
-      monumentContainerRef.current?.refresh(),
       skillsCarouselRef.current?.refresh(),
       canUseCommandManagement ? commandSectionRef.current?.refresh() : undefined,
     ]);
@@ -43,7 +38,7 @@ export default function CommandTabContent() {
       <main className="app-dashboard-bg flow-root pb-20">
         <LevelBanner ref={levelBannerRef} />
 
-        <MonumentContainer ref={monumentContainerRef} />
+        <AreasContainer />
 
         <Section title="Skills" className="mt-1 px-4">
           <SkillsCarousel ref={skillsCarouselRef} />

@@ -41,6 +41,46 @@ export interface Database {
           updated_at?: string;
         };
       };
+      areas: {
+        Row: {
+          id: string;
+          slug: string;
+          label: string;
+          sort_order: number;
+        };
+        Insert: {
+          id: string;
+          slug: string;
+          label: string;
+          sort_order: number;
+        };
+        Update: {
+          id?: string;
+          slug?: string;
+          label?: string;
+          sort_order?: number;
+        };
+      };
+      area_skills: {
+        Row: {
+          user_id: string;
+          area_id: string;
+          skill_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id?: string;
+          area_id: string;
+          skill_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          area_id?: string;
+          skill_id?: string;
+          created_at?: string;
+        };
+      };
       events: {
         Row: {
           id: string;
@@ -119,6 +159,7 @@ export interface Database {
           is_current: boolean;
           stage_id: number;
           monument_id: string;
+          area_id: string | null;
           Title: string;
           user_id: string;
         };
@@ -128,6 +169,7 @@ export interface Database {
           is_current?: boolean;
           stage_id: number;
           monument_id: string;
+          area_id?: string | null;
           Title?: string;
           user_id: string;
         };
@@ -137,6 +179,7 @@ export interface Database {
           is_current?: boolean;
           stage_id?: number;
           monument_id?: string;
+          area_id?: string | null;
           Title?: string;
           user_id?: string;
         };
@@ -147,6 +190,7 @@ export interface Database {
           user_id: string;
           roadmap_id: string | null;
           primary_monument_id: string | null;
+          primary_area_id: string | null;
           name: string;
           description: string | null;
           emoji: string | null;
@@ -168,6 +212,7 @@ export interface Database {
           user_id: string;
           roadmap_id?: string | null;
           primary_monument_id?: string | null;
+          primary_area_id?: string | null;
           name: string;
           description?: string | null;
           emoji?: string | null;
@@ -189,6 +234,7 @@ export interface Database {
           user_id?: string;
           roadmap_id?: string | null;
           primary_monument_id?: string | null;
+          primary_area_id?: string | null;
           name?: string;
           description?: string | null;
           emoji?: string | null;
@@ -1266,6 +1312,7 @@ export interface Database {
           content: string | null;
           monument_id: string | null;
           skill_id: string | null;
+          area_id: string | null;
           metadata: Json | null;
           parent_note_id: string | null;
           sibling_order: number | null;
@@ -1279,6 +1326,7 @@ export interface Database {
           content?: string | null;
           monument_id?: string | null;
           skill_id?: string | null;
+          area_id?: string | null;
           metadata?: Json | null;
           parent_note_id?: string | null;
           sibling_order?: number | null;
@@ -1292,6 +1340,7 @@ export interface Database {
           content?: string | null;
           monument_id?: string | null;
           skill_id?: string | null;
+          area_id?: string | null;
           metadata?: Json | null;
           parent_note_id?: string | null;
           sibling_order?: number | null;
@@ -2299,6 +2348,7 @@ export interface Database {
           completion_event_id: string | null;
           skill_id: string | null;
           monument_id: string | null;
+          area_id: string | null;
           award_key: string | null;
           source: string | null;
         };
@@ -2312,6 +2362,7 @@ export interface Database {
           completion_event_id?: string | null;
           skill_id?: string | null;
           monument_id?: string | null;
+          area_id?: string | null;
           award_key?: string | null;
           source?: string | null;
         };
@@ -2325,6 +2376,7 @@ export interface Database {
           completion_event_id?: string | null;
           skill_id?: string | null;
           monument_id?: string | null;
+          area_id?: string | null;
           award_key?: string | null;
           source?: string | null;
         };

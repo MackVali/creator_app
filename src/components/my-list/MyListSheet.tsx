@@ -180,6 +180,12 @@ const MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
 const MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX = 22;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
+const MY_LIST_COMPLETION_EXIT_TIMING = {
+  confirmationPauseMs: 320,
+  exitDurationMs: 220,
+  cleanupBufferMs: 60,
+  exitDistancePx: 16,
+} as const;
 const MY_LIST_CHECKBOX_TARGET_SELECTOR = "[data-my-list-checkbox]";
 const MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR = [
   "input",
@@ -853,6 +859,16 @@ type MyListVisibleTodoRow =
   | { rowType: "task"; task: TaskLite }
   | { rowType: "manual"; row: MyListManualRow }
   | { rowType: "pinnedSource"; row: MyListPinnedSourceRow };
+type MyListCompletionExitPhase = "confirming" | "exiting";
+type MyListCompletionExitState = {
+  phase: MyListCompletionExitPhase;
+  completedAt: string;
+  visibleRow: MyListVisibleTodoRow;
+};
+type MyListCompletionExitTimers = {
+  exit: ReturnType<typeof setTimeout>;
+  cleanup: ReturnType<typeof setTimeout>;
+};
 
 type MyListActiveView = "list" | "matrix";
 type MyListScheduleMetadata = {
@@ -960,6 +976,8 @@ type MyListSortableManualTodoRowProps = {
   rowKey: MyListSortableTodoRowKey;
   rowType: MyListVisibleTodoRow["rowType"];
   disabled: boolean;
+  completionExitPhase?: MyListCompletionExitPhase | null;
+  prefersReducedMotion: boolean | null;
   reorderGroup: MyListManualReorderGroup | null;
   children: (props: MyListSortableManualTodoHandleProps) => ReactNode;
 };
@@ -1442,6 +1460,8 @@ function MyListSortableManualTodoRow({
   rowKey,
   rowType,
   disabled,
+  completionExitPhase,
+  prefersReducedMotion,
   reorderGroup,
   children,
 }: MyListSortableManualTodoRowProps) {
@@ -1463,6 +1483,8 @@ function MyListSortableManualTodoRow({
     } satisfies MyListManualReorderOverData,
   });
 
+  const isCompletionExiting = completionExitPhase === "exiting";
+
   return (
     <div
       ref={setNodeRef}
@@ -1476,7 +1498,30 @@ function MyListSortableManualTodoRow({
         isDragging && "z-30"
       )}
     >
-      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
+      <motion.div
+        initial={false}
+        animate={
+          isCompletionExiting
+            ? {
+                height: 0,
+                opacity: 0,
+                y: prefersReducedMotion
+                  ? 0
+                  : MY_LIST_COMPLETION_EXIT_TIMING.exitDistancePx,
+              }
+            : { height: "auto", opacity: 1, y: 0 }
+        }
+        transition={{
+          duration: prefersReducedMotion
+            ? 0
+            : MY_LIST_COMPLETION_EXIT_TIMING.exitDurationMs / 1000,
+          ease: [0.22, 1, 0.36, 1],
+        }}
+        className={clsx(isCompletionExiting && "overflow-hidden")}
+        style={{ transformOrigin: "top" }}
+      >
+        {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
+      </motion.div>
     </div>
   );
 }
@@ -1497,6 +1542,7 @@ export function MyListSheet({
   useFullExpandedHeight,
   enableScheduleTimelineDrag = false,
   onRemovePinnedSource,
+  onRemoveTask,
   onTogglePinnedSourceCompletion,
   onUpdatePinnedSourceMetadata,
   onReorderPinnedSourceRows,
@@ -1518,10 +1564,11 @@ export function MyListSheet({
   useFullExpandedHeight: boolean;
   enableScheduleTimelineDrag?: boolean;
   onRemovePinnedSource?: (row: MyListPinnedSourceRow) => void;
+  onRemoveTask?: (taskId: string) => Promise<boolean> | boolean;
   onTogglePinnedSourceCompletion?: (
     row: MyListPinnedSourceRow,
     completedAt: string | null
-  ) => void;
+  ) => Promise<boolean> | boolean;
   onUpdatePinnedSourceMetadata?: (
     row: MyListPinnedSourceRow,
     updates: {
@@ -1534,7 +1581,7 @@ export function MyListSheet({
     taskId: string,
     sourceRect: CreatorXpBurstRect | null,
     xpContext: MyListTaskXpContext
-  ) => void;
+  ) => Promise<boolean> | boolean;
   onTaskSkillSelect: (taskId: string, skill: SkillRow) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
@@ -1577,15 +1624,18 @@ export function MyListSheet({
   const [deletingManualRowIds, setDeletingManualRowIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [deletingTaskRowIds, setDeletingTaskRowIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [taskOverrides, setTaskOverrides] = useState<
     Record<string, MyListTaskOverride>
   >({});
   const [pinnedSourceCompletions, setPinnedSourceCompletions] = useState<
     Record<string, string | null>
   >({});
-  const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [completionExitRows, setCompletionExitRows] = useState<
+    Partial<Record<MyListSortableTodoRowKey, MyListCompletionExitState>>
+  >({});
   const [isScheduleDragActive, setIsScheduleDragActive] = useState(false);
   const [activeManualReorderRowId, setActiveManualReorderRowId] = useState<
     MyListSortableTodoRowKey | null
@@ -1637,6 +1687,9 @@ export function MyListSheet({
   const manualRowIdCounterRef = useRef(0);
   const manualRowsPersistenceRef = useRef<Promise<void>>(Promise.resolve());
   const deletingManualRowIdsRef = useRef<Set<string>>(new Set());
+  const completionExitTimersRef = useRef(
+    new Map<MyListSortableTodoRowKey, MyListCompletionExitTimers>()
+  );
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const manualUpgradePressRef = useRef<MyListManualUpgradePress | null>(null);
@@ -1678,6 +1731,95 @@ export function MyListSheet({
     }),
     []
   );
+  const clearCompletionExitTimers = useCallback(
+    (rowKey: MyListSortableTodoRowKey) => {
+      const timers = completionExitTimersRef.current.get(rowKey);
+      if (!timers) return;
+
+      clearTimeout(timers.exit);
+      clearTimeout(timers.cleanup);
+      completionExitTimersRef.current.delete(rowKey);
+    },
+    []
+  );
+  const cancelCompletionExit = useCallback(
+    (rowKey: MyListSortableTodoRowKey) => {
+      clearCompletionExitTimers(rowKey);
+      setCompletionExitRows((currentRows) => {
+        if (!currentRows[rowKey]) return currentRows;
+
+        const nextRows = { ...currentRows };
+        delete nextRows[rowKey];
+        return nextRows;
+      });
+    },
+    [clearCompletionExitTimers]
+  );
+  const beginCompletionExit = useCallback(
+    (
+      rowKey: MyListSortableTodoRowKey,
+      completedAt: string,
+      visibleRow: MyListVisibleTodoRow
+    ) => {
+      clearCompletionExitTimers(rowKey);
+      setCompletionExitRows((currentRows) => ({
+        ...currentRows,
+        [rowKey]: {
+          phase: "confirming",
+          completedAt,
+          visibleRow,
+        },
+      }));
+
+      const exit = setTimeout(() => {
+        setCompletionExitRows((currentRows) => {
+          const currentRow = currentRows[rowKey];
+          if (!currentRow || currentRow.completedAt !== completedAt) {
+            return currentRows;
+          }
+
+          return {
+            ...currentRows,
+            [rowKey]: {
+              ...currentRow,
+              phase: "exiting",
+            },
+          };
+        });
+      }, MY_LIST_COMPLETION_EXIT_TIMING.confirmationPauseMs);
+
+      const cleanupDelay =
+        MY_LIST_COMPLETION_EXIT_TIMING.confirmationPauseMs +
+        MY_LIST_COMPLETION_EXIT_TIMING.exitDurationMs +
+        MY_LIST_COMPLETION_EXIT_TIMING.cleanupBufferMs;
+      const cleanup = setTimeout(() => {
+        setCompletionExitRows((currentRows) => {
+          const currentRow = currentRows[rowKey];
+          if (!currentRow || currentRow.completedAt !== completedAt) {
+            return currentRows;
+          }
+
+          const nextRows = { ...currentRows };
+          delete nextRows[rowKey];
+          return nextRows;
+        });
+        completionExitTimersRef.current.delete(rowKey);
+      }, cleanupDelay);
+
+      completionExitTimersRef.current.set(rowKey, { exit, cleanup });
+    },
+    [clearCompletionExitTimers]
+  );
+  useEffect(() => {
+    const completionExitTimers = completionExitTimersRef.current;
+    return () => {
+      completionExitTimers.forEach((timers) => {
+        clearTimeout(timers.exit);
+        clearTimeout(timers.cleanup);
+      });
+      completionExitTimers.clear();
+    };
+  }, []);
   const manualReorderCollisionDetection = useCallback<CollisionDetection>(
     (args) => {
       const activeData = readManualReorderOverData(args.active.data.current);
@@ -1729,16 +1871,15 @@ export function MyListSheet({
       nextRollover: getNextLocalCreatorDayRollover(creatorDayBoundaryNow),
     };
   }, [creatorDayBoundaryNow]);
-  const visibleTasks = useMemo(
-    () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
-    [hiddenTaskRowIds, tasks]
-  );
+  const visibleTasks = tasks;
   const activeVisibleTasks = useMemo(
     () =>
       visibleTasks.filter(
-        (task) => task.stage?.toString().toUpperCase() !== "PERFECT"
+        (task) =>
+          task.stage?.toString().toUpperCase() !== "PERFECT" ||
+          Boolean(completionExitRows[`task:${task.id}`])
       ),
-    [visibleTasks]
+    [completionExitRows, visibleTasks]
   );
   const visiblePinnedSourceRows = useMemo(
     () => sanitizePinnedSourceRows(pinnedSourceRows),
@@ -1801,6 +1942,14 @@ export function MyListSheet({
   const visibleTodoRows = useMemo<MyListVisibleTodoRow[]>(() => {
     const rows: MyListVisibleTodoRow[] = [];
     const renderedManualRowIds = new Set<string>();
+    const renderedRowKeys = new Set<MyListSortableTodoRowKey>();
+    const pushRow = (visibleRow: MyListVisibleTodoRow) => {
+      rows.push(visibleRow);
+      const rowKey = getSortableTodoRowKey(visibleRow);
+      if (rowKey) {
+        renderedRowKeys.add(rowKey);
+      }
+    };
 
     const appendAnchoredManualRows = (anchorKey: MyListRowKey) => {
       const anchoredRows = visibleManualRowsByAnchor.get(anchorKey) ?? [];
@@ -1809,25 +1958,25 @@ export function MyListSheet({
         if (renderedManualRowIds.has(row.id)) return;
 
         renderedManualRowIds.add(row.id);
-        rows.push({ rowType: "manual", row });
+        pushRow({ rowType: "manual", row });
         appendAnchoredManualRows(`manual:${row.id}`);
       });
     };
 
     visibleTasks.forEach((task) => {
-      rows.push({ rowType: "task", task });
+      pushRow({ rowType: "task", task });
       appendAnchoredManualRows(`task:${task.id}`);
     });
 
     groupablePinnedSourceRows.forEach((row) => {
-      rows.push({ rowType: "pinnedSource", row });
+      pushRow({ rowType: "pinnedSource", row });
     });
 
     unanchoredVisibleManualRows.forEach((row) => {
       if (renderedManualRowIds.has(row.id)) return;
 
       renderedManualRowIds.add(row.id);
-      rows.push({ rowType: "manual", row });
+      pushRow({ rowType: "manual", row });
       appendAnchoredManualRows(`manual:${row.id}`);
     });
 
@@ -1835,11 +1984,23 @@ export function MyListSheet({
       if (renderedManualRowIds.has(row.id)) return;
 
       renderedManualRowIds.add(row.id);
-      rows.push({ rowType: "manual", row });
+      pushRow({ rowType: "manual", row });
+    });
+
+    Object.entries(completionExitRows).forEach(([rowKey, exitState]) => {
+      if (
+        !exitState ||
+        renderedRowKeys.has(rowKey as MyListSortableTodoRowKey)
+      ) {
+        return;
+      }
+
+      pushRow(exitState.visibleRow);
     });
 
     return rows;
   }, [
+    completionExitRows,
     unanchoredVisibleManualRows,
     visibleManualRows,
     visibleManualRowsByAnchor,
@@ -1867,6 +2028,11 @@ export function MyListSheet({
   const activeTodoRows = useMemo(
     () =>
       visibleTodoRows.filter((visibleRow) => {
+        const rowKey = getSortableTodoRowKey(visibleRow);
+        if (rowKey && completionExitRows[rowKey]) {
+          return true;
+        }
+
         if (visibleRow.rowType === "manual") {
           return !visibleRow.row.done;
         }
@@ -1886,11 +2052,16 @@ export function MyListSheet({
           : visibleRow.task.stage?.toString().toUpperCase() === "PERFECT";
         return !done;
       }),
-    [pinnedSourceCompletions, taskOverrides, visibleTodoRows]
+    [completionExitRows, pinnedSourceCompletions, taskOverrides, visibleTodoRows]
   );
   const completedTodoRows = useMemo(
     () =>
       visibleTodoRows.filter((visibleRow) => {
+        const rowKey = getSortableTodoRowKey(visibleRow);
+        if (rowKey && completionExitRows[rowKey]) {
+          return false;
+        }
+
         let done: boolean;
         let completedAt: string | null;
 
@@ -1928,6 +2099,7 @@ export function MyListSheet({
     [
       creatorDayBoundary.currentStart,
       creatorDayBoundary.nextRollover,
+      completionExitRows,
       pinnedSourceCompletions,
       taskOverrides,
       visibleTodoRows,
@@ -4051,26 +4223,53 @@ export function MyListSheet({
         return;
       }
 
-      setPendingDeleteRowId(null);
-      setActiveSkillPickerRowKey((currentRowKey) =>
-        currentRowKey === `task:${rowId}` ? null : currentRowKey
-      );
-      setActivePriorityPickerRowKey((currentRowKey) =>
-        currentRowKey === `task:${rowId}` ? null : currentRowKey
-      );
-      setActiveDayPickerRowKey((currentRowKey) =>
-        currentRowKey === `task:${rowId}` ? null : currentRowKey
-      );
-      setHiddenTaskRowIds((currentIds) => {
+      if (deletingTaskRowIds.has(rowId)) return;
+
+      setDeletingTaskRowIds((currentIds) => {
         const nextIds = new Set(currentIds);
         nextIds.add(rowId);
         return nextIds;
       });
+
+      try {
+        const removed = await onRemoveTask?.(rowId);
+        if (removed) {
+          setActiveSkillPickerRowKey((currentRowKey) =>
+            currentRowKey === `task:${rowId}` ? null : currentRowKey
+          );
+          setActivePriorityPickerRowKey((currentRowKey) =>
+            currentRowKey === `task:${rowId}` ? null : currentRowKey
+          );
+          setActiveDayPickerRowKey((currentRowKey) =>
+            currentRowKey === `task:${rowId}` ? null : currentRowKey
+          );
+          setTaskOverrides((currentOverrides) => {
+            if (!(rowId in currentOverrides)) return currentOverrides;
+            const nextOverrides = { ...currentOverrides };
+            delete nextOverrides[rowId];
+            return nextOverrides;
+          });
+        }
+      } catch (error) {
+        console.error("Failed to remove My List Task", error);
+      } finally {
+        setPendingDeleteRowId((currentRowKey) =>
+          currentRowKey === deleteRowId ? null : currentRowKey
+        );
+        setDeletingTaskRowIds((currentIds) => {
+          if (!currentIds.has(rowId)) return currentIds;
+          const nextIds = new Set(currentIds);
+          nextIds.delete(rowId);
+          return nextIds;
+        });
+      }
     },
     [
       defaultPriority.id,
       deletingManualRowIds,
+      deletingTaskRowIds,
       onRemovePinnedSource,
+      onRemoveTask,
       pendingDeleteRowId,
       userId,
     ]
@@ -4088,7 +4287,8 @@ export function MyListSheet({
           : `${rowType}:${rowId}`;
       const confirming = pendingDeleteRowId === deleteRowId;
       const isDeleting =
-        rowType === "manual" && deletingManualRowIds.has(rowId);
+        (rowType === "manual" && deletingManualRowIds.has(rowId)) ||
+        (rowType === "task" && deletingTaskRowIds.has(rowId));
 
       return (
         <button
@@ -4150,6 +4350,7 @@ export function MyListSheet({
     [
       handleDeleteRowAction,
       deletingManualRowIds,
+      deletingTaskRowIds,
       open,
       pendingDeleteRowId,
       prefersReducedMotion,
@@ -4965,6 +5166,50 @@ export function MyListSheet({
   }, [pendingTaskIds, tasks]);
 
   useEffect(() => {
+    Object.keys(completionExitRows).forEach((rowKey) => {
+      const typedRowKey = rowKey as MyListSortableTodoRowKey;
+      const exitState = completionExitRows[typedRowKey];
+      if (!exitState) return;
+
+      if (typedRowKey.startsWith("task:")) {
+        const taskId = typedRowKey.slice("task:".length);
+        if (pendingTaskIds.has(taskId)) return;
+
+        const task = tasks.find((item) => item.id === taskId);
+        const override = taskOverrides[taskId];
+        const hasCompletionOverride = Boolean(
+          override && "completedAt" in override
+        );
+        const isDone = hasCompletionOverride
+          ? Boolean(override?.completedAt)
+          : task?.stage?.toString().toUpperCase() === "PERFECT";
+
+        if (!isDone) {
+          cancelCompletionExit(typedRowKey);
+        }
+        return;
+      }
+
+      if (typedRowKey.startsWith("pinnedSource:")) {
+        const pinnedSourceParts = readPinnedSourceRowKeyParts(typedRowKey);
+        if (!pinnedSourceParts) return;
+
+        const completionKey = `${pinnedSourceParts.sourceType}:${pinnedSourceParts.sourceId}`;
+        if (!pinnedSourceCompletions[completionKey]) {
+          cancelCompletionExit(typedRowKey);
+        }
+      }
+    });
+  }, [
+    cancelCompletionExit,
+    completionExitRows,
+    pendingTaskIds,
+    pinnedSourceCompletions,
+    taskOverrides,
+    tasks,
+  ]);
+
+  useEffect(() => {
     if (!canStartTodoRowLongPress) {
       clearScheduleDragPress();
     }
@@ -5774,14 +6019,18 @@ export function MyListSheet({
 
                   if (visibleRow.rowType === "task") {
                     const task = visibleRow.task;
+                    const rowKey = `task:${task.id}` as const;
+                    const completionExitState = completionExitRows[rowKey];
                     const taskCompletionOverride = taskOverrides[task.id];
                     const hasTaskCompletionOverride = Boolean(
                       taskCompletionOverride &&
                         "completedAt" in taskCompletionOverride
                     );
-                    const done = hasTaskCompletionOverride
-                      ? Boolean(taskCompletionOverride?.completedAt)
-                      : task.stage?.toString().toUpperCase() === "PERFECT";
+                    const done =
+                      Boolean(completionExitState?.completedAt) ||
+                      (hasTaskCompletionOverride
+                        ? Boolean(taskCompletionOverride?.completedAt)
+                        : task.stage?.toString().toUpperCase() === "PERFECT");
                     const pending = pendingTaskIds.has(task.id);
                     const taskSkill = resolveTaskSkillMetadata(task);
                     const priorityId = resolveTaskPriorityId(task);
@@ -5799,7 +6048,6 @@ export function MyListSheet({
                     const taskText = taskOverrides[task.id]?.text ?? task.name;
                     const taskTitle = taskText.trim() || task.name.trim();
                     const checkboxId = `my-list-task-${task.id}`;
-                    const rowKey = `task:${task.id}` as const;
                     const priorityMetadata =
                       resolvePriorityScheduleMetadata(priorityId);
                     const taskScheduleDragRow: MyListScheduleDragRow = {
@@ -5881,20 +6129,35 @@ export function MyListSheet({
                           id={checkboxId}
                           type="checkbox"
                           checked={done}
-                          disabled={pending}
+                          disabled={pending || Boolean(completionExitState)}
                           onChange={(event) => {
                             setPendingDeleteRowId(null);
                             const checked = event.target.checked;
+                            const completedAt = checked
+                              ? new Date().toISOString()
+                              : null;
+                            const previousCompletedAt =
+                              hasTaskCompletionOverride
+                                ? taskCompletionOverride?.completedAt ?? null
+                                : readCompletedAtFromUnknown(task);
 
                             setTaskOverrides((currentOverrides) => ({
                               ...currentOverrides,
                               [task.id]: {
                                 ...currentOverrides[task.id],
-                                completedAt: checked
-                                  ? new Date().toISOString()
-                                  : null,
+                                completedAt,
                               },
                             }));
+
+                            if (completedAt) {
+                              beginCompletionExit(
+                                rowKey,
+                                completedAt,
+                                visibleRow
+                              );
+                            } else {
+                              cancelCompletionExit(rowKey);
+                            }
 
                             const sourceElement = event.currentTarget.closest(
                               '[data-creator-xp-source="my-list-todo"]'
@@ -5905,10 +6168,38 @@ export function MyListSheet({
                                     sourceElement.getBoundingClientRect()
                                   )
                                 : null;
-                            onToggleTask(task.id, sourceRect, {
-                              skillId: taskSkill.skillId,
-                              monumentId: taskSkill.monumentId,
-                            });
+                            void Promise.resolve(
+                              onToggleTask(task.id, sourceRect, {
+                                skillId: taskSkill.skillId,
+                                monumentId: taskSkill.monumentId,
+                              })
+                            )
+                              .then((success) => {
+                                if (success === false) {
+                                  setTaskOverrides((currentOverrides) => ({
+                                    ...currentOverrides,
+                                    [task.id]: {
+                                      ...currentOverrides[task.id],
+                                      completedAt: previousCompletedAt,
+                                    },
+                                  }));
+                                  cancelCompletionExit(rowKey);
+                                }
+                              })
+                              .catch((error) => {
+                                console.error(
+                                  "My List task completion handler failed",
+                                  error
+                                );
+                                setTaskOverrides((currentOverrides) => ({
+                                  ...currentOverrides,
+                                  [task.id]: {
+                                    ...currentOverrides[task.id],
+                                    completedAt: previousCompletedAt,
+                                  },
+                                }));
+                                cancelCompletionExit(rowKey);
+                              });
                           }}
                           tabIndex={open ? 0 : -1}
                           className="peer sr-only disabled:cursor-wait"
@@ -6071,8 +6362,15 @@ export function MyListSheet({
                   if (visibleRow.rowType === "pinnedSource") {
                     const row = visibleRow.row;
                     const completionKey = `${row.sourceType}:${row.id}`;
+                    const rowKey = buildPinnedSourceRowKey(
+                      row.sourceType,
+                      row.id
+                    );
+                    const completionExitState = completionExitRows[rowKey];
                     const completedAt =
-                      pinnedSourceCompletions[completionKey] ?? null;
+                      completionExitState?.completedAt ??
+                      pinnedSourceCompletions[completionKey] ??
+                      null;
                     const done = Boolean(completedAt);
                     const checkboxId = `my-list-pinned-${row.sourceType.toLowerCase()}-${row.id}`;
                     const priorityId =
@@ -6089,10 +6387,6 @@ export function MyListSheet({
                     const dayViewBucketId = dayBucketId ?? "anytime";
                     const dayVisual = MY_LIST_DAY_VISUALS[dayViewBucketId];
                     const DayIcon = dayVisual.Icon;
-                    const rowKey = buildPinnedSourceRowKey(
-                      row.sourceType,
-                      row.id
-                    );
                     const title =
                       row.title.trim() ||
                       `Untitled ${row.sourceType.toLowerCase()}`;
@@ -6129,19 +6423,56 @@ export function MyListSheet({
                             id={checkboxId}
                             type="checkbox"
                             checked={done}
+                            disabled={Boolean(completionExitState)}
                             onChange={(event) => {
                               const nextCompletedAt = event.target.checked
                                 ? new Date().toISOString()
                                 : null;
+                              const previousCompletedAt =
+                                pinnedSourceCompletions[completionKey] ?? null;
                               setPendingDeleteRowId(null);
                               setPinnedSourceCompletions((current) => ({
                                 ...current,
                                 [completionKey]: nextCompletedAt,
                               }));
-                              onTogglePinnedSourceCompletion?.(row, nextCompletedAt);
+                              if (nextCompletedAt) {
+                                beginCompletionExit(
+                                  rowKey,
+                                  nextCompletedAt,
+                                  visibleRow
+                                );
+                              } else {
+                                cancelCompletionExit(rowKey);
+                              }
+                              void Promise.resolve(
+                                onTogglePinnedSourceCompletion?.(
+                                  row,
+                                  nextCompletedAt
+                                )
+                              )
+                                .then((success) => {
+                                  if (success !== false) return;
+
+                                  setPinnedSourceCompletions((current) => ({
+                                    ...current,
+                                    [completionKey]: previousCompletedAt,
+                                  }));
+                                  cancelCompletionExit(rowKey);
+                                })
+                                .catch((error) => {
+                                  console.error(
+                                    "My List pinned completion handler failed",
+                                    error
+                                  );
+                                  setPinnedSourceCompletions((current) => ({
+                                    ...current,
+                                    [completionKey]: previousCompletedAt,
+                                  }));
+                                  cancelCompletionExit(rowKey);
+                                });
                             }}
                             tabIndex={open ? 0 : -1}
-                            className="peer sr-only"
+                            className="peer sr-only disabled:cursor-wait"
                           />
                           <label
                             htmlFor={checkboxId}
@@ -6557,6 +6888,10 @@ export function MyListSheet({
                       rowType={visibleRow.rowType}
                       reorderGroup={manualReorderGroup}
                       disabled={!open || activeView !== "list"}
+                      completionExitPhase={
+                        completionExitRows[sortableRowKey]?.phase ?? null
+                      }
+                      prefersReducedMotion={prefersReducedMotion}
                     >
                       {({ attributes, listeners, setActivatorNodeRef, isDragging }) => (
                         <>

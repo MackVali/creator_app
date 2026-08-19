@@ -10,6 +10,7 @@ import {
   isCircleDetailRoute,
   shouldHideBottomChrome,
 } from "@/components/appChromeVisibility";
+import { CLOSE_ACTIVE_AREA_DETAIL_EVENT } from "@/components/areas/events";
 import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
@@ -68,6 +69,13 @@ function isSkillDetailOverlayOpen() {
   );
 }
 
+function isAreaDetailOverlayOpen() {
+  return (
+    typeof document !== "undefined" &&
+    document.body.classList.contains("area-detail-open")
+  );
+}
+
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -113,6 +121,7 @@ export default function BottomNav() {
                   (isCircleDetail ||
                     isMonumentDetailOverlayOpen() ||
                     isSkillDetailOverlayOpen() ||
+                    isAreaDetailOverlayOpen() ||
                     isCommandCircleDetailOverlayOpen())) ||
                 (href === "/schedule" && pathname.startsWith("/schedule/"))
               }
@@ -120,10 +129,21 @@ export default function BottomNav() {
                 void hapticPress();
                 const targetHref = href as MainTabRouteHref;
                 const skillDetailOverlayOpen = isSkillDetailOverlayOpen();
+                const areaDetailOverlayOpen = isAreaDetailOverlayOpen();
 
                 if (skillDetailOverlayOpen) {
                   window.dispatchEvent(
                     new CustomEvent(CLOSE_ACTIVE_SKILL_DETAIL_EVENT)
+                  );
+
+                  if (targetHref === "/dashboard") {
+                    return;
+                  }
+                }
+
+                if (areaDetailOverlayOpen) {
+                  window.dispatchEvent(
+                    new CustomEvent(CLOSE_ACTIVE_AREA_DETAIL_EVENT)
                   );
 
                   if (targetHref === "/dashboard") {

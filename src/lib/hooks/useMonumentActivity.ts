@@ -29,6 +29,7 @@ type XpEventRow = {
   amount: number | null;
   kind: string | null;
   skill_id?: string | null;
+  area_id?: string | null;
   source: string | null;
   schedule_instance_id: string | null;
 };
@@ -39,6 +40,8 @@ type MonumentSkillRow = {
   icon: string | null;
   monument_id: string | null;
 };
+
+type CreatorActivitySourceType = "monument" | "area";
 
 function removeCancellingScheduleXpEvents(events: XpEventRow[]): XpEventRow[] {
   if (events.length === 0) return events;
@@ -320,7 +323,10 @@ function buildLevelHistory(
   return cumulativeXp > 0 ? levelHistory : [];
 }
 
-export function useMonumentActivity(monumentId: string) {
+export function useCreatorActivity(
+  sourceType: CreatorActivitySourceType,
+  sourceId: string
+) {
   const [{ events, summary, loading, error, notes, levelHistory, xpSkillMix }, setState] =
     useState<UseMonumentActivityState>(
       {
@@ -337,12 +343,12 @@ export function useMonumentActivity(monumentId: string) {
   const supabase = useMemo(() => getSupabaseBrowser(), []);
 
   const loadActivity = useCallback(async () => {
-    if (!monumentId) {
+    if (!sourceId) {
       setState({
         events: [],
         summary: DEFAULT_SUMMARY,
         loading: false,
-        error: "Missing monument identifier",
+        error: `Missing ${sourceType} identifier`,
         notes: [],
         levelHistory: [],
         xpSkillMix: [],
@@ -378,55 +384,114 @@ export function useMonumentActivity(monumentId: string) {
         throw new Error("User not authenticated");
       }
 
-      const [notesRes, xpRes, xpHistoryRes, goalsRes, skillsRes] = await Promise.all([
+      const sourceColumn = sourceType === "area" ? "area_id" : "monument_id";
+
+      const [notesRes, xpRes, xpHistoryRes, goalsRes] = await Promise.all([
         supabase
           .from("notes")
           .select("id,title,content,created_at,updated_at", { count: "exact" })
           .eq("user_id", userId)
-          .eq("monument_id", monumentId)
+          .eq(sourceColumn, sourceId)
           .order("created_at", { ascending: false })
           .limit(30),
         supabase
           .from("xp_events")
           .select("id,created_at,amount,kind,source,schedule_instance_id")
           .eq("user_id", userId)
-          .eq("monument_id", monumentId)
+          .eq(sourceColumn, sourceId)
           .order("created_at", { ascending: false })
           .limit(200),
         supabase
           .from("xp_events")
           .select("id,created_at,amount,kind,source,schedule_instance_id")
           .eq("user_id", userId)
-          .eq("monument_id", monumentId)
+          .eq(sourceColumn, sourceId)
           .order("created_at", { ascending: true }),
         supabase
           .from("goals")
           .select("id,name,status,active,created_at,updated_at", { count: "exact" })
           .eq("user_id", userId)
-          .eq("monument_id", monumentId)
+          .eq(sourceColumn, sourceId)
           .order("updated_at", { ascending: false })
           .limit(60),
-        supabase
-          .from("skills")
-          .select("id,name,icon,monument_id")
-          .eq("user_id", userId)
-          .eq("monument_id", monumentId),
       ]);
 
       const noteError = notesRes.error;
       const xpError = xpRes.error;
       const xpHistoryError = xpHistoryRes.error;
       const goalError = goalsRes.error;
-      const skillError = skillsRes.error;
 
-      if (noteError || xpError || xpHistoryError || goalError || skillError) {
+      if (noteError || xpError || xpHistoryError || goalError) {
         const firstError =
-          noteError ?? xpError ?? xpHistoryError ?? goalError ?? skillError;
+          noteError ?? xpError ?? xpHistoryError ?? goalError;
         throw firstError;
       }
 
       const notes = (notesRes.data ?? []) as NoteRow[];
-      const monumentSkills = (skillsRes.data ?? []) as MonumentSkillRow[];
+      let monumentSkills: MonumentSkillRow[] = [];
+
+      if (sourceType === "area") {
+        const { data: relationRows, error: relationError } = await supabase
+          .from("area_skills")
+          .select("skill_id")
+          .eq("user_id", userId)
+          .eq("area_id", sourceId);
+        if (relationError) throw relationError;
+
+        const relationSkillIds = ((relationRows ?? []) as Array<{ skill_id: unknown }>)
+          .map((row) =>
+            row && typeof row.skill_id === "string" ? row.skill_id : null
+          )
+          .filter((skillId): skillId is string => Boolean(skillId));
+
+        if (relationSkillIds.length > 0) {
+          const { data: skillRows, error: skillsError } = await supabase
+            .from("skills")
+            .select("id,name,icon,monument_id")
+            .eq("user_id", userId)
+            .in("id", relationSkillIds);
+          if (skillsError) throw skillsError;
+          monumentSkills = (skillRows ?? []) as MonumentSkillRow[];
+        }
+      } else {
+        const [directSkillsRes, relationRes] = await Promise.all([
+          supabase
+            .from("skills")
+            .select("id,name,icon,monument_id")
+            .eq("user_id", userId)
+            .eq("monument_id", sourceId),
+          supabase
+            .from("monument_skills")
+            .select("skill_id")
+            .eq("monument_id", sourceId),
+        ]);
+        if (directSkillsRes.error) throw directSkillsRes.error;
+        if (relationRes.error) throw relationRes.error;
+
+        const directSkills = (directSkillsRes.data ?? []) as MonumentSkillRow[];
+        const directSkillIds = new Set(directSkills.map((skill) => skill.id));
+        const relationSkillIds = ((relationRes.data ?? []) as Array<{ skill_id: unknown }>)
+          .map((row) =>
+            row && typeof row.skill_id === "string" ? row.skill_id : null
+          )
+          .filter(
+            (skillId): skillId is string =>
+              skillId !== null && !directSkillIds.has(skillId)
+          );
+        monumentSkills = [...directSkills];
+
+        if (relationSkillIds.length > 0) {
+          const { data: relationSkills, error: relationSkillsError } =
+            await supabase
+              .from("skills")
+              .select("id,name,icon,monument_id")
+              .eq("user_id", userId)
+              .in("id", relationSkillIds);
+          if (relationSkillsError) throw relationSkillsError;
+          monumentSkills.push(...((relationSkills ?? []) as MonumentSkillRow[]));
+        }
+      }
+
       const skillIds = monumentSkills.map((skill) => skill.id);
       const skillXpRes =
         skillIds.length > 0
@@ -574,22 +639,25 @@ export function useMonumentActivity(monumentId: string) {
         xpSkillMix,
       });
     } catch (err) {
-      console.error("Failed to load monument activity", {
+      console.error(`Failed to load ${sourceType} activity`, {
         error: err,
-        monumentId,
+        sourceType,
+        sourceId,
       });
       setState({
         events: [],
         summary: DEFAULT_SUMMARY,
         loading: false,
         error:
-          err instanceof Error ? err.message : "Failed to load monument activity",
+          err instanceof Error
+            ? err.message
+            : `Failed to load ${sourceType} activity`,
         notes: [],
         levelHistory: [],
         xpSkillMix: [],
       });
     }
-  }, [monumentId, supabase]);
+  }, [sourceId, sourceType, supabase]);
 
   useEffect(() => {
     let ignore = false;
@@ -610,6 +678,14 @@ export function useMonumentActivity(monumentId: string) {
     xpSkillMix,
     refresh: loadActivity,
   };
+}
+
+export function useMonumentActivity(monumentId: string) {
+  return useCreatorActivity("monument", monumentId);
+}
+
+export function useAreaActivity(areaId: string) {
+  return useCreatorActivity("area", areaId);
 }
 
 export type UseMonumentActivityResult = ReturnType<typeof useMonumentActivity>;

@@ -25,6 +25,7 @@ type QueryResult = {
 type QueryCall = {
   table: string;
   columns?: string;
+  filters?: Array<{ method: "eq" | "is" | "in"; column: string; value: unknown }>;
 };
 
 type QueryBuilder = PromiseLike<QueryResult> & {
@@ -126,6 +127,107 @@ function createFocusPomoQueueClient() {
         eq: () => builder,
         is: () => builder,
         in: () => builder,
+        maybeSingle: () => Promise.resolve(resolve(call)),
+        then: (onFulfilled, onRejected) =>
+          Promise.resolve(resolve(call)).then(onFulfilled, onRejected),
+      };
+
+      return builder;
+    }),
+  };
+
+  return { calls, client };
+}
+
+function createAreaFocusPomoQueueClient() {
+  const calls: QueryCall[] = [];
+
+  const resolve = (call: QueryCall): QueryResult => {
+    calls.push({ ...call, filters: [...(call.filters ?? [])] });
+
+    if (call.table === "goals" && call.columns === "id") {
+      return { data: [{ id: "goal-body" }], error: null };
+    }
+
+    if (call.table === "goals") {
+      return {
+        data: [
+          {
+            id: "goal-body",
+            name: "Body goal",
+            emoji: "B",
+            area_id: "body",
+            monument_id: null,
+            circle_id: null,
+            roadmap_id: null,
+            priority_rank: 1,
+            global_rank: 1,
+            due_date: null,
+            created_at: "2026-06-20T15:00:00.000Z",
+            updated_at: "2026-06-20T16:00:00.000Z",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (call.table === "projects") {
+      return {
+        data: [
+          {
+            id: "project-body",
+            name: "Body project",
+            duration_min: 25,
+            energy: "MEDIUM",
+            priority: "HIGH",
+            goal_id: "goal-body",
+            campaign_id: null,
+            completed_at: null,
+            due_date: null,
+            global_rank: 1,
+            created_at: "2026-06-21T15:00:00.000Z",
+            updated_at: "2026-06-21T16:00:00.000Z",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (call.table === "project_skills" || call.table === "profiles") {
+      return call.table === "profiles"
+        ? { data: { timezone: "UTC" }, error: null }
+        : { data: [], error: null };
+    }
+
+    return { data: [], error: null };
+  };
+
+  const client = {
+    auth: {
+      getUser: vi.fn(async () => ({
+        data: { user: { id: "user-1" } },
+        error: null,
+      })),
+    },
+    from: vi.fn((table: string): QueryBuilder => {
+      const call: QueryCall = { table, filters: [] };
+      const builder: QueryBuilder = {
+        select: (columns) => {
+          call.columns = columns;
+          return builder;
+        },
+        eq: (column, value) => {
+          call.filters?.push({ method: "eq", column, value });
+          return builder;
+        },
+        is: (column, value) => {
+          call.filters?.push({ method: "is", column, value });
+          return builder;
+        },
+        in: (column, value) => {
+          call.filters?.push({ method: "in", column, value });
+          return builder;
+        },
         maybeSingle: () => Promise.resolve(resolve(call)),
         then: (onFulfilled, onRejected) =>
           Promise.resolve(resolve(call)).then(onFulfilled, onRejected),
@@ -262,5 +364,37 @@ describe("fetchFocusPomoQueue", () => {
         priority: "ULTRA-CRITICAL",
       },
     ]);
+  });
+
+  it("loads area-scoped projects through goals.area_id and preserves goal area metadata", async () => {
+    const { calls, client } = createAreaFocusPomoQueueClient();
+    vi.mocked(getSupabaseBrowser).mockReturnValue(client as never);
+
+    const items = await fetchFocusPomoQueue({
+      sourceType: "area",
+      sourceId: "body",
+    });
+    const areaGoalCall = calls.find(
+      (call) => call.table === "goals" && call.columns === "id"
+    );
+    const projectCall = calls.find((call) => call.table === "projects");
+
+    expect(areaGoalCall?.filters).toContainEqual({
+      method: "eq",
+      column: "area_id",
+      value: "body",
+    });
+    expect(projectCall?.filters).toContainEqual({
+      method: "in",
+      column: "goal_id",
+      value: ["goal-body"],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: "project-body",
+      goalId: "goal-body",
+      goalAreaId: "body",
+      goal_area_id: "body",
+    });
   });
 });

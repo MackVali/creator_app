@@ -159,6 +159,7 @@ import {
 import {
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
+import { AREAS, getAreaById, isAreaId } from "@/config/areas";
 import {
   buildCreatorXpSurgePayload,
   type CreatorXpSurgePayload,
@@ -429,6 +430,7 @@ type FabGoalEditRow = {
   why?: string | null;
   monument_id?: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
   roadmap_id?: string | null;
   due_date?: string | null;
 };
@@ -443,6 +445,7 @@ type FabGoalCampaignContextRow = {
   roadmap_id: string | null;
   primary_monument_id: string | null;
   primary_circle_id?: string | null;
+  primary_area_id?: string | null;
   scheduling_state: CampaignSchedulingState | null;
   position: number | null;
 };
@@ -450,6 +453,7 @@ type FabRoadmapContextRow = {
   id: string;
   monument_id: string | null;
   circle_id?: string | null;
+  area_id?: string | null;
 };
 type FabProjectEditRow = {
   id: string;
@@ -494,6 +498,7 @@ type CreatorEntitySavedEventDetail = {
   action: "created" | "updated" | "deleted";
   monumentId?: string | null;
   circleId?: string | null;
+  areaId?: string | null;
   campaignId?: string | null;
   goalId?: string | null;
   projectId?: string | null;
@@ -1085,11 +1090,12 @@ type GoalCampaignOption = {
   roadmap_id: string | null;
   primary_monument_id: string | null;
   primary_circle_id?: string | null;
+  primary_area_id?: string | null;
   scheduling_state: CampaignSchedulingState;
   position: number | null;
 };
 
-type GoalRelationType = "MONUMENT" | "CIRCLE" | null;
+type GoalRelationType = "MONUMENT" | "CIRCLE" | "AREA" | null;
 
 type GoalCircleOption = {
   id: string;
@@ -1110,6 +1116,7 @@ type GoalCircleOption = {
 type GoalRelationResolution = {
   selectedMonumentId: string | null;
   selectedCircleId: string | null;
+  selectedAreaId: string | null;
   error: string | null;
 };
 
@@ -6791,6 +6798,7 @@ export function Fab({
     useState<GoalRelationType>(null);
   const [goalRelationId, setGoalRelationId] = useState("");
   const [goalCircleId, setGoalCircleId] = useState<string | "">("");
+  const [goalAreaId, setGoalAreaId] = useState<string | "">("");
   const [goalCampaignId, setGoalCampaignId] = useState<string | null>(null);
   const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
   const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
@@ -7421,6 +7429,7 @@ export function Fab({
     setGoalRelationType(null);
     setGoalRelationId("");
     setGoalCircleId("");
+    setGoalAreaId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalActive(null);
@@ -9196,7 +9205,7 @@ export function Fab({
             supabase
               .from("goals")
               .select(
-                "id, name, priority, energy, priority_code, energy_code, active, status, why, monument_id, circle_id, roadmap_id, due_date",
+                "id, name, priority, energy, priority_code, energy_code, active, status, why, monument_id, circle_id, area_id, roadmap_id, due_date",
               )
               .eq("id", entityId)
               .single(),
@@ -9241,7 +9250,7 @@ export function Fab({
               await supabase
                 .from("campaigns")
                 .select(
-                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position",
                 )
                 .eq("id", hydratedCampaignId)
                 .eq("user_id", user.id)
@@ -9257,7 +9266,7 @@ export function Fab({
             const { data: roadmapContextData, error: roadmapContextError } =
               await supabase
                 .from("roadmaps")
-                .select("id, monument_id, circle_id")
+                .select("id, monument_id, circle_id, area_id")
                 .eq("id", roadmapContextId)
                 .eq("user_id", user.id)
                 .maybeSingle();
@@ -9372,14 +9381,25 @@ export function Fab({
                 campaignContext?.primary_circle_id ||
                 roadmapContext?.circle_id ||
                 "");
+          const hydratedAreaId =
+            hydratedMonumentId || hydratedCircleId
+              ? ""
+              : (goalRow?.area_id ||
+                campaignContext?.primary_area_id ||
+                roadmapContext?.area_id ||
+                "");
           setGoalMonumentId(hydratedMonumentId);
           setGoalCircleId(hydratedCircleId);
+          setGoalAreaId(hydratedAreaId);
           if (hydratedMonumentId) {
             setGoalRelationType("MONUMENT");
             setGoalRelationId(hydratedMonumentId);
           } else if (hydratedCircleId) {
             setGoalRelationType("CIRCLE");
             setGoalRelationId(hydratedCircleId);
+          } else if (hydratedAreaId) {
+            setGoalRelationType("AREA");
+            setGoalRelationId(hydratedAreaId);
           } else {
             setGoalRelationType(null);
             setGoalRelationId("");
@@ -16501,6 +16521,27 @@ export function Fab({
                             No managed circles yet
                           </SelectItem>
                         )}
+                        <SelectItem
+                          value="__areas_label"
+                          disabled
+                          className="cursor-default px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
+                        >
+                          AREAS
+                        </SelectItem>
+                        {AREAS.map((area) => (
+                          <SelectItem
+                            key={area.id}
+                            value={`AREA:${area.id}`}
+                            className={fabCreationSelectItemClass(
+                              selectedGoalRelationValue === `AREA:${area.id}`,
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">{area.emoji}</span>
+                              <span>{area.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -19409,12 +19450,22 @@ export function Fab({
     if (creationRequest.type === "GOAL") {
       const requestedCampaignId = creationRequest.campaignId ?? null;
       const requestedMonumentId = creationRequest.monumentId ?? null;
+      const requestedAreaId = isAreaId(creationRequest.areaId)
+        ? creationRequest.areaId
+        : null;
       setGoalCampaignId(requestedCampaignId);
       if (requestedMonumentId && !requestedCampaignId) {
         setGoalMonumentId(requestedMonumentId);
         setGoalCircleId("");
+        setGoalAreaId("");
         setGoalRelationType("MONUMENT");
         setGoalRelationId(requestedMonumentId);
+      } else if (requestedAreaId && !requestedCampaignId) {
+        setGoalMonumentId("");
+        setGoalCircleId("");
+        setGoalAreaId(requestedAreaId);
+        setGoalRelationType("AREA");
+        setGoalRelationId(requestedAreaId);
       }
 
       if (requestedCampaignId) {
@@ -19432,7 +19483,7 @@ export function Fab({
             const { data: campaignData, error: campaignError } = await supabase
               .from("campaigns")
               .select(
-                "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position",
               )
               .eq("id", requestedCampaignId)
               .eq("user_id", user.id)
@@ -19461,11 +19512,20 @@ export function Fab({
             let hydratedCircleId = hydratedMonumentId
               ? ""
               : (campaign.primary_circle_id ?? "");
+            let hydratedAreaId =
+              hydratedMonumentId || hydratedCircleId
+                ? ""
+                : (campaign.primary_area_id ?? "");
 
-            if (!hydratedMonumentId && !hydratedCircleId && campaign.roadmap_id) {
+            if (
+              !hydratedMonumentId &&
+              !hydratedCircleId &&
+              !hydratedAreaId &&
+              campaign.roadmap_id
+            ) {
               const { data: roadmapData, error: roadmapError } = await supabase
                 .from("roadmaps")
-                .select("id, monument_id, circle_id")
+                .select("id, monument_id, circle_id, area_id")
                 .eq("id", campaign.roadmap_id)
                 .eq("user_id", user.id)
                 .maybeSingle();
@@ -19477,18 +19537,30 @@ export function Fab({
               hydratedCircleId = hydratedMonumentId
                 ? ""
                 : (roadmap?.circle_id ?? "");
+              hydratedAreaId =
+                hydratedMonumentId || hydratedCircleId
+                  ? ""
+                  : (roadmap?.area_id ?? "");
             }
 
             if (hydratedMonumentId) {
               setGoalMonumentId(hydratedMonumentId);
               setGoalCircleId("");
+              setGoalAreaId("");
               setGoalRelationType("MONUMENT");
               setGoalRelationId(hydratedMonumentId);
             } else if (hydratedCircleId) {
               setGoalMonumentId("");
               setGoalCircleId(hydratedCircleId);
+              setGoalAreaId("");
               setGoalRelationType("CIRCLE");
               setGoalRelationId(hydratedCircleId);
+            } else if (hydratedAreaId) {
+              setGoalMonumentId("");
+              setGoalCircleId("");
+              setGoalAreaId(hydratedAreaId);
+              setGoalRelationType("AREA");
+              setGoalRelationId(hydratedAreaId);
             }
           } catch (error) {
             console.error("Failed to hydrate requested goal campaign", error);
@@ -21163,7 +21235,7 @@ export function Fab({
         const { data, error } = await supabase
           .from("campaigns")
           .select(
-            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position",
           )
           .eq("user_id", user.id)
           .order("position", { ascending: true, nullsFirst: false })
@@ -21201,6 +21273,9 @@ export function Fab({
   }, [selected]);
 
   const goalCampaignOptions = useMemo(() => {
+    if (goalRelationType === "AREA") {
+      return [];
+    }
     const campaigns = [...goalCampaigns];
     if (goalRelationType === "CIRCLE" && goalCircleId) {
       return campaigns
@@ -21239,14 +21314,14 @@ export function Fab({
   }, [
     goalCampaignId,
     goalCampaigns,
-    goalMonumentId,
     goalRelationType,
+    goalMonumentId,
     goalCircleId,
   ]);
 
   useEffect(() => {
     setGoalCampaignCreateError(null);
-  }, [goalMonumentId, goalCircleId]);
+  }, [goalMonumentId, goalCircleId, goalAreaId]);
 
   const resetGoalCampaignInlineCreation = useCallback(() => {
     setIsCreatingGoalCampaignInline(false);
@@ -21274,7 +21349,10 @@ export function Fab({
           ?.name ?? "Link to MONUMENT / CIRCLE +"
       );
     }
-    return "Link to MONUMENT / CIRCLE +";
+    if (goalRelationType === "AREA" && goalRelationId) {
+      return getAreaById(goalRelationId)?.label ?? "Link to AREA +";
+    }
+    return "Link to MONUMENT / CIRCLE / AREA +";
   }, [goalRelationId, goalRelationType, manageableCircles, monuments]);
 
   const handleGoalRelationChange = useCallback(
@@ -21288,12 +21366,13 @@ export function Fab({
         setGoalRelationId("");
         setGoalMonumentId("");
         setGoalCircleId("");
+        setGoalAreaId("");
         return;
       }
 
       const [rawType, relationId] = value.split(":");
       if (
-        (rawType !== "MONUMENT" && rawType !== "CIRCLE") ||
+        (rawType !== "MONUMENT" && rawType !== "CIRCLE" && rawType !== "AREA") ||
         !relationId
       ) {
         return;
@@ -21304,10 +21383,22 @@ export function Fab({
       if (rawType === "MONUMENT") {
         setGoalMonumentId(relationId);
         setGoalCircleId("");
+        setGoalAreaId("");
         return;
       }
 
-      setGoalCircleId(relationId);
+      if (rawType === "CIRCLE") {
+        setGoalCircleId(relationId);
+        setGoalAreaId("");
+        setGoalMonumentId("");
+        return;
+      }
+
+      if (!isAreaId(relationId)) {
+        return;
+      }
+      setGoalAreaId(relationId);
+      setGoalCircleId("");
       setGoalMonumentId("");
     },
     [resetGoalCampaignInlineCreation],
@@ -21319,7 +21410,8 @@ export function Fab({
         return {
           selectedMonumentId: null,
           selectedCircleId: null,
-          error: "Link this goal to a Monument or Circle before saving.",
+          selectedAreaId: null,
+          error: "Link this goal to a Monument, Circle, or Area before saving.",
         };
       }
 
@@ -21328,6 +21420,7 @@ export function Fab({
           return {
             selectedMonumentId: null,
             selectedCircleId: null,
+            selectedAreaId: null,
             error: "Link this goal to a monument before saving.",
           };
         }
@@ -21335,12 +21428,31 @@ export function Fab({
           return {
             selectedMonumentId: null,
             selectedCircleId: null,
+            selectedAreaId: null,
             error: "Link this goal to a valid monument before saving.",
           };
         }
         return {
           selectedMonumentId: goalMonumentId,
           selectedCircleId: null,
+          selectedAreaId: null,
+          error: null,
+        };
+      }
+
+      if (goalRelationType === "AREA") {
+        if (!isAreaId(goalAreaId)) {
+          return {
+            selectedMonumentId: null,
+            selectedCircleId: null,
+            selectedAreaId: null,
+            error: "Link this goal to a valid area before saving.",
+          };
+        }
+        return {
+          selectedMonumentId: null,
+          selectedCircleId: null,
+          selectedAreaId: goalAreaId,
           error: null,
         };
       }
@@ -21349,6 +21461,7 @@ export function Fab({
         return {
           selectedMonumentId: null,
           selectedCircleId: null,
+          selectedAreaId: null,
           error: "Link this goal to a circle before saving.",
         };
       }
@@ -21356,15 +21469,17 @@ export function Fab({
         return {
           selectedMonumentId: null,
           selectedCircleId: null,
+          selectedAreaId: null,
           error: "Link this goal to a valid circle before saving.",
         };
       }
       return {
         selectedMonumentId: null,
         selectedCircleId: goalCircleId,
+        selectedAreaId: null,
         error: null,
       };
-    }, [goalCircleId, goalMonumentId, goalRelationId, goalRelationType]);
+    }, [goalAreaId, goalCircleId, goalMonumentId, goalRelationId, goalRelationType]);
 
   const handleCreateGoalCampaignInline = useCallback(async () => {
     if (goalCampaignCreating) {
@@ -21382,6 +21497,10 @@ export function Fab({
       setGoalCampaignCreateError(
         "Link a Monument or Circle before creating a campaign.",
       );
+      return;
+    }
+    if (goalRelationType === "AREA") {
+      setGoalCampaignCreateError("Area campaigns are coming later.");
       return;
     }
 
@@ -21514,7 +21633,7 @@ export function Fab({
         await supabase
           .from("campaigns")
           .select(
-            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position",
           )
           .eq("user_id", user.id)
           .or(campaignContextFilter);
@@ -22903,6 +23022,7 @@ export function Fab({
           : {
               selectedMonumentId: null,
               selectedCircleId: null,
+              selectedAreaId: null,
               error: null,
             };
       if (saveSelected === "GOAL") {
@@ -23086,10 +23206,16 @@ export function Fab({
         const resolveGoalRoadmapId = async ({
           selectedMonumentId,
           selectedCircleId,
+          selectedAreaId,
         }: {
           selectedMonumentId: string | null;
           selectedCircleId: string | null;
+          selectedAreaId: string | null;
         }) => {
+          if (selectedAreaId) {
+            return null;
+          }
+
           if (selectedMonumentId) {
             const { data: existingRoadmap, error: roadmapError } =
               await supabase
@@ -23191,12 +23317,14 @@ export function Fab({
           roadmapId,
           selectedMonumentId,
           selectedCircleId,
+          selectedAreaId,
         }: {
-          roadmapId: string;
+          roadmapId: string | null;
           selectedMonumentId: string | null;
           selectedCircleId: string | null;
+          selectedAreaId: string | null;
         }) => {
-          if (!goalCampaignId) {
+          if (!goalCampaignId || selectedAreaId || !roadmapId) {
             return null;
           }
 
@@ -23208,7 +23336,7 @@ export function Fab({
               await supabase
                 .from("campaigns")
                 .select(
-                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position",
                 )
                 .eq("id", goalCampaignId)
                 .eq("user_id", user.id)
@@ -23594,7 +23722,7 @@ export function Fab({
           const { data: existingGoalData, error: existingGoalError } =
             await supabase
               .from("goals")
-              .select("id, monument_id, circle_id, roadmap_id")
+              .select("id, monument_id, circle_id, area_id, roadmap_id")
               .eq("id", activeEditTarget.entityId)
               .eq("user_id", user.id)
               .maybeSingle();
@@ -23602,7 +23730,7 @@ export function Fab({
 
           const existingGoal = existingGoalData as Pick<
             FabGoalEditRow,
-            "id" | "monument_id" | "circle_id" | "roadmap_id"
+            "id" | "monument_id" | "circle_id" | "area_id" | "roadmap_id"
           > | null;
           if (!existingGoal) {
             throw new Error("Goal could not be found.");
@@ -23610,13 +23738,17 @@ export function Fab({
 
           const originalRelationType = existingGoal.circle_id
             ? "CIRCLE"
-            : "MONUMENT";
+            : existingGoal.area_id
+              ? "AREA"
+              : "MONUMENT";
           const nextRelationType = goalRelationResolution.selectedCircleId
             ? "CIRCLE"
-            : "MONUMENT";
+            : goalRelationResolution.selectedAreaId
+              ? "AREA"
+              : "MONUMENT";
           if (originalRelationType !== nextRelationType) {
             setBlockedSaveError(
-              "Moving a Goal between Monument and Circle is coming next.",
+              "Moving a Goal between sources is coming next.",
             );
             return;
           }
@@ -23627,16 +23759,25 @@ export function Fab({
             setBlockedSaveError("Moving a Goal between Circles is coming next.");
             return;
           }
+          if (
+            originalRelationType === "AREA" &&
+            existingGoal.area_id !== goalRelationResolution.selectedAreaId
+          ) {
+            setBlockedSaveError("Moving a Goal between Areas is coming next.");
+            return;
+          }
 
           const resolvedGoalRoadmapId = await resolveGoalRoadmapId({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
+            selectedAreaId: goalRelationResolution.selectedAreaId,
           });
           const effectiveGoalCampaignId =
             await resolveCompatibleGoalCampaignId({
               roadmapId: resolvedGoalRoadmapId,
               selectedMonumentId: goalRelationResolution.selectedMonumentId,
               selectedCircleId: goalRelationResolution.selectedCircleId,
+              selectedAreaId: goalRelationResolution.selectedAreaId,
             });
 
           const { error } = await supabase
@@ -23650,9 +23791,12 @@ export function Fab({
               why: goalWhy?.trim() || null,
               monument_id: goalRelationResolution.selectedMonumentId,
               circle_id: goalRelationResolution.selectedCircleId,
+              area_id: goalRelationResolution.selectedAreaId,
               roadmap_id: goalRelationResolution.selectedCircleId
                 ? resolvedGoalRoadmapId
-                : existingGoal.roadmap_id
+                : goalRelationResolution.selectedAreaId
+                  ? null
+                  : existingGoal.roadmap_id
                   ? resolvedGoalRoadmapId
                   : (existingGoal.roadmap_id ?? null),
               due_date: goalDue ?? null,
@@ -23715,6 +23859,7 @@ export function Fab({
             action: "updated",
             monumentId: goalRelationResolution.selectedMonumentId,
             circleId: goalRelationResolution.selectedCircleId,
+            areaId: goalRelationResolution.selectedAreaId,
           });
           setSourceItemPinned({
             userId: user.id,
@@ -24019,12 +24164,14 @@ export function Fab({
           const roadmapId = await resolveGoalRoadmapId({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
+            selectedAreaId: goalRelationResolution.selectedAreaId,
           });
           const effectiveGoalCampaignId =
             await resolveCompatibleGoalCampaignId({
               roadmapId,
               selectedMonumentId: goalRelationResolution.selectedMonumentId,
               selectedCircleId: goalRelationResolution.selectedCircleId,
+              selectedAreaId: goalRelationResolution.selectedAreaId,
             });
           const { data: goalData, error } = await supabase
             .from("goals")
@@ -24036,6 +24183,7 @@ export function Fab({
               why: goalWhy?.trim() || null,
               monument_id: goalRelationResolution.selectedMonumentId,
               circle_id: goalRelationResolution.selectedCircleId,
+              area_id: goalRelationResolution.selectedAreaId,
               roadmap_id: roadmapId,
               due_date: goalDue ?? null,
             })
@@ -24429,6 +24577,10 @@ export function Fab({
             circleId:
               createdType === "GOAL"
                 ? goalRelationResolution.selectedCircleId
+                : null,
+            areaId:
+              createdType === "GOAL"
+                ? goalRelationResolution.selectedAreaId
                 : null,
             campaignId: createdCampaignId,
             goalId: createdGoalId,

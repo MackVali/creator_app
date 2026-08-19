@@ -278,6 +278,41 @@ type TaskRecord = {
   } | null;
 };
 
+type StandaloneMyListTaskGuardRow = {
+  id: string;
+  goal_id?: string | null;
+  project_id?: string | null;
+};
+
+type RelationshipGuardRow = {
+  id?: string | null;
+};
+
+type RelationshipGuardQuery = PromiseLike<{
+  data: RelationshipGuardRow[] | null;
+  error: { message?: string } | null;
+}> & {
+  select(columns?: string): RelationshipGuardQuery;
+  eq(column: string, value: unknown): RelationshipGuardQuery;
+  limit(count: number): RelationshipGuardQuery;
+};
+
+type StandaloneMyListTaskDeleteClient = Client & {
+  from(table: "event_tags" | "my_list_items"): RelationshipGuardQuery;
+};
+
+export type DeleteStandaloneMyListTaskBlockedReason =
+  | "not-found"
+  | "attached"
+  | "scheduled"
+  | "tagged"
+  | "pinned"
+  | "changed";
+
+export type DeleteStandaloneMyListTaskResult =
+  | { deleted: true }
+  | { deleted: false; reason: DeleteStandaloneMyListTaskBlockedReason };
+
 function normalizeWindowKind(value?: string | null): WindowKind {
   if (!value) return "DEFAULT";
   const normalized = value.toUpperCase().trim();
@@ -565,6 +600,94 @@ export async function updateTaskSkill(
     .from("tasks")
     .update({ skill_id: skillId } as never)
     .eq("id", taskId);
+}
+
+export async function deleteStandaloneMyListTask({
+  taskId,
+  userId,
+  client,
+}: {
+  taskId: string;
+  userId: string;
+  client?: Client;
+}): Promise<DeleteStandaloneMyListTaskResult> {
+  const normalizedTaskId = taskId.trim();
+  const normalizedUserId = userId.trim();
+  if (!normalizedTaskId || !normalizedUserId) {
+    return { deleted: false, reason: "not-found" };
+  }
+
+  const supabase = ensureClient(client);
+  const { data: taskData, error: taskLookupError } = await supabase
+    .from("tasks")
+    .select("id, goal_id, project_id")
+    .eq("id", normalizedTaskId)
+    .eq("user_id", normalizedUserId)
+    .maybeSingle();
+
+  if (taskLookupError) throw taskLookupError;
+
+  const task = taskData as StandaloneMyListTaskGuardRow | null;
+  if (!task) return { deleted: false, reason: "not-found" };
+  if (task.goal_id || task.project_id) {
+    return { deleted: false, reason: "attached" };
+  }
+
+  const relationshipClient =
+    supabase as unknown as StandaloneMyListTaskDeleteClient;
+  const [scheduledResult, taggedResult, pinnedResult] = await Promise.all([
+    supabase
+      .from("schedule_instances")
+      .select("id")
+      .eq("user_id", normalizedUserId)
+      .eq("source_type", "TASK")
+      .eq("source_id", normalizedTaskId)
+      .limit(1),
+    relationshipClient
+      .from("event_tags")
+      .select("id")
+      .eq("user_id", normalizedUserId)
+      .eq("entity_type", "TASK")
+      .eq("entity_id", normalizedTaskId)
+      .limit(1),
+    relationshipClient
+      .from("my_list_items")
+      .select("id")
+      .eq("user_id", normalizedUserId)
+      .eq("item_kind", "PINNED_SOURCE")
+      .eq("source_type", "TASK")
+      .eq("source_id", normalizedTaskId)
+      .limit(1),
+  ]);
+
+  if (scheduledResult.error) throw scheduledResult.error;
+  if (taggedResult.error) throw taggedResult.error;
+  if (pinnedResult.error) throw pinnedResult.error;
+
+  if ((scheduledResult.data ?? []).length > 0) {
+    return { deleted: false, reason: "scheduled" };
+  }
+  if ((taggedResult.data ?? []).length > 0) {
+    return { deleted: false, reason: "tagged" };
+  }
+  if ((pinnedResult.data ?? []).length > 0) {
+    return { deleted: false, reason: "pinned" };
+  }
+
+  const { data: deletedRows, error: taskDeleteError } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", normalizedTaskId)
+    .eq("user_id", normalizedUserId)
+    .is("goal_id", null)
+    .is("project_id", null)
+    .select("id");
+
+  if (taskDeleteError) throw taskDeleteError;
+
+  return (deletedRows ?? []).length === 1
+    ? { deleted: true }
+    : { deleted: false, reason: "changed" };
 }
 
 const crossesMidnight = (w: WindowLite) => {

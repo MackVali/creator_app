@@ -956,6 +956,23 @@ function SettingsStaticRow({ icon: Icon, title, description, value }: SettingsSt
   );
 }
 
+function formatFocusGateEarnedTime(minutes: number): string {
+  const normalizedMinutes = Math.max(0, Math.trunc(minutes));
+
+  if (normalizedMinutes < 60) {
+    return `${normalizedMinutes} min earned`;
+  }
+
+  const hours = Math.floor(normalizedMinutes / 60);
+  const remainingMinutes = normalizedMinutes % 60;
+
+  if (remainingMinutes === 0) {
+    return `${hours} hr earned`;
+  }
+
+  return `${hours} hr ${remainingMinutes} min earned`;
+}
+
 function FocusGateSettingsCard() {
   const { status, isLoading, isRefreshing, error, invalidate } = useFocusGateStatus();
   const [minutesPerXp, setMinutesPerXp] = useState("5");
@@ -1172,7 +1189,7 @@ function FocusGateSettingsCard() {
   const protectedSelectionLabel = focusGateSelectionLabel(selectionSummary);
   const screenTimeEarnedLabel = isLoading
     ? "..."
-    : `${status?.allowedMinutes ?? 0} min earned`;
+    : formatFocusGateEarnedTime(status?.allowedMinutes ?? 0);
 
   return (
     <section className="app-settings-surface overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">

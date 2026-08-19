@@ -31,6 +31,8 @@ export type GoalItem = {
   priority_code?: string | null;
   energy_code?: string | null;
   monument_id?: string | null;
+  circle_id?: string | null;
+  area_id?: string | null;
   created_at: string;
   status?: string | null;
   active?: boolean | null;

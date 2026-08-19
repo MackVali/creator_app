@@ -1,6 +1,7 @@
 export type MonumentNote = {
   id: string;
   monumentId: string;
+  areaId?: string | null;
   title: string | null;
   content: string | null;
   createdAt?: string | null;

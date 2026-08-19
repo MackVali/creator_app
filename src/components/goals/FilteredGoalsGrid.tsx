@@ -16,7 +16,7 @@ import { GoalFolderCard } from "@/components/goals/GoalFolderCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 
 interface FilteredGoalsGridProps {
-  entity: "monument" | "skill";
+  entity: "monument" | "skill" | "area";
   id: string;
   onCreateGoal?: () => void;
   displayMode?: "default" | "minimal";
@@ -239,7 +239,9 @@ export function FilteredGoalsGrid({
   const emptyStateMessage =
     entity === "skill"
       ? "No goals linked to this skill yet."
-      : "No goals linked to this monument yet.";
+      : entity === "area"
+        ? "No goals linked to this area yet."
+        : "No goals linked to this monument yet.";
   const filterEmptyMessage =
     active === "ACTIVE"
       ? "No active goals right now."

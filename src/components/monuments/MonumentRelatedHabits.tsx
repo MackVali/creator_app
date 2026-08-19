@@ -46,7 +46,10 @@ import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisu
 import type { CreatorXpBurstSourceOrigin } from "@/lib/effects/creatorXpBurstBus";
 
 interface MonumentRelatedHabitsProps {
-  monumentId: string;
+  monumentId?: string;
+  areaId?: string;
+  sourceType?: "monument" | "area";
+  sourceLabel?: string;
 }
 
 interface RelatedSkillSummary {
@@ -626,6 +629,9 @@ async function fetchRoutineMetadataById(
 
 export function MonumentRelatedHabits({
   monumentId,
+  areaId,
+  sourceType = "monument",
+  sourceLabel,
 }: MonumentRelatedHabitsProps) {
   const supabase = getSupabaseBrowser();
   const toast = useToastHelpers();
@@ -649,6 +655,10 @@ export function MonumentRelatedHabits({
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [relatedHabitCardDensity, setRelatedHabitCardDensity] =
     useState<RelatedHabitCardDensity>("large");
+  const sourceId = sourceType === "area" ? areaId : monumentId;
+  const sourceNoun = sourceType === "area" ? "area" : "monument";
+  const relationLabel =
+    sourceLabel ?? (sourceType === "area" ? "area" : "monument");
   const [completedRelatedHabitIds, setCompletedRelatedHabitIds] = useState<
     Set<string>
   >(() => new Set());
@@ -772,7 +782,7 @@ export function MonumentRelatedHabits({
     if (!defaultSkillId) {
       toast.error(
         "Add a related skill first",
-        "Habits are linked to this monument through skills."
+        `Habits are linked to this ${relationLabel} through skills.`
       );
       return;
     }
@@ -780,7 +790,7 @@ export function MonumentRelatedHabits({
     fabCreation?.requestHabitCreation(null, {
       skillId: defaultSkillId,
     });
-  }, [fabCreation, relatedHabitSkillIds, relatedHabits, toast]);
+  }, [fabCreation, relatedHabitSkillIds, relatedHabits, relationLabel, toast]);
   const clearPendingCompletedRelatedHabitMove = useCallback(
     (habitId: string) => {
       const pendingTimer =
@@ -1540,7 +1550,7 @@ export function MonumentRelatedHabits({
 
         if (!cancelled) {
           const completedIds = new Set(
-            (data ?? [])
+            ((data ?? []) as Array<{ habit_id?: unknown }>)
               .map((row) => readString(row.habit_id))
               .filter((habitId): habitId is string => habitId !== null)
           );
@@ -1929,7 +1939,7 @@ export function MonumentRelatedHabits({
 
   useEffect(() => {
     setRestoreRoutineDrawerId(null);
-  }, [monumentId]);
+  }, [sourceId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1993,9 +2003,9 @@ export function MonumentRelatedHabits({
 
     const loadRelatedHabits = async () => {
       const shouldPreserveRelatedHabitState =
-        loadedRelatedHabitsMonumentIdRef.current === monumentId;
+        loadedRelatedHabitsMonumentIdRef.current === sourceId;
 
-      if (!supabase || !monumentId) {
+      if (!supabase || !sourceId) {
         loadedRelatedHabitsMonumentIdRef.current = null;
         setRelatedHabits([]);
         setHabitsLoading(false);
@@ -2030,30 +2040,40 @@ export function MonumentRelatedHabits({
 
         if (!userId) {
           if (!cancelled) {
-            loadedRelatedHabitsMonumentIdRef.current = monumentId;
+            loadedRelatedHabitsMonumentIdRef.current = sourceId;
             setRelatedHabits([]);
           }
           return;
         }
 
-        const [directSkillsResult, relationResult] = await Promise.all([
-          supabase
-            .from("skills")
-            .select("id,name,icon")
-            .eq("user_id", userId)
-            .eq("monument_id", monumentId),
-          supabase
-            .from("monument_skills")
-            .select("skill_id")
-            .eq("monument_id", monumentId),
-        ]);
+        const [directSkillsResult, relationResult] =
+          sourceType === "area"
+            ? await Promise.all([
+                Promise.resolve({ data: [], error: null }),
+                supabase
+                  .from("area_skills")
+                  .select("skill_id")
+                  .eq("user_id", userId)
+                  .eq("area_id", sourceId),
+              ])
+            : await Promise.all([
+                supabase
+                  .from("skills")
+                  .select("id,name,icon")
+                  .eq("user_id", userId)
+                  .eq("monument_id", sourceId),
+                supabase
+                  .from("monument_skills")
+                  .select("skill_id")
+                  .eq("monument_id", sourceId),
+              ]);
 
         if (directSkillsResult.error) {
           throw directSkillsResult.error;
         }
         if (relationResult.error) {
           console.warn(
-            "Unable to load monument skill relation rows:",
+            `Unable to load ${sourceNoun} skill relation rows:`,
             relationResult.error
           );
         }
@@ -2062,7 +2082,7 @@ export function MonumentRelatedHabits({
           .map(formatSkillRecord)
           .filter((skill): skill is RelatedSkillSummary => skill !== null);
         const relationSkillIds = new Set(
-          (relationResult.data ?? [])
+          ((relationResult.data ?? []) as Array<{ skill_id?: unknown }>)
             .map((row) => readString(row.skill_id))
             .filter((skillId): skillId is string => skillId !== null)
         );
@@ -2097,7 +2117,7 @@ export function MonumentRelatedHabits({
 
         if (skillIds.length === 0) {
           if (!cancelled) {
-            loadedRelatedHabitsMonumentIdRef.current = monumentId;
+            loadedRelatedHabitsMonumentIdRef.current = sourceId;
             setRelatedHabitSkillIds([]);
             setRelatedHabits([]);
           }
@@ -2141,7 +2161,7 @@ export function MonumentRelatedHabits({
               formatHabitRecord(habit, skillById, routineById)
             )
             .filter((habit): habit is HabitSummary => habit !== null);
-          loadedRelatedHabitsMonumentIdRef.current = monumentId;
+          loadedRelatedHabitsMonumentIdRef.current = sourceId;
           setCompletionLoading(
             shouldPreserveRelatedHabitState ? false : formattedHabits.length > 0
           );
@@ -2149,7 +2169,7 @@ export function MonumentRelatedHabits({
         }
       } catch (err) {
         if (!cancelled) {
-          console.error("Error fetching monument related habits:", err);
+          console.error(`Error fetching ${sourceNoun} related habits:`, err);
           if (!shouldPreserveRelatedHabitState) {
             setRelatedHabits([]);
           }
@@ -2169,7 +2189,9 @@ export function MonumentRelatedHabits({
     };
   }, [
     clearAllPendingCompletedRelatedHabitMoves,
-    monumentId,
+    sourceId,
+    sourceNoun,
+    sourceType,
     refreshVersion,
     supabase,
   ]);

@@ -4,7 +4,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { GoalItem } from "@/types/dashboard";
 
 interface UseFilteredGoalsOptions {
-  entity: "monument" | "skill";
+  entity: "monument" | "skill" | "area";
   id: string;
   limit?: number;
 }
@@ -59,7 +59,7 @@ export function useFilteredGoals({
       let goalsData: GoalItem[] = [];
 
       const selectBase =
-        "id,name,priority,energy,priority_code,energy_code,monument_id,created_at,status,active,due_date";
+        "id,name,priority,energy,priority_code,energy_code,monument_id,circle_id,area_id,created_at,status,active,due_date";
       const selectWithWeight = `${selectBase},weight_snapshot,weight`;
 
       const shouldFallbackToBase = (error: PostgrestError | null) => {
@@ -79,6 +79,27 @@ export function useFilteredGoals({
             .select(select)
             .eq("user_id", userId)
             .eq("monument_id", id)
+            .order("priority", { ascending: false })
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        const { data, error } = await runQuery(selectWithWeight);
+
+        if (error && shouldFallbackToBase(error)) {
+          const fallback = await runQuery(selectBase);
+          if (fallback.error) throw fallback.error;
+          goalsData = fallback.data || [];
+        } else {
+          if (error) throw error;
+          goalsData = data || [];
+        }
+      } else if (entity === "area") {
+        const runQuery = (select: string) =>
+          supabase
+            .from("goals")
+            .select(select)
+            .eq("user_id", userId)
+            .eq("area_id", id)
             .order("priority", { ascending: false })
             .order("created_at", { ascending: false })
             .limit(limit);

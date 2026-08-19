@@ -79,6 +79,7 @@ import {
 import { createPortal } from "react-dom";
 import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
+import { NutritionDailyProgressBars } from "@/components/nutrition/NutritionDailyProgressBars";
 import { NutritionRecipesPanel } from "@/components/nutrition/NutritionRecipesPanel";
 import { SharedMealPlanPanel } from "@/components/nutrition/SharedMealPlanPanel";
 import {
@@ -150,6 +151,7 @@ import {
   DEFAULT_NUTRITION_RECIPE_ICON,
   type NutritionMealDraft,
 } from "@/lib/nutrition/meals";
+import { getNutritionCreatorDayWindow } from "@/lib/nutrition/dailyTotals";
 import {
   dispatchNutritionMealSavedEvent,
   getPendingNutritionLogContext,
@@ -446,7 +448,6 @@ const EMPTY_NUTRITION_TOTALS = {
   protein: 0,
   fat: 0,
 } satisfies Record<keyof typeof DEFAULT_DAILY_NUTRITION_GOALS, number>;
-const NUTRITION_DAY_START_HOUR = 4;
 const NUTRITION_MACRO_FIELD_KEYS = ["carbs", "protein", "fat"] as const;
 const NUTRITION_FOOD_FIELD_LOOKUP_KEYS = new Set(["food", "foodname", "name"]);
 const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
@@ -5952,17 +5953,12 @@ function getLocalTimezone() {
 }
 
 function getNutritionLocalDayWindow(referenceDate = new Date()) {
-  const start = new Date(referenceDate);
-  start.setHours(NUTRITION_DAY_START_HOUR, 0, 0, 0);
+  const window = getNutritionCreatorDayWindow({
+    referenceDate,
+    deviceTimezone: getLocalTimezone(),
+  });
 
-  if (referenceDate < start) {
-    start.setDate(start.getDate() - 1);
-  }
-
-  const end = new Date(start);
-  end.setDate(start.getDate() + 1);
-
-  return { start, end };
+  return { start: window.startsAt, end: window.endsAt };
 }
 
 function aggregateNutritionMealTotals(meals: NutritionMealTotalsSource[]) {
@@ -6000,129 +5996,6 @@ function aggregateNutritionDraftTotals({
   }
 
   return totals;
-}
-
-function NutritionDailyProgressBars({
-  savedTotals,
-  previewTotals,
-  targetGoals,
-  error,
-  isAnimatedIn,
-  shouldReduceMotion,
-  className = "",
-}: {
-  savedTotals: Record<NutritionDailyMetricKey, number>;
-  previewTotals: Record<NutritionDailyMetricKey, number>;
-  targetGoals: Record<NutritionDailyMetricKey, number>;
-  error?: string | null;
-  isAnimatedIn: boolean;
-  shouldReduceMotion: boolean | null;
-  className?: string;
-}) {
-  function renderNutritionProgressBar({
-    label,
-    savedValue,
-    previewValue,
-    target,
-    unit = "",
-    size,
-  }: {
-    label: string;
-    savedValue: number;
-    previewValue: number;
-    target: number;
-    unit?: string;
-    size: "large" | "small";
-  }) {
-    const savedPercent =
-      target > 0 ? Math.min(100, Math.max(0, (savedValue / target) * 100)) : 0;
-    const previewPercent =
-      target > 0
-        ? Math.min(
-            Math.max(0, (previewValue / target) * 100),
-            Math.max(0, 100 - savedPercent),
-          )
-        : 0;
-    const displayValue = savedValue + previewValue;
-    const displayedSavedPercent = isAnimatedIn ? savedPercent : 0;
-    const displayedPreviewPercent = isAnimatedIn ? previewPercent : 0;
-    const formattedValue = formatFoodNutritionNumber(displayValue) ?? "0";
-    const formattedTarget = formatFoodNutritionNumber(target) ?? String(target);
-    const progressValue = `${formattedValue}${unit} / ${formattedTarget}${unit}`;
-    const barHeightClassName = size === "large" ? "h-3" : "h-2";
-    const labelClassName =
-      size === "large"
-        ? "text-sm font-semibold text-white/82"
-        : "text-[11px] font-semibold text-white/64";
-    const valueClassName =
-      size === "large"
-        ? "text-xs font-semibold text-white/52"
-        : "text-[10px] font-semibold text-white/42";
-    const fillTransitionClassName = shouldReduceMotion
-      ? ""
-      : "transition-[width] duration-700 ease-out";
-    const savedSegmentRadiusClassName = previewPercent > 0 ? "rounded-l-full" : "rounded-full";
-    const previewSegmentRadiusClassName = savedPercent > 0 ? "rounded-r-full" : "rounded-full";
-
-    return (
-      <div>
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className={labelClassName}>{label}</span>
-          <span className={`${valueClassName} shrink-0 tabular-nums`}>{progressValue}</span>
-        </div>
-        <div
-          className={`relative mt-1.5 overflow-hidden rounded-full border border-white/[0.045] bg-black/36 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07),inset_0_-1px_2px_rgba(0,0,0,0.55)] ${barHeightClassName}`}
-          role="meter"
-          aria-label={`${label} daily intake`}
-          aria-valuemin={0}
-          aria-valuemax={target}
-          aria-valuenow={Math.min(displayValue, target)}
-        >
-          <div className="flex h-full w-full overflow-hidden rounded-full" aria-hidden="true">
-            <div
-              className={`h-full shrink-0 bg-[#858585] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] ${savedSegmentRadiusClassName} ${fillTransitionClassName}`}
-              style={{ width: `${displayedSavedPercent}%` }}
-            />
-            <div
-              className={`h-full shrink-0 bg-[#5a5a5a] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ${previewSegmentRadiusClassName} ${fillTransitionClassName}`}
-              style={{ width: `${displayedPreviewPercent}%` }}
-            />
-          </div>
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.12]"
-            aria-hidden="true"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`space-y-2.5 px-1 pb-2.5 ${className}`}>
-      {renderNutritionProgressBar({
-        label: "Calories",
-        savedValue: savedTotals.calories,
-        previewValue: previewTotals.calories,
-        target: targetGoals.calories,
-        size: "large",
-      })}
-      <div className="grid grid-cols-3 gap-1.5">
-        {NUTRITION_MACRO_FIELD_KEYS.map((macroKey) => (
-          <div key={macroKey} className="min-w-0 rounded-lg bg-white/[0.035] px-2 py-2">
-            {renderNutritionProgressBar({
-              label: macroKey === "carbs" ? "Carbs" : macroKey === "protein" ? "Protein" : "Fat",
-              savedValue: savedTotals[macroKey],
-              previewValue: previewTotals[macroKey],
-              target: targetGoals[macroKey],
-              unit: "g",
-              size: "small",
-            })}
-          </div>
-        ))}
-      </div>
-      {error ? <p className="text-[11px] font-medium text-red-200/68">{error}</p> : null}
-    </div>
-  );
 }
 
 function getNutritionMealOccurredAt(

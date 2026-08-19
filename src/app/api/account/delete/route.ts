@@ -82,6 +82,7 @@ const OWNED_ROW_TARGETS: DeleteTarget[] = [
   { table: "xp_events" },
   { table: "skill_progress" },
   { table: "user_progress" },
+  { table: "area_skills" },
   { table: "monument_skills" },
   { table: "habits" },
   { table: "tasks" },

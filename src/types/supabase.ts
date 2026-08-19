@@ -86,6 +86,27 @@ export type Database = {
         }
         Relationships: []
       }
+      areas: {
+        Row: {
+          id: string
+          label: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          id: string
+          label: string
+          slug: string
+          sort_order: number
+        }
+        Update: {
+          id?: string
+          label?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       badges: {
         Row: {
           badge_type: string
@@ -186,6 +207,7 @@ export type Database = {
           id: string
           name: string
           position: number | null
+          primary_area_id: string | null
           primary_circle_id: string | null
           primary_monument_id: string | null
           priority_code: string
@@ -202,6 +224,7 @@ export type Database = {
           id?: string
           name: string
           position?: number | null
+          primary_area_id?: string | null
           primary_circle_id?: string | null
           primary_monument_id?: string | null
           priority_code?: string
@@ -218,6 +241,7 @@ export type Database = {
           id?: string
           name?: string
           position?: number | null
+          primary_area_id?: string | null
           primary_circle_id?: string | null
           primary_monument_id?: string | null
           priority_code?: string
@@ -228,6 +252,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_primary_area_id_fkey"
+            columns: ["primary_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaigns_primary_circle_id_fkey"
             columns: ["primary_circle_id"]
@@ -1727,6 +1758,7 @@ export type Database = {
       goals: {
         Row: {
           active: boolean | null
+          area_id: string | null
           circle_id: string | null
           created_at: string | null
           due_date: string | null
@@ -1753,6 +1785,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          area_id?: string | null
           circle_id?: string | null
           created_at?: string | null
           due_date?: string | null
@@ -1779,6 +1812,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          area_id?: string | null
           circle_id?: string | null
           created_at?: string | null
           due_date?: string | null
@@ -1804,6 +1838,13 @@ export type Database = {
           why?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "goals_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "goals_circle_id_fkey"
             columns: ["circle_id"]
@@ -2619,6 +2660,42 @@ export type Database = {
         }
         Relationships: []
       }
+      area_skills: {
+        Row: {
+          area_id: string
+          created_at: string
+          skill_id: string
+          user_id: string
+        }
+        Insert: {
+          area_id: string
+          created_at?: string
+          skill_id: string
+          user_id?: string
+        }
+        Update: {
+          area_id?: string
+          created_at?: string
+          skill_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "area_skills_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "area_skills_skill_id_fkey"
+            columns: ["skill_id"]
+            isOneToOne: false
+            referencedRelation: "skills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monuments: {
         Row: {
           charge: number
@@ -2656,6 +2733,7 @@ export type Database = {
         Row: {
           content: string | null
           created_at: string
+          area_id: string | null
           id: string
           metadata: Json | null
           monument_id: string | null
@@ -2669,6 +2747,7 @@ export type Database = {
         Insert: {
           content?: string | null
           created_at?: string
+          area_id?: string | null
           id?: string
           metadata?: Json | null
           monument_id?: string | null
@@ -2682,6 +2761,7 @@ export type Database = {
         Update: {
           content?: string | null
           created_at?: string
+          area_id?: string | null
           id?: string
           metadata?: Json | null
           monument_id?: string | null
@@ -2693,6 +2773,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notes_area_fk"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notes_monument_fk"
             columns: ["monument_id"]
@@ -3727,6 +3814,7 @@ export type Database = {
       }
       roadmaps: {
         Row: {
+          area_id: string | null
           circle_id: string | null
           created_at: string | null
           emoji: string | null
@@ -3737,6 +3825,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          area_id?: string | null
           circle_id?: string | null
           created_at?: string | null
           emoji?: string | null
@@ -3747,6 +3836,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          area_id?: string | null
           circle_id?: string | null
           created_at?: string | null
           emoji?: string | null
@@ -3757,6 +3847,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "roadmaps_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "roadmaps_circle_id_fkey"
             columns: ["circle_id"]
@@ -4769,6 +4866,7 @@ export type Database = {
       }
       xp_events: {
         Row: {
+          area_id: string | null
           amount: number
           award_key: string | null
           completion_event_id: string | null
@@ -4782,6 +4880,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          area_id?: string | null
           amount: number
           award_key?: string | null
           completion_event_id?: string | null
@@ -4795,6 +4894,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          area_id?: string | null
           amount?: number
           award_key?: string | null
           completion_event_id?: string | null
@@ -4808,6 +4908,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "xp_events_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "xp_events_completion_event_id_fkey"
             columns: ["completion_event_id"]

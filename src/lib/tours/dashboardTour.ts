@@ -29,14 +29,6 @@ export const dashboardTourSteps: TourStep[] = [
     },
   },
   {
-    id: "new-monument",
-    selector: '[data-tour="new-monument"]',
-    title: "Monuments",
-    body: "Monuments capture your long-term pursuits built up from goals and habits.",
-    requiresClick: false,
-    allowNext: true,
-  },
-  {
     id: "nav-schedule",
     selector: '[data-tour="nav-schedule"]',
     title: "Your schedule",
