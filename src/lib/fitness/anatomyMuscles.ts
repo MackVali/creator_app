@@ -26,6 +26,11 @@ export type FitnessAnatomyMuscleActivation = {
   role: FitnessAnatomyMuscleRole;
 };
 
+export type FitnessPrimaryExerciseForMuscle = Readonly<{
+  exerciseName: string;
+  normalizedExerciseName: string;
+}>;
+
 export const FITNESS_ANATOMY_MUSCLES: readonly {
   id: FitnessAnatomyMuscleId;
   label: string;
@@ -338,6 +343,23 @@ const EXERCISE_ANATOMY = new Map<
     "neck lateral flexion": [primary("neck")],
   }),
 );
+
+export function getFitnessPrimaryExercisesForMuscle(
+  muscleId: FitnessAnatomyMuscleId,
+): readonly FitnessPrimaryExerciseForMuscle[] {
+  return Array.from(EXERCISE_ANATOMY.entries())
+    .filter(([, activations]) =>
+      activations.some(
+        (activation) =>
+          activation.muscleId === muscleId &&
+          activation.role === "primary",
+      ),
+    )
+    .map(([exerciseName]) => ({
+      exerciseName,
+      normalizedExerciseName: normalizeFitnessExerciseName(exerciseName),
+    }));
+}
 
 export function resolveFitnessAnatomyMuscleActivations(
   exerciseId: string,

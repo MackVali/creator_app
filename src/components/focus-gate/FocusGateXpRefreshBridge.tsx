@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 import {
   FOCUS_GATE_STATUS_CHANGED_EVENT,
@@ -47,8 +48,14 @@ function isXpMutation(input: RequestInfo | URL, init?: RequestInit) {
 
 export function FocusGateXpRefreshBridge() {
   const queryClient = useQueryClient();
+  const { ready: authReady, user } = useAuth();
+  const userId = user?.id ?? null;
 
   useEffect(() => {
+    if (!authReady || !userId) {
+      return;
+    }
+
     const syncNativeAllowance = async () => {
       const availability = getFocusGateNativeAvailability();
       if (!availability.canUse) {
@@ -102,7 +109,7 @@ export function FocusGateXpRefreshBridge() {
       window.removeEventListener(FOCUS_GATE_STATUS_CHANGED_EVENT, invalidate);
       window.removeEventListener("creator:app-active", invalidate);
     };
-  }, [queryClient]);
+  }, [authReady, queryClient, userId]);
 
   useEffect(() => {
     const originalFetch = window.fetch;

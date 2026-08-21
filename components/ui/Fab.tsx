@@ -157,6 +157,7 @@ import {
   createManualMyListItem,
 } from "@/lib/my-list/myListItemsStorage";
 import {
+  useFabCreation,
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
 import { AREAS, getAreaById, isAreaId } from "@/config/areas";
@@ -1394,9 +1395,9 @@ function FabHabitRoutineCreateRow({
   );
 }
 
-const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
-const FAB_PRIMARY_PAGE_INDEX = 0;
-const FAB_NEXUS_PAGE_INDEX = 2;
+const FAB_PAGES = ["primary", "nexus"] as const;
+const FAB_PRIMARY_PAGE_INDEX = FAB_PAGES.indexOf("primary");
+const FAB_NEXUS_PAGE_INDEX = FAB_PAGES.indexOf("nexus");
 
 const FLAME_LEVELS: FlameLevel[] = [
   "NO",
@@ -1542,17 +1543,20 @@ function FabCarouselChevronButton({
         }
       }}
       className={cn(
-        "pointer-events-auto absolute top-1/2 z-30 flex h-10 w-1.5 -translate-y-1/2 items-center justify-center bg-transparent text-zinc-700/70 transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-700/25",
-        isPrevious ? "left-0 border-l border-white/[0.035]" : "right-0 border-r border-white/[0.035]",
+        "pointer-events-auto absolute top-1/2 z-30 flex h-10 w-6 -translate-y-1/2 items-center bg-transparent p-0 text-white/28 transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-700/25",
+        isPrevious ? "left-0 justify-start" : "right-0 justify-end",
         disabled
           ? "pointer-events-none opacity-15"
-          : "hover:text-white/45 active:text-white/60",
+          : "hover:text-white/45 active:text-white/55",
       )}
     >
-      <span className="relative block h-10 w-4" aria-hidden="true">
+      <span
+        className="pointer-events-none relative block h-10 w-2.5 opacity-75"
+        aria-hidden="true"
+      >
         <span
           className={cn(
-            "absolute top-1/2 h-[1px] w-4 bg-current",
+            "absolute top-1/2 h-[0.75px] w-2.5 bg-current",
             isPrevious
               ? "left-0 origin-left -rotate-[28deg]"
               : "right-0 origin-right rotate-[28deg]",
@@ -1560,7 +1564,7 @@ function FabCarouselChevronButton({
         />
         <span
           className={cn(
-            "absolute top-1/2 h-[1px] w-4 bg-current",
+            "absolute top-1/2 h-[0.75px] w-2.5 bg-current",
             isPrevious
               ? "left-0 origin-left rotate-[28deg]"
               : "right-0 origin-right -rotate-[28deg]",
@@ -10575,11 +10579,13 @@ export function Fab({
     searchResults,
   ]);
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
+  const compactMenuMeasureRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
   const pageX = useMotionValue(0);
   const pageDragControls = useDragControls();
   const router = useRouter();
+  const fabCreation = useFabCreation();
   const { isPlus } = useEntitlement();
   const {
     options: locationContextOptions,
@@ -11886,7 +11892,6 @@ export function Fab({
   ];
   const FAB_PAGE_PALETTE_INDEXES: Record<(typeof FAB_PAGES)[number], number> = {
     primary: 0,
-    secondary: 1,
     nexus: 1,
   };
   const DEFAULT_MENU_PALETTE = MENU_PALETTES[FAB_PRIMARY_PAGE_INDEX];
@@ -11934,7 +11939,7 @@ export function Fab({
         color: string;
       }
     | {
-        label: "NOTE" | "POST" | "SERVICE" | "PRODUCT" | "OFFER";
+        label: "NOTE" | "POST" | "OFFER";
         action: "extra";
         color: string;
       };
@@ -11949,33 +11954,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "GOAL",
-          action: "creation",
-          creationType: "GOAL",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "PROJECT",
-          action: "creation",
-          creationType: "PROJECT",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "TASK",
-          action: "creation",
-          creationType: "TASK",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "HABIT",
-          action: "creation",
-          creationType: "HABIT",
-          color: "hover:bg-gray-600",
-        },
-      ],
-      secondary: [
-        {
-          label: "NOTE",
+          label: "OFFER",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -11985,17 +11964,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "SERVICE",
-          action: "extra",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "PRODUCT",
-          action: "extra",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "OFFER",
+          label: "NOTE",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -12011,33 +11980,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "GOAL",
-          action: "creation",
-          creationType: "GOAL",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "PROJECT",
-          action: "creation",
-          creationType: "PROJECT",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "TASK",
-          action: "creation",
-          creationType: "TASK",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "HABIT",
-          action: "creation",
-          creationType: "HABIT",
-          color: "hover:bg-gray-600",
-        },
-      ],
-      secondary: [
-        {
-          label: "NOTE",
+          label: "OFFER",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -12047,17 +11990,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "SERVICE",
-          action: "extra",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "PRODUCT",
-          action: "extra",
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "OFFER",
+          label: "NOTE",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -12067,10 +12000,9 @@ export function Fab({
     },
   } as const;
 
-  const { primary, secondary, menuClassName, itemAlignmentClass } =
+  const { primary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
-  const menuContainerHeight =
-    Math.max(primary.length, secondary.length) * FAB_MENU_ROW_HEIGHT;
+  const menuContainerHeight = primary.length * FAB_MENU_ROW_HEIGHT;
   const compactFabPanelHeight = menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
     !expanded &&
@@ -16359,6 +16291,35 @@ export function Fab({
     </motion.div>
   );
 
+  const renderCompactMenuMeasure = () => (
+    <div
+      ref={compactMenuMeasureRef}
+      aria-hidden="true"
+      className="pointer-events-none invisible absolute left-0 top-0 min-w-[200px] overflow-hidden rounded-lg border bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700 shadow-2xl"
+      style={{
+        minHeight: menuContainerHeight,
+        maxHeight: menuContainerHeight,
+        height: menuContainerHeight,
+      }}
+    >
+      <div className="flex w-full flex-col px-4 py-2">
+        {primary.map((menuItem) => (
+          <div
+            key={menuItem.label}
+            className={cn(
+              "w-full whitespace-nowrap border-b border-gray-700 px-6 py-2 font-medium text-white transition-colors duration-200 last:border-b-0",
+              itemAlignmentClass,
+              menuItem.color,
+            )}
+          >
+            <span className="text-sm opacity-80">add</span>{" "}
+            <span className="text-lg font-bold">{menuItem.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   const renderPrimaryPage = () => (
     <div
       className={cn(
@@ -19088,27 +19049,6 @@ export function Fab({
     </div>
   );
 
-  const renderSecondaryPage = () => {
-    if (expanded) {
-      return renderPrimaryPage();
-    }
-
-    return (
-      <div
-        className={cn(
-          "flex w-full flex-col",
-          expanded ? "min-h-full p-0" : "",
-        )}
-      >
-        <div className="grid w-full">
-          <AnimatePresence initial={false}>
-            {renderFabMenuPage(secondary, "fab-secondary-selection")}
-          </AnimatePresence>
-        </div>
-      </div>
-    );
-  };
-
   const handleNormalNexusExpandedChange = useCallback(
     (nextExpanded: boolean) => {
       setNormalNexusExpanded(nextExpanded);
@@ -19269,9 +19209,6 @@ export function Fab({
     const page = pages[pageIndex];
     if (page === "primary") {
       return renderPrimaryPage();
-    }
-    if (page === "secondary") {
-      return renderSecondaryPage();
     }
     return renderNexusPage();
   };
@@ -19610,7 +19547,10 @@ export function Fab({
           setIsOpen(false);
           setActiveLimitCode("GOAL_LIMIT_REACHED");
         });
+        return;
       }
+      setIsOpen(false);
+      fabCreation?.openOfferChooser();
     } else if (label === "SERVICE" || label === "PRODUCT") {
       setIsOpen(false);
       router.push(`/source?create=${label.toLowerCase()}`);
@@ -22209,18 +22149,15 @@ export function Fab({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) return;
-    const node = menuRef.current;
+    const node = compactMenuMeasureRef.current;
     if (!node) return;
-    const frame = requestAnimationFrame(() => {
-      const rect = node.getBoundingClientRect();
-      if (rect.width > 0) {
-        setMenuWidth(rect.width);
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [isOpen, primary.length]);
+    const rect = node.getBoundingClientRect();
+    if (rect.width > 0) {
+      setMenuWidth(Math.ceil(rect.width));
+    }
+  }, [isOpen, menuVariant, primary.length]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -31323,6 +31260,7 @@ export function Fab({
                         : undefined
                   }
                 >
+              {!expanded ? renderCompactMenuMeasure() : null}
               <motion.div
                 ref={creationRevealWrapperRef}
                 key={

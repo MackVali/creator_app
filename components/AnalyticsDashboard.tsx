@@ -438,6 +438,8 @@ export default function AnalyticsDashboard({}: {
             points={overviewTrend}
             comparison={analytics?.overviewComparison}
             range={analytics?.range ?? selectedRange}
+            selectedRange={selectedRange}
+            onRangeChange={setSelectedRange}
             isRefreshing={analyticsRefreshing}
             statusMessage={error}
           />
@@ -502,36 +504,9 @@ export default function AnalyticsDashboard({}: {
         className="pointer-events-none absolute inset-x-0 top-[-35%] h-[420px] bg-[radial-gradient(circle_at_top,rgba(120,120,120,0.18),transparent_68%)] blur-3xl"
       />
       <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-8 sm:pb-8">
-        <Header
-          selectedRange={selectedRange}
-          onRangeChange={setSelectedRange}
-          isRefreshing={analyticsRefreshing}
-        />
         <section aria-label="Analytics">{analyticsContent}</section>
       </div>
     </div>
-  );
-}
-
-function Header({
-  selectedRange,
-  onRangeChange,
-  isRefreshing,
-}: {
-  selectedRange: AnalyticsRange;
-  onRangeChange: (range: AnalyticsRange) => void;
-  isRefreshing: boolean;
-}) {
-  return (
-    <header className="sticky top-0 z-20 mb-2 -mx-4 bg-black px-4 py-1.5 sm:static sm:mx-0 sm:mb-4 sm:bg-transparent sm:px-0 sm:py-0">
-      <div className="flex min-w-0 justify-end">
-        <AnalyticsRangeSelector
-          selectedRange={selectedRange}
-          onRangeChange={onRangeChange}
-          isRefreshing={isRefreshing}
-        />
-      </div>
-    </header>
   );
 }
 
@@ -1718,12 +1693,16 @@ function OverviewDiagnosticsSection({
   points,
   comparison,
   range,
+  selectedRange,
+  onRangeChange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   comparison?: AnalyticsOverviewComparison;
   range: AnalyticsRange;
+  selectedRange: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
@@ -1874,6 +1853,9 @@ function OverviewDiagnosticsSection({
         <OverviewLineChart
           points={points}
           range={range}
+          selectedRange={selectedRange}
+          onRangeChange={onRangeChange}
+          isRefreshing={isRefreshing}
           onSelectedPointIndexChange={setSelectedPointIndex}
         />
       </div>
@@ -2130,10 +2112,16 @@ function stopOverviewChartGesturePropagation(
 export function OverviewLineChart({
   points,
   range,
+  selectedRange,
+  onRangeChange,
+  isRefreshing,
   onSelectedPointIndexChange,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
+  selectedRange: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
   onSelectedPointIndexChange: (index: number | null) => void;
 }) {
   const [mode, setMode] = useState<OverviewXpChartMode>("totalXp");
@@ -2210,31 +2198,38 @@ export function OverviewLineChart({
             </span>
           </div>
         </div>
-        <div
-          className="inline-flex w-fit shrink-0 rounded-full border border-white/[0.08] bg-black/30 p-0.5"
-          aria-label="XP chart mode"
-        >
-          {OVERVIEW_XP_CHART_MODES.map((option) => {
-            const isActive = option.value === mode;
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+          <div
+            className="inline-flex w-fit shrink-0 rounded-full border border-white/[0.08] bg-black/30 p-0.5"
+            aria-label="XP chart mode"
+          >
+            {OVERVIEW_XP_CHART_MODES.map((option) => {
+              const isActive = option.value === mode;
 
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={isActive}
-                aria-label={`Show ${option.seriesLabel}`}
-                onClick={() => setMode(option.value)}
-                className={classNames(
-                  "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase leading-none transition-colors sm:px-3",
-                  isActive
-                    ? "bg-zinc-100 text-zinc-950 shadow-[0_6px_16px_rgba(255,255,255,0.12)]"
-                    : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
-                )}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={`Show ${option.seriesLabel}`}
+                  onClick={() => setMode(option.value)}
+                  className={classNames(
+                    "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase leading-none transition-colors sm:px-3",
+                    isActive
+                      ? "bg-zinc-100 text-zinc-950 shadow-[0_6px_16px_rgba(255,255,255,0.12)]"
+                      : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <AnalyticsRangeSelector
+            selectedRange={selectedRange}
+            onRangeChange={onRangeChange}
+            isRefreshing={isRefreshing}
+          />
         </div>
       </div>
 
