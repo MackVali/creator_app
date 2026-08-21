@@ -6,6 +6,7 @@ import Body, { type ExtendedBodyPart } from "react-muscle-highlighter";
 import { getFitnessExerciseHistories } from "@/lib/fitness/exerciseHistory";
 import {
   FITNESS_ANATOMY_MUSCLES,
+  getFitnessPrimaryExercisesForMuscle,
   resolveFitnessAnatomyMuscleActivations,
   type FitnessAnatomyMuscleId,
 } from "@/lib/fitness/anatomyMuscles";
@@ -14,7 +15,10 @@ import {
   getFitnessStrengthLevelLabel,
   type FitnessMuscleStrengthStat,
 } from "@/lib/fitness/muscleStrength";
-import { extractFitnessLoggedSetPerformances } from "@/lib/fitness/progressiveOverload";
+import {
+  extractFitnessLoggedSetPerformances,
+  normalizeFitnessExerciseName,
+} from "@/lib/fitness/progressiveOverload";
 import { getCurrentUserFitnessWorkoutEntries } from "@/lib/fitness/workoutEntries";
 
 type BodySide = "front" | "back";
@@ -25,12 +29,27 @@ type SelectedMuscle = {
   side?: MuscleSide;
 };
 
+type PreferredUnits = "metric" | "us";
+
+type ActivityLevel =
+  | "sedentary"
+  | "light"
+  | "moderate"
+  | "active"
+  | "very_active";
+
+type NutritionProfile = {
+  current_weight_kg?: number | null;
+  height_cm?: number | null;
+  formula_sex?: string | null;
+  preferred_units?: PreferredUnits | null;
+  age_years?: number | null;
+  body_fat_pct?: number | null;
+  activity_level?: ActivityLevel | null;
+};
+
 type NutritionProfileResponse = {
-  profile?: {
-    current_weight_kg?: number | null;
-    height_cm?: number | null;
-    formula_sex?: string | null;
-  } | null;
+  profile?: NutritionProfile | null;
 };
 
 const FITNESS_ANATOMY_MUSCLE_IDS = new Set<FitnessAnatomyMuscleId>(
@@ -46,9 +65,136 @@ const STRENGTH_COLORS = {
   elite: "#a78bfa",
 } as const;
 
-function formatEstimatedMax(valueKg: number) {
+const KG_TO_LB = 2.2046226218;
+const CM_TO_IN = 1 / 2.54;
+
+const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
+  sedentary: "Sedentary",
+  light: "Light",
+  moderate: "Moderate",
+  active: "Active",
+  very_active: "Very active",
+};
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatDecimal(value: number, maximumFractionDigits = 1) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatWeight(valueKg: number | null | undefined, units: PreferredUnits) {
+  if (!valueKg || !Number.isFinite(valueKg) || valueKg <= 0) return "—";
+
+  if (units === "metric") return `${formatDecimal(valueKg)} kg`;
+
+  return `${Math.round(valueKg * KG_TO_LB)} lb`;
+}
+
+function formatHeight(valueCm: number | null | undefined, units: PreferredUnits) {
+  if (!valueCm || !Number.isFinite(valueCm) || valueCm <= 0) return "—";
+
+  if (units === "metric") return `${formatDecimal(valueCm)} cm`;
+
+  const totalInches = valueCm * CM_TO_IN;
+  let feet = Math.floor(totalInches / 12);
+  let inches = Math.round(totalInches - feet * 12);
+
+  if (inches === 12) {
+    feet += 1;
+    inches = 0;
+  }
+
+  return `${feet}'${inches}"`;
+}
+
+function calculateBmi(weightKg: number | null | undefined, heightCm: number | null | undefined) {
+  if (
+    !weightKg ||
+    !heightCm ||
+    !Number.isFinite(weightKg) ||
+    !Number.isFinite(heightCm) ||
+    weightKg <= 0 ||
+    heightCm <= 0
+  ) {
+    return null;
+  }
+
+  const heightM = heightCm / 100;
+  if (heightM <= 0) return null;
+
+  const bmi = weightKg / (heightM * heightM);
+  return Number.isFinite(bmi) ? bmi : null;
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value) || value <= 0) return "—";
+  return `${formatDecimal(value)}%`;
+}
+
+function formatEstimatedMax(valueKg: number, units: PreferredUnits) {
+  if (units === "metric") return `${Math.round(valueKg)} kg est. 1RM`;
+
   const pounds = valueKg * 2.2046226218;
   return `${Math.round(pounds)} lb est. 1RM`;
+}
+
+function formatLastTrained(value: string | null | undefined) {
+  if (!value) return "No recent log";
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Logged";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(timestamp);
+}
+
+function formatCatalogExerciseName(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function getExerciseIdentityKeys(exercise: {
+  exerciseId: string;
+  exerciseName: string;
+}) {
+  return [
+    normalizeFitnessExerciseName(exercise.exerciseId),
+    normalizeFitnessExerciseName(exercise.exerciseName),
+  ].filter(Boolean);
+}
+
+function doExercisesMatch(
+  first: { exerciseId: string; exerciseName: string },
+  second: { exerciseId: string; exerciseName: string },
+) {
+  const firstKeys = new Set(getExerciseIdentityKeys(first));
+  return getExerciseIdentityKeys(second).some((key) => firstKeys.has(key));
+}
+
+function getLoggedExerciseDisclosureKey(exercise: {
+  exerciseId: string;
+  exerciseName: string;
+}) {
+  const [identityKey] = getExerciseIdentityKeys(exercise);
+  const fallbackKey = normalizeFitnessExerciseName(
+    `${exercise.exerciseId} ${exercise.exerciseName}`,
+  );
+
+  return (
+    identityKey ||
+    fallbackKey ||
+    encodeURIComponent(`${exercise.exerciseId}:${exercise.exerciseName}`)
+  );
 }
 
 export function BodyMuscleMapPrototype() {
@@ -57,10 +203,17 @@ export function BodyMuscleMapPrototype() {
   const [entries, setEntries] = useState<
     Awaited<ReturnType<typeof getCurrentUserFitnessWorkoutEntries>>
   >([]);
+  const [nutritionProfile, setNutritionProfile] =
+    useState<NutritionProfile | null>(null);
   const [bodyweightKg, setBodyweightKg] = useState<number | null>(null);
   const [sex, setSex] = useState<"male" | "female">("male");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showUnusedPrimaryExercises, setShowUnusedPrimaryExercises] =
+    useState(false);
+  const [expandedExerciseKey, setExpandedExerciseKey] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -83,14 +236,18 @@ export function BodyMuscleMapPrototype() {
 
         if (profileResponse.ok) {
           const payload = (await profileResponse.json()) as NutritionProfileResponse;
+          const profile = payload.profile ?? null;
 
-          const weight = payload.profile?.current_weight_kg;
+          setNutritionProfile(profile);
+
+          const weight = finiteNumber(profile?.current_weight_kg);
           setBodyweightKg(
             typeof weight === "number" && Number.isFinite(weight) ? weight : null,
           );
 
-          setSex(payload.profile?.formula_sex === "female" ? "female" : "male");
+          setSex(profile?.formula_sex === "female" ? "female" : "male");
         } else {
+          setNutritionProfile(null);
           setBodyweightKg(null);
           setSex("male");
         }
@@ -99,6 +256,8 @@ export function BodyMuscleMapPrototype() {
 
         console.error("Failed to load Body strength data", { error });
         setEntries([]);
+        setNutritionProfile(null);
+        setBodyweightKg(null);
         setLoadError("Unable to load strength data.");
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -155,10 +314,36 @@ export function BodyMuscleMapPrototype() {
     ? strengthById.get(selectedMuscleId) ?? null
     : null;
 
+  useEffect(() => {
+    setShowUnusedPrimaryExercises(false);
+    setExpandedExerciseKey(null);
+  }, [selectedMuscleId]);
+
+  const selectedPrimaryExercises = useMemo(
+    () =>
+      selectedMuscleId
+        ? getFitnessPrimaryExercisesForMuscle(selectedMuscleId)
+        : [],
+    [selectedMuscleId],
+  );
+
   const selectedHistories = useMemo(() => {
     if (!selectedMuscleId) return [];
 
-    return exerciseHistories
+    const selectedPrimaryExerciseKeys = new Set(
+      selectedPrimaryExercises.map(
+        (exercise) => exercise.normalizedExerciseName,
+      ),
+    );
+    const getPrimaryExerciseKey = (history: {
+      exerciseId: string;
+      exerciseName: string;
+    }) =>
+      getExerciseIdentityKeys(history).find((key) =>
+        selectedPrimaryExerciseKeys.has(key),
+      ) ?? getExerciseIdentityKeys(history)[0];
+
+    const histories = exerciseHistories
       .filter((history) =>
         resolveFitnessAnatomyMuscleActivations(
           history.exerciseId,
@@ -174,7 +359,94 @@ export function BodyMuscleMapPrototype() {
         const bTime = b.lastTrainedAt ? Date.parse(b.lastTrainedAt) : 0;
         return bTime - aTime;
       });
-  }, [exerciseHistories, selectedMuscleId]);
+
+    const uniqueHistories = new Map<string, (typeof histories)[number]>();
+
+    histories.forEach((history) => {
+      const key =
+        getPrimaryExerciseKey(history) ??
+        `${history.exerciseId}:${history.exerciseName}`;
+      if (!uniqueHistories.has(key)) uniqueHistories.set(key, history);
+    });
+
+    return Array.from(uniqueHistories.values());
+  }, [exerciseHistories, selectedMuscleId, selectedPrimaryExercises]);
+
+  const selectedPerformedExerciseKeys = useMemo(() => {
+    const selectedPrimaryExerciseKeys = new Set(
+      selectedPrimaryExercises.map(
+        (exercise) => exercise.normalizedExerciseName,
+      ),
+    );
+
+    return new Set(
+      selectedHistories.flatMap((history) =>
+        getExerciseIdentityKeys(history).filter((key) =>
+          selectedPrimaryExerciseKeys.has(key),
+        ),
+      ),
+    );
+  }, [selectedHistories, selectedPrimaryExercises]);
+
+  const selectedUnusedPrimaryExercises = useMemo(
+    () =>
+      selectedPrimaryExercises.filter(
+        (exercise) =>
+          !selectedPerformedExerciseKeys.has(exercise.normalizedExerciseName),
+      ),
+    [selectedPerformedExerciseKeys, selectedPrimaryExercises],
+  );
+
+  const preferredUnits: PreferredUnits =
+    nutritionProfile?.preferred_units === "metric" ? "metric" : "us";
+
+  const profileMetrics = useMemo(() => {
+    const weightKg = finiteNumber(nutritionProfile?.current_weight_kg);
+    const heightCm = finiteNumber(nutritionProfile?.height_cm);
+    const bmi = calculateBmi(weightKg, heightCm);
+    const bodyFatPct = finiteNumber(nutritionProfile?.body_fat_pct);
+    const ageYears = finiteNumber(nutritionProfile?.age_years);
+    const activityLevel = nutritionProfile?.activity_level;
+
+    return [
+      {
+        label: "Weight",
+        value: formatWeight(weightKg, preferredUnits),
+      },
+      {
+        label: "Height",
+        value: formatHeight(heightCm, preferredUnits),
+      },
+      {
+        label: "BMI",
+        value: bmi ? formatDecimal(bmi) : "—",
+      },
+      ...(bodyFatPct
+        ? [
+            {
+              label: "Body fat",
+              value: formatPercent(bodyFatPct),
+            },
+          ]
+        : []),
+      ...(ageYears
+        ? [
+            {
+              label: "Age",
+              value: `${Math.round(ageYears)}`,
+            },
+          ]
+        : []),
+      ...(activityLevel
+        ? [
+            {
+              label: "Activity",
+              value: ACTIVITY_LABELS[activityLevel],
+            },
+          ]
+        : []),
+    ];
+  }, [nutritionProfile, preferredUnits]);
 
   const data = useMemo<readonly ExtendedBodyPart[]>(() => {
     const parts: ExtendedBodyPart[] = [];
@@ -220,150 +492,377 @@ export function BodyMuscleMapPrototype() {
       className="relative overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
       aria-label="Muscle strength map"
     >
-      <div className="flex min-h-[390px] items-center justify-center overflow-hidden px-2 py-3">
-        <Body
-          data={data}
-          side={view}
-          gender={sex}
-          scale={1}
-          border="#3f3f46"
-          defaultFill="#201d2c"
-          defaultStroke="#18181b"
-          defaultStrokeWidth={0.35}
-          colors={Object.values(STRENGTH_COLORS)}
-          onBodyPartPress={(part, side) => {
-            if (!part.slug) return;
+      <div className="grid min-h-[390px] grid-cols-[minmax(172px,58fr)_minmax(0,42fr)] max-[360px]:grid-cols-[minmax(166px,58fr)_minmax(0,42fr)] sm:min-h-[430px] sm:grid-cols-[minmax(210px,54fr)_minmax(0,46fr)]">
+        <div className="relative flex min-h-[390px] items-center justify-center overflow-hidden border-r border-white/[0.055] px-1 py-4 sm:min-h-[430px] sm:px-3">
+          <div className="origin-center scale-[0.86] min-[375px]:scale-[0.94] sm:scale-100">
+            <Body
+              data={data}
+              side={view}
+              gender={sex}
+              scale={1}
+              border="#3f3f46"
+              defaultFill="#201d2c"
+              defaultStroke="#18181b"
+              defaultStrokeWidth={0.35}
+              colors={Object.values(STRENGTH_COLORS)}
+              onBodyPartPress={(part, side) => {
+                if (!part.slug) return;
 
-            setSelected({
-              slug: part.slug,
-              side,
-            });
-          }}
-        />
-      </div>
+                setSelected((current) =>
+                  current?.slug === part.slug && current.side === side
+                    ? null
+                    : {
+                        slug: part.slug,
+                        side,
+                      },
+                );
+              }}
+            />
+          </div>
 
-      <div className="border-t border-white/[0.055] px-3 py-3 pr-28">
-        {selected ? (
-          selectedStat ? (
-            <div className="space-y-2.5">
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <p className="text-xs font-semibold uppercase text-white">
-                    {selectedStat.label}
+          <div className="absolute left-2 top-2 z-10 flex rounded-lg border border-white/[0.075] bg-black/60 p-0.5 backdrop-blur">
+            {(["front", "back"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-label={`Show ${option} body view`}
+                aria-pressed={view === option}
+                onClick={() => setView(option)}
+                className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition ${
+                  view === option
+                    ? "bg-white/[0.11] text-white"
+                    : "text-white/38 hover:text-white/68"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-w-0 px-3 py-4 max-[360px]:px-2.5 sm:px-4 sm:py-5">
+          {selected ? (
+            selectedStat ? (
+              <div className="flex h-full min-w-0 flex-col">
+                <div className="border-b border-white/[0.06] pb-3">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
+                    Muscle focus
                   </p>
-                  <span className="font-mono text-[10px] text-white/45">
-                    {selectedStat.strengthScore}/100
-                  </span>
+                  <h3 className="mt-1.5 text-[15px] font-semibold leading-tight text-white sm:text-lg">
+                    {selectedStat.label}
+                  </h3>
+
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor:
+                              STRENGTH_COLORS[selectedStat.strengthLevel],
+                          }}
+                        />
+                        <p className="truncate text-[10px] font-medium text-white/52">
+                          {getFitnessStrengthLevelLabel(
+                            selectedStat.strengthLevel,
+                          )}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-[9px] leading-snug text-white/28">
+                        {bodyweightKg
+                          ? `${formatWeight(bodyweightKg, preferredUnits)} bodyweight`
+                          : "Add bodyweight in Nutrition"}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="font-mono text-[18px] leading-none text-white sm:text-2xl">
+                        {selectedStat.strengthScore}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[9px] text-white/30">
+                        /100
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <p className="mt-0.5 text-[11px] font-medium text-white/48">
-                  {getFitnessStrengthLevelLabel(selectedStat.strengthLevel)}
-                  {bodyweightKg
-                    ? ` · ${Math.round(bodyweightKg * 2.2046226218)} lb bodyweight`
-                    : " · add bodyweight in Nutrition to calculate strength"}
+                <div className="min-h-0 flex-1 overflow-y-auto pt-2">
+                  {selectedHistories.length > 0 ? (
+                    selectedHistories.map((history) => {
+                      const activation =
+                        resolveFitnessAnatomyMuscleActivations(
+                          history.exerciseId,
+                          history.exerciseName,
+                        ).find(
+                          (item) =>
+                            item.muscleId === selectedMuscleId &&
+                            item.role === "primary",
+                        );
+
+                      const strengthExercise = selectedStat.exercises.find(
+                        (exercise) =>
+                          doExercisesMatch(exercise, history),
+                      );
+
+                      const bestRecord =
+                        history.records.find(
+                          (record) => record.type === "heaviest_weight",
+                        ) ?? history.records[0] ?? null;
+                      const disclosureKey = `performed:${getLoggedExerciseDisclosureKey(
+                        history,
+                      )}`;
+                      const isExpanded = expandedExerciseKey === disclosureKey;
+                      const panelId = `body-muscle-exercise-${disclosureKey}`;
+
+                      return (
+                        <div
+                          key={`${history.exerciseId}:${history.exerciseName}`}
+                          className="border-b border-white/[0.045]"
+                        >
+                          <button
+                            type="button"
+                            aria-expanded={isExpanded}
+                            aria-controls={panelId}
+                            onClick={() =>
+                              setExpandedExerciseKey((value) =>
+                                value === disclosureKey ? null : disclosureKey,
+                              )
+                            }
+                            className="relative w-full py-2 pr-3 text-left transition hover:bg-white/[0.018] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+                          >
+                            <span className="block min-w-0">
+                              <span className="block break-words text-[11px] font-semibold leading-tight text-white/76">
+                                {history.exerciseName}
+                              </span>
+                              <span className="mt-0.5 block text-right font-mono text-[10px] leading-none text-white/46">
+                                {bestRecord?.valueLabel ?? "No PR"}
+                              </span>
+                            </span>
+                            <span
+                              aria-hidden="true"
+                              className={`absolute right-0 top-2.5 text-[10px] leading-none text-white/20 transition ${
+                                isExpanded ? "rotate-90 text-white/34" : ""
+                              }`}
+                            >
+                              ›
+                            </span>
+                          </button>
+
+                          {isExpanded ? (
+                            <div
+                              id={panelId}
+                              className="bg-white/[0.018] px-2 pb-2.5 pt-1"
+                            >
+                              <p className="break-words text-[11px] font-semibold leading-snug text-white/82">
+                                {history.exerciseName}
+                              </p>
+                              <div className="mt-2 grid grid-cols-[minmax(0,1fr)_max-content] gap-x-3 gap-y-1.5">
+                                <p className="text-[9px] uppercase tracking-wide text-white/24">
+                                  Relationship
+                                </p>
+                                <p className="text-right text-[10px] font-medium text-white/58">
+                                  {activation?.role === "primary"
+                                    ? "Primary"
+                                    : "Related"}
+                                </p>
+                                <p className="text-[9px] uppercase tracking-wide text-white/24">
+                                  Last trained
+                                </p>
+                                <p className="text-right text-[10px] font-medium text-white/58">
+                                  {formatLastTrained(history.lastTrainedAt)}
+                                </p>
+                                <p className="text-[9px] uppercase tracking-wide text-white/24">
+                                  Best PR
+                                </p>
+                                <p className="text-right font-mono text-[10px] text-white/68">
+                                  {bestRecord?.valueLabel ?? "No PR"}
+                                </p>
+                                {strengthExercise ? (
+                                  <>
+                                    <p className="text-[9px] uppercase tracking-wide text-white/24">
+                                      Est. 1RM
+                                    </p>
+                                    <p className="text-right font-mono text-[10px] text-white/58">
+                                      {formatEstimatedMax(
+                                        strengthExercise.estimatedOneRepMaxKg,
+                                        preferredUnits,
+                                      )}
+                                    </p>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="pt-3 text-[10px] leading-snug text-white/32">
+                      No logged exercises for this muscle yet.
+                    </p>
+                  )}
+
+                  {selectedUnusedPrimaryExercises.length > 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowUnusedPrimaryExercises((value) => !value)
+                        }
+                        className="mt-2 text-[10px] font-semibold text-white/36 transition hover:text-white/62"
+                      >
+                        {showUnusedPrimaryExercises ? "Show less" : "See more"}
+                      </button>
+
+                      {showUnusedPrimaryExercises
+                        ? selectedUnusedPrimaryExercises.map((exercise) => {
+                            const exerciseName = formatCatalogExerciseName(
+                              exercise.exerciseName,
+                            );
+                            const disclosureKey = `unused:${exercise.normalizedExerciseName}`;
+                            const isExpanded =
+                              expandedExerciseKey === disclosureKey;
+                            const panelId = `body-muscle-exercise-${disclosureKey}`;
+
+                            return (
+                              <div
+                                key={exercise.normalizedExerciseName}
+                                className="border-b border-white/[0.035] last:border-b-0"
+                              >
+                                <button
+                                  type="button"
+                                  aria-expanded={isExpanded}
+                                  aria-controls={panelId}
+                                  onClick={() =>
+                                    setExpandedExerciseKey((value) =>
+                                      value === disclosureKey
+                                        ? null
+                                        : disclosureKey,
+                                    )
+                                  }
+                                  className="relative w-full py-2 pr-3 text-left transition hover:bg-white/[0.014] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/24"
+                                >
+                                  <span className="block min-w-0">
+                                    <span className="block break-words text-[11px] font-semibold leading-tight text-white/42">
+                                      {exerciseName}
+                                    </span>
+                                    <span className="mt-0.5 block text-right font-mono text-[10px] leading-none text-white/30">
+                                      0 lb
+                                    </span>
+                                  </span>
+                                  <span
+                                    aria-hidden="true"
+                                    className={`absolute right-0 top-2.5 text-[10px] leading-none text-white/16 transition ${
+                                      isExpanded
+                                        ? "rotate-90 text-white/28"
+                                        : ""
+                                    }`}
+                                  >
+                                    ›
+                                  </span>
+                                </button>
+
+                                {isExpanded ? (
+                                  <div
+                                    id={panelId}
+                                    className="bg-white/[0.012] px-2 pb-2.5 pt-1"
+                                  >
+                                    <p className="break-words text-[11px] font-semibold leading-snug text-white/58">
+                                      {exerciseName}
+                                    </p>
+                                    <div className="mt-2 grid grid-cols-[minmax(0,1fr)_max-content] gap-x-3 gap-y-1.5">
+                                      <p className="text-[9px] uppercase tracking-wide text-white/20">
+                                        Relationship
+                                      </p>
+                                      <p className="text-right text-[10px] font-medium text-white/42">
+                                        Primary
+                                      </p>
+                                      <p className="text-[9px] uppercase tracking-wide text-white/20">
+                                        Last trained
+                                      </p>
+                                      <p className="text-right text-[10px] font-medium text-white/42">
+                                        Not logged
+                                      </p>
+                                      <p className="text-[9px] uppercase tracking-wide text-white/20">
+                                        Best PR
+                                      </p>
+                                      <p className="text-right text-[10px] font-medium text-white/42">
+                                        No history / no PR
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })
+                        : null}
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
+                  Muscle focus
+                </p>
+                <h3 className="mt-1.5 text-[15px] font-semibold capitalize leading-tight text-white/80">
+                  {selected.slug.replaceAll("-", " ")}
+                </h3>
+                <p className="mt-3 text-[10px] leading-snug text-white/32">
+                  No strength mapping for this area yet.
+                </p>
+              </div>
+            )
+          ) : loadError ? (
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-red-200/42">
+                Body profile
+              </p>
+              <p className="mt-3 text-[11px] font-medium leading-snug text-red-300/60">
+                {loadError}
+              </p>
+            </div>
+          ) : isLoading ? (
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
+                Body profile
+              </p>
+              <p className="mt-3 text-[11px] font-medium leading-snug text-white/34">
+                Loading strength profile…
+              </p>
+            </div>
+          ) : (
+            <div className="flex h-full min-w-0 flex-col">
+              <div className="border-b border-white/[0.06] pb-3">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
+                  Body profile
+                </p>
+                <h3 className="mt-1.5 text-[15px] font-semibold leading-tight text-white sm:text-lg">
+                  Current frame
+                </h3>
+                <p className="mt-2 text-[10px] leading-snug text-white/32">
+                  Tap the anatomy to shift this panel into muscle context.
                 </p>
               </div>
 
-              {selectedHistories.length > 0 ? (
-                <div className="space-y-1.5">
-                  {selectedHistories.slice(0, 4).map((history) => {
-                    const activation =
-                      resolveFitnessAnatomyMuscleActivations(
-                        history.exerciseId,
-                        history.exerciseName,
-                      ).find(
-                        (item) =>
-                          item.muscleId === selectedMuscleId &&
-                          item.role === "primary",
-                      );
-
-                    const strengthExercise = selectedStat.exercises.find(
-                      (exercise) =>
-                        exercise.exerciseId === history.exerciseId ||
-                        exercise.exerciseName === history.exerciseName,
-                    );
-
-                    const bestRecord =
-                      history.records.find(
-                        (record) => record.type === "heaviest_weight",
-                      ) ?? history.records[0] ?? null;
-
-                    return (
-                      <div
-                        key={`${history.exerciseId}:${history.exerciseName}`}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.05] bg-white/[0.025] px-2.5 py-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-[11px] font-semibold text-white/76">
-                            {history.exerciseName}
-                          </p>
-                          <p className="mt-0.5 text-[9px] uppercase tracking-wide text-white/30">
-                            {activation?.role ?? "related"}
-                          </p>
-                        </div>
-
-                        <div className="shrink-0 text-right">
-                          <p className="font-mono text-[10px] text-white/70">
-                            {bestRecord?.valueLabel ?? "No PR"}
-                          </p>
-                          {strengthExercise ? (
-                            <p className="mt-0.5 font-mono text-[9px] text-white/30">
-                              {formatEstimatedMax(
-                                strengthExercise.estimatedOneRepMaxKg,
-                              )}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[10px] text-white/32">
-                  No logged exercises for this muscle yet.
-                </p>
-              )}
+              <div className="pt-2">
+                {profileMetrics.map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="flex items-baseline justify-between gap-2 border-b border-white/[0.045] py-2 last:border-b-0"
+                  >
+                    <p className="min-w-0 truncate text-[10px] font-medium text-white/34">
+                      {metric.label}
+                    </p>
+                    <p className="shrink-0 whitespace-nowrap text-right font-mono text-[11px] text-white/78 sm:text-xs">
+                      {metric.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div>
-              <p className="text-xs font-semibold uppercase text-white/78">
-                {selected.slug.replaceAll("-", " ")}
-              </p>
-              <p className="mt-0.5 text-[10px] text-white/32">
-                No strength mapping for this area yet.
-              </p>
-            </div>
-          )
-        ) : loadError ? (
-          <p className="text-[11px] font-medium text-red-300/60">
-            {loadError}
-          </p>
-        ) : isLoading ? (
-          <p className="text-[11px] font-medium text-white/34">
-            Loading strength profile…
-          </p>
-        ) : (
-          <p className="text-[11px] font-medium text-white/34">
-            Tap a muscle to view strength, exercises, and PRs.
-          </p>
-        )}
-      </div>
-
-      <div className="absolute bottom-2.5 right-3 z-10 flex rounded-lg border border-white/[0.075] bg-black/60 p-0.5 backdrop-blur">
-        {(["front", "back"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setView(option)}
-            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition ${
-              view === option
-                ? "bg-white/[0.11] text-white"
-                : "text-white/38 hover:text-white/68"
-            }`}
-          >
-            {option}
-          </button>
-        ))}
+          )}
+        </div>
       </div>
     </section>
   );
