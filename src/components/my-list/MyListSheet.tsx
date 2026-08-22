@@ -82,6 +82,7 @@ import {
   normalizePriority,
   type PriorityBucketId,
 } from "@/app/(app)/schedule/priorities/utils";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
 const QUICK_CREATE_PRIORITY_SYMBOLS: Record<PriorityBucketId, string> = {
@@ -180,6 +181,9 @@ const MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
 const MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX = 22;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
+const MY_LIST_GOAL_ROW_DOUBLE_TAP_MS = 325;
+const MY_LIST_COMPLETED_GOAL_ICON_CLASS =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_6px_12px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_4px_rgba(0,0,0,0.12)]";
 const MY_LIST_COMPLETION_EXIT_TIMING = {
   confirmationPauseMs: 320,
   exitDurationMs: 220,
@@ -595,6 +599,12 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
     monumentName:
       typeof record.monumentName === "string" ? record.monumentName : null,
     skillId: readTrimmedString(record.skillId),
+    skillIds: Array.isArray(record.skillIds)
+      ? record.skillIds.filter(
+          (skillId): skillId is string =>
+            typeof skillId === "string" && skillId.trim().length > 0
+        )
+      : undefined,
     skillMonumentId: readTrimmedString(record.skillMonumentId),
     skillIcon: typeof record.skillIcon === "string" ? record.skillIcon : null,
     priority: typeof record.priority === "string" ? record.priority : null,
@@ -605,6 +615,7 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
     dayBucketId: readMyListDayBucketFromUnknown(record),
     energy: typeof record.energy === "string" ? record.energy : null,
     stage: typeof record.stage === "string" ? record.stage : null,
+    active: typeof record.active === "boolean" ? record.active : null,
     goalId: typeof record.goalId === "string" ? record.goalId : null,
     projectId: readTrimmedString(record.projectId),
     rowKind:
@@ -798,6 +809,14 @@ function readCompletedAtFromUnknown(value: unknown): string | null {
     : null;
 }
 
+function isProjectCompletionStage(stage: string | null | undefined) {
+  return stage?.toString().trim().toUpperCase() === "RELEASE";
+}
+
+function isPinnedGoalCompleted(goal: MyListPinnedGoalRow) {
+  return normalizeGoalStatus(goal.stage, goal.active) === "COMPLETED";
+}
+
 function isCompletedAtInCurrentLocalCreatorDay(
   completedAt: string | null | undefined,
   currentCreatorDayStart: Date,
@@ -835,6 +854,7 @@ export type MyListPinnedSourceRow = {
   monumentIcon?: string | null;
   monumentName?: string | null;
   skillId?: string | null;
+  skillIds?: string[];
   skillMonumentId?: string | null;
   skillIcon?: string | null;
   priority?: string | null;
@@ -842,6 +862,7 @@ export type MyListPinnedSourceRow = {
   dayBucketId?: MyListDayBucketId | null;
   energy?: string | null;
   stage?: string | null;
+  active?: boolean | null;
   goalId?: string | null;
   projectId?: string | null;
   isPinned?: boolean;
@@ -1544,6 +1565,8 @@ export function MyListSheet({
   onRemovePinnedSource,
   onRemoveTask,
   onTogglePinnedSourceCompletion,
+  onTogglePinnedGoalProjectCompletion,
+  onCompletePinnedGoal,
   onUpdatePinnedSourceMetadata,
   onReorderPinnedSourceRows,
   onToggleTask,
@@ -1569,6 +1592,12 @@ export function MyListSheet({
     row: MyListPinnedSourceRow,
     completedAt: string | null
   ) => Promise<boolean> | boolean;
+  onTogglePinnedGoalProjectCompletion?: (
+    row: MyListPinnedSourceRow,
+    checked: boolean,
+    sourceRect: CreatorXpBurstRect | null
+  ) => Promise<boolean> | boolean;
+  onCompletePinnedGoal?: (goal: MyListPinnedGoalRow) => Promise<boolean> | boolean;
   onUpdatePinnedSourceMetadata?: (
     row: MyListPinnedSourceRow,
     updates: {
@@ -1633,6 +1662,13 @@ export function MyListSheet({
   const [pinnedSourceCompletions, setPinnedSourceCompletions] = useState<
     Record<string, string | null>
   >({});
+  const pinnedGoalTapStateRef = useRef<
+    Record<string, { time: number; wasExpanded: boolean } | null>
+  >({});
+  const [
+    pendingPinnedGoalProjectCompletionIds,
+    setPendingPinnedGoalProjectCompletionIds,
+  ] = useState<Set<string>>(() => new Set());
   const [completionExitRows, setCompletionExitRows] = useState<
     Partial<Record<MyListSortableTodoRowKey, MyListCompletionExitState>>
   >({});
@@ -2913,6 +2949,58 @@ export function MyListSheet({
       event.stopPropagation();
     },
     [cancelTodoRowPressesForCheckbox]
+  );
+
+  const togglePinnedGoalExpanded = useCallback((goalId: string) => {
+    setExpandedPinnedGoalIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(goalId)) nextIds.delete(goalId);
+      else nextIds.add(goalId);
+      return nextIds;
+    });
+  }, []);
+
+  const handlePinnedGoalRowClick = useCallback(
+    (
+      event: ReactMouseEvent<HTMLButtonElement>,
+      goal: MyListPinnedGoalRow,
+      expanded: boolean
+    ) => {
+      if (isPinnedGoalCompleted(goal) || !onCompletePinnedGoal) {
+        togglePinnedGoalExpanded(goal.id);
+        return;
+      }
+
+      const now = Date.now();
+      const lastTap = pinnedGoalTapStateRef.current[goal.id] ?? null;
+      const isDoubleTap =
+        event.detail > 1 ||
+        (lastTap !== null &&
+          now - lastTap.time <= MY_LIST_GOAL_ROW_DOUBLE_TAP_MS);
+
+      if (isDoubleTap) {
+        pinnedGoalTapStateRef.current[goal.id] = null;
+        event.preventDefault();
+        event.stopPropagation();
+        setExpandedPinnedGoalIds((currentIds) => {
+          const nextIds = new Set(currentIds);
+          if (lastTap?.wasExpanded) nextIds.add(goal.id);
+          else nextIds.delete(goal.id);
+          return nextIds;
+        });
+        void onCompletePinnedGoal(goal);
+        return;
+      }
+
+      pinnedGoalTapStateRef.current[goal.id] = { time: now, wasExpanded: expanded };
+      window.setTimeout(() => {
+        if (pinnedGoalTapStateRef.current[goal.id]?.time === now) {
+          pinnedGoalTapStateRef.current[goal.id] = null;
+        }
+      }, MY_LIST_GOAL_ROW_DOUBLE_TAP_MS);
+      togglePinnedGoalExpanded(goal.id);
+    },
+    [onCompletePinnedGoal, togglePinnedGoalExpanded]
   );
 
   const activateTodoRowFromPointer = useCallback(
@@ -4338,7 +4426,7 @@ export function MyListSheet({
               {confirming ? (
                 <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
               ) : rowType === "pinnedSource" ? (
-                <Pin className="h-3 w-3" strokeWidth={1.9} />
+                <Pin className="h-3 w-3 fill-current" strokeWidth={1.9} />
               ) : (
                 <X className="h-3.5 w-3.5" strokeWidth={2} />
               )}
@@ -5552,6 +5640,7 @@ export function MyListSheet({
             <div className="border-b border-white/[0.055] pb-2">
               {visiblePinnedGoalRows.map((goal) => {
                 const expanded = expandedPinnedGoalIds.has(goal.id);
+                const goalCompleted = isPinnedGoalCompleted(goal);
                 const descendantRows = [
                   ...goal.projects,
                   ...(goal.tasks ?? []),
@@ -5569,18 +5658,17 @@ export function MyListSheet({
                         aria-controls={`pinned-goal-projects:${goal.id}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setExpandedPinnedGoalIds((currentIds) => {
-                            const nextIds = new Set(currentIds);
-                            if (nextIds.has(goal.id)) nextIds.delete(goal.id);
-                            else nextIds.add(goal.id);
-                            return nextIds;
-                          });
+                          handlePinnedGoalRowClick(event, goal, expanded);
                         }}
                         tabIndex={open ? 0 : -1}
                         className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-3 pr-1 text-left outline-none transition hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-white/30"
                       >
                         <span
-                          className="flex h-5 w-5 shrink-0 items-center justify-center text-[0.8rem] text-white/62"
+                          className={clsx(
+                            "flex h-5 w-5 shrink-0 items-center justify-center text-[0.8rem] text-white/62",
+                            goalCompleted &&
+                              `rounded-md ${MY_LIST_COMPLETED_GOAL_ICON_CLASS}`
+                          )}
                           aria-hidden="true"
                         >
                           {resolvePinnedSourceIcon(goal)}
@@ -5607,11 +5695,24 @@ export function MyListSheet({
                         {descendantRows.length > 0 ? (
                           descendantRows.map((descendant) => {
                             const completionKey = `${descendant.sourceType}:${descendant.id}`;
-                            const completedAt =
-                              pinnedSourceCompletions[completionKey] ?? null;
-                            const done = Boolean(completedAt);
-                            const canToggleCompletion =
-                              descendant.isPinned === true;
+                            const isNestedProject =
+                              descendant.sourceType === "PROJECT";
+                            const completedAt = isNestedProject
+                              ? descendant.completedAt ?? null
+                              : pinnedSourceCompletions[completionKey] ?? null;
+                            const done = isNestedProject
+                              ? Boolean(completedAt) ||
+                                isProjectCompletionStage(descendant.stage)
+                              : Boolean(completedAt);
+                            const isProjectCompletionPending =
+                              isNestedProject &&
+                              pendingPinnedGoalProjectCompletionIds.has(
+                                descendant.id
+                              );
+                            const canToggleCompletion = isNestedProject
+                              ? Boolean(onTogglePinnedGoalProjectCompletion) &&
+                                !isProjectCompletionPending
+                              : descendant.isPinned === true;
                             const checkboxId = `my-list-goal-${descendant.sourceType.toLowerCase()}-${descendant.id}`;
 
                             return (
@@ -5634,7 +5735,54 @@ export function MyListSheet({
                                     disabled={!canToggleCompletion}
                                     onChange={(event) => {
                                       if (!canToggleCompletion) return;
-                                      const nextCompletedAt = event.target.checked
+                                      const checked = event.target.checked;
+
+                                      if (isNestedProject) {
+                                        const sourceElement =
+                                          event.currentTarget.closest(
+                                            "[data-my-list-checkbox]"
+                                          );
+                                        const sourceRect =
+                                          sourceElement instanceof HTMLElement
+                                            ? toCreatorXpBurstRect(
+                                                sourceElement.getBoundingClientRect()
+                                              )
+                                            : null;
+                                        setPendingPinnedGoalProjectCompletionIds(
+                                          (currentIds) => {
+                                            const nextIds = new Set(currentIds);
+                                            nextIds.add(descendant.id);
+                                            return nextIds;
+                                          }
+                                        );
+                                        void Promise.resolve(
+                                          onTogglePinnedGoalProjectCompletion?.(
+                                            descendant,
+                                            checked,
+                                            sourceRect
+                                          )
+                                        )
+                                          .catch((error) => {
+                                            console.error(
+                                              "Pinned Goal Project completion failed",
+                                              error
+                                            );
+                                          })
+                                          .finally(() => {
+                                            setPendingPinnedGoalProjectCompletionIds(
+                                              (currentIds) => {
+                                                const nextIds = new Set(
+                                                  currentIds
+                                                );
+                                                nextIds.delete(descendant.id);
+                                                return nextIds;
+                                              }
+                                            );
+                                          });
+                                        return;
+                                      }
+
+                                      const nextCompletedAt = checked
                                         ? new Date().toISOString()
                                         : null;
                                       setPinnedSourceCompletions((current) => ({

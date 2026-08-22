@@ -49,6 +49,7 @@ import { cn } from "@/lib/utils";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
+  buildCreatorXpSurgePayload,
   resolveCreatorXpSurgeTitle,
   type CreatorXpSurgePayload,
 } from "@/components/xp/CreatorXpSurgeHud";
@@ -144,6 +145,17 @@ type PriorityEditorTaskCompletionUpdateQuery = {
     completed_at: string;
     updated_at: string;
   }): {
+    eq(column: "id", value: string): {
+      eq(
+        column: "user_id",
+        value: string
+      ): Promise<{ error: { message?: string } | null }>;
+    };
+  };
+};
+
+type PriorityEditorGoalCompletionUpdateQuery = {
+  update(values: { status: "COMPLETED"; active: false }): {
     eq(column: "id", value: string): {
       eq(
         column: "user_id",
@@ -262,11 +274,177 @@ function updateRoadmapTask(
   });
 }
 
+type PriorityEditorCompletableGoal = (
+  | GlobalPriorityRoadmapItem
+  | RoadmapPriorityGoal
+) & {
+  active?: boolean | null;
+  status?: string | null;
+};
+
+function updateRoadmapGoal(
+  items: GlobalPriorityRoadmapItem[],
+  goalId: string,
+  update: (goal: PriorityEditorCompletableGoal) => PriorityEditorCompletableGoal
+) {
+  return items.map((item) => {
+    if (item.type === "goal" && item.id === goalId) {
+      return update(item as PriorityEditorCompletableGoal) as GlobalPriorityRoadmapItem;
+    }
+
+    if (item.type === "campaign") {
+      return {
+        ...item,
+        goals: item.goals?.map((goal) =>
+          goal.id === goalId ? (update(goal) as RoadmapPriorityGoal) : goal
+        ),
+      };
+    }
+
+    return item;
+  });
+}
+
+function collectRoadmapGoalIds(items: GlobalPriorityRoadmapItem[]) {
+  const goalIds = new Set<string>();
+
+  for (const item of items) {
+    if (item.type === "goal") {
+      goalIds.add(item.id);
+      continue;
+    }
+
+    for (const goal of item.goals ?? []) {
+      goalIds.add(goal.id);
+    }
+  }
+
+  return goalIds;
+}
+
+function mergeSessionCompletedGlobalPriorityItems(
+  incomingItems: GlobalPriorityRoadmapItem[],
+  currentItems: GlobalPriorityRoadmapItem[],
+  completedGoalIds: Set<string>
+) {
+  if (completedGoalIds.size === 0) return incomingItems;
+
+  const mergedItems = [...incomingItems];
+  const incomingGoalIds = collectRoadmapGoalIds(mergedItems);
+
+  currentItems.forEach((currentItem, currentIndex) => {
+    if (
+      currentItem.type === "goal" &&
+      completedGoalIds.has(currentItem.id) &&
+      !incomingGoalIds.has(currentItem.id)
+    ) {
+      mergedItems.splice(Math.min(currentIndex, mergedItems.length), 0, currentItem);
+      incomingGoalIds.add(currentItem.id);
+      return;
+    }
+
+    if (currentItem.type !== "campaign") return;
+
+    const completedCurrentGoals = (currentItem.goals ?? []).filter(
+      (goal) => completedGoalIds.has(goal.id) && !incomingGoalIds.has(goal.id)
+    );
+    if (completedCurrentGoals.length === 0) return;
+
+    const incomingCampaignIndex = mergedItems.findIndex(
+      (item) => item.type === "campaign" && item.id === currentItem.id
+    );
+    if (incomingCampaignIndex < 0) {
+      const completedGoalIdsForCampaign = new Set(
+        completedCurrentGoals.map((goal) => goal.id)
+      );
+      mergedItems.splice(Math.min(currentIndex, mergedItems.length), 0, {
+        ...currentItem,
+        goals: (currentItem.goals ?? []).filter((goal) =>
+          completedGoalIdsForCampaign.has(goal.id)
+        ),
+      });
+      completedCurrentGoals.forEach((goal) => incomingGoalIds.add(goal.id));
+      return;
+    }
+
+    const incomingCampaign = mergedItems[incomingCampaignIndex];
+    const mergedGoals = [...(incomingCampaign.goals ?? [])];
+    for (const currentGoal of currentItem.goals ?? []) {
+      if (
+        !completedGoalIds.has(currentGoal.id) ||
+        incomingGoalIds.has(currentGoal.id)
+      ) {
+        continue;
+      }
+
+      const currentGoalIndex =
+        currentItem.goals?.findIndex((goal) => goal.id === currentGoal.id) ?? 0;
+      mergedGoals.splice(
+        Math.min(currentGoalIndex, mergedGoals.length),
+        0,
+        currentGoal
+      );
+      incomingGoalIds.add(currentGoal.id);
+    }
+
+    mergedItems[incomingCampaignIndex] = {
+      ...incomingCampaign,
+      goals: mergedGoals,
+    };
+  });
+
+  return mergedItems;
+}
+
 function isRoadmapTaskComplete(task: RoadmapPriorityTask) {
   return (
     Boolean(task.completedAt) ||
     task.stage?.trim().toUpperCase() === "PERFECT"
   );
+}
+
+function isRoadmapProjectComplete(project: RoadmapPriorityProject) {
+  const normalizedStage = project.stage?.trim().toUpperCase();
+  return (
+    Boolean(project.completedAt) ||
+    normalizedStage === "RELEASE" ||
+    normalizedStage === "COMPLETE" ||
+    normalizedStage === "COMPLETED" ||
+    normalizedStage === "DONE"
+  );
+}
+
+function isRoadmapGoalComplete(goal: PriorityEditorCompletableGoal) {
+  return goal.status?.trim().toUpperCase() === "COMPLETED";
+}
+
+function isRoadmapGoalReadyToComplete(goal: PriorityEditorCompletableGoal) {
+  return (goal.projects ?? []).every(
+    (project) =>
+      isRoadmapProjectComplete(project) &&
+      (project.tasks ?? []).every(isRoadmapTaskComplete)
+  );
+}
+
+function collectRoadmapGoalCompletionSkillIds(
+  goal: PriorityEditorCompletableGoal
+) {
+  const skillIds = new Set<string>();
+
+  for (const project of goal.projects ?? []) {
+    for (const skillId of project.skillIds ?? []) {
+      if (typeof skillId === "string" && skillId.trim()) {
+        skillIds.add(skillId.trim());
+      }
+    }
+    for (const task of project.tasks ?? []) {
+      if (typeof task.skillId === "string" && task.skillId.trim()) {
+        skillIds.add(task.skillId.trim());
+      }
+    }
+  }
+
+  return Array.from(skillIds);
 }
 
 type PriorityEditorTaskXpAwardResponse = {
@@ -324,6 +502,55 @@ async function awardPriorityEditorTaskCompletion(
   }
 }
 
+async function awardPriorityEditorGoalCompletion(
+  goal: PriorityEditorCompletableGoal,
+  completedAt: string
+): Promise<PriorityEditorTaskXpAwardResponse | null> {
+  const body: Record<string, unknown> = {
+    kind: "goal",
+    awardKeyBase: `goal:${goal.id}:goal`,
+    reversible: {
+      occurrenceStem: `goal:${goal.id}:goal`,
+    },
+    completion: {
+      action: "complete",
+      sourceType: "GOAL",
+      sourceId: goal.id,
+      completedAt,
+      wasScheduled: false,
+    },
+  };
+
+  const skillIds = collectRoadmapGoalCompletionSkillIds(goal);
+  if (skillIds.length > 0) {
+    body.skillIds = skillIds;
+  }
+  if (goal.monumentId) {
+    body.monumentIds = [goal.monumentId];
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.error(
+        "Failed to award XP for priority roadmap Goal completion",
+        await response.text()
+      );
+      return null;
+    }
+    return (await response.json().catch(() => null)) as
+      | PriorityEditorTaskXpAwardResponse
+      | null;
+  } catch (error) {
+    console.error("Failed to award XP for priority roadmap Goal completion", error);
+    return null;
+  }
+}
+
 export default function PriorityEditorClient({
   userId,
   initialGlobalPriorityItems,
@@ -360,13 +587,21 @@ export default function PriorityEditorClient({
   const refreshTimeoutRef = useRef<number | null>(null);
   const lastRefreshAtRef = useRef(0);
   const isSavingOrderRef = useRef(false);
+  const completingGoalIdsRef = useRef<Set<string>>(new Set());
+  const completedGoalIdsRef = useRef<Set<string>>(new Set());
 
   const sensors = usePriorityRoadmapSensors();
   const adjustOpen = controlledAdjustOpen ?? internalAdjustOpen;
   const setAdjustOpen = onAdjustOpenChange ?? setInternalAdjustOpen;
 
   useEffect(() => {
-    setGlobalPriorityItems(initialGlobalPriorityItems);
+    setGlobalPriorityItems((currentItems) =>
+      mergeSessionCompletedGlobalPriorityItems(
+        initialGlobalPriorityItems,
+        currentItems,
+        completedGoalIdsRef.current
+      )
+    );
     setHabitRoadmapItems(initialHabitItems);
     setError(initialError);
   }, [initialGlobalPriorityItems, initialHabitItems, initialError]);
@@ -825,6 +1060,106 @@ export default function PriorityEditorClient({
     [habitRoadmapItems, router, userId]
   );
 
+  const handleRoadmapGoalComplete = useCallback(
+    async (goal: PriorityEditorCompletableGoal) => {
+      if (
+        completedGoalIdsRef.current.has(goal.id) ||
+        completingGoalIdsRef.current.has(goal.id) ||
+        isRoadmapGoalComplete(goal)
+      ) {
+        return;
+      }
+
+      if (!isRoadmapGoalReadyToComplete(goal)) {
+        setGlobalPriorityError("Complete all Events inside this Goal first.");
+        void hapticErrorPattern();
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setGlobalPriorityError("Unable to complete Goal.");
+        void hapticWarningPattern();
+        return;
+      }
+
+      const completedAt = new Date().toISOString();
+      completingGoalIdsRef.current.add(goal.id);
+      setGlobalPriorityError(null);
+
+      try {
+        const goalCompletionUpdate = supabase.from(
+          "goals"
+        ) as unknown as PriorityEditorGoalCompletionUpdateQuery;
+        const { error: updateError } = await goalCompletionUpdate
+          .update({ status: "COMPLETED", active: false })
+          .eq("id", goal.id)
+          .eq("user_id", userId);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        completedGoalIdsRef.current.add(goal.id);
+        setGlobalPriorityItems((current) =>
+          updateRoadmapGoal(current, goal.id, (item) => ({
+            ...item,
+            active: false,
+            status: "COMPLETED",
+          }))
+        );
+        void hapticComplete();
+
+        const awardPayload = await awardPriorityEditorGoalCompletion(
+          goal,
+          completedAt
+        );
+        const didAwardXp = Boolean(
+          awardPayload?.success &&
+            !awardPayload.deduped &&
+            (awardPayload.inserted ?? 0) > 0
+        );
+        if (didAwardXp) {
+          const fallbackGoalSurge = buildCreatorXpSurgePayload({
+            sourceType: "GOAL",
+            monumentTitle: goal.monumentName,
+            sourceTitle: goal.name,
+            sourceIcon: goal.emoji ?? goal.monumentEmoji ?? goal.monumentIcon ?? null,
+          });
+          const goalSurge = awardPayload?.surge
+            ? {
+                ...fallbackGoalSurge,
+                ...awardPayload.surge,
+                sourceType: "GOAL" as const,
+                title: awardPayload.surge.title ?? fallbackGoalSurge.title,
+                sourceIcon:
+                  awardPayload.surge.sourceIcon ??
+                  fallbackGoalSurge.sourceIcon ??
+                  null,
+                displayXp:
+                  awardPayload.surge.displayXp ?? fallbackGoalSurge.displayXp,
+              }
+            : fallbackGoalSurge;
+
+          dispatchCreatorXpRewardVisual({
+            surge: goalSurge,
+            completedAt,
+            amount: goalSurge.displayXp ?? undefined,
+            kind: "goal_complete",
+            burstId: `priority-goal:${goal.id}:${completedAt}`,
+          });
+        }
+      } catch (caught) {
+        console.error("Failed to complete roadmap Goal", caught);
+        setGlobalPriorityError("Could not complete Goal.");
+        void hapticErrorPattern();
+      } finally {
+        completingGoalIdsRef.current.delete(goal.id);
+      }
+    },
+    [userId]
+  );
+
   const handleRoadmapProjectComplete = useCallback(
     async (project: RoadmapPriorityProject) => {
       if (
@@ -1011,6 +1346,7 @@ export default function PriorityEditorClient({
               appearance="priorityEditor"
               onDragEnd={handleGlobalPriorityDragEnd}
               onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
+              onGoalComplete={handleRoadmapGoalComplete}
               onProjectComplete={handleRoadmapProjectComplete}
               onTaskComplete={handleRoadmapTaskComplete}
             />

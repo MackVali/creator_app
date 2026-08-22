@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { useProfileContext } from "@/components/ProfileProvider";
-import { useToastHelpers } from "@/components/ui/toast";
 import { hapticLevelUp } from "@/lib/haptics/creatorHaptics";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
@@ -15,18 +14,6 @@ type DarkXpEvent = {
 
 export default function LevelUpListener() {
   const { userId } = useProfileContext();
-  const toast = useToastHelpers();
-  const toastRef = useRef(toast);
-  const skillNameCacheRef = useRef(new Map<string, string>());
-
-  useEffect(() => {
-    toastRef.current = toast;
-  }, [toast]);
-
-  useEffect(() => {
-    skillNameCacheRef.current.clear();
-  }, [userId]);
-
   useEffect(() => {
     const supabase = getSupabaseBrowser();
     if (!supabase || !userId) {
@@ -53,28 +40,6 @@ export default function LevelUpListener() {
           if (typeof event.amount !== "number" || event.amount <= 0) return;
           if (typeof event.new_skill_level !== "number") return;
 
-          const cache = skillNameCacheRef.current;
-          let skillName = cache.get(event.skill_id);
-
-          if (!skillName) {
-            const { data, error } = await supabase
-              .from("skills")
-              .select("name")
-              .eq("id", event.skill_id)
-              .maybeSingle<{ name: string | null }>();
-
-            if (error) {
-              console.error("Failed to load skill for level-up toast", error);
-            }
-
-            skillName = data?.name ?? "Skill";
-            cache.set(event.skill_id, skillName);
-          }
-
-          toastRef.current.success(
-            `${skillName} leveled up!`,
-            `Now level ${event.new_skill_level}`
-          );
           void hapticLevelUp();
         }
       );

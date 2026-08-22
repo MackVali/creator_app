@@ -12,7 +12,9 @@ import {
   notifyFocusGateStatusChanged,
 } from "@/lib/focus-gate/client";
 import {
+  getFocusGateAuthorizationStatus,
   getFocusGateNativeAvailability,
+  requestFocusGateAuthorization,
   syncFocusGateAllowance,
 } from "@/lib/focus-gate/focusGateNative";
 
@@ -74,6 +76,18 @@ export function FocusGateXpRefreshBridge() {
         xpToday: status.xpToday,
         allowedMinutes: status.allowedMinutes,
       });
+
+      if (status.enabled) {
+        const authorization = await getFocusGateAuthorizationStatus();
+
+        if (authorization.status === "notDetermined") {
+          logFocusGateDebug(
+            "refreshing Family Controls authorization before native sync"
+          );
+          await requestFocusGateAuthorization();
+        }
+      }
+
       queryClient.setQueryData(getFocusGateStatusQueryKey(), status);
       logFocusGateDebug("native syncAllowance invoked", {
         enabled: status.enabled,

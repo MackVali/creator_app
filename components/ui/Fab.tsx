@@ -159,6 +159,7 @@ import {
 import {
   useFabCreation,
   type FabCreationRequest,
+  type FabCourseAuthoringContext,
 } from "@/components/ui/FabCreationContext";
 import { AREAS, getAreaById, isAreaId } from "@/config/areas";
 import {
@@ -221,11 +222,62 @@ type UnifiedEventManualUpgradeSourceContext = {
   origin: "manual-my-list-upgrade";
   itemId: string;
 };
+type CourseCurriculumNodeType = CreationType;
+type CourseCurriculumNode = {
+  id: string;
+  course_id: string;
+  parent_node_id: string | null;
+  node_type: CourseCurriculumNodeType;
+  name: string;
+  position: number;
+  definition: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+type CourseCurriculumNodeCreatedEventDetail = {
+  courseId: string;
+  node: CourseCurriculumNode;
+};
 type ScheduleQuickCreateTaskDetailsEvent = CustomEvent<
   ScheduleQuickCreateTaskDetailsPayload
 > & {
   __creatorQuickCreateTaskDetailsHandled?: boolean;
 };
+
+function getCourseCurriculumHierarchyError({
+  nodeType,
+  parentNodeId,
+  parentNodeType,
+}: {
+  nodeType: CourseCurriculumNodeType;
+  parentNodeId?: string | null;
+  parentNodeType?: CourseCurriculumNodeType | null;
+}) {
+  if (nodeType === "GOAL") {
+    return parentNodeId ? "Course GOAL nodes cannot have a parent." : null;
+  }
+
+  if (nodeType === "PROJECT") {
+    return parentNodeId && parentNodeType === "GOAL"
+      ? null
+      : "Choose a GOAL parent before adding a Course project.";
+  }
+
+  if (nodeType === "TASK") {
+    return parentNodeId &&
+      (parentNodeType === "GOAL" || parentNodeType === "PROJECT")
+      ? null
+      : "Choose a GOAL or PROJECT parent before adding a Course task.";
+  }
+
+  if (nodeType === "HABIT") {
+    return !parentNodeId || parentNodeType === "GOAL"
+      ? null
+      : "Course habits can only be added at the top level or under a GOAL.";
+  }
+
+  return "Unsupported Course curriculum type.";
+}
 const UNIFIED_EVENT_TITLE_PLACEHOLDERS = [
   "Dentist appointment",
   "Client call",
@@ -251,6 +303,8 @@ const UNIFIED_TASK_TITLE_PLACEHOLDERS = [
 const UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS = 3200;
 const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
+const COURSE_CURRICULUM_NODE_CREATED_EVENT =
+  "course-curriculum-node-created";
 export const UNIFIED_TASK_SIDE_TYPE_OPTIONS = [
   { value: "AUTO", label: "AUTO" },
   { value: "TO_DO", label: "TO DO" },
@@ -4510,6 +4564,8 @@ export function Fab({
   const prefersReducedMotion = useReducedMotion();
   const [isUnifiedEventSheetOpen, setIsUnifiedEventSheetOpen] =
     useState(false);
+  const [courseAuthoringContext, setCourseAuthoringContext] =
+    useState<FabCourseAuthoringContext | null>(null);
   const [
     unifiedEventManualUpgradeSource,
     setUnifiedEventManualUpgradeSource,
@@ -10835,6 +10891,7 @@ export function Fab({
       setOverlayPickerSelected(null);
       setIsUnifiedEventSheetOpen(false);
       setUnifiedEventManualUpgradeSource(null);
+      setCourseAuthoringContext(null);
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
@@ -11757,6 +11814,7 @@ export function Fab({
 
   const resetFabFormState = useCallback(() => {
     setUnifiedEventManualUpgradeSource(null);
+    setCourseAuthoringContext(null);
     setSelectedType("AUTO");
     setProjectName("");
     setProjectPinned(false);
@@ -19379,6 +19437,61 @@ export function Fab({
     setUnifiedEventManualUpgradeSource(null);
     handledCreationRequestIdRef.current = creationRequest.id;
     openingCreationRequestIdRef.current = creationRequest.id;
+    if (creationRequest.courseContext?.courseId) {
+      const courseContext = creationRequest.courseContext;
+      resetFabFormState();
+      setCourseAuthoringContext(courseContext);
+      setSaveError(null);
+      setGoalDeleteConfirmTarget(null);
+      setActiveCreationMode("main");
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTimingMonthYearPickerOpen(false);
+      setFabAdvancedTimingPickerOpen(null);
+      setShowTaskDurationPicker(false);
+      setTaskDurationPosition(null);
+      setShowDraftTaskDurationPicker(false);
+      setDraftTaskDurationPosition(null);
+      setShowHabitDurationPicker(false);
+      setHabitDurationPosition(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsUnifiedTagCreateOpen(false);
+      setUnifiedTagCreateValue("");
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      setIsGoalPickerOpen(false);
+      setIsUnifiedGoalPickerOpen(false);
+      setShowUnifiedGoalFilters(false);
+      setUnifiedGoalSearch("");
+      setUnifiedGoalFilterMonumentId("");
+      setUnifiedGoalSortMode("default");
+      setSelectedTagIds([]);
+      setAddEventSubActions([]);
+      setAddEventWorkspaceValue("PERSONAL");
+      setAddEventTimingMode("dynamic");
+      setAddEventDynamicDuration("60");
+      setProjectTaskStack(null);
+      setGoalProjectStack(null);
+      setUnifiedCreationMode("TASKS");
+      setUnifiedEventType(
+        creationRequest.type === "HABIT" ? "HABIT" : "TASK",
+      );
+      setSelectedType(creationRequest.type);
+      setSelected(creationRequest.type);
+      setNormalNexusExpanded(false);
+      flushSync(() => {
+        setExpanded(false);
+        setIsDirectCreationOpen(false);
+        setIsOpen(false);
+      });
+      setIsUnifiedEventSheetOpen(true);
+      return;
+    }
     resetFabFormState();
     setProjectGoalId(creationRequest.goalId ?? null);
     if (creationRequest.type === "PROJECT") {
@@ -19565,6 +19678,7 @@ export function Fab({
   }) => {
     void hapticPress();
     setUnifiedEventManualUpgradeSource(null);
+    setCourseAuthoringContext(null);
     const defaultSchedule = getNextSolidHourEventDefaults(new Date());
     const initialDate =
       parseDateInputValueLocal(taskExactDate.trim()) ??
@@ -20209,6 +20323,7 @@ export function Fab({
     void hapticSnap();
     const wasEventEdit = editTarget?.entityType === "EVENT";
     setUnifiedEventManualUpgradeSource(null);
+    setCourseAuthoringContext(null);
     setSelectedType("AUTO");
     setSaveError(null);
     setShowTaskDurationPicker(false);
@@ -22421,7 +22536,10 @@ export function Fab({
 
     const saveSelected = resolvedUnifiedAddEventSaveSelected;
     if (!saveSelected) return "Unable to resolve this event type.";
+    const activeCourseAuthoringContext = courseAuthoringContext;
+    const isCourseAuthoring = Boolean(activeCourseAuthoringContext);
     if (
+      !isCourseAuthoring &&
       saveSelected === "TASK" &&
       isAddEventTimingInvalid &&
       !isStandaloneUnifiedTaskDraft
@@ -22452,11 +22570,20 @@ export function Fab({
           : habitName.trim();
     if (trimmedName.length === 0) return "Please enter a name.";
 
+    if (isCourseAuthoring && saveSelected !== "TO_DO") {
+      return getCourseCurriculumHierarchyError({
+        nodeType: saveSelected,
+        parentNodeId: activeCourseAuthoringContext?.parentNodeId ?? null,
+        parentNodeType:
+          activeCourseAuthoringContext?.parentNodeType ?? null,
+      });
+    }
+
     if (saveSelected === "TO_DO") {
       return null;
     }
 
-    if (saveSelected === "PROJECT") {
+    if (!isCourseAuthoring && saveSelected === "PROJECT") {
       if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
         return "Link this project to a goal before saving.";
       }
@@ -22465,7 +22592,7 @@ export function Fab({
       }
     }
 
-    if (saveSelected === "TASK") {
+    if (!isCourseAuthoring && saveSelected === "TASK") {
       const hasTaskRelation = Boolean(
         taskProjectId || projectTaskStack || resolvedAddEventTaskGoalId,
       );
@@ -22477,7 +22604,7 @@ export function Fab({
       }
     }
 
-    if (saveSelected === "HABIT") {
+    if (!isCourseAuthoring && saveSelected === "HABIT") {
       if (!habitEnergy) {
         return "Select an energy level before saving.";
       }
@@ -22493,6 +22620,7 @@ export function Fab({
     }
 
     if (
+      !isCourseAuthoring &&
       saveSelected === "TASK" &&
       !isStandaloneUnifiedTaskDraft &&
       addEventTimingMode === "manual" &&
@@ -22516,7 +22644,7 @@ export function Fab({
       }
     }
 
-    if (saveSelected === "HABIT") {
+    if (!isCourseAuthoring && saveSelected === "HABIT") {
       const parsed = parseHabitFixedTime(habitFixedStartTime, habitFixedEndTime);
       if (parsed.error) return parsed.error;
     }
@@ -22888,6 +23016,10 @@ export function Fab({
       isUnifiedEventSheetOpen && !activeEditTarget
         ? unifiedEventManualUpgradeSource
         : null;
+    const activeCourseAuthoringContext =
+      isUnifiedEventSheetOpen && !activeEditTarget
+        ? courseAuthoringContext
+        : null;
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
@@ -22897,6 +23029,7 @@ export function Fab({
         setSaveError(message);
       };
       if (
+        !activeCourseAuthoringContext &&
         saveSelected === "TASK" &&
         isAddEventTimingInvalid &&
         !isStandaloneUnifiedTaskCreate
@@ -22954,7 +23087,7 @@ export function Fab({
         return;
       }
       const goalRelationResolution =
-        saveSelected === "GOAL"
+        saveSelected === "GOAL" && !activeCourseAuthoringContext
           ? resolveSelectedGoalRelation()
           : {
               selectedMonumentId: null,
@@ -22962,7 +23095,7 @@ export function Fab({
               selectedAreaId: null,
               error: null,
             };
-      if (saveSelected === "GOAL") {
+      if (saveSelected === "GOAL" && !activeCourseAuthoringContext) {
         if (goalRelationResolution.error) {
           setBlockedSaveError(goalRelationResolution.error);
           return;
@@ -22976,7 +23109,7 @@ export function Fab({
           return;
         }
       }
-      if (saveSelected === "PROJECT") {
+      if (saveSelected === "PROJECT" && !activeCourseAuthoringContext) {
         if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
           setBlockedSaveError("Link this project to a goal before saving.");
           return;
@@ -22986,7 +23119,7 @@ export function Fab({
           return;
         }
       }
-      if (saveSelected === "TASK") {
+      if (saveSelected === "TASK" && !activeCourseAuthoringContext) {
         const hasTaskRelation = Boolean(
           taskProjectId ||
             projectTaskStack ||
@@ -23014,15 +23147,20 @@ export function Fab({
           setBlockedSaveError("Select a habit type before saving.");
           return;
         }
-        if (!habitSkillId) {
+        if (!activeCourseAuthoringContext && !habitSkillId) {
           setBlockedSaveError("Link this habit to a skill before saving.");
           return;
         }
-        if (habitType.toUpperCase() === "TEMP" && !habitGoalId) {
+        if (
+          !activeCourseAuthoringContext &&
+          habitType.toUpperCase() === "TEMP" &&
+          !habitGoalId
+        ) {
           setBlockedSaveError("Link this Temp habit to a goal before saving.");
           return;
         }
         if (
+          !activeCourseAuthoringContext &&
           habitType.toUpperCase() === "TEMP" &&
           (!Number.isInteger(Number(habitCompletionTarget)) ||
             Number(habitCompletionTarget) <= 0)
@@ -23031,8 +23169,20 @@ export function Fab({
           return;
         }
       }
+      if (activeCourseAuthoringContext && saveSelected !== "TO_DO") {
+        const hierarchyError = getCourseCurriculumHierarchyError({
+          nodeType: saveSelected,
+          parentNodeId: activeCourseAuthoringContext.parentNodeId ?? null,
+          parentNodeType: activeCourseAuthoringContext.parentNodeType ?? null,
+        });
+        if (hierarchyError) {
+          setBlockedSaveError(hierarchyError);
+          return;
+        }
+      }
       let exactSchedule: ParsedExactSchedule | null = null;
       if (
+        !activeCourseAuthoringContext &&
         saveSelected === "PROJECT" &&
         projectScheduleTimingMode === "manual"
       ) {
@@ -23055,6 +23205,7 @@ export function Fab({
       }
       if (saveSelected === "TASK") {
         if (
+          !activeCourseAuthoringContext &&
           isUnifiedEventSheetOpen &&
           !isStandaloneUnifiedTaskCreate &&
           addEventTimingMode === "manual" &&
@@ -23093,7 +23244,11 @@ export function Fab({
               ),
             ),
           };
-        } else if (!isStandaloneUnifiedTaskDraft && !isDynamicAddEvent) {
+        } else if (
+          !activeCourseAuthoringContext &&
+          !isStandaloneUnifiedTaskDraft &&
+          !isDynamicAddEvent
+        ) {
           const parsed = parseExactSchedule(
             taskHasExactDate,
             taskExactDate,
@@ -23110,6 +23265,7 @@ export function Fab({
       }
       let habitFixedTime: ParsedHabitFixedTime | null = null;
       if (
+        !activeCourseAuthoringContext &&
         saveSelected === "HABIT" &&
         (isUnifiedEventSheetOpen || habitScheduleTimingMode === "manual")
       ) {
@@ -23139,6 +23295,176 @@ export function Fab({
         let createdRoutineId: string | null = null;
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
+
+        if (activeCourseAuthoringContext && saveSelected !== "TO_DO") {
+          const selectedSkillIds =
+            saveSelected === "PROJECT"
+              ? projectSkillIds
+              : saveSelected === "TASK"
+                ? taskSkillId
+                  ? [taskSkillId]
+                  : []
+                : saveSelected === "HABIT" && habitSkillId
+                  ? [habitSkillId]
+                  : [];
+          const portableSkills = selectedSkillIds
+            .map((skillId) => skills.find((skill) => skill.id === skillId))
+            .filter((skill): skill is Skill => Boolean(skill))
+            .map((skill) => ({
+              name: skill.name,
+              ...(skill.icon ? { icon: skill.icon } : {}),
+            }));
+          const projectDurationMin =
+            typeof projectDuration === "number" &&
+            Number.isFinite(projectDuration)
+              ? projectDuration
+              : normalizedProjectDuration || null;
+          const parsedHabitDurationForDefinition = Number.parseInt(
+            habitDuration || "0",
+            10,
+          );
+          const habitDurationMin =
+            effectiveHabitDuration ??
+            (Number.isFinite(parsedHabitDurationForDefinition)
+              ? parsedHabitDurationForDefinition
+              : null);
+          const baseDefinition: Record<string, unknown> = {
+            source: "course",
+          };
+          const definition =
+            saveSelected === "GOAL"
+              ? {
+                  ...baseDefinition,
+                  priority: goalPriority,
+                  energy: goalEnergy,
+                  ...(goalWhy.trim() ? { description: goalWhy.trim() } : {}),
+                  ...(goalDue ? { dueDate: goalDue } : {}),
+                  ...(goalPinned ? { pinned: true } : {}),
+                }
+              : saveSelected === "PROJECT"
+                ? {
+                    ...baseDefinition,
+                    priority: projectPriority,
+                    energy: projectEnergy,
+                    stage: projectStage,
+                    ...(projectWhy.trim()
+                      ? { description: projectWhy.trim() }
+                      : {}),
+                    ...(projectDurationMin
+                      ? { durationMin: projectDurationMin }
+                      : {}),
+                    ...(projectDue ? { dueDate: projectDue } : {}),
+                    ...(portableSkills.length > 0
+                      ? { skills: portableSkills }
+                      : {}),
+                    ...(projectPinned ? { pinned: true } : {}),
+                  }
+                : saveSelected === "TASK"
+                  ? {
+                      ...baseDefinition,
+                      priority: taskPriority,
+                      energy: taskEnergy,
+                      stage: taskStage,
+                      ...(taskNotes.trim()
+                        ? { description: taskNotes.trim() }
+                        : {}),
+                      ...(effectiveTaskDuration
+                        ? { durationMin: effectiveTaskDuration }
+                        : {}),
+                      ...(taskDue ? { dueDate: taskDue } : {}),
+                      timingMode: addEventTimingMode,
+                      ...(portableSkills.length > 0
+                        ? { skills: portableSkills }
+                        : {}),
+                      ...(taskPinned ? { pinned: true } : {}),
+                    }
+                  : {
+                      ...baseDefinition,
+                      description: habitWhy.trim() || undefined,
+                      habitType,
+                      recurrence: habitRecurrence,
+                      durationMin: habitDurationMin,
+                      energy: habitEnergy,
+                      ...(habitType.toUpperCase() === "TEMP"
+                        ? { completionTarget: Number(habitCompletionTarget) }
+                        : {}),
+                      ...(habitNextDueOverride
+                        ? { nextDueOverride: habitNextDueOverride }
+                        : {}),
+                      ...(habitDaylightPreference !== "ALL_DAY"
+                        ? { daylightPreference: habitDaylightPreference }
+                        : {}),
+                      ...(habitWindowEdgePreference
+                        ? { windowEdgePreference: habitWindowEdgePreference }
+                        : {}),
+                      ...(habitFixedStartTime.trim()
+                        ? { fixedStartLocal: habitFixedStartTime.trim() }
+                        : {}),
+                      ...(habitFixedEndTime.trim()
+                        ? { fixedEndLocal: habitFixedEndTime.trim() }
+                        : {}),
+                      ...(portableSkills.length > 0
+                        ? { skills: portableSkills }
+                        : {}),
+                      ...(habitPinned ? { pinned: true } : {}),
+                    };
+          const sanitizedDefinition = Object.fromEntries(
+            Object.entries(definition).filter(([, value]) => value !== undefined),
+          );
+          const requestedPosition = activeCourseAuthoringContext.position;
+          const position =
+            typeof requestedPosition === "number" &&
+            Number.isInteger(requestedPosition) &&
+            requestedPosition >= 0
+              ? requestedPosition
+              : 0;
+          const response = await fetch(
+            `/api/courses/${encodeURIComponent(
+              activeCourseAuthoringContext.courseId,
+            )}/curriculum`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nodeType: saveSelected,
+                name: trimmedName,
+                parentNodeId: activeCourseAuthoringContext.parentNodeId ?? null,
+                position,
+                definition: sanitizedDefinition,
+              }),
+            },
+          );
+          const body = (await response.json()) as {
+            node?: CourseCurriculumNode;
+            error?: string;
+            message?: string;
+          };
+          if (!response.ok || !body.node) {
+            throw new Error(
+              body.error || body.message || "Unable to save Course curriculum.",
+            );
+          }
+
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent<CourseCurriculumNodeCreatedEventDetail>(
+                COURSE_CURRICULUM_NODE_CREATED_EVENT,
+                {
+                  detail: {
+                    courseId: activeCourseAuthoringContext.courseId,
+                    node: body.node,
+                  },
+                },
+              ),
+            );
+          }
+          openingCreationRequestIdRef.current = null;
+          resetFabFormState();
+          closeExpandedPanel({ notifyEditClose: false });
+          void hapticComplete();
+          toast.success(`${saveSelected.charAt(0)}${saveSelected.slice(1).toLowerCase()} added to Course`);
+          return;
+        }
 
         const resolveGoalRoadmapId = async ({
           selectedMonumentId,
@@ -24705,6 +25031,7 @@ export function Fab({
     attachSelectedTagsToEntity,
     buildMemoCaptureConfig,
     closeExpandedPanel,
+    courseAuthoringContext,
     creationRequest,
     onEditClose,
     onEditSaved,
@@ -25945,37 +26272,53 @@ export function Fab({
 
     const isEventsMode = unifiedCreationMode === "EVENTS";
     const isTasksMode = unifiedCreationMode === "TASKS";
+    const isGoal = isTasksMode && selected === "GOAL";
     const isProject = isTasksMode && selected === "PROJECT";
-    const isTask = isTasksMode && unifiedEventType === "TASK" && !isProject;
+    const isTask =
+      isTasksMode && unifiedEventType === "TASK" && !isProject && !isGoal;
     const isHabit = isTasksMode && unifiedEventType === "HABIT";
     const isGoalLinkedEvent = isTasksMode && (isTask || isProject);
     const titleValue = isEventsMode
       ? unifiedEventTitle
-      : isProject
+      : isGoal
+        ? goalName
+        : isProject
         ? projectName
         : isTask
           ? taskName
           : habitName;
     const titleSetter = isProject
       ? setProjectName
-      : isEventsMode
-        ? setUnifiedEventTitle
-        : isTask
-          ? setTaskName
-          : setHabitName;
+      : isGoal
+        ? setGoalName
+        : isEventsMode
+          ? setUnifiedEventTitle
+          : isTask
+            ? setTaskName
+            : setHabitName;
     const sourcePinned = isProject
       ? projectPinned
-      : isTask
+      : isGoal
+        ? goalPinned
+        : isTask
         ? taskPinned
         : isHabit
           ? habitPinned
           : false;
     const setSourcePinned = isProject
       ? setProjectPinned
-      : isTask
-        ? setTaskPinned
-        : setHabitPinned;
-    const sourcePinLabel = isProject ? "Project" : isTask ? "Task" : "Habit";
+      : isGoal
+        ? setGoalPinned
+        : isTask
+          ? setTaskPinned
+          : setHabitPinned;
+    const sourcePinLabel = isGoal
+      ? "Goal"
+      : isProject
+        ? "Project"
+        : isTask
+          ? "Task"
+          : "Habit";
     const titleSuggestion =
       titleValue.length === 0 && isEventsMode
         ? UNIFIED_EVENT_TITLE_PLACEHOLDERS[
@@ -25992,17 +26335,23 @@ export function Fab({
       ? ""
       : isEventsMode
         ? "Title"
-        : "Event name";
+        : isGoal
+          ? "Goal name"
+          : "Event name";
     const energyValue = isProject
       ? projectEnergy
-      : isTask
+      : isGoal
+        ? goalEnergy
+        : isTask
         ? taskEnergy
         : habitEnergy;
     const setEnergyValue = isProject
       ? setProjectEnergy
-      : isTask
-        ? setTaskEnergy
-        : setHabitEnergy;
+      : isGoal
+        ? setGoalEnergy
+        : isTask
+          ? setTaskEnergy
+          : setHabitEnergy;
     const skillValue = isProject
       ? (projectSkillIds[0] ?? "")
       : isTask
@@ -26015,18 +26364,22 @@ export function Fab({
         : setHabitSkillId;
     const notesValue = isEventsMode
       ? unifiedEventDescription
-      : isProject
+      : isGoal
+        ? goalWhy
+        : isProject
         ? projectWhy
         : isTask
           ? taskNotes
           : habitWhy;
     const setNotesValue = isProject
       ? setProjectWhy
-      : isEventsMode
-        ? setUnifiedEventDescription
-        : isTask
-          ? setTaskNotes
-          : setHabitWhy;
+      : isGoal
+        ? setGoalWhy
+        : isEventsMode
+          ? setUnifiedEventDescription
+          : isTask
+            ? setTaskNotes
+            : setHabitWhy;
     const eventTypeLabel = "Event";
     const timingCardClass =
       "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
@@ -26880,6 +27233,11 @@ export function Fab({
       UNIFIED_TASK_SIDE_TYPE_OPTIONS.find(
         (option) => option.value === selectedType,
       )?.label ?? "TASK";
+    const unifiedTaskSideTypeOptions = courseAuthoringContext
+      ? UNIFIED_TASK_SIDE_TYPE_OPTIONS.filter(
+          (option) => option.value !== "AUTO" && option.value !== "TO_DO",
+        )
+      : UNIFIED_TASK_SIDE_TYPE_OPTIONS;
     const resolvedTypeLabel =
       UNIFIED_TASK_SIDE_TYPE_OPTIONS.find(
         (option) => option.value === resolvedUnifiedAddEventSaveSelected,
@@ -27700,7 +28058,25 @@ export function Fab({
       setUnifiedEventInviteSearch("");
     };
 
-    const workspaceSection = (
+    const workspaceSection = courseAuthoringContext ? (
+      <section className={workspaceRowClass} aria-label="Workspace">
+        <div className="grid min-h-[38px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3">
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold leading-none text-zinc-100">
+              Workspace
+            </h3>
+            <p className="mt-1 text-[11px] font-medium leading-snug text-zinc-500">
+              Course curriculum
+            </p>
+          </div>
+          <div className="flex min-w-0 justify-end">
+            <span className="inline-flex h-8 max-w-[14rem] items-center gap-1.5 truncate rounded-lg px-1 text-right text-[13px] font-semibold text-zinc-100/95">
+              Course
+            </span>
+          </div>
+        </div>
+      </section>
+    ) : (
       <section className={workspaceRowClass} aria-label="Workspace">
         <div className="grid min-h-[38px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3">
           <div className="min-w-0">
@@ -29372,41 +29748,43 @@ export function Fab({
                     isTask ? "gap-1.5" : "gap-2",
                   )}
                 >
-                  <div
-                    className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
-                    aria-label="Creation mode"
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={isEventsMode}
-                      {...getUnifiedSheetTouchActivationProps(() =>
-                        handleUnifiedCreationModeChange("EVENTS"),
-                      )}
-                      className={cn(
-                        unifiedModeOptionClass,
-                        isEventsMode
-                          ? unifiedModeOptionActiveClass
-                          : unifiedModeOptionInactiveClass,
-                      )}
+                  {!courseAuthoringContext ? (
+                    <div
+                      className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
+                      aria-label="Creation mode"
                     >
-                      EVENT
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={isTasksMode}
-                      {...getUnifiedSheetTouchActivationProps(() =>
-                        handleUnifiedCreationModeChange("TASKS"),
-                      )}
-                      className={cn(
-                        unifiedModeOptionClass,
-                        isTasksMode
-                          ? unifiedModeOptionActiveClass
-                          : unifiedModeOptionInactiveClass,
-                      )}
-                    >
-                      TASK
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        aria-pressed={isEventsMode}
+                        {...getUnifiedSheetTouchActivationProps(() =>
+                          handleUnifiedCreationModeChange("EVENTS"),
+                        )}
+                        className={cn(
+                          unifiedModeOptionClass,
+                          isEventsMode
+                            ? unifiedModeOptionActiveClass
+                            : unifiedModeOptionInactiveClass,
+                        )}
+                      >
+                        EVENT
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={isTasksMode}
+                        {...getUnifiedSheetTouchActivationProps(() =>
+                          handleUnifiedCreationModeChange("TASKS"),
+                        )}
+                        className={cn(
+                          unifiedModeOptionClass,
+                          isTasksMode
+                            ? unifiedModeOptionActiveClass
+                            : unifiedModeOptionInactiveClass,
+                        )}
+                      >
+                        TASK
+                      </button>
+                    </div>
+                  ) : null}
 
                   {isGoalLinkedEvent ? (
                     <div
@@ -30845,72 +31223,75 @@ export function Fab({
                       </div>
                     ) : null}
 
-                    <div className={detailCardClass}>
-                      <div
-                        className={
-                          isTask ? taskDetailRowClass : detailRowClass
-                        }
-                      >
-                        <Label className={detailLabelClass}>
-                          <Brain className={detailIconClass} aria-hidden="true" />
-                          Skill
-                        </Label>
-                        <div className={detailControlWrapClass}>
-                          <Select
-                            value={skillValue || "__none__"}
-                            onValueChange={(value) => {
-                              void hapticSoftTick();
-                              const nextValue = value === "__none__" ? "" : value;
-                              setSkillValue(nextValue);
-                            }}
-                            triggerClassName={detailInlineSelectTriggerClass}
-                            trigger={
-                              <SelectValue
-                                placeholder="Link a skill"
-                                className="text-right"
-                              />
-                            }
-                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
-                            contentAlign="end"
-                            minContentWidth={224}
-                            placeholder="Link a skill"
-                          >
-                            <SelectContent
-                              className={cn(
-                                FAB_CREATION_SELECT_CONTENT_CLASS,
-                                "max-h-[18rem]",
-                              )}
+                    {!isGoal ? (
+                      <div className={detailCardClass}>
+                        <div
+                          className={
+                            isTask ? taskDetailRowClass : detailRowClass
+                          }
+                        >
+                          <Label className={detailLabelClass}>
+                            <Brain className={detailIconClass} aria-hidden="true" />
+                            Skill
+                          </Label>
+                          <div className={detailControlWrapClass}>
+                            <Select
+                              value={skillValue || "__none__"}
+                              onValueChange={(value) => {
+                                void hapticSoftTick();
+                                const nextValue =
+                                  value === "__none__" ? "" : value;
+                                setSkillValue(nextValue);
+                              }}
+                              triggerClassName={detailInlineSelectTriggerClass}
+                              trigger={
+                                <SelectValue
+                                  placeholder="Link a skill"
+                                  className="text-right"
+                                />
+                              }
+                              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                              contentAlign="end"
+                              minContentWidth={224}
+                              placeholder="Link a skill"
                             >
-                              <SelectItem
-                                value="__none__"
-                                className={fabCreationSelectItemClass(!skillValue)}
+                              <SelectContent
+                                className={cn(
+                                  FAB_CREATION_SELECT_CONTENT_CLASS,
+                                  "max-h-[18rem]",
+                                )}
                               >
-                                Link a skill
-                              </SelectItem>
-                              {skillsLoading ? (
                                 <SelectItem
-                                  value="__skills_loading"
-                                  disabled
-                                  className={fabCreationSelectItemClass(false)}
+                                  value="__none__"
+                                  className={fabCreationSelectItemClass(!skillValue)}
                                 >
-                                  Loading skills...
+                                  Link a skill
                                 </SelectItem>
-                              ) : filteredSkills.length > 0 ? (
-                                renderAddEventGroupedSkillItems()
-                              ) : (
-                                <SelectItem
-                                  value="__skills_empty"
-                                  disabled
-                                  className={fabCreationSelectItemClass(false)}
-                                >
-                                  No skills found
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
+                                {skillsLoading ? (
+                                  <SelectItem
+                                    value="__skills_loading"
+                                    disabled
+                                    className={fabCreationSelectItemClass(false)}
+                                  >
+                                    Loading skills...
+                                  </SelectItem>
+                                ) : filteredSkills.length > 0 ? (
+                                  renderAddEventGroupedSkillItems()
+                                ) : (
+                                  <SelectItem
+                                    value="__skills_empty"
+                                    disabled
+                                    className={fabCreationSelectItemClass(false)}
+                                  >
+                                    No skills found
+                                  </SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : null}
 
                     {!editTarget ? (
                       <div
@@ -30929,9 +31310,18 @@ export function Fab({
                               onValueChange={(value) => {
                                 void hapticSoftTick();
                                 setSaveError(null);
-                                setSelectedType(
-                                  value as UnifiedTaskSideSelectedType,
-                                );
+                                const nextType =
+                                  value as UnifiedTaskSideSelectedType;
+                                setSelectedType(nextType);
+                                if (nextType !== "AUTO" && nextType !== "TO_DO") {
+                                  setSelected(nextType);
+                                  setUnifiedEventType(
+                                    nextType === "HABIT" ? "HABIT" : "TASK",
+                                  );
+                                } else {
+                                  setSelected("TASK");
+                                  setUnifiedEventType("TASK");
+                                }
                               }}
                               triggerClassName={detailInlineSelectTriggerClass}
                               trigger={
@@ -30944,7 +31334,7 @@ export function Fab({
                               minContentWidth={180}
                             >
                               <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
-                                {UNIFIED_TASK_SIDE_TYPE_OPTIONS.map((option) => (
+                                {unifiedTaskSideTypeOptions.map((option) => (
                                   <SelectItem
                                     key={option.value}
                                     value={option.value}
