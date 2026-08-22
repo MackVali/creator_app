@@ -37,6 +37,7 @@ export type FabCreationRequest = {
   skillId?: string | null;
   originRect?: FabCreationOriginRect | null;
   preserveDrawer?: FabCreationPreservedDrawer | null;
+  courseContext?: FabCourseAuthoringContext | null;
 };
 
 export type FabCreationPreservedDrawer = {
@@ -45,11 +46,19 @@ export type FabCreationPreservedDrawer = {
   parentId?: string | null;
 };
 
+export type FabCourseAuthoringContext = {
+  courseId: string;
+  parentNodeId?: string | null;
+  parentNodeType?: "GOAL" | "PROJECT" | "TASK" | "HABIT" | null;
+  position?: number | null;
+};
+
 type FabCreationRequestOptions = {
   monumentId?: string | null;
   areaId?: string | null;
   skillId?: string | null;
   preserveDrawer?: FabCreationPreservedDrawer | null;
+  courseContext?: FabCourseAuthoringContext | null;
 };
 
 type FabOfferChooserType = "PRODUCT" | "SERVICE";
@@ -72,6 +81,7 @@ type FabCreationContextValue = {
     projectId?: string | null,
     goalId?: string | null,
     originRect?: FabCreationOriginRect | null,
+    options?: FabCreationRequestOptions,
   ) => void;
   requestHabitCreation: (
     originRect?: FabCreationOriginRect | null,
@@ -192,6 +202,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         campaignId: campaignId ?? null,
         originRect: originRect ?? null,
         preserveDrawer: options?.preserveDrawer ?? null,
+        courseContext: options?.courseContext ?? null,
       });
     },
     [],
@@ -211,6 +222,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         skillId: options?.skillId ?? null,
         originRect: originRect ?? null,
         preserveDrawer: options?.preserveDrawer ?? null,
+        courseContext: options?.courseContext ?? null,
       });
     },
     [],
@@ -221,6 +233,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       projectId?: string | null,
       goalId?: string | null,
       originRect?: FabCreationOriginRect | null,
+      options?: FabCreationRequestOptions,
     ) => {
       nextRequestIdRef.current += 1;
       setCreationRequest({
@@ -229,6 +242,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         goalId: goalId ?? null,
         projectId: projectId ?? null,
         originRect: originRect ?? null,
+        courseContext: options?.courseContext ?? null,
       });
     },
     [],
@@ -251,6 +265,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         skillId: defaults?.skillId ?? null,
         originRect: originRect ?? null,
         preserveDrawer: options?.preserveDrawer ?? null,
+        courseContext: options?.courseContext ?? null,
       });
     },
     [],

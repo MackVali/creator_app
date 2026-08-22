@@ -82,6 +82,10 @@ export type GlobalPriorityProjectCompleteHandler = (
   project: RoadmapPriorityProject
 ) => void | Promise<void>;
 
+export type GlobalPriorityGoalCompleteHandler = (
+  goal: GlobalPriorityRoadmapItem | RoadmapPriorityGoal
+) => void | Promise<void>;
+
 export type GlobalPriorityTaskCompleteHandler = (
   task: RoadmapPriorityTask,
   project: RoadmapPriorityProject
@@ -115,6 +119,8 @@ const PRIORITY_EDITOR_PROJECT_ROW_DRAGGING_CLASS =
   "bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.18),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.94)_0%,rgba(22,22,26,0.9)_42%,rgba(34,35,42,0.82)_100%)]";
 const PRIORITY_EDITOR_COMPLETED_NESTED_ROW_CLASS =
   "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]";
+const PRIORITY_EDITOR_COMPLETED_GOAL_ICON_CLASS =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_6px_12px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_4px_rgba(0,0,0,0.12)]";
 
 export function usePriorityRoadmapSensors() {
   return useSensors(
@@ -646,6 +652,7 @@ export function GlobalPriorityRoadmap({
   hideNestedChildCountLabels = false,
   onGoalOpen,
   onGoalLongPressEdit,
+  onGoalComplete,
   onProjectComplete,
   onTaskComplete,
   onDragEnd,
@@ -664,6 +671,7 @@ export function GlobalPriorityRoadmap({
   hideNestedChildCountLabels?: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit?: GlobalPriorityGoalLongPressEditHandler;
+  onGoalComplete?: GlobalPriorityGoalCompleteHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onDragEnd: (
@@ -904,6 +912,7 @@ export function GlobalPriorityRoadmap({
                       hideNestedChildCountLabels={hideNestedChildCountLabels}
                       onGoalOpen={onGoalOpen}
                       onGoalLongPressEdit={handleGoalLongPressEdit}
+                      onGoalComplete={onGoalComplete}
                       onProjectComplete={onProjectComplete}
                       onTaskComplete={onTaskComplete}
                       onCampaignGoalDragEnd={onCampaignGoalDragEnd}
@@ -964,6 +973,7 @@ function GlobalPriorityBucket({
   hideNestedChildCountLabels,
   onGoalOpen,
   onGoalLongPressEdit,
+  onGoalComplete,
   onProjectComplete,
   onTaskComplete,
   onCampaignGoalDragEnd,
@@ -985,6 +995,7 @@ function GlobalPriorityBucket({
   hideNestedChildCountLabels: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onGoalComplete?: GlobalPriorityGoalCompleteHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onCampaignGoalDragEnd: (
@@ -1046,6 +1057,7 @@ function GlobalPriorityBucket({
                 hideNestedChildCountLabels={hideNestedChildCountLabels}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
+                onGoalComplete={onGoalComplete}
                 onProjectComplete={onProjectComplete}
                 onTaskComplete={onTaskComplete}
                 onCampaignGoalDragEnd={onCampaignGoalDragEnd}
@@ -1081,6 +1093,7 @@ function SortableGlobalPriorityItem({
   hideNestedChildCountLabels,
   onGoalOpen,
   onGoalLongPressEdit,
+  onGoalComplete,
   onProjectComplete,
   onTaskComplete,
   onCampaignGoalDragEnd,
@@ -1103,6 +1116,7 @@ function SortableGlobalPriorityItem({
   hideNestedChildCountLabels: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onGoalComplete?: GlobalPriorityGoalCompleteHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onCampaignGoalDragEnd: (
@@ -1128,6 +1142,7 @@ function SortableGlobalPriorityItem({
   const globalRank = isCampaign ? null : getGlobalPriorityItemRank(item);
   const goalProjects = item.projects ?? [];
   const hasGoalProjects = goalProjects.length > 0;
+  const isGoalCompleted = !isCampaign && isRoadmapGoalCompleted(item);
   const campaignGoalBuckets = useMemo(
     () => groupCampaignGoalsByPriority(item.goals ?? []),
     [item.goals]
@@ -1276,6 +1291,25 @@ function SortableGlobalPriorityItem({
     }
     onGoalOpen(item.id);
   }, [appearance, item.id, onGoalOpen]);
+  const handleGoalDoubleTap = useCallback(() => {
+    if (
+      appearance !== "priorityEditor" ||
+      isDragging ||
+      isCampaign ||
+      isGoalCompleted ||
+      !onGoalComplete
+    ) {
+      return;
+    }
+    void onGoalComplete(item);
+  }, [
+    appearance,
+    isCampaign,
+    isDragging,
+    isGoalCompleted,
+    item,
+    onGoalComplete,
+  ]);
   const handleGoalToggle = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -1286,6 +1320,22 @@ function SortableGlobalPriorityItem({
   const goalLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
     handleGoalLongPress,
     isDragging || isCampaign
+  );
+  const goalDoubleTapHandlers = useRoadmapRowDoubleTap<HTMLButtonElement>(
+    handleGoalDoubleTap,
+    appearance !== "priorityEditor" ||
+      isDragging ||
+      isCampaign ||
+      isGoalCompleted ||
+      !onGoalComplete
+  );
+  const handleGoalButtonClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      goalDoubleTapHandlers.onClick(event);
+      if (event.defaultPrevented || !onGoalOpen) return;
+      handleGoalOpen();
+    },
+    [goalDoubleTapHandlers, handleGoalOpen, onGoalOpen]
   );
 
   return (
@@ -1355,11 +1405,18 @@ function SortableGlobalPriorityItem({
           <>
             <button
               type="button"
-              onClick={onGoalOpen ? handleGoalOpen : undefined}
+              onClick={handleGoalButtonClick}
               {...goalLongPressHandlers}
               className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                  appearance === "priorityEditor" && isGoalCompleted
+                    ? PRIORITY_EDITOR_COMPLETED_GOAL_ICON_CLASS
+                    : ""
+                )}
+              >
                 {identity}
               </span>
               <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
@@ -1440,6 +1497,7 @@ function SortableGlobalPriorityItem({
                   onProjectBlocked={onProjectBlocked}
                   appearance={appearance}
                   hideNestedChildCountLabels={hideNestedChildCountLabels}
+                  onGoalComplete={onGoalComplete}
                   onProjectComplete={onProjectComplete}
                   onTaskComplete={onTaskComplete}
                 />
@@ -1542,6 +1600,7 @@ function CampaignGoalPriorityBucket({
   onToggleGoal,
   onToggleProject,
   onProjectBlocked,
+  onGoalComplete,
   onProjectComplete,
   onTaskComplete,
   hideNestedChildCountLabels,
@@ -1558,6 +1617,7 @@ function CampaignGoalPriorityBucket({
   onToggleGoal: (goalRowKey: string) => void;
   onToggleProject: (projectRowKey: string) => void;
   onProjectBlocked: (projectRowKey: string) => void;
+  onGoalComplete?: GlobalPriorityGoalCompleteHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   hideNestedChildCountLabels: boolean;
@@ -1612,6 +1672,7 @@ function CampaignGoalPriorityBucket({
                 onProjectBlocked={onProjectBlocked}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
+                onGoalComplete={onGoalComplete}
                 onProjectComplete={onProjectComplete}
                 onTaskComplete={onTaskComplete}
                 hideNestedChildCountLabels={hideNestedChildCountLabels}
@@ -1637,6 +1698,7 @@ function GlobalCampaignGoalRow({
   onProjectBlocked,
   onGoalOpen,
   onGoalLongPressEdit,
+  onGoalComplete,
   onProjectComplete,
   onTaskComplete,
   hideNestedChildCountLabels,
@@ -1653,6 +1715,7 @@ function GlobalCampaignGoalRow({
   onProjectBlocked: (projectRowKey: string) => void;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onGoalComplete?: GlobalPriorityGoalCompleteHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   hideNestedChildCountLabels: boolean;
@@ -1678,6 +1741,7 @@ function GlobalCampaignGoalRow({
   const globalRank = getCampaignGoalRank(goal);
   const projects = goal.projects ?? [];
   const hasProjects = projects.length > 0;
+  const isGoalCompleted = isRoadmapGoalCompleted(goal);
   const dragHandleListeners = listeners as DragHandleListenerMap | undefined;
   const handleDragHandlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1716,6 +1780,17 @@ function GlobalCampaignGoalRow({
     }
     onGoalOpen(goal.id);
   }, [appearance, goal.id, onGoalOpen]);
+  const handleGoalDoubleTap = useCallback(() => {
+    if (
+      appearance !== "priorityEditor" ||
+      isDragging ||
+      isGoalCompleted ||
+      !onGoalComplete
+    ) {
+      return;
+    }
+    void onGoalComplete(goal);
+  }, [appearance, goal, isDragging, isGoalCompleted, onGoalComplete]);
   const handleToggle = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -1726,6 +1801,21 @@ function GlobalCampaignGoalRow({
   const goalLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
     handleGoalLongPress,
     isDragging
+  );
+  const goalDoubleTapHandlers = useRoadmapRowDoubleTap<HTMLButtonElement>(
+    handleGoalDoubleTap,
+    appearance !== "priorityEditor" ||
+      isDragging ||
+      isGoalCompleted ||
+      !onGoalComplete
+  );
+  const handleGoalButtonClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      goalDoubleTapHandlers.onClick(event);
+      if (event.defaultPrevented || !onGoalOpen) return;
+      handleGoalOpen();
+    },
+    [goalDoubleTapHandlers, handleGoalOpen, onGoalOpen]
   );
 
   return (
@@ -1768,12 +1858,19 @@ function GlobalCampaignGoalRow({
         {onGoalOpen ? (
           <button
             type="button"
-            onClick={handleGoalOpen}
+            onClick={handleGoalButtonClick}
             {...goalLongPressHandlers}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
           >
             {identity ? (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+              <span
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70",
+                  appearance === "priorityEditor" && isGoalCompleted
+                    ? PRIORITY_EDITOR_COMPLETED_GOAL_ICON_CLASS
+                    : ""
+                )}
+              >
                 {identity}
               </span>
             ) : null}
@@ -1789,11 +1886,19 @@ function GlobalCampaignGoalRow({
         ) : (
           <button
             type="button"
+            onClick={handleGoalButtonClick}
             {...goalLongPressHandlers}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
           >
             {identity ? (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+              <span
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70",
+                  appearance === "priorityEditor" && isGoalCompleted
+                    ? PRIORITY_EDITOR_COMPLETED_GOAL_ICON_CLASS
+                    : ""
+                )}
+              >
                 {identity}
               </span>
             ) : null}
@@ -2376,6 +2481,14 @@ function isRoadmapProjectCompleted(project: RoadmapPriorityProject) {
     normalizedStage === "COMPLETED" ||
     normalizedStage === "DONE"
   );
+}
+
+function isRoadmapGoalCompleted(
+  goal: (GlobalPriorityRoadmapItem | RoadmapPriorityGoal) & {
+    status?: string | null;
+  }
+) {
+  return goal.status?.trim().toUpperCase() === "COMPLETED";
 }
 
 function isRoadmapTaskCompleted(task: RoadmapPriorityTask) {

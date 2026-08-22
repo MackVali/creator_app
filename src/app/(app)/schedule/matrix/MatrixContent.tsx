@@ -38,10 +38,9 @@ import {
   type WheelEvent,
 } from "react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
-import {
-  RelatedRoutineCard,
-  type RelatedRoutineCardHabit,
-  type RelatedRoutineCardRoutine,
+import type {
+  RelatedRoutineCardHabit,
+  RelatedRoutineCardRoutine,
 } from "@/components/habits/RelatedRoutineCard";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
@@ -444,7 +443,7 @@ const MATRIX_TYPE_GROUP_DEFINITIONS: Record<
 const MATRIX_LIBRARY_GRID_CLASS =
   "-mx-3 grid grid-cols-3 items-stretch gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_SMALL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full auto-rows-[108px] grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] items-stretch gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid grid w-full max-w-full auto-rows-[minmax(108px,_auto)] grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] items-stretch gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_ROW_LIST_CLASS = "flex w-full min-w-0 flex-col gap-0.5 pt-0.5";
 const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
@@ -2646,6 +2645,8 @@ function MatrixSmallEventCard({
   className,
   status,
   completed = false,
+  expanded = false,
+  children,
 }: {
   glyph: string;
   title: string;
@@ -2654,10 +2655,18 @@ function MatrixSmallEventCard({
   className?: string | null;
   status?: string | null;
   completed?: boolean;
+  expanded?: boolean;
+  children?: ReactNode;
 }) {
+  const hasExpandedChildren = Boolean(children) && expanded;
+
   return (
     <div
-      className={cn(MATRIX_LIBRARY_SMALL_CARD_CLASS, className)}
+      className={cn(
+        MATRIX_LIBRARY_SMALL_CARD_CLASS,
+        className,
+        hasExpandedChildren ? "h-auto aspect-auto" : null
+      )}
       style={completed ? getMatrixCompleteShimmerStyle() : undefined}
     >
       {status && !completed ? (
@@ -2666,7 +2675,12 @@ function MatrixSmallEventCard({
         </span>
       ) : null}
 
-      <div className="relative z-[2] flex h-full min-h-0 flex-col items-center justify-center gap-1 text-center">
+      <div
+        className={cn(
+          "relative z-[2] flex flex-col items-center justify-center gap-1 text-center",
+          hasExpandedChildren ? "min-h-[108px]" : "h-full min-h-0"
+        )}
+      >
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-[10px] font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]">
           {glyph}
         </span>
@@ -2689,6 +2703,7 @@ function MatrixSmallEventCard({
           {meta}
         </div>
       </div>
+      {children}
     </div>
   );
 }
@@ -2704,6 +2719,7 @@ function MatrixEventRowCard({
   className,
   open = false,
   onOpenChange,
+  children,
 }: {
   glyph: string;
   title: string;
@@ -2715,6 +2731,7 @@ function MatrixEventRowCard({
   className?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  children?: ReactNode;
 }) {
   return (
     <div
@@ -2733,6 +2750,7 @@ function MatrixEventRowCard({
       }
       className={cn(
         "relative flex min-h-[56px] w-full min-w-0 select-none rounded-lg border px-3 py-1.5 text-left text-white transition-[filter,transform,border-color,box-shadow] duration-200 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+        children ? "flex-col" : null,
         completed
           ? MATRIX_ROW_NEXUS_COMPLETED_CARD_CLASS
           : className,
@@ -2790,6 +2808,7 @@ function MatrixEventRowCard({
           </div>
         </div>
       </div>
+      {children}
     </div>
   );
 }
@@ -2939,6 +2958,8 @@ function MatrixHabitCard({
   status,
   completed = false,
   density = "large",
+  expanded = false,
+  children,
 }: {
   glyph: string;
   title: string;
@@ -2950,6 +2971,8 @@ function MatrixHabitCard({
   status?: string | null;
   completed?: boolean;
   density?: MatrixCardDensity;
+  expanded?: boolean;
+  children?: ReactNode;
 }) {
   const isCompleted =
     completed || status?.trim().toLowerCase() === "completed";
@@ -3008,6 +3031,7 @@ function MatrixHabitCard({
         subtitle={displaySubtitle}
         status={status}
         completed={isCompleted}
+        expanded={expanded}
         className={cn(
           isCompleted
             ? ["emerald-completed-compact", "shimmer-border-complete"]
@@ -3027,9 +3051,13 @@ function MatrixHabitCard({
             {displayPill}
           </span>
         }
-      />
+      >
+        {children}
+      </MatrixSmallEventCard>
     );
   }
+
+  const hasExpandedChildren = Boolean(children) && expanded;
 
   return (
     <div
@@ -3050,7 +3078,8 @@ function MatrixHabitCard({
               getHabitCardTypeClass(habitType, isFitnessPlanManaged),
               getHabitCardBorderClass(habitType, isFitnessPlanManaged),
               overdue ? "related-habit-due-border" : null,
-            ]
+            ],
+        hasExpandedChildren ? "h-auto aspect-auto" : null
       )}
       style={isCompleted ? getMatrixCompleteShimmerStyle() : undefined}
     >
@@ -3070,7 +3099,8 @@ function MatrixHabitCard({
       <div
         className={cn(
           "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center",
-          isSmall ? "gap-1" : "gap-1.5"
+          isSmall ? "gap-1" : "gap-1.5",
+          hasExpandedChildren ? "min-h-[96px]" : null
         )}
       >
         <span
@@ -3121,6 +3151,7 @@ function MatrixHabitCard({
           </span>
         </div>
       </div>
+      {children}
     </div>
   );
 }
@@ -4626,6 +4657,45 @@ function MatrixRoutineProgressBar({
   );
 }
 
+function getMatrixRoutineHabitDisplayPill(habit: MatrixRoutineHabit) {
+  if (habit.completed) return "COMPLETE";
+
+  const dueLabel = habit.dueLabel?.trim();
+  if (dueLabel) return dueLabel;
+
+  if (habit.sourceInstance) {
+    return getMatrixScheduledHabitLabel(habit.sourceInstance.status);
+  }
+
+  return (
+    habit.sourceHabit.dueStatus?.label ??
+    (habit.sourceHabit.duration_minutes ? "DUE" : "DUE TODAY")
+  );
+}
+
+function getMatrixRoutineHabitDisplayStatus(habit: MatrixRoutineHabit) {
+  if (habit.completed) return "Completed";
+
+  const status = habit.sourceInstance?.status;
+  if (status && status !== "scheduled") {
+    return status.replaceAll("_", " ");
+  }
+
+  return null;
+}
+
+function getMatrixRoutineHabitSubtitle(habit: MatrixRoutineHabit) {
+  const scheduledRoutineAssignment = habit.sourceInstance
+    ? readFitnessPlanScheduleRoutineAssignment(habit.sourceInstance.metadata)
+    : null;
+
+  return (
+    scheduledRoutineAssignment?.fitnessRoutineTitle?.trim() ||
+    habit.sourceHabit.fitnessPlanRoutineAssignment?.fitnessRoutineTitle?.trim() ||
+    null
+  );
+}
+
 function MatrixRoutineCard({
   routine,
   density,
@@ -4645,6 +4715,15 @@ function MatrixRoutineCard({
 }) {
   const routineCardRef = useRef<HTMLDivElement | null>(null);
   const [areCompactDetailsOpen, setAreCompactDetailsOpen] = useState(false);
+  const routineHabitTouchStartRef = useRef<{
+    habitId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const routineHabitLastTapRef = useRef<{
+    habitId: string;
+    time: number;
+  } | null>(null);
   const habitCount = Math.max(0, routine.dueHabitCount);
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
   const routineName = routine.name?.trim() || "Routine";
@@ -4652,19 +4731,246 @@ function MatrixRoutineCard({
   const completed = routine.completed;
   const shouldUseCompactDetails =
     density === "todo" && presentationMode === "checkbox-only";
+  const hasRoutineDetails = routine.habits.length > 0;
   const routineProgress = getMatrixRoutineProgress(routine.habits);
   const routineProgressBar =
     !completed && routineProgress.total > 0 ? (
       <MatrixRoutineProgressBar progress={routineProgress} density={density} />
     ) : null;
-  const getRoutineXpSource = useCallback((): MatrixXpSourceCapture => {
-    const rect = getUsableMatrixXpRect(routineCardRef.current);
-    if (rect) {
-      dispatchCreatorXpBurstStatus("XP: matrix source card");
-      return { rect, origin: "card" };
-    }
-    return { rect: null, origin: undefined };
-  }, []);
+  const toggleRoutineDetails = useCallback(() => {
+    if (!hasRoutineDetails) return;
+    setAreCompactDetailsOpen((current) => !current);
+  }, [hasRoutineDetails]);
+  const handleRoutineCardKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleRoutineDetails();
+    },
+    [toggleRoutineDetails]
+  );
+  const completeRoutineHabit = useCallback(
+    (
+      habit: MatrixRoutineHabit,
+      source?: MatrixXpSourceCapture | null
+    ) => {
+      if (habit.pending) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      onCompleteHabit(habit.id, Boolean(habit.completed), source);
+    },
+    [onCompleteHabit]
+  );
+  const handleRoutineHabitDoubleClick = useCallback(
+    (
+      habit: MatrixRoutineHabit,
+      event: MouseEvent<HTMLDivElement>
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      completeRoutineHabit(
+        habit,
+        getMatrixXpSourceFromInteraction(event, {
+          clientX: event.clientX,
+          clientY: event.clientY,
+        })
+      );
+    },
+    [completeRoutineHabit]
+  );
+  const handleRoutineHabitKeyDown = useCallback(
+    (
+      habit: MatrixRoutineHabit,
+      event: KeyboardEvent<HTMLDivElement>
+    ) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      completeRoutineHabit(habit, {
+        rect: getUsableMatrixXpRect(event.currentTarget),
+        origin: "card",
+      });
+    },
+    [completeRoutineHabit]
+  );
+  const handleRoutineHabitTouchStart = useCallback(
+    (habit: MatrixRoutineHabit, event: TouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      if (habit.pending || event.touches.length !== 1) {
+        routineHabitTouchStartRef.current = null;
+        return;
+      }
+
+      const touch = event.touches[0];
+      routineHabitTouchStartRef.current = {
+        habitId: habit.id,
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+    },
+    []
+  );
+  const handleRoutineHabitTouchEnd = useCallback(
+    (habit: MatrixRoutineHabit, event: TouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      const start = routineHabitTouchStartRef.current;
+      routineHabitTouchStartRef.current = null;
+      if (habit.pending || !start || start.habitId !== habit.id) return;
+      if (event.changedTouches.length !== 1) return;
+
+      const touch = event.changedTouches[0];
+      const deltaX = Math.abs(touch.clientX - start.x);
+      const deltaY = Math.abs(touch.clientY - start.y);
+      if (deltaX > 12 || deltaY > 12) return;
+
+      const now = Date.now();
+      const lastTap = routineHabitLastTapRef.current;
+      if (
+        lastTap?.habitId === habit.id &&
+        now - lastTap.time <= SCHEDULED_EVENT_DOUBLE_TAP_MS
+      ) {
+        routineHabitLastTapRef.current = null;
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        completeRoutineHabit(
+          habit,
+          getMatrixXpSourceFromInteraction(event, {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+          })
+        );
+        return;
+      }
+
+      routineHabitLastTapRef.current = {
+        habitId: habit.id,
+        time: now,
+      };
+    },
+    [completeRoutineHabit]
+  );
+  const routineDetails = hasRoutineDetails ? (
+    <AnimatePresence initial={false}>
+      {areCompactDetailsOpen ? (
+        <motion.div
+          key="routine-inline-details"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden"
+        >
+          <div
+            className={cn(
+              "flex flex-col",
+              density === "todo"
+                ? todoRowDensity === "compact"
+                  ? "gap-0.5 pt-0.5 pl-5"
+                  : "gap-0.5 pt-1 pl-6"
+                : density === "row"
+                  ? "mt-1 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  : "mt-1.5 gap-1.5 rounded-2xl border border-white/[0.08] bg-black/20 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+            )}
+          >
+            {density === "todo"
+              ? routine.habits.map((habit) => (
+                  <MatrixTodoRow
+                    key={habit.id}
+                    title={habit.name}
+                    glyph={habit.skillIcon || routineGlyph}
+                    completed={Boolean(habit.completed)}
+                    disabled={Boolean(habit.pending)}
+                    density={todoRowDensity}
+                    meta={habit.completed ? "Complete" : habit.dueLabel ?? null}
+                    onToggle={(source) => {
+                      onCompleteHabit(
+                        habit.id,
+                        Boolean(habit.completed),
+                        source
+                      );
+                    }}
+                  />
+                ))
+              : routine.habits.map((habit) => {
+                  const sourceHabit = habit.sourceHabit;
+                  const habitCompleted = Boolean(habit.completed);
+                  const isFitnessPlanRoutineHabit =
+                    (habit.sourceInstance
+                      ? isFitnessPlanScheduleMetadata(
+                          habit.sourceInstance.metadata
+                        )
+                      : false) || isFitnessPlanManagedHabit(sourceHabit);
+                  const disabled = Boolean(habit.pending);
+
+                  return (
+                    <div
+                      key={habit.id}
+                      role="button"
+                      tabIndex={disabled ? undefined : 0}
+                      aria-disabled={disabled || undefined}
+                      data-matrix-routine-details-action="true"
+                      data-creator-xp-source="matrix-card"
+                      data-creator-xp-kind="habit"
+                      data-creator-xp-source-id={
+                        habit.sourceInstance?.id ?? sourceHabit.id
+                      }
+                      data-matrix-entity-id={sourceHabit.id}
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onPointerUp={(event) => event.stopPropagation()}
+                      onPointerCancel={(event) => event.stopPropagation()}
+                      onTouchStart={(event) =>
+                        handleRoutineHabitTouchStart(habit, event)
+                      }
+                      onTouchEnd={(event) =>
+                        handleRoutineHabitTouchEnd(habit, event)
+                      }
+                      onDoubleClick={(event) =>
+                        handleRoutineHabitDoubleClick(habit, event)
+                      }
+                      onKeyDown={(event) =>
+                        handleRoutineHabitKeyDown(habit, event)
+                      }
+                      className={cn(
+                        "min-w-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                        disabled ? "opacity-70" : "cursor-pointer"
+                      )}
+                    >
+                      <MatrixHabitCard
+                        glyph={
+                          sourceHabit.glyph ||
+                          habit.skillIcon ||
+                          getHabitFallbackGlyph(sourceHabit.habit_type)
+                        }
+                        title={sourceHabit.name}
+                        subtitle={
+                          isFitnessPlanRoutineHabit
+                            ? getMatrixRoutineHabitSubtitle(habit)
+                            : null
+                        }
+                        pill={getMatrixRoutineHabitDisplayPill(habit)}
+                        habitType={sourceHabit.habit_type}
+                        isFitnessPlanManaged={isFitnessPlanRoutineHabit}
+                        overdue={
+                          habitCompleted
+                            ? false
+                            : (sourceHabit.dueStatus?.isOverdue ?? false)
+                        }
+                        status={getMatrixRoutineHabitDisplayStatus(habit)}
+                        completed={habitCompleted}
+                        density={density}
+                      />
+                    </div>
+                  );
+                })}
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  ) : null;
 
   if (density === "todo") {
     return (
@@ -4674,6 +4980,7 @@ function MatrixRoutineCard({
         data-creator-xp-kind="habit"
         data-creator-xp-source-id={routine.id}
         data-matrix-entity-id={routine.id}
+        data-matrix-routine-expanded={areCompactDetailsOpen ? "true" : undefined}
         className={cn(
           "matrix-event-card-shell group/routine-card relative min-w-0",
           shouldUseCompactDetails
@@ -4703,7 +5010,7 @@ function MatrixRoutineCard({
             );
           }}
         />
-        {shouldUseCompactDetails && routine.habits.length > 0 ? (
+        {shouldUseCompactDetails && hasRoutineDetails ? (
           <button
             type="button"
             aria-label={
@@ -4716,7 +5023,7 @@ function MatrixRoutineCard({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              setAreCompactDetailsOpen((current) => !current);
+              toggleRoutineDetails();
             }}
             onPointerDown={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
@@ -4771,69 +5078,7 @@ function MatrixRoutineCard({
             </div>
           )
         ) : null}
-        {shouldUseCompactDetails ? (
-          <AnimatePresence initial={false}>
-            {areCompactDetailsOpen ? (
-              <motion.div
-                key="routine-compact-details"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden"
-              >
-                <div
-                  className={cn(
-                    "flex flex-col gap-0.5",
-                    todoRowDensity === "compact" ? "pt-0.5 pl-5" : "pt-1 pl-6"
-                  )}
-                >
-                  {routine.habits.map((habit) => (
-                    <MatrixTodoRow
-                      key={habit.id}
-                      title={habit.name}
-                      glyph={habit.skillIcon || routineGlyph}
-                      completed={Boolean(habit.completed)}
-                      disabled={Boolean(habit.pending)}
-                      density={todoRowDensity}
-                      meta={
-                        habit.completed ? "Complete" : habit.dueLabel ?? null
-                      }
-                      onToggle={(source) => {
-                        onCompleteHabit(
-                          habit.id,
-                          Boolean(habit.completed),
-                          source
-                        );
-                      }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        ) : (
-          <div
-            className={cn(
-              "absolute inset-y-0 right-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full",
-              todoRowDensity === "compact" ? "left-9" : "left-10"
-            )}
-          >
-            <RelatedRoutineCard
-              routine={routine}
-              density="small"
-              fallbackIcon={routineGlyph}
-              onHabitCompletionToggle={(habitId) => {
-                const habit = routine.habits.find((item) => item.id === habitId);
-                onCompleteHabit(
-                  habitId,
-                  Boolean(habit?.completed),
-                  getRoutineXpSource()
-                );
-              }}
-            />
-          </div>
-        )}
+        {routineDetails}
       </div>
     );
   }
@@ -4843,102 +5088,95 @@ function MatrixRoutineCard({
       <div className="min-w-0">
         <div
           ref={routineCardRef}
-          className="matrix-event-card-shell group/routine-card relative min-w-0 cursor-pointer"
+          role={hasRoutineDetails ? "button" : undefined}
+          tabIndex={hasRoutineDetails ? 0 : undefined}
+          aria-expanded={hasRoutineDetails ? areCompactDetailsOpen : undefined}
+          onClick={hasRoutineDetails ? toggleRoutineDetails : undefined}
+          onKeyDown={hasRoutineDetails ? handleRoutineCardKeyDown : undefined}
+          className={cn(
+            "matrix-event-card-shell group/routine-card relative min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+            hasRoutineDetails ? "cursor-pointer" : null
+          )}
           data-creator-xp-source="matrix-card"
           data-creator-xp-kind="habit"
           data-creator-xp-source-id={routine.id}
           data-matrix-entity-id={routine.id}
+          data-matrix-routine-expanded={areCompactDetailsOpen ? "true" : undefined}
         >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
-          >
-            <MatrixEventRowCard
-              glyph={routineGlyph}
-              title={routineName}
-              completed={completed}
-              className={getHabitRowTypeClass(null)}
-              meta={
-                <span className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={cn(
-                      "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
-                      completed
-                        ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                        : "border-white/10 bg-white/[0.06] text-white/65"
-                    )}
-                  >
-                    {completed ? "COMPLETE" : habitCountLabel}
-                  </span>
-                  {routineProgressBar}
+          <MatrixEventRowCard
+            glyph={routineGlyph}
+            title={routineName}
+            completed={completed}
+            className={cn(
+              getHabitRowTypeClass(null),
+              "transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+            )}
+            meta={
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+                    completed
+                      ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                      : "border-white/10 bg-white/[0.06] text-white/65"
+                  )}
+                >
+                  {completed ? "COMPLETE" : habitCountLabel}
                 </span>
-              }
-            />
-          </div>
-          <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
-            <RelatedRoutineCard
-              routine={routine}
-              density="small"
-              fallbackIcon={routineGlyph}
-              onHabitCompletionToggle={(habitId) => {
-                const habit = routine.habits.find((item) => item.id === habitId);
-                onCompleteHabit(
-                  habitId,
-                  Boolean(habit?.completed),
-                  getRoutineXpSource()
-                );
-              }}
-            />
-          </div>
+                {routineProgressBar}
+              </span>
+            }
+          >
+            {routineDetails}
+          </MatrixEventRowCard>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full min-w-0">
+    <div className="min-w-0">
       <div
         ref={routineCardRef}
-        className="matrix-event-card-shell group/routine-card relative h-full cursor-pointer"
+        role={hasRoutineDetails ? "button" : undefined}
+        tabIndex={hasRoutineDetails ? 0 : undefined}
+        aria-expanded={hasRoutineDetails ? areCompactDetailsOpen : undefined}
+        onClick={hasRoutineDetails ? toggleRoutineDetails : undefined}
+        onKeyDown={hasRoutineDetails ? handleRoutineCardKeyDown : undefined}
+        className={cn(
+          "matrix-event-card-shell group/routine-card relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+          hasRoutineDetails ? "cursor-pointer" : null
+        )}
         data-creator-xp-source="matrix-card"
         data-creator-xp-kind="habit"
         data-creator-xp-source-id={routine.id}
         data-matrix-entity-id={routine.id}
+        data-matrix-routine-expanded={areCompactDetailsOpen ? "true" : undefined}
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none relative h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+        <MatrixHabitCard
+          glyph={routineGlyph}
+          title={routineName}
+          pill={completed ? "COMPLETE" : habitCountLabel}
+          habitType={null}
+          overdue={false}
+          completed={completed}
+          density={density}
+          expanded={areCompactDetailsOpen}
         >
-          <MatrixHabitCard
-            glyph={routineGlyph}
-            title={routineName}
-            pill={completed ? "COMPLETE" : habitCountLabel}
-            habitType={null}
-            overdue={false}
-            completed={completed}
-            density={density}
-          />
           {routineProgressBar ? (
-            <div className="absolute inset-x-3 bottom-2 z-[5]">
+            <div
+              className={cn(
+                "pointer-events-none z-[5]",
+                areCompactDetailsOpen
+                  ? "relative mt-2"
+                  : "absolute inset-x-3 bottom-2"
+              )}
+            >
               {routineProgressBar}
             </div>
           ) : null}
-        </div>
-        <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!aspect-auto [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
-          <RelatedRoutineCard
-            routine={routine}
-            density={density}
-            fallbackIcon={routineGlyph}
-            onHabitCompletionToggle={(habitId) => {
-              const habit = routine.habits.find((item) => item.id === habitId);
-              onCompleteHabit(
-                habitId,
-                Boolean(habit?.completed),
-                getRoutineXpSource()
-              );
-            }}
-          />
-        </div>
+          {routineDetails}
+        </MatrixHabitCard>
       </div>
     </div>
   );

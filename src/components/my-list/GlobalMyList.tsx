@@ -12,12 +12,14 @@ import {
 } from "@/components/my-list/MyListSheet";
 import {
   hapticComplete,
+  hapticErrorPattern,
   hapticPress,
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
 import { getCatsForUser } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
   deleteStandaloneMyListTask,
   fetchReadyTasks,
@@ -29,7 +31,12 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import { normalizePriority } from "@/app/(app)/schedule/priorities/utils";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import {
+  buildCreatorXpSurgePayload,
+  type CreatorXpSurgePayload,
+} from "@/components/xp/CreatorXpSurgeHud";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import {
   MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT,
   readPinnedSourceItemIds,
@@ -67,6 +74,25 @@ type MyListXpReverseResult = {
 
 const MY_LIST_TASK_XP_AMOUNT = 1;
 
+type MyListGoalCompletionUpdateQuery = {
+  update(values: { status: "COMPLETED"; active: false }): {
+    eq(column: "id", value: string): {
+      eq(
+        column: "user_id",
+        value: string
+      ): Promise<{ error: { message?: string } | null }>;
+    };
+  };
+};
+
+type MyListGoalXpAwardResponse = {
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: CreatorXpSurgePayload | null;
+  reason?: string | null;
+};
+
 type MyListHierarchyGoalRow = {
   id: string;
   monument_id?: string | null;
@@ -89,6 +115,62 @@ function readCleanId(value: unknown): string | null {
 
 function buildMyListTaskOccurrenceStem(taskId: string) {
   return `my_list:task:${taskId}`;
+}
+
+function isProjectCompletionStage(stage: string | null | undefined) {
+  return stage?.toString().trim().toUpperCase() === "RELEASE";
+}
+
+function isMyListProjectComplete(project: MyListPinnedSourceRow) {
+  const normalizedStage = project.stage?.trim().toUpperCase();
+  return (
+    Boolean(project.completedAt) ||
+    normalizedStage === "RELEASE" ||
+    normalizedStage === "COMPLETE" ||
+    normalizedStage === "COMPLETED" ||
+    normalizedStage === "DONE"
+  );
+}
+
+function isMyListTaskComplete(task: MyListPinnedSourceRow) {
+  return Boolean(task.completedAt) || task.stage?.trim().toUpperCase() === "PERFECT";
+}
+
+function isMyListGoalComplete(goal: MyListPinnedGoalRow) {
+  return normalizeGoalStatus(goal.stage, goal.active) === "COMPLETED";
+}
+
+function isMyListGoalReadyToComplete(goal: MyListPinnedGoalRow) {
+  return (
+    goal.projects.every(isMyListProjectComplete) &&
+    (goal.tasks ?? []).every(isMyListTaskComplete)
+  );
+}
+
+function collectMyListGoalCompletionSkillIds(goal: MyListPinnedGoalRow) {
+  const skillIds = new Set<string>();
+
+  for (const descendant of [...goal.projects, ...(goal.tasks ?? [])]) {
+    for (const skillId of descendant.skillIds ?? []) {
+      if (typeof skillId === "string" && skillId.trim()) {
+        skillIds.add(skillId.trim());
+      }
+    }
+    if (typeof descendant.skillId === "string" && descendant.skillId.trim()) {
+      skillIds.add(descendant.skillId.trim());
+    }
+  }
+
+  return Array.from(skillIds);
+}
+
+function readRealProjectCompletedAt(project: {
+  completed_at?: string | null;
+  stage?: string | null;
+}) {
+  return typeof project.completed_at === "string" && project.completed_at.trim()
+    ? project.completed_at
+    : null;
 }
 
 async function reverseMyListTaskXp(taskId: string) {
@@ -160,6 +242,55 @@ async function awardMyListTaskXp({
   return result;
 }
 
+async function awardMyListGoalCompletion(
+  goal: MyListPinnedGoalRow,
+  completedAt: string
+): Promise<MyListGoalXpAwardResponse | null> {
+  const body: Record<string, unknown> = {
+    kind: "goal",
+    awardKeyBase: `goal:${goal.id}:goal`,
+    reversible: {
+      occurrenceStem: `goal:${goal.id}:goal`,
+    },
+    completion: {
+      action: "complete",
+      sourceType: "GOAL",
+      sourceId: goal.id,
+      completedAt,
+      wasScheduled: false,
+    },
+  };
+
+  const skillIds = collectMyListGoalCompletionSkillIds(goal);
+  if (skillIds.length > 0) {
+    body.skillIds = skillIds;
+  }
+  if (goal.monumentId) {
+    body.monumentIds = [goal.monumentId];
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.error(
+        "Failed to award XP for My List Goal completion",
+        await response.text()
+      );
+      return null;
+    }
+    return (await response.json().catch(() => null)) as
+      | MyListGoalXpAwardResponse
+      | null;
+  } catch (error) {
+    console.error("Failed to award XP for My List Goal completion", error);
+    return null;
+  }
+}
+
 export function GlobalMyList({
   useFullExpandedHeight,
   enableScheduleTimelineDrag,
@@ -193,6 +324,7 @@ export function GlobalMyList({
   );
   const [myListReloadKey, setMyListReloadKey] = useState(0);
   const previousStageRef = useRef<Map<string, TaskLite["stage"]>>(new Map());
+  const completingPinnedGoalIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!ready || !user?.id) {
@@ -271,9 +403,10 @@ export function GlobalMyList({
             Boolean(entry[0] && entry[1])
           )
       );
-      const projectSelect = "id, name, priority, energy, stage, goal_id";
+      const projectSelect =
+        "id, name, priority, energy, stage, goal_id, completed_at";
       const taskSelect =
-        "id, name, priority, energy, stage, goal_id, project_id, skill_id, skill:skills(icon, monument_id)";
+        "id, name, priority, energy, stage, completed_at, goal_id, project_id, skill_id, skill:skills(icon, monument_id)";
       const habitSelect =
         "id, name, energy, habit_type, goal_id, skill_id, skill:skills(icon, monument_id)";
       const emptyResult = { data: [], error: null };
@@ -290,7 +423,7 @@ export function GlobalMyList({
           ? supabase
               .from("goals")
               .select(
-                "id, name, emoji, priority, energy, status, monument_id, roadmap_id, monument:monuments(id, title, emoji)"
+                "id, name, emoji, priority, energy, status, active, monument_id, roadmap_id, monument:monuments(id, title, emoji)"
               )
               .eq("user_id", user.id)
               .in("id", pinnedIds.GOAL)
@@ -355,6 +488,7 @@ export function GlobalMyList({
         priority: string | null;
         energy: string | null;
         stage: string | null;
+        completed_at?: string | null;
         goal_id?: string | null;
       };
       type TaskSourceRecord = {
@@ -363,6 +497,7 @@ export function GlobalMyList({
         priority: string | null;
         energy: string | null;
         stage: string | null;
+        completed_at?: string | null;
         goal_id?: string | null;
         project_id?: string | null;
         skill_id?: string | null;
@@ -403,6 +538,7 @@ export function GlobalMyList({
         .map((project) => project.id)
         .filter((projectId): projectId is string => Boolean(projectId));
       const projectIconById = new Map<string, string>();
+      const projectSkillIdsById = new Map<string, string[]>();
       if (projectIds.length > 0) {
         const { data: projectSkillRowsData, error: projectSkillRowsError } =
           await supabase
@@ -417,10 +553,20 @@ export function GlobalMyList({
         }[]).forEach((row) => {
           const projectId =
             typeof row.project_id === "string" ? row.project_id : null;
-          if (!projectId || projectIconById.has(projectId)) return;
+          if (!projectId) return;
 
-          const icon = row.skill_id
-            ? skillIconById.get(row.skill_id) ?? null
+          const skillId = readCleanId(row.skill_id);
+          if (skillId) {
+            const currentSkillIds = projectSkillIdsById.get(projectId) ?? [];
+            if (!currentSkillIds.includes(skillId)) {
+              projectSkillIdsById.set(projectId, [...currentSkillIds, skillId]);
+            }
+          }
+
+          if (projectIconById.has(projectId)) return;
+
+          const icon = skillId
+            ? skillIconById.get(skillId) ?? null
             : null;
           if (icon) {
             projectIconById.set(projectId, icon);
@@ -455,15 +601,18 @@ export function GlobalMyList({
         options?: {
           isPinned?: boolean;
           rowKind?: MyListPinnedSourceRow["rowKind"];
+          useRealProjectCompletion?: boolean;
         }
       ): MyListPinnedSourceRow => {
         const monumentId = resolveProjectMonumentId(project.id, project.goal_id);
+        const realCompletedAt = readRealProjectCompletedAt(project);
         return {
           id: project.id,
           sourceType: "PROJECT" as const,
           rowKind: options?.rowKind,
           title: project.name ?? "Untitled Project",
           icon: projectIconById.get(project.id) ?? null,
+          skillIds: projectSkillIdsById.get(project.id) ?? [],
           skillIcon: projectIconById.get(project.id) ?? null,
           monumentId,
           ...resolveMonumentMetadata(monumentId),
@@ -474,7 +623,9 @@ export function GlobalMyList({
           stage: project.stage,
           goalId: project.goal_id ?? null,
           isPinned: options?.isPinned ?? pinnedIds.PROJECT.includes(project.id),
-          completedAt: completionByKey.get(`PROJECT:${project.id}`) ?? null,
+          completedAt: options?.useRealProjectCompletion
+            ? realCompletedAt
+            : completionByKey.get(`PROJECT:${project.id}`) ?? null,
         };
       };
 
@@ -483,6 +634,7 @@ export function GlobalMyList({
         options?: {
           isPinned?: boolean;
           rowKind?: MyListPinnedSourceRow["rowKind"];
+          useRealTaskCompletion?: boolean;
         }
       ): MyListPinnedSourceRow => {
         const skill = Array.isArray(task.skill) ? task.skill[0] : task.skill;
@@ -512,7 +664,9 @@ export function GlobalMyList({
           energy: task.energy,
           stage: task.stage,
           isPinned: options?.isPinned ?? pinnedIds.TASK.includes(task.id),
-          completedAt: completionByKey.get(`TASK:${task.id}`) ?? null,
+          completedAt: options?.useRealTaskCompletion
+            ? readCleanId(task.completed_at)
+            : completionByKey.get(`TASK:${task.id}`) ?? null,
         };
       };
 
@@ -559,6 +713,7 @@ export function GlobalMyList({
           priority: string | null;
           energy: string | null;
           status: string | null;
+          active?: boolean | null;
           monument_id?: string | null;
           roadmap_id?: string | null;
           monument?:
@@ -585,13 +740,16 @@ export function GlobalMyList({
             dayBucketId: metadataByKey.get(`GOAL:${goal.id}`)?.dayBucketId ?? null,
             energy: goal.energy,
             stage: goal.status,
-            completedAt: completionByKey.get(`GOAL:${goal.id}`) ?? null,
+            active: goal.active ?? null,
+            completedAt: null,
             projects: goalProjectRows
               .filter((project) => project.goal_id === goal.id)
-              .map((project) => buildProjectRow(project)),
+              .map((project) =>
+                buildProjectRow(project, { useRealProjectCompletion: true })
+              ),
             tasks: goalTaskRows
               .filter((task) => task.goal_id === goal.id)
-              .map((task) => buildTaskRow(task)),
+              .map((task) => buildTaskRow(task, { useRealTaskCompletion: true })),
             habits: goalHabitRows
               .filter((habit) => habit.goal_id === goal.id)
               .map((habit) => buildHabitRow(habit)),
@@ -1025,6 +1183,269 @@ export function GlobalMyList({
     [user?.id]
   );
 
+  const handleTogglePinnedGoalProjectCompletion = useCallback(
+    async (
+      row: MyListPinnedSourceRow,
+      checked: boolean,
+      sourceRect: CreatorXpBurstRect | null
+    ) => {
+      if (!user?.id || row.sourceType !== "PROJECT") return false;
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return false;
+
+      const previousStage = row.stage ?? null;
+      const previousCompletedAt = row.completedAt ?? null;
+      const nextCompletedAt = checked ? new Date().toISOString() : null;
+      const nextStage = checked
+        ? "RELEASE"
+        : isProjectCompletionStage(previousStage)
+          ? "BUILD"
+          : previousStage ?? "BUILD";
+
+      try {
+        const [
+          projectSkillRowsResult,
+          taskSkillRowsResult,
+        ] = await Promise.all([
+          supabase
+            .from("project_skills")
+            .select("skill_id")
+            .eq("project_id", row.id),
+          supabase
+            .from("tasks")
+            .select("skill_id, stage, completed_at")
+            .eq("user_id", user.id)
+            .eq("project_id", row.id),
+        ]);
+
+        if (projectSkillRowsResult.error) throw projectSkillRowsResult.error;
+        if (taskSkillRowsResult.error) throw taskSkillRowsResult.error;
+
+        const taskRows = (taskSkillRowsResult.data ?? []) as {
+          skill_id?: string | null;
+          stage?: string | null;
+          completed_at?: string | null;
+        }[];
+
+        if (
+          checked &&
+          taskRows.some(
+            (task) =>
+              task.stage?.toString().toUpperCase() !== "PERFECT" &&
+              !task.completed_at
+          )
+        ) {
+          void hapticWarningPattern();
+          return false;
+        }
+
+        setPinnedGoalRows((currentRows) =>
+          currentRows.map((goal) => ({
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.sourceType === "PROJECT" && project.id === row.id
+                ? {
+                    ...project,
+                    stage: nextStage,
+                    completedAt: nextCompletedAt,
+                  }
+                : project
+            ),
+          }))
+        );
+
+        const projectSkillIds = (
+          (projectSkillRowsResult.data ?? []) as { skill_id?: string | null }[]
+        )
+          .map((skill) => skill.skill_id)
+          .filter((skillId): skillId is string =>
+            Boolean(skillId && skillId.trim())
+          );
+        const taskSkillIds = taskRows.map((task) => task.skill_id);
+
+        const result = await recordProjectCompletion(
+          {
+            projectId: row.id,
+            projectSkillIds,
+            taskSkillIds,
+            xpSurge: {
+              sourceTitle: row.title,
+              sourceIcon: row.icon ?? row.skillIcon ?? null,
+            },
+            xpSourceRect: checked ? sourceRect : null,
+            xpSourceOrigin: checked && sourceRect ? "card" : undefined,
+          },
+          checked ? "complete" : "undo"
+        );
+
+        if (checked && !result.completedAt) {
+          throw new Error("Project completion failed");
+        }
+
+        if (!checked && !result.ok) {
+          console.warn(
+            "Pinned Goal Project undo completed, but XP reversal did not succeed",
+            {
+              projectId: row.id,
+              scheduleInstanceId: result.scheduleInstanceId,
+            }
+          );
+        }
+
+        const persistedCompletedAt = checked ? result.completedAt : null;
+        setPinnedGoalRows((currentRows) =>
+          currentRows.map((goal) => ({
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.sourceType === "PROJECT" && project.id === row.id
+                ? {
+                    ...project,
+                    stage: checked ? "RELEASE" : nextStage,
+                    completedAt: persistedCompletedAt,
+                  }
+                : project
+            ),
+          }))
+        );
+
+        try {
+          const { error: stageUpdateError } = await supabase
+            .from("projects")
+            .update({
+              stage: nextStage,
+              updated_at: new Date().toISOString(),
+            } as never)
+            .eq("id", row.id)
+            .eq("user_id", user.id);
+          if (stageUpdateError) throw stageUpdateError;
+        } catch (stageSyncError) {
+          console.error(
+            "Failed to synchronize pinned Goal Project stage",
+            stageSyncError
+          );
+          void hapticWarningPattern();
+          return true;
+        }
+
+        if (checked) void hapticComplete();
+        return true;
+      } catch (error) {
+        console.error("Failed to toggle pinned Goal Project completion", error);
+        setPinnedGoalRows((currentRows) =>
+          currentRows.map((goal) => ({
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.sourceType === "PROJECT" && project.id === row.id
+                ? {
+                    ...project,
+                    stage: previousStage,
+                    completedAt: previousCompletedAt,
+                  }
+                : project
+            ),
+          }))
+        );
+        void hapticWarningPattern();
+        return false;
+      }
+    },
+    [user?.id]
+  );
+
+  const handleCompletePinnedGoal = useCallback(
+    async (goal: MyListPinnedGoalRow) => {
+      if (!user?.id) return false;
+      if (
+        completingPinnedGoalIdsRef.current.has(goal.id) ||
+        isMyListGoalComplete(goal)
+      ) {
+        return false;
+      }
+
+      if (!isMyListGoalReadyToComplete(goal)) {
+        void hapticErrorPattern();
+        return false;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        void hapticWarningPattern();
+        return false;
+      }
+
+      const completedAt = new Date().toISOString();
+      completingPinnedGoalIdsRef.current.add(goal.id);
+
+      try {
+        const goalCompletionUpdate = supabase.from(
+          "goals"
+        ) as unknown as MyListGoalCompletionUpdateQuery;
+        const { error: updateError } = await goalCompletionUpdate
+          .update({ status: "COMPLETED", active: false })
+          .eq("id", goal.id)
+          .eq("user_id", user.id);
+
+        if (updateError) throw updateError;
+
+        setPinnedGoalRows((currentRows) =>
+          currentRows.map((currentGoal) =>
+            currentGoal.id === goal.id
+              ? { ...currentGoal, active: false, stage: "COMPLETED" }
+              : currentGoal
+          )
+        );
+        void hapticComplete();
+
+        const awardPayload = await awardMyListGoalCompletion(goal, completedAt);
+        const didAwardXp = Boolean(
+          awardPayload?.success &&
+            !awardPayload.deduped &&
+            (awardPayload.inserted ?? 0) > 0
+        );
+        if (didAwardXp) {
+          const fallbackGoalSurge = buildCreatorXpSurgePayload({
+            sourceType: "GOAL",
+            monumentTitle: goal.monumentName,
+            sourceTitle: goal.title,
+            sourceIcon: goal.goalIcon ?? goal.icon ?? goal.monumentIcon ?? null,
+          });
+          const goalSurge = awardPayload?.surge
+            ? {
+                ...fallbackGoalSurge,
+                ...awardPayload.surge,
+                sourceType: "GOAL" as const,
+                title: awardPayload.surge.title ?? fallbackGoalSurge.title,
+                sourceIcon:
+                  awardPayload.surge.sourceIcon ??
+                  fallbackGoalSurge.sourceIcon ??
+                  null,
+                displayXp:
+                  awardPayload.surge.displayXp ?? fallbackGoalSurge.displayXp,
+              }
+            : fallbackGoalSurge;
+
+          dispatchCreatorXpRewardVisual({
+            surge: goalSurge,
+            completedAt,
+            amount: goalSurge.displayXp ?? undefined,
+            kind: "goal_complete",
+            burstId: `my-list-goal:${goal.id}:${completedAt}`,
+          });
+        }
+
+        return true;
+      } catch (error) {
+        console.error("Failed to complete pinned Goal from My List", error);
+        void hapticErrorPattern();
+        return false;
+      } finally {
+        completingPinnedGoalIdsRef.current.delete(goal.id);
+      }
+    },
+    [user?.id]
+  );
+
   const handleUpdatePinnedSourceMetadata = useCallback(
     (
       row: MyListPinnedSourceRow,
@@ -1371,6 +1792,10 @@ export function GlobalMyList({
       enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
       onRemovePinnedSource={handleRemovePinnedSource}
       onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
+      onTogglePinnedGoalProjectCompletion={
+        handleTogglePinnedGoalProjectCompletion
+      }
+      onCompletePinnedGoal={handleCompletePinnedGoal}
       onUpdatePinnedSourceMetadata={handleUpdatePinnedSourceMetadata}
       onReorderPinnedSourceRows={handleReorderPinnedSourceRows}
       onRemoveTask={handleRemoveTask}

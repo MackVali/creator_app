@@ -7,6 +7,8 @@ export const MY_LIST_MANUAL_ITEM_CONSUMED_EVENT =
 export const MY_LIST_MANUAL_ITEM_CREATED_EVENT =
   "creator:my-list:manual-item-created";
 
+const MY_LIST_PINNED_SOURCE_MIGRATION_STORAGE_PREFIX =
+  "creator:my-list:pinned-source-migrated-to-supabase:v1";
 const MY_LIST_SOURCE_TYPES = ["GOAL", "PROJECT", "TASK", "HABIT"] as const;
 const MY_LIST_VALID_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -81,7 +83,7 @@ type MyListItemWrite = Partial<MyListItemRow> & {
 
 type QueryResult<T> = {
   data: T | null;
-  error: { message?: string } | null;
+  error: { code?: string; message?: string } | null;
 };
 
 type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
@@ -144,6 +146,32 @@ function markMigrationCompleted(userId: string) {
 
   try {
     window.localStorage.setItem(migrationStorageKey(userId), "1");
+  } catch {
+    // Migration success does not depend on writing the local marker.
+  }
+}
+
+function pinnedSourceMigrationStorageKey(userId: string) {
+  return `${MY_LIST_PINNED_SOURCE_MIGRATION_STORAGE_PREFIX}:${userId}`;
+}
+
+function hasPinnedSourceMigrationCompleted(userId: string) {
+  if (typeof window === "undefined") return true;
+
+  try {
+    return (
+      window.localStorage.getItem(pinnedSourceMigrationStorageKey(userId)) === "1"
+    );
+  } catch {
+    return true;
+  }
+}
+
+function markPinnedSourceMigrationCompleted(userId: string) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(pinnedSourceMigrationStorageKey(userId), "1");
   } catch {
     // Migration success does not depend on writing the local marker.
   }
@@ -547,6 +575,78 @@ async function fetchPinnedRows(userId: string) {
   return data ?? [];
 }
 
+async function fetchPinnedSourceRows({
+  client,
+  userId,
+  sourceType,
+  sourceId,
+}: {
+  client: MyListItemsClient;
+  userId: string;
+  sourceType: MyListSourceType;
+  sourceId: string;
+}) {
+  const { data, error } = await client
+    .from("my_list_items")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("item_kind", "PINNED_SOURCE")
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+function isPinnedSourceUniqueViolation(error: { code?: string; message?: string }) {
+  return (
+    error.code === "23505" ||
+    /my_list_items_unique_pinned_source|duplicate key value violates unique constraint/i.test(
+      error.message ?? ""
+    )
+  );
+}
+
+async function ensurePinnedSourceMyListItem({
+  client,
+  userId,
+  sourceType,
+  sourceId,
+  sortOrder,
+}: {
+  client: MyListItemsClient;
+  userId: string;
+  sourceType: MyListSourceType;
+  sourceId: string;
+  sortOrder: number;
+}) {
+  const existingRows = await fetchPinnedSourceRows({
+    client,
+    userId,
+    sourceType,
+    sourceId,
+  });
+  if (existingRows.length > 0) return;
+
+  const { error } = await client
+    .from("my_list_items")
+    .insert(pinnedRowToWrite({ userId, sourceType, sourceId, sortOrder }))
+    .select("*");
+
+  if (!error) return;
+  if (!isPinnedSourceUniqueViolation(error)) throw error;
+
+  const rowsAfterRace = await fetchPinnedSourceRows({
+    client,
+    userId,
+    sourceType,
+    sourceId,
+  });
+  if (rowsAfterRace.length > 0) return;
+
+  throw error;
+}
+
 export async function loadPinnedSourceMyListItems({
   userId,
   localPinnedIds,
@@ -555,66 +655,68 @@ export async function loadPinnedSourceMyListItems({
   localPinnedIds: Record<MyListSourceType, string[]>;
 }): Promise<MyListPinnedSourceStorageItem[]> {
   const existingRows = await fetchPinnedRows(userId);
-  const normalizedLocalPinnedIds = MY_LIST_SOURCE_TYPES.reduce(
-    (ids, sourceType) => ({
-      ...ids,
-      [sourceType]: Array.from(
-        new Set(
-          (localPinnedIds[sourceType] ?? [])
-            .map((sourceId) =>
-              typeof sourceId === "string" ? sourceId.trim() : ""
-            )
-            .filter(Boolean)
-        )
-      ),
-    }),
-    {
-      GOAL: [],
-      PROJECT: [],
-      TASK: [],
-      HABIT: [],
-    } as Record<MyListSourceType, string[]>
-  );
-  const existingKeys = new Set(
-    existingRows
-      .map((row) => {
-        const sourceType = normalizeMyListSourceType(row.source_type);
-        const sourceId =
-          typeof row.source_id === "string" ? row.source_id.trim() : "";
-        return sourceType && sourceId ? `${sourceType}:${sourceId}` : null;
-      })
-      .filter((key): key is string => Boolean(key))
-  );
-  const rowsToMigrate = MY_LIST_SOURCE_TYPES.flatMap((sourceType) =>
-    normalizedLocalPinnedIds[sourceType]
-      .filter((sourceId) => sourceId && !existingKeys.has(`${sourceType}:${sourceId}`))
-      .map((sourceId, index) =>
-        pinnedRowToWrite({
-          userId,
-          sourceType,
-          sourceId,
-          sortOrder: existingRows.length + index,
+  let rows = existingRows;
+
+  if (!hasPinnedSourceMigrationCompleted(userId)) {
+    const normalizedLocalPinnedIds = MY_LIST_SOURCE_TYPES.reduce(
+      (ids, sourceType) => ({
+        ...ids,
+        [sourceType]: Array.from(
+          new Set(
+            (localPinnedIds[sourceType] ?? [])
+              .map((sourceId) =>
+                typeof sourceId === "string" ? sourceId.trim() : ""
+              )
+              .filter(Boolean)
+          )
+        ),
+      }),
+      {
+        GOAL: [],
+        PROJECT: [],
+        TASK: [],
+        HABIT: [],
+      } as Record<MyListSourceType, string[]>
+    );
+    const existingKeys = new Set(
+      existingRows
+        .map((row) => {
+          const sourceType = normalizeMyListSourceType(row.source_type);
+          const sourceId =
+            typeof row.source_id === "string" ? row.source_id.trim() : "";
+          return sourceType && sourceId ? `${sourceType}:${sourceId}` : null;
         })
-      )
-  );
+        .filter((key): key is string => Boolean(key))
+    );
+    const pinnedSourcesToMigrate = MY_LIST_SOURCE_TYPES.flatMap((sourceType) =>
+      normalizedLocalPinnedIds[sourceType]
+        .filter(
+          (sourceId) => sourceId && !existingKeys.has(`${sourceType}:${sourceId}`)
+        )
+        .map((sourceId) => ({ sourceType, sourceId }))
+    );
 
-  if (rowsToMigrate.length > 0) {
-    const client = getClient();
-    if (!client) throw new Error("Supabase client not available");
+    if (pinnedSourcesToMigrate.length > 0) {
+      const client = getClient();
+      if (!client) throw new Error("Supabase client not available");
 
-    const { error } = await client
-      .from("my_list_items")
-      .upsert(rowsToMigrate, {
-        onConflict: "user_id,source_type,source_id",
-      })
-      .select("*");
-    if (error) throw error;
-    markMigrationCompleted(userId);
-  } else {
-    markMigrationCompleted(userId);
+      await Promise.all(
+        pinnedSourcesToMigrate.map((row, index) =>
+          ensurePinnedSourceMyListItem({
+            client,
+            userId,
+            sourceType: row.sourceType,
+            sourceId: row.sourceId,
+            sortOrder: existingRows.length + index,
+          })
+        )
+      );
+    }
+
+    rows = await fetchPinnedRows(userId);
+    markPinnedSourceMigrationCompleted(userId);
   }
 
-  const rows = rowsToMigrate.length > 0 ? await fetchPinnedRows(userId) : existingRows;
   const seenPinnedKeys = new Set<string>();
   return rows
     .map((row) => {
@@ -671,13 +773,13 @@ export async function setPinnedSourceMyListItem({
     return;
   }
 
-  const { error } = await client
-    .from("my_list_items")
-    .upsert(pinnedRowToWrite({ userId, sourceType, sourceId, sortOrder: 0 }), {
-      onConflict: "user_id,source_type,source_id",
-    })
-    .select("*");
-  if (error) throw error;
+  await ensurePinnedSourceMyListItem({
+    client,
+    userId,
+    sourceType,
+    sourceId,
+    sortOrder: 0,
+  });
 }
 
 export async function updatePinnedSourceMyListItemCompletion({
