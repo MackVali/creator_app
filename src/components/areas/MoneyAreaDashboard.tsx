@@ -910,20 +910,44 @@ function MoneyMetricCard({
   label,
   value,
   detail,
+  compact = false,
 }: {
   label: string;
   value: string;
   detail: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-white/[0.075] bg-[#090909] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
-      <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
+    <div
+      className={cn(
+        "min-w-0 rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]",
+        compact ? "px-2 py-2 sm:px-3 sm:py-2.5" : "px-3 py-3"
+      )}
+    >
+      <p
+        className={cn(
+          "truncate text-[10px] font-semibold uppercase text-white/34",
+          compact ? "tracking-[0.08em] sm:tracking-[0.14em]" : "tracking-[0.14em]"
+        )}
+      >
         {label}
       </p>
-      <p className="mt-2 truncate text-2xl font-semibold tabular-nums tracking-tight text-white sm:text-3xl">
+      <p
+        className={cn(
+          "truncate font-semibold tabular-nums tracking-tight text-white",
+          compact
+            ? "mt-1 text-[clamp(0.875rem,4vw,1.25rem)] sm:mt-1.5 sm:text-2xl"
+            : "mt-2 text-2xl sm:text-3xl"
+        )}
+      >
         {value}
       </p>
-      <p className="mt-1 truncate text-[11px] font-medium text-white/36">
+      <p
+        className={cn(
+          "mt-1 truncate text-[11px] font-medium text-white/36",
+          compact && "hidden sm:block"
+        )}
+      >
         {detail}
       </p>
     </div>
@@ -3770,21 +3794,24 @@ export function MoneyAreaDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 border-t border-white/[0.055] p-3 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-1.5 border-t border-white/[0.055] p-2 sm:gap-2 sm:p-3">
           <MoneyMetricCard
             label="Total available"
             value={formatMoneyFromMinor(summary.totalAvailable)}
             detail="Active asset accounts"
+            compact
           />
           <MoneyMetricCard
             label="Debt"
             value={formatMoneyFromMinor(summary.debt)}
             detail="Credit cards owed"
+            compact
           />
           <MoneyMetricCard
             label="Net position"
             value={formatMoneyFromMinor(summary.netPosition)}
             detail="All active balances"
+            compact
           />
         </div>
       </section>
