@@ -1173,14 +1173,11 @@ function MoneyAccountForm({
 }) {
   const [form, setForm] = useState(initialState);
 
-  useEffect(() => {
-    setForm(initialState);
-  }, [initialState]);
-
   const isCreditCard = form.accountType === "credit_card";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaving) return;
     const saved = await onSubmit(form);
     if (saved && mode === "add") setForm(getDefaultFormState());
   }
@@ -1188,11 +1185,41 @@ function MoneyAccountForm({
   return (
     <form
       onSubmit={(event) => void handleSubmit(event)}
-      className="rounded-2xl border border-white/[0.075] bg-black/30 p-3"
+      className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border"
     >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={`money-account-name-${mode}`} className="text-white/58">
+      <div className="flex h-12 items-center justify-between border-b border-white/[0.065] px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSaving}
+            aria-label={`Close ${mode === "add" ? "add" : "edit"} account editor`}
+            className="-ml-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/48 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <h3 className="truncate text-sm font-semibold text-white/86">
+            {mode === "add" ? "Add Account" : "Edit Account"}
+          </h3>
+        </div>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="inline-flex h-8 min-w-14 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 transition hover:bg-sky-200/[0.07] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSaving ? (
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          ) : null}
+          {isSaving ? "Saving" : "Save"}
+        </button>
+      </div>
+
+      <div className="px-3">
+        <div className="border-b border-white/[0.065] py-3">
+          <Label
+            htmlFor={`money-account-name-${mode}`}
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38"
+          >
             Account name
           </Label>
           <Input
@@ -1203,47 +1230,60 @@ function MoneyAccountForm({
             }
             placeholder="Main checking"
             maxLength={80}
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28"
+            autoFocus={mode === "add"}
+            className="mt-0.5 h-10 rounded-none border-0 bg-transparent px-0 text-lg font-semibold text-white shadow-none placeholder:text-white/24 focus-visible:ring-0"
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Account type</Label>
-          <Select
-            value={form.accountType}
-            onValueChange={(value) =>
-              setForm((current) => ({
-                ...current,
-                accountType: normalizeAccountType(value),
-              }))
-            }
-            placeholder="Select type"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
-          >
-            <SelectContent>
-              {ACCOUNT_TYPE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor={`money-account-balance-${mode}`} className="text-white/58">
-            Current balance
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]">
+          <Label className="min-w-28 text-xs font-medium text-white/48">
+            Account type
           </Label>
-          <Input
-            id={`money-account-balance-${mode}`}
-            inputMode="decimal"
-            value={form.balance}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, balance: event.target.value }))
-            }
-            placeholder={isCreditCard ? "500.00 owed" : "500.00"}
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] font-mono tabular-nums text-white placeholder:text-white/28"
-          />
+          <div className="min-w-0 flex-1">
+            <Select
+              value={form.accountType}
+              onValueChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  accountType: normalizeAccountType(value),
+                }))
+              }
+              placeholder="Select type"
+              triggerClassName="h-10 justify-end rounded-none border-0 bg-transparent px-0 font-medium text-white/76 shadow-none focus:ring-0"
+            >
+              <SelectContent>
+                {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="border-b border-white/[0.065] py-2">
+          <div className="flex min-h-10 items-center gap-3">
+            <Label
+              htmlFor={`money-account-balance-${mode}`}
+              className="min-w-28 text-xs font-medium text-white/48"
+            >
+              Current balance
+            </Label>
+            <div className="flex min-w-0 flex-1 items-center justify-end">
+              <span className="font-mono text-base text-white/38">$</span>
+              <Input
+                id={`money-account-balance-${mode}`}
+                inputMode="decimal"
+                value={form.balance}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, balance: event.target.value }))
+                }
+                placeholder={isCreditCard ? "500.00 owed" : "0.00"}
+                className="h-10 min-w-0 rounded-none border-0 bg-transparent px-1 text-right font-mono text-base tabular-nums text-white shadow-none placeholder:text-white/24 focus-visible:ring-0"
+              />
+            </div>
+          </div>
           <p className="text-[11px] leading-4 text-white/36">
             {isCreditCard
               ? "Enter what you owe as a positive amount; CREATOR stores it as negative debt."
@@ -1251,10 +1291,10 @@ function MoneyAccountForm({
           </p>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="flex min-h-12 items-center gap-3">
           <Label
             htmlFor={`money-account-institution-${mode}`}
-            className="text-white/58"
+            className="min-w-28 text-xs font-medium text-white/48"
           >
             Institution
           </Label>
@@ -1269,7 +1309,7 @@ function MoneyAccountForm({
             }
             placeholder="Optional"
             maxLength={80}
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28"
+            className="h-10 min-w-0 rounded-none border-0 bg-transparent px-0 text-right text-sm text-white/72 shadow-none placeholder:text-white/24 focus-visible:ring-0"
           />
         </div>
       </div>
@@ -1280,31 +1320,6 @@ function MoneyAccountForm({
         </p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={isSaving}
-          className="h-10 rounded-xl px-3 text-xs font-semibold text-white/54 hover:bg-white/[0.06] hover:text-white"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={isSaving}
-          className="h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-        >
-          {isSaving ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          ) : mode === "add" ? (
-            <Plus className="h-3.5 w-3.5" />
-          ) : (
-            <PencilLine className="h-3.5 w-3.5" />
-          )}
-          {isSaving ? "Saving" : mode === "add" ? "Add account" : "Save account"}
-        </Button>
-      </div>
     </form>
   );
 }
@@ -4170,7 +4185,7 @@ export function MoneyAreaDashboard() {
             <Button
               type="button"
               onClick={() => setAddOpen(true)}
-              className="mt-3 h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
+              className="mt-3 h-9 rounded-lg border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/72 hover:bg-white/[0.09]"
             >
               <Plus className="h-3.5 w-3.5" />
               Add Account
