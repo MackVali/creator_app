@@ -31,6 +31,7 @@ export type MyListManualItemCreatedDetail = {
 
 export type MyListManualStorageItem = {
   id: string;
+  listId: string | null;
   done: boolean;
   completedAt: string | null;
   skillId: string | null;
@@ -59,6 +60,7 @@ type MyListItemMetadata = {
 type MyListItemRow = {
   id: string;
   user_id: string;
+  list_id: string | null;
   item_kind: MyListItemKind;
   source_type: MyListSourceType | null;
   source_id: string | null;
@@ -94,7 +96,7 @@ type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
   insert(values: MyListItemWrite | MyListItemWrite[]): QueryBuilder<T>;
   upsert(
     values: MyListItemWrite | MyListItemWrite[],
-    options?: Record<string, unknown>
+    options?: Record<string, unknown>,
   ): QueryBuilder<T>;
   update(values: Partial<MyListItemRow>): QueryBuilder<T>;
   delete(): QueryBuilder<T>;
@@ -114,7 +116,7 @@ export function isValidMyListUuid(value: string) {
 }
 
 export function normalizeMyListSourceType(
-  value: unknown
+  value: unknown,
 ): MyListSourceType | null {
   if (typeof value !== "string") return null;
 
@@ -125,15 +127,14 @@ export function normalizeMyListSourceType(
 }
 
 function createUuid() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) =>
-    (
-      Number(char) ^
-      (Math.random() * 16) >>
-        (Number(char) / 4)
-    ).toString(16)
+    (Number(char) ^ ((Math.random() * 16) >> (Number(char) / 4))).toString(16),
   );
 }
 
@@ -160,7 +161,8 @@ function hasPinnedSourceMigrationCompleted(userId: string) {
 
   try {
     return (
-      window.localStorage.getItem(pinnedSourceMigrationStorageKey(userId)) === "1"
+      window.localStorage.getItem(pinnedSourceMigrationStorageKey(userId)) ===
+      "1"
     );
   } catch {
     return true;
@@ -185,7 +187,7 @@ function readMetadata(value: unknown): MyListItemMetadata {
 
 function hasMatchingManualRow(
   existingRows: MyListItemRow[],
-  localRow: MyListManualStorageItem
+  localRow: MyListManualStorageItem,
 ) {
   return existingRows.some((row) => {
     if (row.id === localRow.id) return true;
@@ -209,22 +211,25 @@ function manualRowToWrite(
   options?: {
     storageId?: string;
     localIdToStorageId?: Map<string, string>;
-  }
+  },
 ): MyListItemWrite {
   const canPreserveId = isValidMyListUuid(row.id);
-  const storageId = options?.storageId ?? (canPreserveId ? row.id : createUuid());
-  const insertAfterRowKey =
-    row.insertAfterRowKey?.startsWith("manual:")
-      ? (() => {
-          const localAnchorId = row.insertAfterRowKey.slice("manual:".length);
-          const storageAnchorId = options?.localIdToStorageId?.get(localAnchorId);
-          return storageAnchorId ? `manual:${storageAnchorId}` : row.insertAfterRowKey;
-        })()
-      : row.insertAfterRowKey;
+  const storageId =
+    options?.storageId ?? (canPreserveId ? row.id : createUuid());
+  const insertAfterRowKey = row.insertAfterRowKey?.startsWith("manual:")
+    ? (() => {
+        const localAnchorId = row.insertAfterRowKey.slice("manual:".length);
+        const storageAnchorId = options?.localIdToStorageId?.get(localAnchorId);
+        return storageAnchorId
+          ? `manual:${storageAnchorId}`
+          : row.insertAfterRowKey;
+      })()
+    : row.insertAfterRowKey;
 
   return {
     id: storageId,
     user_id: userId,
+    list_id: row.listId ?? null,
     item_kind: "MANUAL",
     source_type: null,
     source_id: null,
@@ -244,7 +249,7 @@ function manualRowToWrite(
 
 function rowToManualItem(
   row: MyListItemRow,
-  fallbackPriorityId: string
+  fallbackPriorityId: string,
 ): MyListManualStorageItem | null {
   if (!row.id || row.item_kind !== "MANUAL") return null;
 
@@ -258,6 +263,7 @@ function rowToManualItem(
 
   return {
     id: row.id,
+    listId: row.list_id ?? null,
     done,
     completedAt: done && row.completed_at ? row.completed_at : null,
     skillId: row.skill_id ?? null,
@@ -306,7 +312,10 @@ export async function loadManualMyListItems({
   });
   localRows.forEach((row) => {
     if (!localIdToStorageId.has(row.id)) {
-      localIdToStorageId.set(row.id, isValidMyListUuid(row.id) ? row.id : createUuid());
+      localIdToStorageId.set(
+        row.id,
+        isValidMyListUuid(row.id) ? row.id : createUuid(),
+      );
     }
   });
   const rowsToMigrate = localRows
@@ -315,7 +324,7 @@ export async function loadManualMyListItems({
       manualRowToWrite(userId, row, existingRows.length + index, {
         storageId: localIdToStorageId.get(row.id),
         localIdToStorageId,
-      })
+      }),
     );
 
   if (rowsToMigrate.length > 0) {
@@ -332,7 +341,8 @@ export async function loadManualMyListItems({
     markMigrationCompleted(userId);
   }
 
-  const rows = rowsToMigrate.length > 0 ? await fetchManualRows(userId) : existingRows;
+  const rows =
+    rowsToMigrate.length > 0 ? await fetchManualRows(userId) : existingRows;
   return rows
     .map((row) => rowToManualItem(row, fallbackPriorityId))
     .filter((row): row is MyListManualStorageItem => Boolean(row));
@@ -348,10 +358,14 @@ export async function replaceManualMyListItems({
   const client = getClient();
   if (!client) throw new Error("Supabase client not available");
 
-  const rowsToWrite = rows.map((row, index) => manualRowToWrite(userId, row, index));
+  const rowsToWrite = rows.map((row, index) =>
+    manualRowToWrite(userId, row, index),
+  );
   const idsToKeep = rowsToWrite
     .map((row) => row.id)
-    .filter((id): id is string => typeof id === "string" && isValidMyListUuid(id));
+    .filter(
+      (id): id is string => typeof id === "string" && isValidMyListUuid(id),
+    );
 
   if (rowsToWrite.length > 0) {
     const { error } = await client
@@ -379,6 +393,7 @@ export async function replaceManualMyListItems({
 
 export async function createManualMyListItem({
   userId,
+  listId = null,
   text,
   skillId = null,
   skillName = null,
@@ -388,6 +403,7 @@ export async function createManualMyListItem({
   insertAfterRowKey = null,
 }: {
   userId: string;
+  listId?: string | null;
   text: string;
   skillId?: string | null;
   skillName?: string | null;
@@ -407,6 +423,7 @@ export async function createManualMyListItem({
   const existingRows = await fetchManualRows(userId);
   const row: MyListManualStorageItem = {
     id: createUuid(),
+    listId,
     done: false,
     completedAt: null,
     skillId: skillId?.trim() || null,
@@ -427,7 +444,7 @@ export async function createManualMyListItem({
 
   const savedRow = Array.isArray(data) ? data[0] : null;
   const savedItem = savedRow
-    ? rowToManualItem(savedRow, row.priorityId) ?? row
+    ? (rowToManualItem(savedRow, row.priorityId) ?? row)
     : row;
 
   if (typeof window !== "undefined") {
@@ -440,8 +457,8 @@ export async function createManualMyListItem({
             userId,
             item: savedItem,
           },
-        }
-      )
+        },
+      ),
     );
   }
 
@@ -465,12 +482,12 @@ async function resolveManualMyListStorageItemId({
   if (matchingRows.length === 1) return matchingRows[0].id;
   if (matchingRows.length === 0) {
     throw new Error(
-      `Manual My List delete found no persisted row for local row id ${itemId}`
+      `Manual My List delete found no persisted row for local row id ${itemId}`,
     );
   }
 
   throw new Error(
-    `Manual My List delete found multiple persisted rows for local row id ${itemId}`
+    `Manual My List delete found multiple persisted rows for local row id ${itemId}`,
   );
 }
 
@@ -505,7 +522,7 @@ export async function deleteManualMyListItem({
   if (error) throw error;
   if (!Array.isArray(data) || !data.some((row) => row.id === storageItemId)) {
     throw new Error(
-      `Manual My List delete affected no persisted rows for ${storageItemId}`
+      `Manual My List delete affected no persisted rows for ${storageItemId}`,
     );
   }
 }
@@ -531,8 +548,8 @@ export async function consumeManualMyListUpgradeSource({
           createdEntityType,
           createdEntityId,
         },
-      }
-    )
+      },
+    ),
   );
 }
 
@@ -598,11 +615,14 @@ async function fetchPinnedSourceRows({
   return data ?? [];
 }
 
-function isPinnedSourceUniqueViolation(error: { code?: string; message?: string }) {
+function isPinnedSourceUniqueViolation(error: {
+  code?: string;
+  message?: string;
+}) {
   return (
     error.code === "23505" ||
     /my_list_items_unique_pinned_source|duplicate key value violates unique constraint/i.test(
-      error.message ?? ""
+      error.message ?? "",
     )
   );
 }
@@ -665,10 +685,10 @@ export async function loadPinnedSourceMyListItems({
           new Set(
             (localPinnedIds[sourceType] ?? [])
               .map((sourceId) =>
-                typeof sourceId === "string" ? sourceId.trim() : ""
+                typeof sourceId === "string" ? sourceId.trim() : "",
               )
-              .filter(Boolean)
-          )
+              .filter(Boolean),
+          ),
         ),
       }),
       {
@@ -676,7 +696,7 @@ export async function loadPinnedSourceMyListItems({
         PROJECT: [],
         TASK: [],
         HABIT: [],
-      } as Record<MyListSourceType, string[]>
+      } as Record<MyListSourceType, string[]>,
     );
     const existingKeys = new Set(
       existingRows
@@ -686,14 +706,15 @@ export async function loadPinnedSourceMyListItems({
             typeof row.source_id === "string" ? row.source_id.trim() : "";
           return sourceType && sourceId ? `${sourceType}:${sourceId}` : null;
         })
-        .filter((key): key is string => Boolean(key))
+        .filter((key): key is string => Boolean(key)),
     );
     const pinnedSourcesToMigrate = MY_LIST_SOURCE_TYPES.flatMap((sourceType) =>
       normalizedLocalPinnedIds[sourceType]
         .filter(
-          (sourceId) => sourceId && !existingKeys.has(`${sourceType}:${sourceId}`)
+          (sourceId) =>
+            sourceId && !existingKeys.has(`${sourceType}:${sourceId}`),
         )
-        .map((sourceId) => ({ sourceType, sourceId }))
+        .map((sourceId) => ({ sourceType, sourceId })),
     );
 
     if (pinnedSourcesToMigrate.length > 0) {
@@ -708,8 +729,8 @@ export async function loadPinnedSourceMyListItems({
             sourceType: row.sourceType,
             sourceId: row.sourceId,
             sortOrder: existingRows.length + index,
-          })
-        )
+          }),
+        ),
       );
     }
 
@@ -864,6 +885,6 @@ export async function updatePinnedSourceMyListItemOrder({
         .eq("source_id", row.sourceId);
 
       if (error) throw error;
-    })
+    }),
   );
 }
