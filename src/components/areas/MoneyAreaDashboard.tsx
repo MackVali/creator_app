@@ -954,6 +954,72 @@ function MoneyMetricCard({
   );
 }
 
+function MoneyForecastSummary({
+  projection,
+}: {
+  projection: MoneyBalanceProjection;
+}) {
+  const cells = [
+    {
+      label: "Projected",
+      value: formatMoneyFromMinor(projection.projectedBalanceMinor),
+      detail: formatCompactDate(projection.endDate),
+      valueClassName: "text-white/88",
+    },
+    {
+      label: "Lowest",
+      value: formatMoneyFromMinor(projection.lowestBalanceMinor),
+      detail: formatCompactDate(projection.lowestBalanceDate),
+      valueClassName: "text-white/88",
+    },
+    {
+      label: "Inflows",
+      value: formatMoneyFromMinor(projection.upcomingInflowMinor),
+      detail: `${projection.horizonDays} days`,
+      valueClassName: "text-emerald-100/72",
+    },
+    {
+      label: "Outflows",
+      value: formatMoneyFromMinor(projection.upcomingOutflowMinor),
+      detail: `${projection.horizonDays} days`,
+      valueClassName: "text-red-100/72",
+    },
+  ];
+
+  return (
+    <dl
+      className="grid grid-cols-2 border-b border-white/[0.055]"
+      aria-label="Forecast summary"
+    >
+      {cells.map((cell, index) => (
+        <div
+          key={cell.label}
+          className={cn(
+            "min-w-0 px-3 py-2.5",
+            index < 2 && "border-b border-white/[0.055]",
+            index % 2 === 0 && "border-r border-white/[0.055]"
+          )}
+        >
+          <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/34">
+            {cell.label}
+          </dt>
+          <dd
+            className={cn(
+              "mt-0.5 truncate text-[clamp(0.95rem,4.5vw,1.125rem)] font-semibold tabular-nums tracking-tight",
+              cell.valueClassName
+            )}
+          >
+            {cell.value}
+          </dd>
+          <dd className="mt-0.5 truncate text-[10px] font-medium tabular-nums text-white/34">
+            {cell.detail}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function SafeToSpendStat({
   label,
   value,
@@ -3897,33 +3963,7 @@ export function MoneyAreaDashboard() {
           <>
             <MoneySafeToSpendPanel summary={safeToSpendSummary} />
 
-            <div className="grid grid-cols-1 gap-2 border-b border-white/[0.055] p-3 sm:grid-cols-5">
-              <MoneyMetricCard
-                label="Projected balance"
-                value={formatMoneyFromMinor(balanceProjection.projectedBalanceMinor)}
-                detail={formatReadableDate(balanceProjection.endDate)}
-              />
-              <MoneyMetricCard
-                label="Lowest balance"
-                value={formatMoneyFromMinor(balanceProjection.lowestBalanceMinor)}
-                detail="First minimum"
-              />
-              <MoneyMetricCard
-                label="Low date"
-                value={formatCompactDate(balanceProjection.lowestBalanceDate)}
-                detail={formatReadableDate(balanceProjection.lowestBalanceDate)}
-              />
-              <MoneyMetricCard
-                label="Inflows"
-                value={formatMoneyFromMinor(balanceProjection.upcomingInflowMinor)}
-                detail={`${balanceProjection.horizonDays} day window`}
-              />
-              <MoneyMetricCard
-                label="Outflows"
-                value={formatMoneyFromMinor(balanceProjection.upcomingOutflowMinor)}
-                detail={`${balanceProjection.horizonDays} day window`}
-              />
-            </div>
+            <MoneyForecastSummary projection={balanceProjection} />
 
             <div className="border-b border-white/[0.055] p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
