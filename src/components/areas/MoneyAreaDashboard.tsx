@@ -1401,10 +1401,11 @@ function MoneyAccountForm({
       </div>
 
       {error ? (
-        <p className="mx-3 mb-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
+        <p className="mt-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
           {error}
         </p>
       ) : null}
+
     </form>
   );
 }
@@ -4090,6 +4091,7 @@ export function MoneyAreaDashboard() {
         ) : (
           <>
             <MoneySafeToSpendPanel summary={safeToSpendSummary} />
+
             <MoneyForecastSummary projection={balanceProjection} />
 
             <div className="border-b border-white/[0.055] p-3">
