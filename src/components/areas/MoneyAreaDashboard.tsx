@@ -906,13 +906,12 @@ function MoneyForecastSummary({
 }: {
   projection: MoneyBalanceProjection;
 }) {
+  const hasScheduledMovement =
+    projection.upcomingInflowMinor !== 0 ||
+    projection.upcomingOutflowMinor !== 0;
+  const projectedChangeMinor =
+    projection.projectedBalanceMinor - projection.startingBalanceMinor;
   const cells = [
-    {
-      label: "Projected",
-      value: formatMoneyFromMinor(projection.projectedBalanceMinor),
-      detail: formatCompactDate(projection.endDate),
-      valueClassName: "text-white/88",
-    },
     {
       label: "Lowest",
       value: formatMoneyFromMinor(projection.lowestBalanceMinor),
@@ -922,48 +921,74 @@ function MoneyForecastSummary({
     {
       label: "Money in",
       value: formatMoneyFromMinor(projection.upcomingInflowMinor),
-      detail: `${projection.horizonDays} days`,
       valueClassName: "text-emerald-100/72",
     },
     {
       label: "Money out",
       value: formatMoneyFromMinor(projection.upcomingOutflowMinor),
-      detail: `${projection.horizonDays} days`,
       valueClassName: "text-red-100/72",
     },
   ];
 
   return (
-    <dl
-      className="grid grid-cols-2 border-b border-white/[0.055]"
-      aria-label="Forecast summary"
-    >
-      {cells.map((cell, index) => (
-        <div
-          key={cell.label}
-          className={cn(
-            "min-w-0 px-3 py-2.5",
-            index < 2 && "border-b border-white/[0.055]",
-            index % 2 === 0 && "border-r border-white/[0.055]"
-          )}
-        >
-          <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/34">
-            {cell.label}
+    <div className="border-b border-white/[0.055] px-3 pb-3">
+      <dl aria-label="Forecast summary">
+        <div className="py-1.5">
+          <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38">
+            Projected balance
           </dt>
-          <dd
-            className={cn(
-              "mt-0.5 truncate text-[clamp(0.95rem,4.5vw,1.125rem)] font-semibold tabular-nums tracking-tight",
-              cell.valueClassName
-            )}
-          >
-            {cell.value}
+          <dd className="mt-0.5 text-2xl font-semibold tabular-nums tracking-tight text-white/90">
+            {formatMoneyFromMinor(projection.projectedBalanceMinor)}
           </dd>
-          <dd className="mt-0.5 truncate text-[10px] font-medium tabular-nums text-white/34">
-            {cell.detail}
+          <dd className="mt-0.5 text-[11px] font-medium tabular-nums text-white/42">
+            {hasScheduledMovement ? (
+              <>
+                {projectedChangeMinor > 0 ? "+" : ""}
+                {formatMoneyFromMinor(projectedChangeMinor)} from today ·{" "}
+                {formatCompactDate(projection.endDate)}
+              </>
+            ) : (
+              <>No scheduled change through {formatCompactDate(projection.endDate)}</>
+            )}
           </dd>
         </div>
-      ))}
-    </dl>
+
+        {hasScheduledMovement ? (
+          <div className="mt-1 grid grid-cols-3 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.025]">
+            {cells.map((cell, index) => (
+              <div
+                key={cell.label}
+                className={cn(
+                  "min-w-0 px-2 py-2",
+                  index > 0 && "border-l border-white/[0.06]"
+                )}
+              >
+                <dt className="truncate text-[8px] font-semibold uppercase tracking-[0.12em] text-white/34">
+                  {cell.label}
+                </dt>
+                <dd
+                  className={cn(
+                    "mt-0.5 truncate text-sm font-semibold tabular-nums tracking-tight",
+                    cell.valueClassName
+                  )}
+                >
+                  {cell.value}
+                </dd>
+                {cell.detail ? (
+                  <dd className="truncate text-[9px] font-medium tabular-nums text-white/34">
+                    {cell.detail}
+                  </dd>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1.5 text-xs text-white/42">
+            Add scheduled bills or income to build a useful forecast.
+          </p>
+        )}
+      </dl>
+    </div>
   );
 }
 
@@ -2288,11 +2313,18 @@ function MoneyProjectionChart({
     ...projection.points.map((point) => point.balanceMinor),
     ...behavioralPoints.map((point) => point.balanceMinor),
   ];
-  const rawMin = Math.min(0, ...balances);
-  const rawMax = Math.max(0, ...balances);
-  const rawRange = Math.max(1, rawMax - rawMin);
-  const minBalance = rawMin - rawRange * 0.08;
-  const maxBalance = rawMax + rawRange * 0.08;
+  const actualMin = Math.min(...balances);
+  const actualMax = Math.max(...balances);
+  const actualRange = Math.max(0, actualMax - actualMin);
+  const includeZero =
+    actualMin <= 0 || (actualMax > 0 && actualMin <= actualMax * 0.15);
+  const domainMin = includeZero ? Math.min(0, actualMin) : actualMin;
+  const domainMax = includeZero ? Math.max(0, actualMax) : actualMax;
+  const paddingAmount =
+    Math.max(actualRange, Math.abs(actualMax) * 0.08, 100) * 0.1;
+  const minBalance =
+    includeZero && actualMin >= 0 ? 0 : domainMin - paddingAmount;
+  const maxBalance = domainMax + paddingAmount;
   const range = Math.max(1, maxBalance - minBalance);
   const hasNegativeBalance = balances.some((balance) => balance < 0);
   const changedPoints = projection.points.filter(
@@ -2321,7 +2353,7 @@ function MoneyProjectionChart({
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
-  const baselineY = getY(0);
+  const baselineY = getY(includeZero ? 0 : minBalance);
   const areaPath =
     projection.points.length > 0
       ? [
@@ -2351,7 +2383,7 @@ function MoneyProjectionChart({
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-[190px] w-full opacity-95 sm:h-[210px]"
+        className="h-[140px] w-full opacity-95 sm:h-[170px]"
         role="img"
         aria-label={`Projected Money balance from ${formatReadableDate(
           projection.startDate
@@ -2396,31 +2428,35 @@ function MoneyProjectionChart({
           );
         })}
 
-        <line
-          x1={padding.left}
-          x2={padding.left + chartWidth}
-          y1={baselineY}
-          y2={baselineY}
-          stroke={
-            hasNegativeBalance
-              ? "rgba(248,113,113,0.42)"
-              : "rgba(82,82,91,0.34)"
-          }
-          strokeDasharray="4 7"
-        />
-        <text
-          x={padding.left - 10}
-          y={baselineY + 4}
-          textAnchor="end"
-          fill={
-            hasNegativeBalance
-              ? "rgba(254,202,202,0.72)"
-              : "rgba(161,161,170,0.58)"
-          }
-          fontSize="11"
-        >
-          $0
-        </text>
+        {includeZero ? (
+          <>
+            <line
+              x1={padding.left}
+              x2={padding.left + chartWidth}
+              y1={baselineY}
+              y2={baselineY}
+              stroke={
+                hasNegativeBalance
+                  ? "rgba(248,113,113,0.42)"
+                  : "rgba(82,82,91,0.34)"
+              }
+              strokeDasharray="4 7"
+            />
+            <text
+              x={padding.left - 10}
+              y={baselineY + 4}
+              textAnchor="end"
+              fill={
+                hasNegativeBalance
+                  ? "rgba(254,202,202,0.72)"
+                  : "rgba(161,161,170,0.58)"
+              }
+              fontSize="11"
+            >
+              $0
+            </text>
+          </>
+        ) : null}
 
         <path d={areaPath} fill={`url(#${gradientId}-area)`} />
         <path
@@ -3880,14 +3916,9 @@ export function MoneyAreaDashboard() {
         {workspace === "forecast" ? (
           <div>
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
-                  Forecast
-                </p>
-                <p className="mt-0.5 text-xs text-white/46">
-                  Current balances + scheduled money only
-                </p>
-              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
+                Outlook
+              </p>
               <div className="w-36">
                 <ProjectionHorizonSegment
                   value={projectionHorizonDays}
@@ -3902,16 +3933,15 @@ export function MoneyAreaDashboard() {
             ) : (
               <>
                 <MoneyForecastSummary projection={balanceProjection} />
-                <div className="border-b border-white/[0.06] p-2">
-                  <MoneyProjectionChart
-                    projection={balanceProjection}
-                    behavioralProjection={null}
-                  />
-                </div>
-                <p className="border-b border-white/[0.06] px-3 py-2.5 text-xs leading-5 text-white/42">
-                  Forecast does not guess random spending. Add scheduled bills
-                  and income to make this line useful.
-                </p>
+                {balanceProjection.upcomingInflowMinor !== 0 ||
+                balanceProjection.upcomingOutflowMinor !== 0 ? (
+                  <div className="border-b border-white/[0.06] p-2">
+                    <MoneyProjectionChart
+                      projection={balanceProjection}
+                      behavioralProjection={null}
+                    />
+                  </div>
+                ) : null}
               </>
             )}
             <div className="flex items-center justify-between px-3 py-2.5">
