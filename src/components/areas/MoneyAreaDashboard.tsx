@@ -11,15 +11,9 @@ import {
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  CalendarClock,
-  CreditCard,
   LoaderCircle,
   PencilLine,
-  PiggyBank,
   Plus,
-  ReceiptText,
-  RotateCcw,
-  WalletCards,
   X,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -586,13 +580,6 @@ function getTrailingCompletedDateRange(today: string, days: number) {
   return { start, endInclusive, endExclusive: today, days };
 }
 
-function getReadableAccountType(type: string | null | undefined) {
-  if (type && type in ACCOUNT_TYPE_LABELS) {
-    return ACCOUNT_TYPE_LABELS[type as MoneyAccountType];
-  }
-  return "Other";
-}
-
 function normalizeAccountType(type: string | null | undefined): MoneyAccountType {
   return type && type in ACCOUNT_TYPE_LABELS
     ? (type as MoneyAccountType)
@@ -914,54 +901,6 @@ async function fetchActiveMoneyRecurringItems({
   return (data ?? []).filter((item) => item.user_id === userId);
 }
 
-function MoneyMetricCard({
-  label,
-  value,
-  detail,
-  compact = false,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "min-w-0 rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]",
-        compact ? "px-2 py-2 sm:px-3 sm:py-2.5" : "px-3 py-3"
-      )}
-    >
-      <p
-        className={cn(
-          "truncate text-[10px] font-semibold uppercase text-white/34",
-          compact ? "tracking-[0.08em] sm:tracking-[0.14em]" : "tracking-[0.14em]"
-        )}
-      >
-        {label}
-      </p>
-      <p
-        className={cn(
-          "truncate font-semibold tabular-nums tracking-tight text-white",
-          compact
-            ? "mt-1 text-[clamp(0.875rem,4vw,1.25rem)] sm:mt-1.5 sm:text-2xl"
-            : "mt-2 text-2xl sm:text-3xl"
-        )}
-      >
-        {value}
-      </p>
-      <p
-        className={cn(
-          "mt-1 truncate text-[11px] font-medium text-white/36",
-          compact && "hidden sm:block"
-        )}
-      >
-        {detail}
-      </p>
-    </div>
-  );
-}
-
 function MoneyForecastSummary({
   projection,
 }: {
@@ -981,13 +920,13 @@ function MoneyForecastSummary({
       valueClassName: "text-white/88",
     },
     {
-      label: "Inflows",
+      label: "Money in",
       value: formatMoneyFromMinor(projection.upcomingInflowMinor),
       detail: `${projection.horizonDays} days`,
       valueClassName: "text-emerald-100/72",
     },
     {
-      label: "Outflows",
+      label: "Money out",
       value: formatMoneyFromMinor(projection.upcomingOutflowMinor),
       detail: `${projection.horizonDays} days`,
       valueClassName: "text-red-100/72",
@@ -1025,96 +964,6 @@ function MoneyForecastSummary({
         </div>
       ))}
     </dl>
-  );
-}
-
-function SafeToSpendStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3">
-      <dt className="truncate text-[11px] font-medium text-white/38">{label}</dt>
-      <dd className="min-w-0 truncate text-right font-mono text-xs font-semibold tabular-nums text-white/76">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function MoneySafeToSpendPanel({
-  summary,
-}: {
-  summary: MoneySafeToSpendSummary;
-}) {
-  const committedLabel = summary.usesFallbackWindow
-    ? "Committed next 30 days"
-    : "Committed before income";
-  const nextIncomeDateLabel = summary.nextIncomeDate
-    ? formatCompactDate(summary.nextIncomeDate)
-    : "None scheduled";
-  const daysUntilIncomeLabel =
-    summary.daysUntilNextIncome === null
-      ? "No date"
-      : summary.daysUntilNextIncome === 1
-        ? "1 day"
-        : `${summary.daysUntilNextIncome} days`;
-  const windowDetail = summary.usesFallbackWindow
-    ? `Using known obligations from ${formatCompactDate(
-        summary.obligationWindowStartDate
-      )} to ${formatCompactDate(summary.obligationWindowEndDate)}.`
-    : `Known obligations through ${formatCompactDate(
-        summary.obligationWindowEndDate
-      )}, including bills due on income day.`;
-
-  return (
-    <div className="border-b border-white/[0.055] bg-white/[0.018] p-3">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:items-end">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-            Safe to spend
-          </p>
-          <p className="mt-2 truncate text-4xl font-semibold tabular-nums tracking-tight text-white sm:text-5xl">
-            {formatMoneyFromMinor(summary.safeToSpendMinor)}
-          </p>
-          <p className="mt-2 max-w-2xl text-xs leading-5 text-white/42">
-            {summary.usesFallbackWindow
-              ? "No future recurring income is scheduled, so this uses the next 30 days of known obligations."
-              : windowDetail}
-          </p>
-        </div>
-        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-          <SafeToSpendStat
-            label="Liquid"
-            value={formatMoneyFromMinor(summary.liquidBalanceMinor)}
-          />
-          <SafeToSpendStat
-            label={committedLabel}
-            value={formatMoneyFromMinor(
-              summary.requiredOutflowsBeforeNextIncomeMinor
-            )}
-          />
-          <SafeToSpendStat
-            label="Next income"
-            value={formatMoneyFromMinor(summary.nextIncomeAmountMinor)}
-          />
-          <SafeToSpendStat label="Next income date" value={nextIncomeDateLabel} />
-          <SafeToSpendStat
-            label="Days until income"
-            value={daysUntilIncomeLabel}
-          />
-          <SafeToSpendStat
-            label="After commitments"
-            value={formatMoneyFromMinor(
-              summary.balanceAfterKnownCommitmentsMinor
-            )}
-          />
-        </dl>
-      </div>
-    </div>
   );
 }
 
@@ -1402,58 +1251,6 @@ function MoneyAccountForm({
       ) : null}
 
     </form>
-  );
-}
-
-function AccountRow({
-  account,
-  isEditing,
-  onEdit,
-}: {
-  account: MoneyAccountRow;
-  isEditing: boolean;
-  onEdit: () => void;
-}) {
-  const minor = normalizeMinorUnits(account.balance_minor);
-  const currencyCode = account.currency_code ?? "USD";
-  const accountType = normalizeAccountType(account.account_type);
-  const isCreditCardDebt = accountType === "credit_card" && minor < 0;
-
-  return (
-    <button
-      type="button"
-      onClick={onEdit}
-      className={cn(
-        "grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-2xl border px-3 py-3 text-left transition active:scale-[0.995]",
-        isEditing
-          ? "border-white/[0.14] bg-white/[0.07]"
-          : "border-white/[0.07] bg-[#090909] hover:bg-white/[0.045]"
-      )}
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-white/84">
-          {account.name?.trim() || "Untitled account"}
-        </span>
-        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-          {getReadableAccountType(account.account_type)}
-          {account.institution_name?.trim()
-            ? ` · ${account.institution_name.trim()}`
-            : ""}
-          {isCreditCardDebt ? " · owed balance" : ""}
-        </span>
-      </span>
-      <span className="flex items-center gap-2">
-        <span
-          className={cn(
-            "font-mono text-sm font-semibold tabular-nums text-white/82",
-            isCreditCardDebt ? "text-white/62" : ""
-          )}
-        >
-          {formatMoneyFromMinor(minor, currencyCode)}
-        </span>
-        <PencilLine className="h-3.5 w-3.5 shrink-0 text-white/30" />
-      </span>
-    </button>
   );
 }
 
@@ -1899,15 +1696,15 @@ function RecurringItemRow({
       type="button"
       onClick={onEdit}
       className={cn(
-        "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-3 rounded-2xl border px-3 py-3 text-left transition active:scale-[0.995]",
+        "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 border-b px-2 py-2 text-left transition last:border-b-0 active:scale-[0.995]",
         isEditing
-          ? "border-white/[0.14] bg-white/[0.07]"
-          : "border-white/[0.07] bg-[#090909] hover:bg-white/[0.045]"
+          ? "border-white/[0.12] bg-white/[0.06]"
+          : "border-white/[0.055] hover:bg-white/[0.035]"
       )}
     >
       <span
         className={cn(
-          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border",
+          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border",
           isOutflow
             ? "border-red-200/10 bg-red-200/[0.035] text-red-100/70"
             : "border-emerald-200/10 bg-emerald-200/[0.04] text-emerald-100/72"
@@ -2727,13 +2524,26 @@ export function MoneyAreaDashboard() {
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [workspace, setWorkspace] = useState<"activity" | "budget" | "forecast">(
+    "budget"
+  );
   const [projectionHorizonDays, setProjectionHorizonDays] =
     useState<ProjectionHorizonDays>(30);
 
+  const editorOpen =
+    addOpen ||
+    editingAccountId !== null ||
+    transactionFormOpen ||
+    recurringFormOpen ||
+    editingRecurringId !== null ||
+    budgetFormOpen ||
+    editingBudgetId !== null;
+
   useEffect(() => {
-    document.body.classList.toggle("fab-panel-active", transactionFormOpen);
+    document.body.classList.toggle("fab-panel-active", editorOpen);
     return () => document.body.classList.remove("fab-panel-active");
-  }, [transactionFormOpen]);
+  }, [editorOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3547,6 +3357,8 @@ export function MoneyAreaDashboard() {
     : historicalSpendingQuery.error
       ? "Unable to load spending history."
       : null;
+  void behavioralProjection;
+  void historicalSpendingError;
   const projectionError = loadError ?? recurringItemsError;
   const isLoading = authLoading || (accountsQuery.isPending && Boolean(userId));
   const transactionsLoading =
@@ -3560,580 +3372,555 @@ export function MoneyAreaDashboard() {
   return (
     <div className="space-y-3 py-3">
       <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0A0A0B_58%,#101113_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Money summary"
+        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0a0a0b_60%,#101113_100%)]"
+        aria-label="Money overview"
       >
-        <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/66">
-                <WalletCards className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white/88">
-                  Money
-                </p>
-                <p className="mt-0.5 truncate text-[11px] font-medium text-white/38">
-                  Manual account balances
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {accountsQuery.isFetching && hasAccounts ? (
-              <LoaderCircle className="h-4 w-4 animate-spin text-white/34" />
-            ) : null}
-            <Button
-              type="button"
-              onClick={() => {
-                setEditingAccountId(null);
-                setFormError(null);
-                setAddOpen((open) => !open);
-              }}
-              className="h-10 rounded-xl border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/80 hover:bg-white/[0.09]"
+        <div className="px-4 pb-4 pt-5 text-center">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
+            Safe to spend
+          </p>
+          <p className="mt-1 text-[clamp(2.25rem,12vw,3.25rem)] font-semibold tabular-nums tracking-[-0.045em] text-white">
+            {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
+          </p>
+          <p className="mt-1 text-xs text-white/42">
+            After scheduled bills through{" "}
+            {formatCompactDate(safeToSpendSummary.obligationWindowEndDate)}
+          </p>
+        </div>
+        <dl className="grid grid-cols-3 border-t border-white/[0.06]">
+          {[
+            ["Cash", summary.totalAvailable],
+            ["Debt", summary.debt],
+            ["Net", summary.netPosition],
+          ].map(([label, value], index) => (
+            <div
+              key={String(label)}
+              className={cn(
+                "min-w-0 px-2 py-3 text-center",
+                index > 0 && "border-l border-white/[0.06]",
+              )}
             >
-              {addOpen ? (
-                <X className="h-3.5 w-3.5" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
-              {addOpen ? "Close" : "Add Account"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-1.5 border-t border-white/[0.055] p-2 sm:gap-2 sm:p-3">
-          <MoneyMetricCard
-            label="Total available"
-            value={formatMoneyFromMinor(summary.totalAvailable)}
-            detail="Active asset accounts"
-            compact
-          />
-          <MoneyMetricCard
-            label="Debt"
-            value={formatMoneyFromMinor(summary.debt)}
-            detail="Credit cards owed"
-            compact
-          />
-          <MoneyMetricCard
-            label="Net position"
-            value={formatMoneyFromMinor(summary.netPosition)}
-            detail="All active balances"
-            compact
-          />
-        </div>
-      </section>
-
-      {addOpen ? (
-        <MoneyAccountForm
-          mode="add"
-          initialState={getDefaultFormState()}
-          isSaving={savingMode === "add"}
-          error={savingMode === "add" || !editingAccountId ? formError : null}
-          onCancel={() => {
-            setAddOpen(false);
-            setFormError(null);
-          }}
-          onSubmit={(form) => saveAccount("add", form)}
-        />
-      ) : null}
-
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Money balance projection"
-      >
-        <div className="flex flex-col gap-3 border-b border-white/[0.055] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <CalendarClock className="h-4 w-4 shrink-0 text-white/44" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white/82">
-                Projection
-              </p>
-              <p className="mt-0.5 truncate text-[11px] font-medium text-white/38">
-                Active balances plus known recurring money
-              </p>
+              <dt className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/34">
+                {label}
+              </dt>
+              <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/82">
+                {formatMoneyFromMinor(Number(value))}
+              </dd>
             </div>
-          </div>
-          <div className="w-full sm:w-44">
-            <ProjectionHorizonSegment
-              value={projectionHorizonDays}
-              onChange={setProjectionHorizonDays}
-            />
-          </div>
-        </div>
-
-        {projectionError ? (
-          <div className="px-4 py-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-red-100/78">
-                  Unable to calculate projection
-                </p>
-                <p className="mt-1 text-xs leading-5 text-white/38">
-                  {projectionError}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void accountsQuery.refetch();
-                  void recurringItemsQuery.refetch();
-                }}
-                className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[11px] font-semibold text-white/62 transition hover:text-white"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Retry
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <MoneySafeToSpendPanel summary={safeToSpendSummary} />
-
-            <MoneyForecastSummary projection={balanceProjection} />
-
-            <div className="border-b border-white/[0.055] p-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-                    Spending estimate
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-white/40">
-                    Recent posted USD expenses from{" "}
-                    {formatReadableDate(behavioralProjection.historicalStartDate)}{" "}
-                    to {formatReadableDate(behavioralProjection.historicalEndDate)}.
-                  </p>
-                </div>
-                {historicalSpendingQuery.isFetching ? (
-                  <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-white/34" />
-                ) : null}
-              </div>
-
-              {historicalSpendingQuery.isPending && Boolean(userId) ? (
-                <div className="flex items-center gap-2 rounded-xl border border-white/[0.075] bg-white/[0.025] px-3 py-2 text-xs text-white/42">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Loading spending estimate...
-                </div>
-              ) : historicalSpendingError ? (
-                <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2">
-                  <p className="text-xs leading-5 text-red-100/72">
-                    Spending estimate unavailable. {historicalSpendingError}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void historicalSpendingQuery.refetch()}
-                    className="inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2 text-[11px] font-semibold text-white/62 transition hover:text-white"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retry
-                  </button>
-                </div>
-              ) : behavioralProjection.status === "insufficient" ? (
-                <p className="rounded-xl border border-white/[0.075] bg-white/[0.025] px-3 py-2 text-xs leading-5 text-white/42">
-                  More transaction history is needed for spending estimates.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
-                  <MoneyMetricCard
-                    label="Expected spending"
-                    value={formatMoneyFromMinor(
-                      behavioralProjection.expectedVariableSpendMinor
-                    )}
-                    detail={`${behavioralProjection.horizonDays} day window`}
-                  />
-                  <MoneyMetricCard
-                    label="Likely balance"
-                    value={formatMoneyFromMinor(
-                      behavioralProjection.projectedBalanceMinor
-                    )}
-                    detail={formatReadableDate(balanceProjection.endDate)}
-                  />
-                  <MoneyMetricCard
-                    label="Likely lowest"
-                    value={formatMoneyFromMinor(
-                      behavioralProjection.lowestBalanceMinor
-                    )}
-                    detail={formatReadableDate(
-                      behavioralProjection.lowestBalanceDate
-                    )}
-                  />
-                  <MoneyMetricCard
-                    label="Avg daily spend"
-                    value={`${formatMoneyFromMinor(
-                      behavioralProjection.averageDailyVariableSpendMinor
-                    )}/day`}
-                    detail={`${behavioralProjection.transactionCount} posted expenses`}
-                  />
-                  <MoneyMetricCard
-                    label="Vs known"
-                    value={formatMoneyFromMinor(
-                      behavioralProjection.differenceVsKnownMinor
-                    )}
-                    detail="Likely minus known"
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="p-3">
-              <MoneyProjectionChart
-                projection={balanceProjection}
-                behavioralProjection={
-                  historicalSpendingError ? null : behavioralProjection
-                }
-              />
-              <div className="mt-3 grid grid-cols-1 gap-2 border-t border-white/[0.055] pt-3 sm:grid-cols-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-                    Window
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-white/44">
-                    {formatReadableDate(balanceProjection.startDate)} to{" "}
-                    {formatReadableDate(balanceProjection.endDate)} starts from{" "}
-                    {formatMoneyFromMinor(balanceProjection.startingBalanceMinor)}.
-                  </p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-                    Largest recurring changes
-                  </p>
-                  {balanceProjection.keyOccurrences.length > 0 ? (
-                    <div className="mt-2 space-y-1.5">
-                      {balanceProjection.keyOccurrences.map((occurrence) => (
-                        <div
-                          key={occurrence.id}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-xs"
-                        >
-                          <span className="min-w-0 truncate font-medium text-white/58">
-                            {formatCompactDate(occurrence.date)} · {occurrence.name}
-                          </span>
-                          <span
-                            className={cn(
-                              "font-mono font-semibold tabular-nums",
-                              occurrence.direction === "outflow"
-                                ? "text-red-100/72"
-                                : "text-emerald-100/72"
-                            )}
-                          >
-                            {formatMoneyFromMinor(
-                              occurrence.signedAmountMinor,
-                              occurrence.currencyCode
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-xs leading-5 text-white/40">
-                      No recurring changes in this window.
-                    </p>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-                    Variable history
-                  </p>
-                  {behavioralProjection.status === "sufficient" &&
-                  !historicalSpendingError ? (
-                    <p className="mt-1 text-xs leading-5 text-white/44">
-                      Trailing 7 days:{" "}
-                      {formatMoneyFromMinor(
-                        behavioralProjection.trailing7SpendMinor
-                      )}
-                      . Trailing 30 days:{" "}
-                      {formatMoneyFromMinor(
-                        behavioralProjection.trailing30SpendMinor
-                      )}
-                      {behavioralProjection.topCategoryName
-                        ? `. Largest category: ${behavioralProjection.topCategoryName} · ${formatMoneyFromMinor(
-                            behavioralProjection.topCategorySpendMinor
-                          )}.`
-                        : "."}
-                      {" "}Direct recurring links are not available here, so
-                      fixed-bill overlap is possible in V1.
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs leading-5 text-white/40">
-                      Expense transactions are not linked directly to recurring
-                      items here, so fixed-bill overlap is possible in V1.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
-
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Money accounts"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <CreditCard className="h-4 w-4 shrink-0 text-white/44" />
-            <p className="truncate text-sm font-semibold text-white/82">
+          ))}
+        </dl>
+        <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
               Accounts
             </p>
-          </div>
-          {loadError ? (
-            <button
-              type="button"
-              onClick={() => void accountsQuery.refetch()}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[11px] font-semibold text-white/62 transition hover:text-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Retry
-            </button>
-          ) : (
-            <span className="text-[11px] font-medium text-white/34">
-              {hasAccounts
-                ? `${accounts.length} active`
-                : "No active accounts yet"}
-            </span>
-          )}
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center gap-2 px-4 py-5 text-xs text-white/44">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Loading Money accounts...
-          </div>
-        ) : loadError ? (
-          <div className="px-4 py-5">
-            <p className="text-sm font-semibold text-red-100/78">
-              Unable to load Money accounts
+            <p className="mt-0.5 truncate text-xs text-white/56">
+              {accounts.length} active ·{" "}
+              {formatMoneyFromMinor(summary.totalAvailable)} available
             </p>
-            <p className="mt-1 text-xs leading-5 text-white/38">{loadError}</p>
           </div>
-        ) : hasAccounts ? (
-          <div className="space-y-2 p-3">
-            {accounts.map((account) => {
-              const isEditing = editingAccountId === account.id;
-              return (
-                <div key={account.id} className="space-y-2">
-                  <AccountRow
-                    account={account}
-                    isEditing={isEditing}
-                    onEdit={() => {
-                      setAddOpen(false);
-                      setFormError(null);
-                      setEditingAccountId((current) =>
-                        current === account.id ? null : account.id
-                      );
-                    }}
-                  />
-                  {isEditing ? (
-                    <MoneyAccountForm
-                      mode="edit"
-                      initialState={getEditFormState(account)}
-                      isSaving={savingMode === "edit"}
-                      error={formError}
-                      onCancel={() => {
-                        setEditingAccountId(null);
+          <button
+            type="button"
+            onClick={() => setAccountsOpen((open) => !open)}
+            className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/[0.06]"
+          >
+            {accountsOpen ? "Done" : "Manage"}
+          </button>
+        </div>
+        {accountsOpen ? (
+          <div className="border-t border-white/[0.06]">
+            <div className="flex justify-end px-3 py-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditingAccountId(null);
+                  setFormError(null);
+                  setAddOpen((open) => !open);
+                }}
+                className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
+              >
+                {addOpen ? (
+                  <X className="h-3.5 w-3.5" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {addOpen ? "Close" : "Add Account"}
+              </Button>
+            </div>
+            {addOpen ? (
+              <div className="border-t border-white/[0.06] p-3">
+                <MoneyAccountForm
+                  mode="add"
+                  initialState={getDefaultFormState()}
+                  isSaving={savingMode === "add"}
+                  error={
+                    savingMode === "add" || !editingAccountId ? formError : null
+                  }
+                  onCancel={() => {
+                    setAddOpen(false);
+                    setFormError(null);
+                  }}
+                  onSubmit={(form) => saveAccount("add", form)}
+                />
+              </div>
+            ) : null}
+            {isLoading ? (
+              <div className="px-4 py-4 text-xs text-white/44">
+                Loading accounts...
+              </div>
+            ) : loadError ? (
+              <div className="px-4 py-4 text-xs text-red-100/78">
+                {loadError}
+              </div>
+            ) : accounts.length ? (
+              accounts.map((account) => {
+                const isEditing = editingAccountId === account.id;
+                return (
+                  <div
+                    key={account.id}
+                    className="border-t border-white/[0.06]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddOpen(false);
                         setFormError(null);
+                        setEditingAccountId((current) =>
+                          current === account.id ? null : account.id,
+                        );
                       }}
-                      onSubmit={(form) => saveAccount("edit", form, account.id)}
-                    />
-                  ) : null}
+                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-white/82">
+                          {account.name?.trim() || "Untitled account"}
+                        </span>
+                        <span className="block truncate text-[11px] capitalize text-white/36">
+                          {normalizeAccountType(
+                            account.account_type,
+                          ).replaceAll("_", " ")}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2 text-sm font-semibold tabular-nums text-white/76">
+                        {formatMoneyFromMinor(
+                          normalizeMinorUnits(account.balance_minor),
+                        )}
+                        <PencilLine className="h-3.5 w-3.5 text-white/28" />
+                      </span>
+                    </button>
+                    {isEditing ? (
+                      <div className="p-3 pt-0">
+                        <MoneyAccountForm
+                          mode="edit"
+                          initialState={getEditFormState(account)}
+                          isSaving={savingMode === "edit"}
+                          error={formError}
+                          onCancel={() => {
+                            setEditingAccountId(null);
+                            setFormError(null);
+                          }}
+                          onSubmit={(form) =>
+                            saveAccount("edit", form, account.id)
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="border-t border-white/[0.06] px-4 py-4 text-xs text-white/44">
+                No accounts yet. Add one to start tracking cash.
+              </div>
+            )}
+          </div>
+        ) : null}
+      </section>
+
+      <section
+        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
+        aria-label="Upcoming scheduled money"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2.5">
+          <div>
+            <p className="text-sm font-semibold text-white/84">Upcoming</p>
+            <p className="text-[11px] text-white/36">Next scheduled money</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWorkspace("forecast")}
+            className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white/58 hover:bg-white/[0.06]"
+          >
+            View all
+          </button>
+        </div>
+        {recurringItemsLoading ? (
+          <div className="px-3 py-4 text-xs text-white/42">
+            Loading scheduled money...
+          </div>
+        ) : recurringItemsError ? (
+          <div className="px-3 py-4 text-xs text-red-100/76">
+            {recurringItemsError}
+          </div>
+        ) : upcomingRecurringItems.length ? (
+          <div>
+            {upcomingRecurringItems.slice(0, 3).map(({ item, nextDate }) => {
+              const days = getDayDifference(todayDate, nextDate);
+              return (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-white/[0.055] px-3 py-2.5 last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white/82">
+                      {item.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-white/38">
+                      {formatCompactDate(nextDate)}
+                      {item.account_id
+                        ? ` · ${accountNameById[item.account_id] ?? "Unknown account"}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        item.direction === "outflow"
+                          ? "text-red-100/76"
+                          : "text-emerald-100/76",
+                      )}
+                    >
+                      {formatVisualRecurringAmount(item)}
+                    </p>
+                    <p className="mt-0.5 text-[10px] tabular-nums text-white/34">
+                      {days === 0
+                        ? "today"
+                        : `in ${days} ${days === 1 ? "day" : "days"}`}
+                    </p>
+                  </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="px-4 py-6">
-            <p className="text-sm font-semibold text-white/76">
-              Add your first account
-            </p>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-white/40">
-              Track manual balances first. Add checking, savings, cash, or a
-              credit card balance to make this Money area useful.
-            </p>
-            <Button
+          <div className="flex items-start justify-between gap-3 px-3 py-3">
+            <div>
+              <p className="text-sm font-semibold text-white/74">
+                Nothing scheduled yet
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/38">
+                Add bills or expected income so Safe to Spend and Forecast have
+                context.
+              </p>
+            </div>
+            <button
               type="button"
-              onClick={() => setAddOpen(true)}
-              className="mt-3 h-9 rounded-lg border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/72 hover:bg-white/[0.09]"
+              onClick={() => {
+                setWorkspace("forecast");
+                setRecurringFormOpen(true);
+              }}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-white/68"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add Account
-            </Button>
+              Add
+            </button>
           </div>
         )}
       </section>
 
       <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Money transactions"
+        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
+        aria-label="Money workspace"
       >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <ReceiptText className="h-4 w-4 shrink-0 text-white/44" />
-            <p className="truncate text-sm font-semibold text-white/82">
-              Transactions
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {transactionsQuery.isFetching && recentTransactions.length > 0 ? (
-              <LoaderCircle className="h-4 w-4 animate-spin text-white/34" />
-            ) : null}
-            {transactionsError ? (
-              <button
-                type="button"
-                onClick={() => void transactionsQuery.refetch()}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[11px] font-semibold text-white/62 transition hover:text-white"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Retry
-              </button>
-            ) : (
+        <div
+          className="grid grid-cols-3 gap-1 border-b border-white/[0.06] bg-white/[0.018] p-1.5"
+          role="tablist"
+          aria-label="Money workspace"
+        >
+          {(["activity", "budget", "forecast"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={workspace === tab}
+              onClick={() => setWorkspace(tab)}
+              className={cn(
+                "h-8 rounded-lg text-[10px] font-semibold uppercase tracking-[0.12em] transition",
+                workspace === tab
+                  ? "bg-white/[0.10] text-white/88"
+                  : "text-white/38",
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {workspace === "activity" ? (
+          <div>
+            <div className="flex items-center justify-between px-3 py-2.5">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
+                  Activity
+                </p>
+                <p className="text-xs text-white/46">What actually happened</p>
+              </div>
               <Button
                 type="button"
+                disabled={!hasAccounts}
                 onClick={() => {
                   setTransactionError(null);
                   setTransactionFormOpen((open) => !open);
                 }}
-                disabled={!hasAccounts}
-                className="h-9 rounded-xl border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/80 hover:bg-white/[0.09]"
+                className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
               >
                 {transactionFormOpen ? (
                   <X className="h-3.5 w-3.5" />
                 ) : (
                   <Plus className="h-3.5 w-3.5" />
                 )}
-                {transactionFormOpen ? "Close" : "Add"}
+                {transactionFormOpen ? "Close" : "Add Transaction"}
               </Button>
+            </div>
+            <dl className="grid grid-cols-3 border-y border-white/[0.06]">
+              {[
+                ["Income", monthMetrics.income],
+                ["Spent", monthMetrics.spent],
+                ["Net", monthMetrics.net],
+              ].map(([label, value], index) => (
+                <div
+                  key={String(label)}
+                  className={cn(
+                    "min-w-0 px-2 py-2.5 text-center",
+                    index > 0 && "border-l border-white/[0.06]",
+                  )}
+                >
+                  <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/32">
+                    {label}
+                  </dt>
+                  <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/78">
+                    {formatMoneyFromMinor(Number(value))}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {transactionFormOpen ? (
+              <div className="border-b border-white/[0.06] p-3">
+                <MoneyTransactionForm
+                  accounts={accounts}
+                  categories={categories}
+                  isSaving={transactionSaving}
+                  error={
+                    transactionError ??
+                    (categoriesQuery.error
+                      ? "Categories could not load. You can still log without a category."
+                      : null)
+                  }
+                  onCancel={() => {
+                    setTransactionFormOpen(false);
+                    setTransactionError(null);
+                  }}
+                  onSubmit={addTransaction}
+                />
+              </div>
+            ) : null}
+            {transactionsLoading ? (
+              <div className="px-3 py-4 text-xs text-white/42">
+                Loading activity...
+              </div>
+            ) : transactionsError ? (
+              <div className="px-3 py-4 text-xs text-red-100/76">
+                {transactionsError}
+              </div>
+            ) : recentTransactions.length ? (
+              recentTransactions.map((transaction) => (
+                <TransactionRow
+                  key={transaction.id}
+                  transaction={transaction}
+                  accountName={
+                    accountNameById[transaction.account_id] ?? "Unknown account"
+                  }
+                  categoryName={
+                    transaction.category_id
+                      ? (categoryNameById[transaction.category_id] ?? null)
+                      : null
+                  }
+                />
+              ))
+            ) : (
+              <div className="px-3 py-5 text-xs text-white/42">
+                No activity yet. Add income or spending after it happens.
+              </div>
             )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-1.5 border-b border-white/[0.055] p-2 sm:gap-2 sm:p-3">
-          <MoneyMetricCard
-            label="Income"
-            value={formatMoneyFromMinor(monthMetrics.income)}
-            detail="Posted inflows"
-            compact
-          />
-          <MoneyMetricCard
-            label="Spent"
-            value={formatMoneyFromMinor(monthMetrics.spent)}
-            detail="Posted outflows"
-            compact
-          />
-          <MoneyMetricCard
-            label="Net"
-            value={formatMoneyFromMinor(monthMetrics.net)}
-            detail="Income minus spend"
-            compact
-          />
-        </div>
-
-        {transactionFormOpen ? (
-          <div className="border-b border-white/[0.055] p-3">
-            <MoneyTransactionForm
-              accounts={accounts}
-              categories={categories}
-              isSaving={transactionSaving}
-              error={
-                transactionError ??
-                (categoriesQuery.error
-                  ? "Categories could not load. You can still log without a category."
-                  : null)
-              }
-              onCancel={() => {
-                setTransactionFormOpen(false);
-                setTransactionError(null);
-              }}
-              onSubmit={addTransaction}
-            />
-          </div>
-        ) : transactionError ? (
-          <div className="border-b border-white/[0.055] px-4 py-3">
-            <p className="rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
-              {transactionError}
-            </p>
           </div>
         ) : null}
 
-        {transactionsLoading ? (
-          <div className="flex items-center gap-2 px-4 py-5 text-xs text-white/44">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Loading transactions...
-          </div>
-        ) : transactionsError ? (
-          <div className="px-4 py-5">
-            <p className="text-sm font-semibold text-red-100/78">
-              Unable to load transactions
-            </p>
-            <p className="mt-1 text-xs leading-5 text-white/38">
-              {transactionsError}
-            </p>
-          </div>
-        ) : recentTransactions.length > 0 ? (
+        {workspace === "budget" ? (
           <div>
-            {recentTransactions.map((transaction) => (
-              <TransactionRow
-                key={transaction.id}
-                transaction={transaction}
-                accountName={
-                  accountNameById[transaction.account_id] ?? "Unknown account"
-                }
-                categoryName={
-                  transaction.category_id
-                    ? categoryNameById[transaction.category_id] ?? null
-                    : null
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="px-4 py-6">
-            <p className="text-sm font-semibold text-white/76">
-              No transactions yet
-            </p>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-white/40">
-              Add posted income or expenses manually after creating an account.
-            </p>
-            <Button
+            <div className="px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
+                Monthly budget
+              </p>
+              <p className="mt-0.5 text-xs text-white/46">
+                What you allow yourself to spend
+              </p>
+            </div>
+            <dl className="grid grid-cols-3 border-y border-white/[0.06]">
+              {[
+                ["Budgeted", budgetSummary.limit],
+                ["Spent", budgetSummary.spent],
+                ["Left", budgetSummary.remaining],
+              ].map(([label, value], index) => (
+                <div
+                  key={String(label)}
+                  className={cn(
+                    "min-w-0 px-2 py-2.5 text-center",
+                    index > 0 && "border-l border-white/[0.06]",
+                  )}
+                >
+                  <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/32">
+                    {label}
+                  </dt>
+                  <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/78">
+                    {formatMoneyFromMinor(Number(value))}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {budgetFormOpen ? (
+              <div className="border-b border-white/[0.06] p-3">
+                <MoneyBudgetForm
+                  mode="add"
+                  initialState={getDefaultBudgetFormState(
+                    expenseCategories,
+                    budgetedCategoryIds,
+                  )}
+                  expenseCategories={expenseCategories}
+                  budgetedCategoryIds={budgetedCategoryIds}
+                  isSaving={budgetSaving}
+                  error={
+                    budgetError ??
+                    (categoriesQuery.error
+                      ? "Expense categories could not load, so budgets cannot be added."
+                      : null)
+                  }
+                  onCancel={() => {
+                    setBudgetFormOpen(false);
+                    setBudgetError(null);
+                  }}
+                  onSubmit={(form) => saveBudget("add", form)}
+                />
+              </div>
+            ) : null}
+            {budgetsLoading ? (
+              <div className="px-3 py-4 text-xs text-white/42">
+                Loading monthly budget...
+              </div>
+            ) : budgetsError ? (
+              <div className="px-3 py-4 text-xs text-red-100/76">
+                {budgetsError}
+              </div>
+            ) : budgetRows.length ? (
+              budgetRows.map((row) => {
+                const isEditing = editingBudgetId === row.budget.id;
+                return (
+                  <div key={row.budget.id}>
+                    <BudgetRow
+                      row={row}
+                      isEditing={isEditing}
+                      onEdit={() => {
+                        setBudgetFormOpen(false);
+                        setBudgetError(null);
+                        setEditingBudgetId((current) =>
+                          current === row.budget.id ? null : row.budget.id,
+                        );
+                      }}
+                    />
+                    {isEditing ? (
+                      <div className="border-b border-white/[0.06] p-3">
+                        <MoneyBudgetForm
+                          mode="edit"
+                          initialState={getEditBudgetFormState(row.budget)}
+                          expenseCategories={expenseCategories}
+                          budgetedCategoryIds={budgetedCategoryIds}
+                          isSaving={budgetSaving}
+                          error={budgetError}
+                          onCancel={() => {
+                            setEditingBudgetId(null);
+                            setBudgetError(null);
+                          }}
+                          onSubmit={(form) =>
+                            saveBudget("edit", form, row.budget.id)
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="px-3 py-4 text-xs text-white/42">
+                No limits set for this month. Build your budget from zero.
+              </div>
+            )}
+            <button
               type="button"
               onClick={() => {
-                setTransactionError(null);
-                setTransactionFormOpen(true);
+                setEditingBudgetId(null);
+                setBudgetError(null);
+                setBudgetFormOpen(true);
               }}
-              disabled={!hasAccounts}
-              className="mt-3 h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
+              className="w-full border-t border-white/[0.06] px-3 py-3 text-left text-xs font-semibold text-white/68 hover:bg-white/[0.035]"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add Transaction
-            </Button>
+              + Add Category
+            </button>
           </div>
-        )}
-      </section>
+        ) : null}
 
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Upcoming recurring Money items"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <CalendarClock className="h-4 w-4 shrink-0 text-white/44" />
-            <p className="truncate text-sm font-semibold text-white/82">
-              Upcoming
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {recurringItemsQuery.isFetching && upcomingRecurringItems.length > 0 ? (
-              <LoaderCircle className="h-4 w-4 animate-spin text-white/34" />
-            ) : null}
-            {recurringItemsError ? (
-              <button
-                type="button"
-                onClick={() => void recurringItemsQuery.refetch()}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[11px] font-semibold text-white/62 transition hover:text-white"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Retry
-              </button>
+        {workspace === "forecast" ? (
+          <div>
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
+                  Forecast
+                </p>
+                <p className="mt-0.5 text-xs text-white/46">
+                  Current balances + scheduled money only
+                </p>
+              </div>
+              <div className="w-36">
+                <ProjectionHorizonSegment
+                  value={projectionHorizonDays}
+                  onChange={setProjectionHorizonDays}
+                />
+              </div>
+            </div>
+            {projectionError ? (
+              <div className="px-3 py-4 text-xs text-red-100/76">
+                {projectionError}
+              </div>
             ) : (
+              <>
+                <MoneyForecastSummary projection={balanceProjection} />
+                <div className="border-b border-white/[0.06] p-2">
+                  <MoneyProjectionChart
+                    projection={balanceProjection}
+                    behavioralProjection={null}
+                  />
+                </div>
+                <p className="border-b border-white/[0.06] px-3 py-2.5 text-xs leading-5 text-white/42">
+                  Forecast does not guess random spending. Add scheduled bills
+                  and income to make this line useful.
+                </p>
+              </>
+            )}
+            <div className="flex items-center justify-between px-3 py-2.5">
+              <div>
+                <p className="text-sm font-semibold text-white/82">
+                  Scheduled money
+                </p>
+                <p className="text-[11px] text-white/36">Planning only</p>
+              </div>
               <Button
                 type="button"
                 onClick={() => {
@@ -4141,310 +3928,108 @@ export function MoneyAreaDashboard() {
                   setRecurringError(null);
                   setRecurringFormOpen((open) => !open);
                 }}
-                className="h-9 rounded-xl border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/80 hover:bg-white/[0.09]"
+                className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
               >
                 {recurringFormOpen ? (
                   <X className="h-3.5 w-3.5" />
                 ) : (
                   <Plus className="h-3.5 w-3.5" />
                 )}
-                {recurringFormOpen ? "Close" : "Add"}
+                {recurringFormOpen ? "Close" : "Add Scheduled"}
               </Button>
-            )}
-          </div>
-        </div>
-
-        {recurringFormOpen ? (
-          <div className="border-b border-white/[0.055] p-3">
-            <MoneyRecurringItemForm
-              mode="add"
-              initialState={getDefaultRecurringItemFormState()}
-              accounts={accounts}
-              categories={categories}
-              isSaving={recurringSaving}
-              error={
-                recurringError ??
-                (categoriesQuery.error
-                  ? "Categories could not load. You can still save without a category."
-                  : null)
-              }
-              onCancel={() => {
-                setRecurringFormOpen(false);
-                setRecurringError(null);
-              }}
-              onSubmit={(form) => saveRecurringItem("add", form)}
-            />
-          </div>
-        ) : recurringError && !editingRecurringId ? (
-          <div className="border-b border-white/[0.055] px-4 py-3">
-            <p className="rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
-              {recurringError}
-            </p>
-          </div>
-        ) : null}
-
-        {recurringItemsLoading ? (
-          <div className="flex items-center gap-2 px-4 py-5 text-xs text-white/44">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Loading upcoming items...
-          </div>
-        ) : recurringItemsError ? (
-          <div className="px-4 py-5">
-            <p className="text-sm font-semibold text-red-100/78">
-              Unable to load upcoming items
-            </p>
-            <p className="mt-1 text-xs leading-5 text-white/38">
-              {recurringItemsError}
-            </p>
-          </div>
-        ) : upcomingRecurringItems.length > 0 ? (
-          <div className="space-y-2 p-3">
-            {upcomingRecurringItems.map(({ item, nextDate }) => {
-              const isEditing = editingRecurringId === item.id;
-              return (
-                <div key={item.id} className="space-y-2">
-                  <RecurringItemRow
-                    item={item}
-                    nextDate={nextDate}
-                    accountName={
-                      item.account_id
-                        ? accountNameById[item.account_id] ?? "Unknown account"
-                        : null
-                    }
-                    categoryName={
-                      item.category_id
-                        ? categoryNameById[item.category_id] ?? null
-                        : null
-                    }
-                    isEditing={isEditing}
-                    onEdit={() => {
-                      setRecurringFormOpen(false);
-                      setRecurringError(null);
-                      setEditingRecurringId((current) =>
-                        current === item.id ? null : item.id
-                      );
-                    }}
-                  />
-                  {isEditing ? (
-                    <MoneyRecurringItemForm
-                      mode="edit"
-                      initialState={getEditRecurringItemFormState(item)}
-                      accounts={accounts}
-                      categories={categories}
-                      isSaving={recurringSaving}
-                      error={recurringError}
-                      onCancel={() => {
-                        setEditingRecurringId(null);
-                        setRecurringError(null);
-                      }}
-                      onSubmit={(form) =>
-                        saveRecurringItem("edit", form, item.id)
-                      }
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="px-4 py-6">
-            <p className="text-sm font-semibold text-white/76">
-              No upcoming items yet
-            </p>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-white/40">
-              Add recurring bills or expected income as planning items. They do
-              not create transactions or change balances.
-            </p>
-            <Button
-              type="button"
-              onClick={() => {
-                setRecurringError(null);
-                setRecurringFormOpen(true);
-              }}
-              className="mt-3 h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Item
-            </Button>
-          </div>
-        )}
-      </section>
-
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
-        aria-label="Monthly Money budgets"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <PiggyBank className="h-4 w-4 shrink-0 text-white/44" />
-            <p className="truncate text-sm font-semibold text-white/82">
-              Budget
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {budgetsQuery.isFetching && budgetRows.length > 0 ? (
-              <LoaderCircle className="h-4 w-4 animate-spin text-white/34" />
+            </div>
+            {recurringFormOpen ? (
+              <div className="border-y border-white/[0.06] p-3">
+                <MoneyRecurringItemForm
+                  mode="add"
+                  initialState={getDefaultRecurringItemFormState()}
+                  accounts={accounts}
+                  categories={categories}
+                  isSaving={recurringSaving}
+                  error={
+                    recurringError ??
+                    (categoriesQuery.error
+                      ? "Categories could not load. You can still save without a category."
+                      : null)
+                  }
+                  onCancel={() => {
+                    setRecurringFormOpen(false);
+                    setRecurringError(null);
+                  }}
+                  onSubmit={(form) => saveRecurringItem("add", form)}
+                />
+              </div>
             ) : null}
-            {budgetsError ? (
-              <button
-                type="button"
-                onClick={() => void budgetsQuery.refetch()}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[11px] font-semibold text-white/62 transition hover:text-white"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Retry
-              </button>
+            {recurringItemsLoading ? (
+              <div className="px-3 py-4 text-xs text-white/42">
+                Loading scheduled money...
+              </div>
+            ) : recurringItemsError ? (
+              <div className="px-3 py-4 text-xs text-red-100/76">
+                {recurringItemsError}
+              </div>
+            ) : upcomingRecurringItems.length ? (
+              <div>
+                {upcomingRecurringItems.map(({ item, nextDate }) => {
+                  const isEditing = editingRecurringId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      className="border-t border-white/[0.04] p-2"
+                    >
+                      <RecurringItemRow
+                        item={item}
+                        nextDate={nextDate}
+                        accountName={
+                          item.account_id
+                            ? (accountNameById[item.account_id] ??
+                              "Unknown account")
+                            : null
+                        }
+                        categoryName={
+                          item.category_id
+                            ? (categoryNameById[item.category_id] ?? null)
+                            : null
+                        }
+                        isEditing={isEditing}
+                        onEdit={() => {
+                          setRecurringFormOpen(false);
+                          setRecurringError(null);
+                          setEditingRecurringId((current) =>
+                            current === item.id ? null : item.id,
+                          );
+                        }}
+                      />
+                      {isEditing ? (
+                        <div className="pt-2">
+                          <MoneyRecurringItemForm
+                            mode="edit"
+                            initialState={getEditRecurringItemFormState(item)}
+                            accounts={accounts}
+                            categories={categories}
+                            isSaving={recurringSaving}
+                            error={recurringError}
+                            onCancel={() => {
+                              setEditingRecurringId(null);
+                              setRecurringError(null);
+                            }}
+                            onSubmit={(form) =>
+                              saveRecurringItem("edit", form, item.id)
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <Button
-                type="button"
-                onClick={() => {
-                  setEditingBudgetId(null);
-                  setBudgetError(null);
-                  setBudgetFormOpen((open) => !open);
-                }}
-                className="h-9 rounded-xl border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/80 hover:bg-white/[0.09]"
-              >
-                {budgetFormOpen ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
-                {budgetFormOpen ? "Close" : "Add"}
-              </Button>
+              <div className="px-3 py-4 text-xs text-white/42">
+                Nothing scheduled yet.
+              </div>
             )}
           </div>
-        </div>
-
-        {budgetRows.length > 0 ? (
-          <div className="grid grid-cols-3 gap-1.5 border-b border-white/[0.055] p-2 sm:gap-2 sm:p-3">
-            <MoneyMetricCard
-              label="Budget"
-              value={formatMoneyFromMinor(budgetSummary.limit)}
-              detail="Total limits"
-              compact
-            />
-            <MoneyMetricCard
-              label="Spent"
-              value={formatMoneyFromMinor(budgetSummary.spent)}
-              detail="Budgeted categories"
-              compact
-            />
-            <MoneyMetricCard
-              label="Left"
-              value={formatMoneyFromMinor(budgetSummary.remaining)}
-              detail="Limits minus spend"
-              compact
-            />
-          </div>
         ) : null}
-
-        {budgetFormOpen ? (
-          <div className="border-b border-white/[0.055] p-3">
-            <MoneyBudgetForm
-              mode="add"
-              initialState={getDefaultBudgetFormState(
-                expenseCategories,
-                budgetedCategoryIds
-              )}
-              expenseCategories={expenseCategories}
-              budgetedCategoryIds={budgetedCategoryIds}
-              isSaving={budgetSaving}
-              error={
-                budgetError ??
-                (categoriesQuery.error
-                  ? "Expense categories could not load, so budgets cannot be added."
-                  : null)
-              }
-              onCancel={() => {
-                setBudgetFormOpen(false);
-                setBudgetError(null);
-              }}
-              onSubmit={(form) => saveBudget("add", form)}
-            />
-          </div>
-        ) : budgetError && !editingBudgetId ? (
-          <div className="border-b border-white/[0.055] px-4 py-3">
-            <p className="rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
-              {budgetError}
-            </p>
-          </div>
-        ) : null}
-
-        {budgetsLoading ? (
-          <div className="flex items-center gap-2 px-4 py-5 text-xs text-white/44">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Loading budgets...
-          </div>
-        ) : budgetsError ? (
-          <div className="px-4 py-5">
-            <p className="text-sm font-semibold text-red-100/78">
-              Unable to load budgets
-            </p>
-            <p className="mt-1 text-xs leading-5 text-white/38">
-              {budgetsError}
-            </p>
-          </div>
-        ) : budgetRows.length > 0 ? (
-          <div>
-            {budgetRows.map((row) => {
-              const isEditing = editingBudgetId === row.budget.id;
-              return (
-                <div key={row.budget.id} className="space-y-2">
-                  <BudgetRow
-                    row={row}
-                    isEditing={isEditing}
-                    onEdit={() => {
-                      setBudgetFormOpen(false);
-                      setBudgetError(null);
-                      setEditingBudgetId((current) =>
-                        current === row.budget.id ? null : row.budget.id
-                      );
-                    }}
-                  />
-                  {isEditing ? (
-                    <MoneyBudgetForm
-                      mode="edit"
-                      initialState={getEditBudgetFormState(row.budget)}
-                      expenseCategories={expenseCategories}
-                      budgetedCategoryIds={budgetedCategoryIds}
-                      isSaving={budgetSaving}
-                      error={budgetError}
-                      onCancel={() => {
-                        setEditingBudgetId(null);
-                        setBudgetError(null);
-                      }}
-                      onSubmit={(form) =>
-                        saveBudget("edit", form, row.budget.id)
-                      }
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="px-4 py-6">
-            <p className="text-sm font-semibold text-white/76">
-              No budgets for this month
-            </p>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-white/40">
-              Add limits for active expense categories to compare current-month
-              spending against plan.
-            </p>
-            <Button
-              type="button"
-              onClick={() => {
-                setBudgetError(null);
-                setBudgetFormOpen(true);
-              }}
-              className="mt-3 h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Budget
-            </Button>
-
-          </div>
-        )}
       </section>
     </div>
   );
