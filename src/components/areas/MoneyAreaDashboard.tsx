@@ -11,9 +11,15 @@ import {
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  CalendarDays,
+  CircleDollarSign,
   LoaderCircle,
+  MessageSquareText,
   PencilLine,
   Plus,
+  Repeat2,
+  Tag,
+  WalletCards,
   X,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1356,20 +1362,25 @@ function RecurringTypeSegment({
   return (
     <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-white/[0.035] p-1">
       {[
-        { value: "expense", label: "Bill / Expense" },
-        { value: "income", label: "Income" },
+        { value: "expense", label: "Bill / Expense", symbol: "↓" },
+        { value: "income", label: "Income", symbol: "↑" },
       ].map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value as ManualRecurringType)}
           className={cn(
-            "min-h-9 rounded-lg px-3 text-xs font-semibold transition",
-            value === option.value
-              ? "bg-white text-black"
-              : "text-white/54 hover:bg-white/[0.055] hover:text-white/78"
+            "min-h-10 rounded-lg border px-3 text-xs font-semibold transition",
+            value === option.value && option.value === "expense"
+              ? "border-amber-200/15 bg-amber-100/[0.09] text-amber-50/90"
+              : value === option.value
+                ? "border-emerald-200/15 bg-emerald-100/[0.09] text-emerald-50/90"
+                : "border-transparent text-white/46 hover:bg-white/[0.055] hover:text-white/78",
           )}
         >
+          <span className="mr-1.5 text-sm" aria-hidden="true">
+            {option.symbol}
+          </span>
           {option.label}
         </button>
       ))}
@@ -1396,19 +1407,19 @@ function MoneyRecurringItemForm({
   onCancel: () => void;
   onSubmit: (state: RecurringItemFormState) => Promise<boolean>;
 }) {
-  const [form, setForm] = useState(initialState);
+  const [form, setForm] = useState(() => initialState);
+  const [noteExpanded, setNoteExpanded] = useState(
+    () => initialState.note.trim().length > 0,
+  );
   const offeredCategories = useMemo(
     () =>
       categories.filter(
         (category) =>
-          category.category_type === form.recurringType && !category.archived_at
+          category.category_type === form.recurringType &&
+          !category.archived_at,
       ),
-    [categories, form.recurringType]
+    [categories, form.recurringType],
   );
-
-  useEffect(() => {
-    setForm(initialState);
-  }, [initialState]);
 
   useEffect(() => {
     setForm((current) => {
@@ -1417,7 +1428,9 @@ function MoneyRecurringItemForm({
         accounts.some((account) => account.id === current.accountId);
       const categoryStillAvailable =
         current.categoryId === NO_CATEGORY_VALUE ||
-        offeredCategories.some((category) => category.id === current.categoryId);
+        offeredCategories.some(
+          (category) => category.id === current.categoryId,
+        );
       return {
         ...current,
         accountId: accountStillAvailable ? current.accountId : NO_ACCOUNT_VALUE,
@@ -1437,11 +1450,40 @@ function MoneyRecurringItemForm({
   return (
     <form
       onSubmit={(event) => void handleSubmit(event)}
-      className="rounded-2xl border border-white/[0.075] bg-black/30 p-3"
+      className="overflow-hidden border-y border-white/[0.075] bg-black/30 sm:rounded-2xl sm:border"
     >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-white/58">Type</Label>
+      <div className="grid min-h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.065] px-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isSaving}
+          className="justify-self-start text-xs font-medium text-white/48 transition hover:text-white/76 disabled:opacity-40"
+        >
+          Close
+        </button>
+        <div className="text-center">
+          <h3 className="text-sm font-semibold text-white/86">
+            {mode === "add" ? "Add Scheduled Money" : "Edit Scheduled Money"}
+          </h3>
+          <p className="text-[10px] text-white/32">Planning only</p>
+        </div>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="inline-flex min-h-10 items-center gap-1.5 justify-self-end text-xs font-semibold text-amber-100/80 transition hover:text-amber-50 disabled:opacity-50"
+        >
+          {isSaving ? (
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          ) : null}
+          {isSaving ? "Saving" : "Save"}
+        </button>
+      </div>
+
+      <div className="px-3">
+        <div className="border-b border-white/[0.065] py-2.5">
+          <Label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/36">
+            Type
+          </Label>
           <RecurringTypeSegment
             value={form.recurringType}
             onChange={(recurringType) =>
@@ -1454,43 +1496,59 @@ function MoneyRecurringItemForm({
           />
         </div>
 
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor={`money-recurring-name-${mode}`} className="text-white/58">
-            Name
-          </Label>
-          <Input
-            id={`money-recurring-name-${mode}`}
-            value={form.name}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, name: event.target.value }))
-            }
-            placeholder="Rent, software, client retainer"
-            maxLength={120}
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28"
-          />
-        </div>
-
-        <div className="space-y-1.5">
+        <div className="border-b border-white/[0.065] py-3">
           <Label
             htmlFor={`money-recurring-amount-${mode}`}
-            className="text-white/58"
+            className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/36"
           >
             Amount
           </Label>
-          <Input
-            id={`money-recurring-amount-${mode}`}
-            inputMode="decimal"
-            value={form.amount}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, amount: event.target.value }))
-            }
-            placeholder="1200.00"
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] font-mono tabular-nums text-white placeholder:text-white/28"
-          />
+          <div className="flex min-h-12 items-center gap-2">
+            <CircleDollarSign className="h-5 w-5 shrink-0 text-white/28" />
+            <Input
+              id={`money-recurring-amount-${mode}`}
+              inputMode="decimal"
+              value={form.amount}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  amount: event.target.value,
+                }))
+              }
+              placeholder="1,200.00"
+              className="h-12 min-w-0 rounded-none border-0 bg-transparent px-0 font-mono text-3xl font-semibold tabular-nums text-white shadow-none placeholder:text-white/20 focus-visible:ring-0"
+            />
+            <span className="text-[11px] font-medium tracking-wider text-white/30">
+              USD
+            </span>
+          </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Frequency</Label>
+        <div className="border-b border-white/[0.065] py-2.5">
+          <Label
+            htmlFor={`money-recurring-name-${mode}`}
+            className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/36"
+          >
+            Name
+          </Label>
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 shrink-0 text-white/28" />
+            <Input
+              id={`money-recurring-name-${mode}`}
+              value={form.name}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="Rent, software, client retainer"
+              maxLength={120}
+              className="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold text-white shadow-none placeholder:text-white/24 focus-visible:ring-0"
+            />
+          </div>
+        </div>
+
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]">
+          <Repeat2 className="h-4 w-4 shrink-0 text-white/28" />
+          <Label className="min-w-20 text-xs text-white/52">Frequency</Label>
           <Select
             value={form.frequency}
             onValueChange={(frequency) =>
@@ -1500,7 +1558,7 @@ function MoneyRecurringItemForm({
               }))
             }
             placeholder="Frequency"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
+            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
           >
             <SelectContent>
               {RECURRING_FREQUENCY_OPTIONS.map((option) => (
@@ -1512,13 +1570,20 @@ function MoneyRecurringItemForm({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="relative flex min-h-12 items-center gap-3 border-b border-white/[0.065]">
+          <CalendarDays className="h-4 w-4 shrink-0 text-white/28" />
           <Label
             htmlFor={`money-recurring-anchor-${mode}`}
-            className="text-white/58"
+            className="min-w-20 text-xs text-white/52"
           >
             First date
           </Label>
+          <span className="ml-auto text-xs font-medium text-white/72">
+            {formatReadableDate(form.anchorDate)}
+          </span>
+          <span className="text-white/24" aria-hidden="true">
+            ›
+          </span>
           <Input
             id={`money-recurring-anchor-${mode}`}
             type="date"
@@ -1529,19 +1594,21 @@ function MoneyRecurringItemForm({
                 anchorDate: event.target.value,
               }))
             }
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white"
+            aria-label="First date"
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Account</Label>
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]">
+          <WalletCards className="h-4 w-4 shrink-0 text-white/28" />
+          <Label className="min-w-20 text-xs text-white/52">Account</Label>
           <Select
             value={form.accountId}
             onValueChange={(accountId) =>
               setForm((current) => ({ ...current, accountId }))
             }
             placeholder="Optional"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
+            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
           >
             <SelectContent>
               <SelectItem value={NO_ACCOUNT_VALUE}>No account</SelectItem>
@@ -1554,15 +1621,16 @@ function MoneyRecurringItemForm({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Category</Label>
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]">
+          <Tag className="h-4 w-4 shrink-0 text-white/28" />
+          <Label className="min-w-20 text-xs text-white/52">Category</Label>
           <Select
             value={form.categoryId}
             onValueChange={(categoryId) =>
               setForm((current) => ({ ...current, categoryId }))
             }
             placeholder="Optional"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
+            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
           >
             <SelectContent>
               <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
@@ -1573,61 +1641,53 @@ function MoneyRecurringItemForm({
               ))}
             </SelectContent>
           </Select>
-          {offeredCategories.length === 0 ? (
-            <p className="text-[11px] leading-4 text-white/36">
-              No matching categories yet; this item can stay uncategorized.
-            </p>
-          ) : null}
         </div>
+        {offeredCategories.length === 0 ? (
+          <p className="border-b border-white/[0.065] py-1.5 pl-7 text-[10px] leading-4 text-white/28">
+            No matching categories yet; this item can stay uncategorized.
+          </p>
+        ) : null}
 
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor={`money-recurring-note-${mode}`} className="text-white/58">
-            Note
-          </Label>
-          <Textarea
-            id={`money-recurring-note-${mode}`}
-            value={form.note}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, note: event.target.value }))
-            }
-            placeholder="Optional"
-            maxLength={500}
-            className="min-h-20 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28 focus-visible:ring-white/15"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setNoteExpanded((expanded) => !expanded)}
+          aria-expanded={noteExpanded}
+          className="flex min-h-12 w-full items-center gap-3 border-b border-white/[0.065] text-left"
+        >
+          <MessageSquareText className="h-4 w-4 shrink-0 text-white/28" />
+          <span className="text-xs text-white/52">Note</span>
+          <span className="ml-auto max-w-[55%] truncate text-xs font-medium text-white/36">
+            {form.note.trim() || "Optional note"}
+          </span>
+          <span className="text-white/24" aria-hidden="true">
+            ›
+          </span>
+        </button>
+        {noteExpanded ? (
+          <div className="border-b border-white/[0.065] py-2">
+            <Label htmlFor={`money-recurring-note-${mode}`} className="sr-only">
+              Note
+            </Label>
+            <Textarea
+              id={`money-recurring-note-${mode}`}
+              value={form.note}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, note: event.target.value }))
+              }
+              placeholder="Optional note"
+              maxLength={500}
+              autoFocus
+              className="min-h-16 resize-none rounded-lg border-white/[0.075] bg-white/[0.025] text-sm text-white placeholder:text-white/24 focus-visible:ring-white/10"
+            />
+          </div>
+        ) : null}
       </div>
 
       {error ? (
-        <p className="mt-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
+        <p className="border-t border-red-200/10 px-3 py-2 text-xs text-red-100/78">
           {error}
         </p>
       ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={isSaving}
-          className="h-10 rounded-xl px-3 text-xs font-semibold text-white/54 hover:bg-white/[0.06] hover:text-white"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={isSaving}
-          className="h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-        >
-          {isSaving ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          ) : mode === "add" ? (
-            <Plus className="h-3.5 w-3.5" />
-          ) : (
-            <PencilLine className="h-3.5 w-3.5" />
-          )}
-          {isSaving ? "Saving" : mode === "add" ? "Add item" : "Save item"}
-        </Button>
-      </div>
     </form>
   );
 }
@@ -3951,25 +4011,23 @@ export function MoneyAreaDashboard() {
                 </p>
                 <p className="text-[11px] text-white/36">Planning only</p>
               </div>
-              <Button
-                type="button"
-                onClick={() => {
-                  setEditingRecurringId(null);
-                  setRecurringError(null);
-                  setRecurringFormOpen((open) => !open);
-                }}
-                className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
-              >
-                {recurringFormOpen ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
+              {!recurringFormOpen ? (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setEditingRecurringId(null);
+                    setRecurringError(null);
+                    setRecurringFormOpen(true);
+                  }}
+                  className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
+                >
                   <Plus className="h-3.5 w-3.5" />
-                )}
-                {recurringFormOpen ? "Close" : "Add Scheduled"}
-              </Button>
+                  Add Scheduled
+                </Button>
+              ) : null}
             </div>
             {recurringFormOpen ? (
-              <div className="border-y border-white/[0.06] p-3">
+              <div>
                 <MoneyRecurringItemForm
                   mode="add"
                   initialState={getDefaultRecurringItemFormState()}
