@@ -84,6 +84,13 @@ type MoneyRecurringFrequency =
   | "yearly";
 type ManualRecurringType = "expense" | "income";
 
+type MoneyCategoryMutationPayload = {
+  id?: string;
+  user_id?: string;
+  name?: string;
+  category_type?: "expense";
+};
+
 type MoneyCategoryRow = {
   id: string;
   user_id: string;
@@ -212,6 +219,7 @@ type MoneyAccountsTableClient = {
 
 type MoneyCategoriesTableClient = {
   select: (columns: string) => MoneySelectBuilder<MoneyCategoryRow>;
+  insert: (payload: MoneyCategoryMutationPayload) => MoneyAccountsMutationBuilder;
 };
 
 type MoneyBudgetsTableClient = {
@@ -1157,7 +1165,9 @@ type RecurringItemFormState = {
 };
 
 type BudgetFormState = {
+  categoryMode: "existing" | "create";
   categoryId: string;
+  categoryName: string;
   limit: string;
 };
 
@@ -1192,17 +1202,22 @@ function getDefaultBudgetFormState(
   expenseCategories: MoneyCategoryRow[],
   budgetedCategoryIds: Set<string>
 ): BudgetFormState {
+  const categoryId =
+    expenseCategories.find((category) => !budgetedCategoryIds.has(category.id))
+      ?.id ?? "";
   return {
-    categoryId:
-      expenseCategories.find((category) => !budgetedCategoryIds.has(category.id))
-        ?.id ?? "",
+    categoryMode: categoryId ? "existing" : "create",
+    categoryId,
+    categoryName: "",
     limit: "",
   };
 }
 
 function getEditBudgetFormState(budget: MoneyBudgetRow): BudgetFormState {
   return {
+    categoryMode: "existing",
     categoryId: budget.category_id,
+    categoryName: "",
     limit: formatMinorForInput(budget.limit_amount_minor),
   };
 }
@@ -1470,228 +1485,41 @@ function TransactionTypeSegment({
   );
 }
 
-function MoneyTransactionForm({
-  accounts,
-  categories,
-  isSaving,
-  error,
-  onCancel,
-  onSubmit,
-}: {
-  accounts: MoneyAccountRow[];
-  categories: MoneyCategoryRow[];
-  isSaving: boolean;
-  error: string | null;
-  onCancel: () => void;
+function MoneyTransactionForm({ accounts, categories, isSaving, error, onCancel, onSubmit }: {
+  accounts: MoneyAccountRow[]; categories: MoneyCategoryRow[]; isSaving: boolean;
+  error: string | null; onCancel: () => void;
   onSubmit: (state: TransactionFormState) => Promise<boolean>;
 }) {
-  const [form, setForm] = useState(() =>
-    getDefaultTransactionFormState(accounts)
+  const [form, setForm] = useState(() => getDefaultTransactionFormState(accounts));
+  const offeredCategories = categories.filter(
+    (category) => category.category_type === form.transactionType && !category.archived_at
   );
-  const matchingCategories = useMemo(
-    () =>
-      categories.filter(
-        (category) =>
-          category.user_id === accounts[0]?.user_id ||
-          accounts.some((account) => account.user_id === category.user_id)
-      ),
-    [accounts, categories]
-  );
-  const offeredCategories = useMemo(
-    () =>
-      matchingCategories.filter(
-        (category) =>
-          category.category_type === form.transactionType && !category.archived_at
-      ),
-    [form.transactionType, matchingCategories]
-  );
-
   useEffect(() => {
-    setForm((current) => {
-      const accountStillAvailable = accounts.some(
-        (account) => account.id === current.accountId
-      );
-      return {
-        ...current,
-        accountId: accountStillAvailable ? current.accountId : accounts[0]?.id ?? "",
-      };
-    });
+    setForm((current) => accounts.some((account) => account.id === current.accountId)
+      ? current : { ...current, accountId: accounts[0]?.id ?? "" });
   }, [accounts]);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaving) return;
     const saved = await onSubmit(form);
     if (saved) setForm(getDefaultTransactionFormState(accounts));
   }
-
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(event)}
-      className="rounded-2xl border border-white/[0.075] bg-black/30 p-3"
-    >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-white/58">Type</Label>
-          <TransactionTypeSegment
-            value={form.transactionType}
-            onChange={(transactionType) =>
-              setForm((current) => ({
-                ...current,
-                transactionType,
-                categoryId: NO_CATEGORY_VALUE,
-              }))
-            }
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="money-transaction-amount" className="text-white/58">
-            Amount
-          </Label>
-          <Input
-            id="money-transaction-amount"
-            inputMode="decimal"
-            value={form.amount}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, amount: event.target.value }))
-            }
-            placeholder="24.50"
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] font-mono tabular-nums text-white placeholder:text-white/28"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="money-transaction-date" className="text-white/58">
-            Date
-          </Label>
-          <Input
-            id="money-transaction-date"
-            type="date"
-            value={form.transactionDate}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                transactionDate: event.target.value,
-              }))
-            }
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white"
-          />
-        </div>
-
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label
-            htmlFor="money-transaction-description"
-            className="text-white/58"
-          >
-            Description
-          </Label>
-          <Input
-            id="money-transaction-description"
-            value={form.description}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                description: event.target.value,
-              }))
-            }
-            placeholder="Client payment or coffee"
-            maxLength={140}
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Account</Label>
-          <Select
-            value={form.accountId}
-            onValueChange={(accountId) =>
-              setForm((current) => ({ ...current, accountId }))
-            }
-            placeholder="Select account"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
-          >
-            <SelectContent>
-              {accounts.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
-                  {account.name?.trim() || "Untitled account"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-white/58">Category</Label>
-          <Select
-            value={form.categoryId}
-            onValueChange={(categoryId) =>
-              setForm((current) => ({ ...current, categoryId }))
-            }
-            placeholder="Optional"
-            triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
-          >
-            <SelectContent>
-              <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
-              {offeredCategories.map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.name?.trim() || "Untitled category"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {offeredCategories.length === 0 ? (
-            <p className="text-[11px] leading-4 text-white/36">
-              No matching categories yet; this transaction can still be logged.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="money-transaction-note" className="text-white/58">
-            Note
-          </Label>
-          <Textarea
-            id="money-transaction-note"
-            value={form.note}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, note: event.target.value }))
-            }
-            placeholder="Optional"
-            maxLength={500}
-            className="min-h-20 rounded-xl border-white/10 bg-white/[0.035] text-white placeholder:text-white/28 focus-visible:ring-white/15"
-          />
-        </div>
+    <form onSubmit={(event) => void handleSubmit(event)} className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border">
+      <div className="flex h-12 items-center justify-between border-b border-white/[0.065] px-3">
+        <div className="flex items-center gap-2"><button type="button" onClick={onCancel} disabled={isSaving} aria-label="Close add transaction editor" className="-ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/48 hover:bg-white/[0.06]"><X className="h-4 w-4" /></button><h3 className="text-sm font-semibold text-white/86">Add Transaction</h3></div>
+        <button type="submit" disabled={isSaving || accounts.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
       </div>
-
-      {error ? (
-        <p className="mt-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={isSaving}
-          className="h-10 rounded-xl px-3 text-xs font-semibold text-white/54 hover:bg-white/[0.06] hover:text-white"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={isSaving || accounts.length === 0}
-          className="h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-        >
-          {isSaving ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          {isSaving ? "Logging" : "Add transaction"}
-        </Button>
+      <div className="px-3">
+        <div className="border-b border-white/[0.065] py-2"><TransactionTypeSegment value={form.transactionType} onChange={(transactionType) => setForm((current) => ({ ...current, transactionType, categoryId: NO_CATEGORY_VALUE }))} /></div>
+        <div className="border-b border-white/[0.065] py-3"><Label htmlFor="money-transaction-amount" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Amount</Label><div className="flex items-center"><span className="font-mono text-xl text-white/38">$</span><Input id="money-transaction-amount" autoFocus inputMode="decimal" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} placeholder="0.00" className="h-12 rounded-none border-0 bg-transparent px-1 font-mono text-3xl font-semibold tabular-nums shadow-none focus-visible:ring-0" /></div></div>
+        <div className="border-b border-white/[0.065] py-2"><Label htmlFor="money-transaction-description" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Description</Label><Input id="money-transaction-description" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Coffee, client payment…" maxLength={140} className="h-10 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0" /></div>
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]"><Label className="min-w-24 text-xs text-white/48">Date</Label><Input type="date" value={form.transactionDate} onChange={(event) => setForm((current) => ({ ...current, transactionDate: event.target.value }))} className="h-10 rounded-none border-0 bg-transparent px-0 text-right shadow-none focus-visible:ring-0" /></div>
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]"><Label className="min-w-24 text-xs text-white/48">Account</Label><Select value={form.accountId} onValueChange={(accountId) => setForm((current) => ({ ...current, accountId }))} placeholder="Select account" triggerClassName="h-10 justify-end rounded-none border-0 bg-transparent px-0 shadow-none focus:ring-0"><SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name?.trim() || "Untitled account"}</SelectItem>)}</SelectContent></Select></div>
+        <div className="flex min-h-12 items-center gap-3 border-b border-white/[0.065]"><Label className="min-w-24 text-xs text-white/48">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Optional" triggerClassName="h-10 justify-end rounded-none border-0 bg-transparent px-0 shadow-none focus:ring-0"><SelectContent><SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>{offeredCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div>
+        <div className="py-2"><Label htmlFor="money-transaction-note" className="text-xs text-white/40">Note <span className="text-white/24">(optional)</span></Label><Textarea id="money-transaction-note" value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} placeholder="Add a note" maxLength={500} className="mt-1 min-h-14 resize-none rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" /></div>
       </div>
+      {error ? <p className="border-t border-red-200/10 px-3 py-2 text-xs text-red-100/78">{error}</p> : null}
     </form>
   );
 }
@@ -1982,143 +1810,35 @@ function MoneyRecurringItemForm({
   );
 }
 
-function MoneyBudgetForm({
-  mode,
-  initialState,
-  expenseCategories,
-  budgetedCategoryIds,
-  isSaving,
-  error,
-  onCancel,
-  onSubmit,
-}: {
-  mode: "add" | "edit";
-  initialState: BudgetFormState;
-  expenseCategories: MoneyCategoryRow[];
-  budgetedCategoryIds: Set<string>;
-  isSaving: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onSubmit: (state: BudgetFormState) => Promise<boolean>;
+function MoneyBudgetForm({ mode, initialState, expenseCategories, budgetedCategoryIds, isSaving, error, onCancel, onSubmit }: {
+  mode: "add" | "edit"; initialState: BudgetFormState; expenseCategories: MoneyCategoryRow[];
+  budgetedCategoryIds: Set<string>; isSaving: boolean; error: string | null;
+  onCancel: () => void; onSubmit: (state: BudgetFormState) => Promise<boolean>;
 }) {
-  const [form, setForm] = useState(initialState);
-  const availableCategories = useMemo(
-    () =>
-      mode === "add"
-        ? expenseCategories.filter(
-            (category) => !budgetedCategoryIds.has(category.id)
-          )
-        : expenseCategories,
-    [budgetedCategoryIds, expenseCategories, mode]
-  );
-
-  useEffect(() => {
-    setForm(initialState);
-  }, [initialState]);
-
-  useEffect(() => {
-    if (mode !== "add") return;
-    setForm((current) => {
-      if (availableCategories.some((category) => category.id === current.categoryId)) {
-        return current;
-      }
-      return {
-        ...current,
-        categoryId: availableCategories[0]?.id ?? "",
-      };
-    });
-  }, [availableCategories, mode]);
-
+  const [form, setForm] = useState(() => initialState);
+  const availableCategories = useMemo(() => mode === "add"
+    ? expenseCategories.filter((category) => !budgetedCategoryIds.has(category.id))
+    : expenseCategories, [budgetedCategoryIds, expenseCategories, mode]);
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaving) return;
     const saved = await onSubmit(form);
-    if (saved && mode === "add") {
-      setForm(getDefaultBudgetFormState(expenseCategories, budgetedCategoryIds));
-    }
+    if (saved && mode === "add") setForm(getDefaultBudgetFormState(expenseCategories, budgetedCategoryIds));
   }
-
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(event)}
-      className="rounded-2xl border border-white/[0.075] bg-black/30 p-3"
-    >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {mode === "add" ? (
-          <div className="space-y-1.5">
-            <Label className="text-white/58">Expense category</Label>
-            <Select
-              value={form.categoryId}
-              onValueChange={(categoryId) =>
-                setForm((current) => ({ ...current, categoryId }))
-              }
-              placeholder="Select category"
-              triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.035]"
-            >
-              <SelectContent>
-                {availableCategories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name?.trim() || "Untitled category"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {availableCategories.length === 0 ? (
-              <p className="text-[11px] leading-4 text-white/36">
-                All active expense categories already have budgets. Edit an
-                existing budget instead.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className={cn("space-y-1.5", mode === "edit" ? "sm:col-span-2" : "")}>
-          <Label htmlFor={`money-budget-limit-${mode}`} className="text-white/58">
-            Monthly limit
-          </Label>
-          <Input
-            id={`money-budget-limit-${mode}`}
-            inputMode="decimal"
-            value={form.limit}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, limit: event.target.value }))
-            }
-            placeholder="500.00"
-            className="h-11 rounded-xl border-white/10 bg-white/[0.035] font-mono tabular-nums text-white placeholder:text-white/28"
-          />
-        </div>
+    <form onSubmit={(event) => void handleSubmit(event)} className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border">
+      <div className="flex h-12 items-center justify-between border-b border-white/[0.065] px-3">
+        <div className="flex items-center gap-2"><button type="button" onClick={onCancel} disabled={isSaving} aria-label="Close budget editor" className="-ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/48 hover:bg-white/[0.06]"><X className="h-4 w-4" /></button><h3 className="text-sm font-semibold text-white/86">{mode === "add" ? "Add Budget" : "Edit Budget"}</h3></div>
+        <button type="submit" disabled={isSaving} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
       </div>
-
-      {error ? (
-        <p className="mt-3 rounded-xl border border-red-200/10 bg-red-200/[0.035] px-3 py-2 text-xs font-medium text-red-100/78">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={isSaving}
-          className="h-10 rounded-xl px-3 text-xs font-semibold text-white/54 hover:bg-white/[0.06] hover:text-white"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={isSaving || (mode === "add" && availableCategories.length === 0)}
-          className="h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
-        >
-          {isSaving ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          ) : mode === "add" ? (
-            <Plus className="h-3.5 w-3.5" />
-          ) : (
-            <PencilLine className="h-3.5 w-3.5" />
-          )}
-          {isSaving ? "Saving" : mode === "add" ? "Add budget" : "Save limit"}
-        </Button>
+      <div className="px-3">
+        {mode === "add" ? <>
+          {availableCategories.length > 0 ? <div className="grid grid-cols-2 gap-1 border-b border-white/[0.065] py-2"><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "existing", categoryId: current.categoryId || availableCategories[0]?.id || "" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "existing" ? "bg-white text-black" : "text-white/48")}>Existing</button><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "create" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "create" ? "bg-white text-black" : "text-white/48")}>Create category</button></div> : null}
+          {form.categoryMode === "existing" && availableCategories.length > 0 ? <div className="border-b border-white/[0.065] py-2"><Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Choose category" triggerClassName="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus:ring-0"><SelectContent>{availableCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div> : <div className="border-b border-white/[0.065] py-2"><Label htmlFor="money-budget-category-name" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id="money-budget-category-name" autoFocus value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div>}
+        </> : null}
+        <div className="py-3"><Label htmlFor={`money-budget-limit-${mode}`} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Monthly limit</Label><div className="flex items-center"><span className="font-mono text-xl text-white/38">$</span><Input id={`money-budget-limit-${mode}`} inputMode="decimal" value={form.limit} onChange={(event) => setForm((current) => ({ ...current, limit: event.target.value }))} placeholder="400" className="h-12 rounded-none border-0 bg-transparent px-1 font-mono text-3xl font-semibold tabular-nums shadow-none focus-visible:ring-0" /></div></div>
       </div>
+      {error ? <p className="border-t border-red-200/10 px-3 py-2 text-xs text-red-100/78">{error}</p> : null}
     </form>
   );
 }
@@ -2133,20 +1853,8 @@ function TransactionRow({
   categoryName: string | null;
 }) {
   const isOutflow = transaction.direction === "outflow";
-  const Icon = isOutflow ? ArrowUpRight : ArrowDownLeft;
-
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 rounded-2xl border border-white/[0.07] bg-[#090909] px-3 py-3">
-      <span
-        className={cn(
-          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border",
-          isOutflow
-            ? "border-red-200/10 bg-red-200/[0.035] text-red-100/70"
-            : "border-emerald-200/10 bg-emerald-200/[0.04] text-emerald-100/72"
-        )}
-      >
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </span>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/[0.065] px-3 py-2 last:border-b-0">
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-white/84">
           {transaction.description.trim() || "Untitled transaction"}
@@ -2260,7 +1968,7 @@ function BudgetRow({
       type="button"
       onClick={onEdit}
       className={cn(
-        "w-full rounded-2xl border px-3 py-3 text-left transition active:scale-[0.995]",
+        "w-full border-b px-3 py-2.5 text-left transition last:border-b-0 active:scale-[0.995]",
         isEditing
           ? "border-white/[0.14] bg-white/[0.07]"
           : "border-white/[0.07] bg-[#090909] hover:bg-white/[0.045]"
@@ -2291,13 +1999,13 @@ function BudgetRow({
               )}
             </span>
             <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-white/30">
-              Remaining
+              {isOverLimit ? "over" : "left"}
             </span>
           </span>
           <PencilLine className="h-3.5 w-3.5 shrink-0 text-white/30" />
         </span>
       </span>
-      <span className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      <span className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <span className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
           <span
             className={cn(
@@ -3023,6 +2731,11 @@ export function MoneyAreaDashboard() {
     useState<ProjectionHorizonDays>(30);
 
   useEffect(() => {
+    document.body.classList.toggle("fab-panel-active", transactionFormOpen);
+    return () => document.body.classList.remove("fab-panel-active");
+  }, [transactionFormOpen]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadUser() {
@@ -3413,6 +3126,12 @@ export function MoneyAreaDashboard() {
       queryKey: getMoneyBudgetsQueryKey(userId, monthRange.start),
     });
   }, [monthRange.start, queryClient, userId]);
+  const invalidateCategories = useCallback(async () => {
+    if (!userId) return;
+    await queryClient.invalidateQueries({
+      queryKey: getMoneyCategoriesQueryKey(userId),
+    });
+  }, [queryClient, userId]);
 
   const saveAccount = useCallback(
     async (
@@ -3708,30 +3427,29 @@ export function MoneyAreaDashboard() {
       }
 
       const limitAmountMinor = parseDollarInput(form.limit);
-      const selectedCategory =
-        mode === "add"
-          ? expenseCategories.find(
-              (category) =>
-                category.id === form.categoryId && category.user_id === userId
-            ) ?? null
-          : null;
-      const existingBudget =
-        mode === "add"
-          ? budgets.find(
-              (budget) =>
-                budget.user_id === userId &&
-                budget.category_id === form.categoryId &&
-                budget.budget_month === monthRange.start &&
-                (budget.currency_code ?? "USD") === "USD"
-            ) ?? null
-          : null;
+      const isCreatingCategory = mode === "add" && form.categoryMode === "create";
+      const categoryName = form.categoryName.trim();
+      const selectedCategory = mode === "add" && !isCreatingCategory
+        ? expenseCategories.find((category) =>
+            category.id === form.categoryId && category.user_id === userId) ?? null
+        : null;
+      const existingBudget = mode === "add" && !isCreatingCategory
+        ? budgets.find((budget) =>
+            budget.user_id === userId && budget.category_id === form.categoryId &&
+            budget.budget_month === monthRange.start &&
+            (budget.currency_code ?? "USD") === "USD") ?? null
+        : null;
 
       if (limitAmountMinor === null) {
         setBudgetError("Enter zero or a positive dollar amount with up to two decimals.");
         return false;
       }
 
-      if (mode === "add" && !selectedCategory) {
+      if (mode === "add" && isCreatingCategory && !categoryName) {
+        setBudgetError("Enter a category name.");
+        return false;
+      }
+      if (mode === "add" && !isCreatingCategory && !selectedCategory) {
         setBudgetError("Select an active expense category.");
         return false;
       }
@@ -3750,11 +3468,22 @@ export function MoneyAreaDashboard() {
 
       try {
         const db = getMoneyDb(supabase);
+        let categoryId = selectedCategory?.id;
+        if (mode === "add" && isCreatingCategory) {
+          categoryId = crypto.randomUUID();
+          const categoryResult = await db.from("money_categories").insert({
+            id: categoryId,
+            user_id: userId,
+            name: categoryName,
+            category_type: "expense",
+          });
+          if (categoryResult.error) throw new Error(categoryResult.error.message || "Unable to create category.");
+        }
         const result =
           mode === "add"
             ? await db.from("money_budgets").insert({
                 user_id: userId,
-                category_id: selectedCategory?.id,
+                category_id: categoryId,
                 budget_month: monthRange.start,
                 limit_amount_minor: limitAmountMinor,
                 currency_code: "USD",
@@ -3769,7 +3498,7 @@ export function MoneyAreaDashboard() {
           throw new Error(result.error.message || "Unable to save budget.");
         }
 
-        await invalidateBudgets();
+        await Promise.all([invalidateBudgets(), invalidateCategories()]);
         setBudgetFormOpen(false);
         setEditingBudgetId(null);
         return true;
@@ -3786,6 +3515,7 @@ export function MoneyAreaDashboard() {
       budgets,
       expenseCategories,
       invalidateBudgets,
+      invalidateCategories,
       monthRange.start,
       supabase,
       userId,
@@ -3826,9 +3556,6 @@ export function MoneyAreaDashboard() {
   const budgetsLoading =
     authLoading || (budgetsQuery.isPending && Boolean(userId));
   const hasAccounts = accounts.length > 0;
-  const hasUnbudgetedExpenseCategories = expenseCategories.some(
-    (category) => !budgetedCategoryIds.has(category.id)
-  );
 
   return (
     <div className="space-y-3 py-3">
@@ -4279,21 +4006,24 @@ export function MoneyAreaDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 border-b border-white/[0.055] p-3 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-1.5 border-b border-white/[0.055] p-2 sm:gap-2 sm:p-3">
           <MoneyMetricCard
-            label="Income this month"
+            label="Income"
             value={formatMoneyFromMinor(monthMetrics.income)}
             detail="Posted inflows"
+            compact
           />
           <MoneyMetricCard
-            label="Spent this month"
+            label="Spent"
             value={formatMoneyFromMinor(monthMetrics.spent)}
             detail="Posted outflows"
+            compact
           />
           <MoneyMetricCard
-            label="Net cash flow"
+            label="Net"
             value={formatMoneyFromMinor(monthMetrics.net)}
             detail="Income minus spend"
+            compact
           />
         </div>
 
@@ -4339,7 +4069,7 @@ export function MoneyAreaDashboard() {
             </p>
           </div>
         ) : recentTransactions.length > 0 ? (
-          <div className="space-y-2 p-3">
+          <div>
             {recentTransactions.map((transaction) => (
               <TransactionRow
                 key={transaction.id}
@@ -4572,7 +4302,6 @@ export function MoneyAreaDashboard() {
                   setBudgetError(null);
                   setBudgetFormOpen((open) => !open);
                 }}
-                disabled={!hasUnbudgetedExpenseCategories}
                 className="h-9 rounded-xl border border-white/[0.09] bg-white/[0.055] px-3 text-xs font-semibold text-white/80 hover:bg-white/[0.09]"
               >
                 {budgetFormOpen ? (
@@ -4587,21 +4316,24 @@ export function MoneyAreaDashboard() {
         </div>
 
         {budgetRows.length > 0 ? (
-          <div className="grid grid-cols-1 gap-2 border-b border-white/[0.055] p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-1.5 border-b border-white/[0.055] p-2 sm:gap-2 sm:p-3">
             <MoneyMetricCard
-              label="Budgeted"
+              label="Budget"
               value={formatMoneyFromMinor(budgetSummary.limit)}
               detail="Total limits"
+              compact
             />
             <MoneyMetricCard
               label="Spent"
               value={formatMoneyFromMinor(budgetSummary.spent)}
               detail="Budgeted categories"
+              compact
             />
             <MoneyMetricCard
-              label="Remaining"
+              label="Left"
               value={formatMoneyFromMinor(budgetSummary.remaining)}
               detail="Limits minus spend"
+              compact
             />
           </div>
         ) : null}
@@ -4653,7 +4385,7 @@ export function MoneyAreaDashboard() {
             </p>
           </div>
         ) : budgetRows.length > 0 ? (
-          <div className="space-y-2 p-3">
+          <div>
             {budgetRows.map((row) => {
               const isEditing = editingBudgetId === row.budget.id;
               return (
@@ -4705,18 +4437,12 @@ export function MoneyAreaDashboard() {
                 setBudgetError(null);
                 setBudgetFormOpen(true);
               }}
-              disabled={!hasUnbudgetedExpenseCategories}
               className="mt-3 h-10 rounded-xl bg-white px-3 text-xs font-semibold text-black hover:bg-white/90"
             >
               <Plus className="h-3.5 w-3.5" />
               Add Budget
             </Button>
-            {!hasUnbudgetedExpenseCategories ? (
-              <p className="mt-2 text-[11px] leading-4 text-white/36">
-                Create an active expense category first, or edit an existing
-                budget if every expense category already has one.
-              </p>
-            ) : null}
+
           </div>
         )}
       </section>
