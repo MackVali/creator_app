@@ -2657,6 +2657,7 @@ export function MonumentGoalsList({
   const loadedGoalsSourceKeyRef = useRef<string | null>(null);
   const sourceHierarchyMountedRef = useRef(false);
   const sourceHierarchyRefreshRequestRef = useRef(0);
+  const goalRefreshRequestRef = useRef<Map<string, number>>(new Map());
   const goalPanelWheelLockedRef = useRef(false);
   const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -3765,11 +3766,53 @@ export function MonumentGoalsList({
     [resolvedSourceId, resolvedSourceType]
   );
 
+  const replaceGoalInRenderedHierarchy = useCallback((nextGoal: Goal) => {
+    const upsertGoal = (current: Goal[]) =>
+      sortGoalsForDisplay([
+        ...current.filter((goal) => goal.id !== nextGoal.id),
+        nextGoal,
+      ]);
+
+    setGoals(upsertGoal);
+    setRoadmapOpenGoal((current) =>
+      current?.id === nextGoal.id ? nextGoal : current
+    );
+    hydratedGoalIdsRef.current.add(nextGoal.id);
+  }, []);
+
+  const refreshRenderedGoal = useCallback(
+    async (
+      goalId: string,
+      fallback?: Goal,
+      includesCreatedEntity?: (goal: Goal) => boolean
+    ) => {
+      const requestId = (goalRefreshRequestRef.current.get(goalId) ?? 0) + 1;
+      goalRefreshRequestRef.current.set(goalId, requestId);
+      const refreshedGoal = await fetchGoalForDisplay(goalId, fallback);
+      if (goalRefreshRequestRef.current.get(goalId) !== requestId) {
+        return true;
+      }
+      if (
+        !refreshedGoal ||
+        !sourceHierarchyMountedRef.current ||
+        (includesCreatedEntity && !includesCreatedEntity(refreshedGoal))
+      ) {
+        return false;
+      }
+
+      replaceGoalInRenderedHierarchy(refreshedGoal);
+      return true;
+    },
+    [fetchGoalForDisplay, replaceGoalInRenderedHierarchy]
+  );
+
   useEffect(() => {
+    const goalRefreshRequests = goalRefreshRequestRef.current;
     sourceHierarchyMountedRef.current = true;
     return () => {
       sourceHierarchyMountedRef.current = false;
       sourceHierarchyRefreshRequestRef.current += 1;
+      goalRefreshRequests.clear();
     };
   }, []);
 
@@ -3881,6 +3924,20 @@ export function MonumentGoalsList({
           }
         }
 
+        if (entityType === "GOAL" && detail.entityId) {
+          const eventGoal = {
+            monumentId: detail.monumentId ?? null,
+            circleId: detail.circleId ?? null,
+            areaId: detail.areaId ?? null,
+          };
+          if (isGoalLinkedToCurrentSource(eventGoal)) {
+            void refreshRenderedGoal(detail.entityId).then((handled) => {
+              if (!handled) void refreshSourceHierarchy();
+            });
+          }
+          return;
+        }
+
         if (
           entityType === "PROJECT" &&
           detail.preserveDrawer?.type === "goal"
@@ -3914,15 +3971,50 @@ export function MonumentGoalsList({
             }
           }
         }
-      }
 
-      if (
-        detail?.action === "created" &&
-        (entityType === "GOAL" ||
-          entityType === "PROJECT" ||
-          entityType === "TASK")
-      ) {
-        void refreshSourceHierarchy();
+        if (entityType === "PROJECT" && detail.goalId) {
+          const renderedGoal = goals.find((goal) => goal.id === detail.goalId);
+          const renderedRoadmapGoal =
+            roadmapOpenGoal?.id === detail.goalId ? roadmapOpenGoal : undefined;
+          const fallback = renderedGoal ?? renderedRoadmapGoal;
+          if (fallback) {
+            void refreshRenderedGoal(
+              detail.goalId,
+              fallback,
+              (goal) =>
+                goal.projects.some((project) => project.id === detail.entityId)
+            ).then((handled) => {
+              if (!handled) void refreshSourceHierarchy();
+            });
+          }
+          return;
+        }
+
+        if (entityType === "TASK" && detail.projectId) {
+          const parentGoal = goals.find((goal) =>
+            goal.projects.some((project) => project.id === detail.projectId)
+          );
+          const parentRoadmapGoal =
+            roadmapOpenGoal?.projects.some(
+              (project) => project.id === detail.projectId
+            )
+              ? roadmapOpenGoal
+              : undefined;
+          const fallback = parentGoal ?? parentRoadmapGoal;
+          if (fallback) {
+            void refreshRenderedGoal(
+              fallback.id,
+              fallback,
+              (goal) =>
+                goal.projects.some((project) =>
+                  project.tasks.some((task) => task.id === detail.entityId)
+                )
+            ).then((handled) => {
+              if (!handled) void refreshSourceHierarchy();
+            });
+          }
+          return;
+        }
       }
 
       setRefreshVersion((current) => current + 1);
@@ -3938,7 +4030,13 @@ export function MonumentGoalsList({
         handleCreatorEntitySaved
       );
     };
-  }, [goals, isGoalLinkedToCurrentSource, refreshSourceHierarchy]);
+  }, [
+    goals,
+    isGoalLinkedToCurrentSource,
+    refreshRenderedGoal,
+    refreshSourceHierarchy,
+    roadmapOpenGoal,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
