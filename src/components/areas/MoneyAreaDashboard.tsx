@@ -120,6 +120,7 @@ type MoneyCategoryMutationPayload = {
   name?: string;
   category_type?: "expense";
   color_key?: MoneyCategoryColorKey;
+  archived_at?: string | null;
 };
 
 type MoneyCategoryRow = {
@@ -1162,7 +1163,7 @@ function getEditBudgetFormState(
   return {
     categoryMode: "existing",
     categoryId: budget.category_id,
-    categoryName: "",
+    categoryName: category?.name?.trim() ?? "",
     categoryColorKey: normalizeMoneyCategoryColorKey(category?.color_key),
     limit: formatMinorForInput(budget.limit_amount_minor),
   };
@@ -1858,12 +1859,32 @@ function MoneyRecurringItemForm({
   );
 }
 
-function MoneyBudgetForm({ mode, initialState, expenseCategories, budgetedCategoryIds, isSaving, error, onCancel, onSubmit }: {
-  mode: "add" | "edit"; initialState: BudgetFormState; expenseCategories: MoneyCategoryRow[];
-  budgetedCategoryIds: Set<string>; isSaving: boolean; error: string | null;
-  onCancel: () => void; onSubmit: (state: BudgetFormState) => Promise<boolean>;
+function MoneyBudgetForm({
+  mode,
+  initialState,
+  expenseCategories,
+  budgetedCategoryIds,
+  isSaving,
+  error,
+  onCancel,
+  onSubmit,
+  onRemoveCategory,
+}: {
+  mode: "add" | "edit";
+  initialState: BudgetFormState;
+  expenseCategories: MoneyCategoryRow[];
+  budgetedCategoryIds: Set<string>;
+  isSaving: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSubmit: (state: BudgetFormState) => Promise<boolean>;
+  onRemoveCategory?: () => Promise<boolean>;
 }) {
   const [form, setForm] = useState(() => initialState);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const categoryNameInputId = useId();
+  const limitInputId = useId();
+  const removeCategoryName = form.categoryName.trim() || "this category";
   const availableCategories = useMemo(() => mode === "add"
     ? expenseCategories.filter((category) => !budgetedCategoryIds.has(category.id))
     : expenseCategories, [budgetedCategoryIds, expenseCategories, mode]);
@@ -1872,6 +1893,10 @@ function MoneyBudgetForm({ mode, initialState, expenseCategories, budgetedCatego
     if (isSaving) return;
     const saved = await onSubmit(form);
     if (saved && mode === "add") setForm(getDefaultBudgetFormState(expenseCategories, budgetedCategoryIds));
+  }
+  async function handleRemoveCategory() {
+    if (!onRemoveCategory || isSaving) return;
+    await onRemoveCategory();
   }
   return (
     <form onSubmit={(event) => void handleSubmit(event)} className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border">
@@ -1882,10 +1907,54 @@ function MoneyBudgetForm({ mode, initialState, expenseCategories, budgetedCatego
       <div className="px-3">
         {mode === "add" ? <>
           {availableCategories.length > 0 ? <div className="grid grid-cols-2 gap-1 border-b border-white/[0.065] py-2"><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "existing", categoryId: current.categoryId || availableCategories[0]?.id || "" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "existing" ? "bg-white text-black" : "text-white/48")}>Existing</button><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "create" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "create" ? "bg-white text-black" : "text-white/48")}>Create category</button></div> : null}
-          {form.categoryMode === "existing" && availableCategories.length > 0 ? <div className="border-b border-white/[0.065] py-2"><Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Choose category" triggerClassName="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus:ring-0"><SelectContent>{availableCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div> : <><div className="border-b border-white/[0.065] py-2"><Label htmlFor="money-budget-category-name" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id="money-budget-category-name" value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div><MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /></>}
+          {form.categoryMode === "existing" && availableCategories.length > 0 ? <div className="border-b border-white/[0.065] py-2"><Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Choose category" triggerClassName="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus:ring-0"><SelectContent>{availableCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div> : <><div className="border-b border-white/[0.065] py-2"><Label htmlFor={categoryNameInputId} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id={categoryNameInputId} value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div><MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /></>}
         </> : null}
-        {mode === "edit" ? <MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /> : null}
-        <div className="py-3"><Label htmlFor={`money-budget-limit-${mode}`} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Monthly limit</Label><div className="flex items-center"><span className="font-mono text-xl text-white/38">$</span><Input id={`money-budget-limit-${mode}`} inputMode="decimal" value={form.limit} onChange={(event) => setForm((current) => ({ ...current, limit: event.target.value }))} placeholder="400" className="h-12 rounded-none border-0 bg-transparent px-1 font-mono text-3xl font-semibold tabular-nums shadow-none focus-visible:ring-0" /></div></div>
+        {mode === "edit" ? <><div className="border-b border-white/[0.065] py-2"><Label htmlFor={categoryNameInputId} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id={categoryNameInputId} value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div><MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /></> : null}
+        <div className="py-3"><Label htmlFor={limitInputId} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Monthly limit</Label><div className="flex items-center"><span className="font-mono text-xl text-white/38">$</span><Input id={limitInputId} inputMode="decimal" value={form.limit} onChange={(event) => setForm((current) => ({ ...current, limit: event.target.value }))} placeholder="400" className="h-12 rounded-none border-0 bg-transparent px-1 font-mono text-3xl font-semibold tabular-nums shadow-none focus-visible:ring-0" /></div></div>
+        {mode === "edit" && onRemoveCategory ? (
+          <div className="border-t border-white/[0.065] py-3">
+            {confirmingRemove ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-white/84">
+                    Remove &quot;{removeCategoryName}&quot;?
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-white/44">
+                    Historical transactions will keep this category, but it will no longer be available for new Money entries.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingRemove(false)}
+                    disabled={isSaving}
+                    className="h-8 px-2 text-xs font-semibold text-white/52 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveCategory()}
+                    disabled={isSaving}
+                    className="inline-flex h-8 items-center gap-1.5 px-2 text-xs font-semibold text-rose-200/86 disabled:opacity-50"
+                  >
+                    {isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingRemove(true)}
+                disabled={isSaving}
+                className="text-xs font-semibold text-rose-200/72 disabled:opacity-50"
+              >
+                Remove category
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
       {error ? <p className="border-t border-red-200/10 px-3 py-2 text-xs text-red-100/78">{error}</p> : null}
     </form>
@@ -3595,6 +3664,7 @@ export function MoneyAreaDashboard() {
       const limitAmountMinor = parseDollarInput(form.limit);
       const isCreatingCategory = mode === "add" && form.categoryMode === "create";
       const categoryName = form.categoryName.trim();
+      const normalizedCategoryName = categoryName.toLocaleLowerCase();
       const selectedCategory = mode === "add" && !isCreatingCategory
         ? expenseCategories.find((category) =>
             category.id === form.categoryId && category.user_id === userId) ?? null
@@ -3615,14 +3685,36 @@ export function MoneyAreaDashboard() {
             (category) => category.id === editedBudget.category_id,
           ) ?? null
         : null;
+      const duplicateCategory = categoryName
+        ? expenseCategories.find((category) => {
+            if (category.user_id !== userId) return false;
+            if (category.id === editedCategory?.id) return false;
+            return (
+              (category.name?.trim().toLocaleLowerCase() ?? "") ===
+              normalizedCategoryName
+            );
+          }) ?? null
+        : null;
 
       if (limitAmountMinor === null) {
         setBudgetError("Enter zero or a positive dollar amount with up to two decimals.");
         return false;
       }
 
-      if (mode === "add" && isCreatingCategory && !categoryName) {
+      if ((mode === "edit" || isCreatingCategory) && !categoryName) {
         setBudgetError("Enter a category name.");
+        return false;
+      }
+      if ((mode === "edit" || isCreatingCategory) && categoryName.length > 80) {
+        setBudgetError("Category names must be 80 characters or fewer.");
+        return false;
+      }
+      if (mode === "edit" && (!editedBudget || !editedCategory)) {
+        setBudgetError("Select an active expense category.");
+        return false;
+      }
+      if ((mode === "edit" || isCreatingCategory) && duplicateCategory) {
+        setBudgetError("A category with that name already exists.");
         return false;
       }
       if (mode === "add" && !isCreatingCategory && !selectedCategory) {
@@ -3677,19 +3769,31 @@ export function MoneyAreaDashboard() {
 
         if (
           mode === "edit" &&
-          editedCategory &&
-          normalizeMoneyCategoryColorKey(editedCategory.color_key) !==
-            form.categoryColorKey
+          editedCategory
         ) {
-          const categoryResult = await db
-            .from("money_categories")
-            .update({ color_key: form.categoryColorKey })
-            .eq("id", editedCategory.id)
-            .eq("user_id", userId);
-          if (categoryResult.error) {
-            throw new Error(
-              categoryResult.error.message || "Unable to update category color.",
-            );
+          const categoryPayload: MoneyCategoryMutationPayload = {};
+          if ((editedCategory.name?.trim() ?? "") !== categoryName) {
+            categoryPayload.name = categoryName;
+          }
+          if (
+            normalizeMoneyCategoryColorKey(editedCategory.color_key) !==
+            form.categoryColorKey
+          ) {
+            categoryPayload.color_key = form.categoryColorKey;
+          }
+
+          if (Object.keys(categoryPayload).length > 0) {
+            const categoryResult = await db
+              .from("money_categories")
+              .update(categoryPayload)
+              .eq("id", editedCategory.id)
+              .eq("user_id", userId);
+            if (categoryResult.error) {
+              throw new Error(
+                categoryResult.error.message ||
+                  "Unable to update category details.",
+              );
+            }
           }
         }
 
@@ -3698,8 +3802,15 @@ export function MoneyAreaDashboard() {
         setEditingBudgetId(null);
         return true;
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unable to save budget.";
+        const normalizedErrorMessage = errorMessage.toLocaleLowerCase();
         setBudgetError(
-          error instanceof Error ? error.message : "Unable to save budget."
+          normalizedErrorMessage.includes("categor") &&
+            (normalizedErrorMessage.includes("duplicate") ||
+              normalizedErrorMessage.includes("unique"))
+            ? "A category with that name already exists."
+            : errorMessage,
         );
         return false;
       } finally {
@@ -3715,6 +3826,63 @@ export function MoneyAreaDashboard() {
       supabase,
       userId,
     ]
+  );
+
+  const archiveBudgetCategory = useCallback(
+    async (budgetId: string) => {
+      if (!supabase || !userId) {
+        setBudgetError("Sign in before removing Money categories.");
+        return false;
+      }
+
+      const budget = budgets.find(
+        (item) => item.id === budgetId && item.user_id === userId,
+      );
+      const category = budget ? categoryById[budget.category_id] : null;
+
+      if (!budget || !category || category.user_id !== userId) {
+        setBudgetError("Unable to find that budget category.");
+        return false;
+      }
+
+      setBudgetSaving(true);
+      setBudgetError(null);
+
+      try {
+        const result = await getMoneyDb(supabase)
+          .from("money_categories")
+          .update({ archived_at: new Date().toISOString() })
+          .eq("id", category.id)
+          .eq("user_id", userId);
+
+        if (result.error) {
+          throw new Error(
+            result.error.message || "Unable to remove category.",
+          );
+        }
+
+        await Promise.all([invalidateCategories(), invalidateBudgets()]);
+        setBudgetFormOpen(false);
+        setEditingBudgetId(null);
+        setBudgetError(null);
+        return true;
+      } catch (error) {
+        setBudgetError(
+          error instanceof Error ? error.message : "Unable to remove category.",
+        );
+        return false;
+      } finally {
+        setBudgetSaving(false);
+      }
+    },
+    [
+      budgets,
+      categoryById,
+      invalidateBudgets,
+      invalidateCategories,
+      supabase,
+      userId,
+    ],
   );
 
   const loadError = authError ?? (accountsQuery.error instanceof Error
@@ -4288,6 +4456,9 @@ export function MoneyAreaDashboard() {
                           }}
                           onSubmit={(form) =>
                             saveBudget("edit", form, row.budget.id)
+                          }
+                          onRemoveCategory={() =>
+                            archiveBudgetCategory(row.budget.id)
                           }
                         />
                       </div>

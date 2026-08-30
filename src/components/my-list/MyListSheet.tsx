@@ -74,6 +74,7 @@ import {
 import {
   createMyListList,
   loadMyListLists,
+  MY_LIST_GROCERY_SYSTEM_KEY,
   MY_LIST_NAME_MAX_LENGTH,
   type MyListList,
 } from "@/lib/my-list/myListListsStorage";
@@ -220,6 +221,7 @@ const MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE = {
   WebkitTapHighlightColor: "transparent",
   WebkitTouchCallout: "none",
   WebkitUserSelect: "none",
+  touchAction: "pan-y",
   userSelect: "none",
 } satisfies ReactCSSProperties;
 
@@ -1982,6 +1984,14 @@ export function MyListSheet({
   const selectedList = customLists.find((list) => list.id === selectedListId);
   const isDefaultMyList = selectedListId === null;
   const selectedListName = selectedList?.name ?? "My List";
+  const isSelectedGroceryList =
+    selectedList?.systemKey === MY_LIST_GROCERY_SYSTEM_KEY;
+  const manualRowInputPlaceholder = isSelectedGroceryList
+    ? "Add item"
+    : "To-do";
+  const manualRowInputAriaLabel = isSelectedGroceryList
+    ? "Grocery item"
+    : "To-do text";
   const visibleTasks = useMemo(
     () => (isDefaultMyList ? tasks : []),
     [isDefaultMyList, tasks],
@@ -3157,7 +3167,7 @@ export function MyListSheet({
             skillId: press.skillId,
             priority: press.priorityId,
             energy: "MEDIUM",
-            origin: "my-list-upgrade",
+            origin: "manual-my-list-upgrade",
             sourceManualMyListItemId: press.rowId,
           },
         }),
@@ -3175,6 +3185,9 @@ export function MyListSheet({
       const title = row.text.trim();
       if (!title) return;
 
+      if (event.pointerType !== "mouse") {
+        event.preventDefault();
+      }
       suppressManualUpgradeSelection();
       clearManualUpgradePress();
       const press: MyListManualUpgradePress = {
@@ -6846,8 +6859,8 @@ export function MyListSheet({
                                               }),
                                             );
                                           }}
-                                          placeholder="To-do"
-                                          aria-label="To-do text"
+                                          placeholder={manualRowInputPlaceholder}
+                                          aria-label={manualRowInputAriaLabel}
                                           tabIndex={open ? 0 : -1}
                                           className={clsx(
                                             "min-w-0 flex-1 select-text bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-touch-callout:default] [-webkit-user-select:text] [user-select:text]",
@@ -7337,6 +7350,15 @@ export function MyListSheet({
                                           event.preventDefault();
                                         }
                                       }}
+                                      onDragStart={(event) => {
+                                        if (
+                                          !shouldIgnoreManualUpgradeTarget(
+                                            event.target,
+                                          )
+                                        ) {
+                                          event.preventDefault();
+                                        }
+                                      }}
                                       onContextMenu={(event) => {
                                         if (
                                           !shouldIgnoreManualUpgradeTarget(
@@ -7503,8 +7525,8 @@ export function MyListSheet({
                                             text: event.target.value,
                                           })
                                         }
-                                        placeholder="To-do"
-                                        aria-label="To-do text"
+                                        placeholder={manualRowInputPlaceholder}
+                                        aria-label={manualRowInputAriaLabel}
                                         tabIndex={open ? 0 : -1}
                                         className={clsx(
                                           "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",

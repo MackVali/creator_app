@@ -218,6 +218,10 @@ type ScheduleQuickCreateTaskDetailsPayload = {
   origin?: string | null;
   sourceManualMyListItemId?: string | null;
 };
+const SCHEDULE_QUICK_CREATE_MANUAL_UPGRADE_ORIGINS = new Set([
+  "manual-my-list-upgrade",
+  "my-list-upgrade",
+]);
 type UnifiedEventManualUpgradeSourceContext = {
   origin: "manual-my-list-upgrade";
   itemId: string;
@@ -20072,104 +20076,110 @@ export function Fab({
       pageX.set(0);
       unifiedSheetSuppressClickUntilRef.current = 0;
 
-      resetFabViewportState();
-      resetTaskFormDraft();
-      resetUnifiedEventDraft();
+      const isManualUpgradeOrigin =
+        typeof payload.origin === "string" &&
+        SCHEDULE_QUICK_CREATE_MANUAL_UPGRADE_ORIGINS.has(payload.origin);
       const sourceManualMyListItemId =
-        payload.origin === "my-list-upgrade" &&
+        isManualUpgradeOrigin &&
         typeof payload.sourceManualMyListItemId === "string"
           ? payload.sourceManualMyListItemId.trim()
           : "";
-      setUnifiedEventManualUpgradeSource(
-        sourceManualMyListItemId
-          ? {
-              origin: "manual-my-list-upgrade",
-              itemId: sourceManualMyListItemId,
-            }
-          : null,
-      );
-      setSaveError(null);
-      setGoalDeleteConfirmTarget(null);
-      setActiveCreationMode("main");
-      setPressedCreationType(null);
-      setCreationSpawnOrigin(null);
-      setCreationRevealGeometry(null);
-      setUnifiedTimingPickerOpen(null);
-      setIsUnifiedTimingMonthYearPickerOpen(false);
-      setFabAdvancedTimingPickerOpen(null);
-      setShowTaskDurationPicker(false);
-      setTaskDurationPosition(null);
-      setShowDraftTaskDurationPicker(false);
-      setDraftTaskDurationPosition(null);
-      setShowHabitDurationPicker(false);
-      setHabitDurationPosition(null);
-      setIsUnifiedNotesSheetOpen(false);
-      setIsUnifiedTagsSheetOpen(false);
-      setIsUnifiedFormsSheetOpen(false);
-      setIsUnifiedTagCreateOpen(false);
-      setUnifiedTagCreateValue("");
-      setIsAddEventMoreOpen(false);
-      setIsUnifiedEventLocationSheetOpen(false);
-      setIsUnifiedEventLinkSheetOpen(false);
-      setIsGoalPickerOpen(false);
-      setIsUnifiedGoalPickerOpen(false);
-      setShowUnifiedGoalFilters(false);
-      setUnifiedGoalSearch("");
-      setUnifiedGoalFilterMonumentId("");
-      setUnifiedGoalSortMode("default");
-      setTaskProjectSearch("");
-      setTaskProjectFilterStage("");
-      setTaskProjectFilterPriority("");
-      setShowTaskProjectFilters(false);
-      setUnifiedProjectFilterGoalId("");
-      setUnifiedProjectFilterSkillId("");
-      setUnifiedProjectSortMode(unifiedProjectDefaultSortMode);
-      setSelectedTagIds([]);
-      setAddEventSubActions([]);
-      setAddEventWorkspaceValue("PERSONAL");
-      setAddEventTimingMode("manual");
-      setAddEventDynamicDuration("60");
-      setProjectTaskStack(null);
-      setGoalProjectStack(null);
-      setUnifiedCreationMode("TASKS");
-      setUnifiedEventType("TASK");
-      setSelectedType("AUTO");
-      setSelected("TASK");
-      setNormalNexusExpanded(false);
-      setUnifiedEventAllDay(false);
-      setUnifiedTimingViewedMonth(
-        new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
-      );
 
       const title =
         typeof payload.title === "string" ? payload.title.trim() : "";
-      if (title) {
-        setTaskName(title);
-        setHabitName(title);
-      }
-      if (durationMin !== null) setTaskDuration(String(durationMin));
       const normalizedEnergy = normalizeFabEnergy(payload.energy);
       const payloadSkillId =
         typeof payload.skillId === "string" ? payload.skillId : "";
-      setTaskPriority(normalizeFabPriority(payload.priority));
-      setTaskEnergy(normalizedEnergy);
-      setTaskSkillId(payloadSkillId);
-      setHabitEnergy(normalizedEnergy);
-      setHabitSkillId(payloadSkillId);
-      if (hasExactSchedule && startDate && endDate) {
-        const date = formatDateInputValue(startDate);
-        setTaskHasExactDate(true);
-        setTaskExactDate(date);
-        setTaskExactFallbackDate(date);
-        setTaskExactStartTime(formatTimeInputValue(startDate));
-        setTaskExactEndTime(formatTimeInputValue(endDate));
-        setTaskExactTimingTouched(true);
-      }
+      const normalizedPriority = normalizeFabPriority(payload.priority);
 
+      resetFabViewportState();
       flushSync(() => {
+        resetTaskFormDraft();
+        resetUnifiedEventDraft();
+        setUnifiedEventManualUpgradeSource(
+          sourceManualMyListItemId
+            ? {
+                origin: "manual-my-list-upgrade",
+                itemId: sourceManualMyListItemId,
+              }
+            : null,
+        );
+        setSaveError(null);
+        setGoalDeleteConfirmTarget(null);
+        setActiveCreationMode("main");
+        setPressedCreationType(null);
+        setCreationSpawnOrigin(null);
+        setCreationRevealGeometry(null);
+        setUnifiedTimingPickerOpen(null);
+        setIsUnifiedTimingMonthYearPickerOpen(false);
+        setFabAdvancedTimingPickerOpen(null);
+        setShowTaskDurationPicker(false);
+        setTaskDurationPosition(null);
+        setShowDraftTaskDurationPicker(false);
+        setDraftTaskDurationPosition(null);
+        setShowHabitDurationPicker(false);
+        setHabitDurationPosition(null);
+        setIsUnifiedNotesSheetOpen(false);
+        setIsUnifiedTagsSheetOpen(false);
+        setIsUnifiedFormsSheetOpen(false);
+        setIsUnifiedTagCreateOpen(false);
+        setUnifiedTagCreateValue("");
+        setIsAddEventMoreOpen(false);
+        setIsUnifiedEventLocationSheetOpen(false);
+        setIsUnifiedEventLinkSheetOpen(false);
+        setIsGoalPickerOpen(false);
+        setIsUnifiedGoalPickerOpen(false);
+        setShowUnifiedGoalFilters(false);
+        setUnifiedGoalSearch("");
+        setUnifiedGoalFilterMonumentId("");
+        setUnifiedGoalSortMode("default");
+        setTaskProjectSearch("");
+        setTaskProjectFilterStage("");
+        setTaskProjectFilterPriority("");
+        setShowTaskProjectFilters(false);
+        setUnifiedProjectFilterGoalId("");
+        setUnifiedProjectFilterSkillId("");
+        setUnifiedProjectSortMode(unifiedProjectDefaultSortMode);
+        setSelectedTagIds([]);
+        setAddEventSubActions([]);
+        setAddEventWorkspaceValue("PERSONAL");
+        setAddEventTimingMode("manual");
+        setAddEventDynamicDuration("60");
+        setProjectTaskStack(null);
+        setGoalProjectStack(null);
+        setUnifiedCreationMode("TASKS");
+        setUnifiedEventType("TASK");
+        setSelectedType("AUTO");
+        setSelected("TASK");
+        setNormalNexusExpanded(false);
+        setUnifiedEventAllDay(false);
+        setUnifiedTimingViewedMonth(
+          new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
+        );
         setExpanded(false);
         setIsDirectCreationOpen(false);
         setIsOpen(false);
+      });
+      flushSync(() => {
+        if (title) {
+          setTaskName(title);
+          setHabitName(title);
+        }
+        if (durationMin !== null) setTaskDuration(String(durationMin));
+        setTaskPriority(normalizedPriority);
+        setTaskEnergy(normalizedEnergy);
+        setTaskSkillId(payloadSkillId);
+        setHabitEnergy(normalizedEnergy);
+        setHabitSkillId(payloadSkillId);
+        if (hasExactSchedule && startDate && endDate) {
+          const date = formatDateInputValue(startDate);
+          setTaskHasExactDate(true);
+          setTaskExactDate(date);
+          setTaskExactFallbackDate(date);
+          setTaskExactStartTime(formatTimeInputValue(startDate));
+          setTaskExactEndTime(formatTimeInputValue(endDate));
+          setTaskExactTimingTouched(true);
+        }
       });
       setIsUnifiedEventSheetOpen(true);
     },
