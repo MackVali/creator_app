@@ -323,6 +323,14 @@ const RECURRING_FREQUENCY_LABELS = RECURRING_FREQUENCY_OPTIONS.reduce(
   {} as Record<MoneyRecurringFrequency, string>
 );
 
+const RECURRING_PROPERTY_SELECT_TRIGGER_CLASS =
+  "h-11 min-w-0 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0 focus:text-white/86";
+const RECURRING_PROPERTY_SELECT_MENU_CLASS =
+  "rounded-2xl border-white/[0.09] bg-[#101010] shadow-2xl shadow-black/60";
+const RECURRING_PROPERTY_SELECT_CONTENT_CLASS = "py-1";
+const RECURRING_PROPERTY_SELECT_ITEM_CLASS =
+  "min-h-11 rounded-none bg-transparent px-4 py-2.5 text-white/70 shadow-none hover:bg-white/[0.05] hover:text-white aria-selected:bg-white/[0.07] aria-selected:text-white";
+
 function getMoneyAccountsQueryKey(userId: string | null) {
   return [...MONEY_ACCOUNTS_QUERY_ROOT, userId] as const;
 }
@@ -1551,6 +1559,7 @@ function MoneyRecurringItemForm({
           <Label className="min-w-20 text-xs text-white/52">Frequency</Label>
           <Select
             value={form.frequency}
+            className="ml-auto min-w-0 flex-1"
             onValueChange={(frequency) =>
               setForm((current) => ({
                 ...current,
@@ -1558,11 +1567,23 @@ function MoneyRecurringItemForm({
               }))
             }
             placeholder="Frequency"
-            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
+            trigger={
+              <span className="ml-auto block max-w-full truncate text-right">
+                {getReadableRecurringFrequency(form.frequency)}
+              </span>
+            }
+            triggerClassName={RECURRING_PROPERTY_SELECT_TRIGGER_CLASS}
+            contentWrapperClassName={RECURRING_PROPERTY_SELECT_MENU_CLASS}
+            contentAlign="end"
+            minContentWidth={210}
           >
-            <SelectContent>
+            <SelectContent className={RECURRING_PROPERTY_SELECT_CONTENT_CLASS}>
               {RECURRING_FREQUENCY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  className={RECURRING_PROPERTY_SELECT_ITEM_CLASS}
+                >
                   {option.label}
                 </SelectItem>
               ))}
@@ -1604,16 +1625,35 @@ function MoneyRecurringItemForm({
           <Label className="min-w-20 text-xs text-white/52">Account</Label>
           <Select
             value={form.accountId}
+            className="ml-auto min-w-0 flex-1"
             onValueChange={(accountId) =>
               setForm((current) => ({ ...current, accountId }))
             }
             placeholder="Optional"
-            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
+            trigger={
+              <span className="ml-auto block max-w-full truncate text-right">
+                {accounts.find((account) => account.id === form.accountId)?.name?.trim() ||
+                  "No account"}
+              </span>
+            }
+            triggerClassName={RECURRING_PROPERTY_SELECT_TRIGGER_CLASS}
+            contentWrapperClassName={RECURRING_PROPERTY_SELECT_MENU_CLASS}
+            contentAlign="end"
+            minContentWidth={220}
           >
-            <SelectContent>
-              <SelectItem value={NO_ACCOUNT_VALUE}>No account</SelectItem>
+            <SelectContent className={RECURRING_PROPERTY_SELECT_CONTENT_CLASS}>
+              <SelectItem
+                value={NO_ACCOUNT_VALUE}
+                className={RECURRING_PROPERTY_SELECT_ITEM_CLASS}
+              >
+                No account
+              </SelectItem>
               {accounts.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
+                <SelectItem
+                  key={account.id}
+                  value={account.id}
+                  className={RECURRING_PROPERTY_SELECT_ITEM_CLASS}
+                >
                   {account.name?.trim() || "Untitled account"}
                 </SelectItem>
               ))}
@@ -1626,16 +1666,36 @@ function MoneyRecurringItemForm({
           <Label className="min-w-20 text-xs text-white/52">Category</Label>
           <Select
             value={form.categoryId}
+            className="ml-auto min-w-0 flex-1"
             onValueChange={(categoryId) =>
               setForm((current) => ({ ...current, categoryId }))
             }
             placeholder="Optional"
-            triggerClassName="h-11 flex-1 justify-end rounded-none border-0 bg-transparent px-0 text-right text-xs font-medium text-white/72 shadow-none focus:ring-0"
+            trigger={
+              <span className="ml-auto block max-w-full truncate text-right">
+                {offeredCategories
+                  .find((category) => category.id === form.categoryId)
+                  ?.name?.trim() || "No category"}
+              </span>
+            }
+            triggerClassName={RECURRING_PROPERTY_SELECT_TRIGGER_CLASS}
+            contentWrapperClassName={RECURRING_PROPERTY_SELECT_MENU_CLASS}
+            contentAlign="end"
+            minContentWidth={220}
           >
-            <SelectContent>
-              <SelectItem value={NO_CATEGORY_VALUE}>No category</SelectItem>
+            <SelectContent className={RECURRING_PROPERTY_SELECT_CONTENT_CLASS}>
+              <SelectItem
+                value={NO_CATEGORY_VALUE}
+                className={RECURRING_PROPERTY_SELECT_ITEM_CLASS}
+              >
+                No category
+              </SelectItem>
               {offeredCategories.map((category) => (
-                <SelectItem key={category.id} value={category.id}>
+                <SelectItem
+                  key={category.id}
+                  value={category.id}
+                  className={RECURRING_PROPERTY_SELECT_ITEM_CLASS}
+                >
                   {category.name?.trim() || "Untitled category"}
                 </SelectItem>
               ))}
