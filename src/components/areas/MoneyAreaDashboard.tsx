@@ -12,6 +12,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarDays,
+  Check,
   CircleDollarSign,
   LoaderCircle,
   MessageSquareText,
@@ -31,6 +32,14 @@ import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_MONEY_CATEGORY_COLOR_KEY,
+  getMoneyCategoryColor,
+  MONEY_CATEGORY_COLORS,
+  MONEY_SEMANTIC_COLORS,
+  normalizeMoneyCategoryColorKey,
+  type MoneyCategoryColorKey,
+} from "./moneyColors";
 
 type MoneyAccountType =
   | "checking"
@@ -89,6 +98,7 @@ type MoneyCategoryMutationPayload = {
   user_id?: string;
   name?: string;
   category_type?: "expense";
+  color_key?: MoneyCategoryColorKey;
 };
 
 type MoneyCategoryRow = {
@@ -96,6 +106,7 @@ type MoneyCategoryRow = {
   user_id: string;
   name: string | null;
   category_type: string | null;
+  color_key: string | null;
   archived_at: string | null;
   created_at: string | null;
 };
@@ -220,6 +231,7 @@ type MoneyAccountsTableClient = {
 type MoneyCategoriesTableClient = {
   select: (columns: string) => MoneySelectBuilder<MoneyCategoryRow>;
   insert: (payload: MoneyCategoryMutationPayload) => MoneyAccountsMutationBuilder;
+  update: (payload: MoneyCategoryMutationPayload) => MoneyAccountsMutationBuilder;
 };
 
 type MoneyBudgetsTableClient = {
@@ -745,7 +757,7 @@ async function fetchMoneyCategories({
   const db = getMoneyDb(client);
   const { data, error } = await db
     .from("money_categories")
-    .select("id,user_id,name,category_type,archived_at,created_at")
+    .select("id,user_id,name,category_type,color_key,archived_at,created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
 
@@ -1056,6 +1068,7 @@ type BudgetFormState = {
   categoryMode: "existing" | "create";
   categoryId: string;
   categoryName: string;
+  categoryColorKey: MoneyCategoryColorKey;
   limit: string;
 };
 
@@ -1097,17 +1110,70 @@ function getDefaultBudgetFormState(
     categoryMode: categoryId ? "existing" : "create",
     categoryId,
     categoryName: "",
+    categoryColorKey: DEFAULT_MONEY_CATEGORY_COLOR_KEY,
     limit: "",
   };
 }
 
-function getEditBudgetFormState(budget: MoneyBudgetRow): BudgetFormState {
+function getEditBudgetFormState(
+  budget: MoneyBudgetRow,
+  category: MoneyCategoryRow | undefined,
+): BudgetFormState {
   return {
     categoryMode: "existing",
     categoryId: budget.category_id,
     categoryName: "",
+    categoryColorKey: normalizeMoneyCategoryColorKey(category?.color_key),
     limit: formatMinorForInput(budget.limit_amount_minor),
   };
+}
+
+function MoneyCategoryColorPicker({
+  value,
+  onChange,
+}: {
+  value: MoneyCategoryColorKey;
+  onChange: (value: MoneyCategoryColorKey) => void;
+}) {
+  return (
+    <fieldset className="border-b border-white/[0.065] py-3">
+      <legend className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
+        Color
+      </legend>
+      <div className="grid grid-cols-6 gap-2" aria-label="Category color">
+        {(Object.keys(MONEY_CATEGORY_COLORS) as MoneyCategoryColorKey[]).map(
+          (colorKey) => {
+            const option = MONEY_CATEGORY_COLORS[colorKey];
+            const selected = value === colorKey;
+            return (
+              <button
+                key={colorKey}
+                type="button"
+                onClick={() => onChange(colorKey)}
+                aria-label={`${option.label} category color`}
+                aria-pressed={selected}
+                className={cn(
+                  "flex h-11 w-full items-center justify-center rounded-xl border bg-white/[0.025] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45",
+                  selected
+                    ? "border-white/70"
+                    : "border-white/[0.08] hover:border-white/25",
+                )}
+              >
+                <span
+                  className="flex h-6 w-6 items-center justify-center rounded-full"
+                  style={{ backgroundColor: option.color }}
+                >
+                  {selected ? (
+                    <Check className="h-3.5 w-3.5 text-black/75" strokeWidth={3} />
+                  ) : null}
+                </span>
+              </button>
+            );
+          },
+        )}
+      </div>
+    </fieldset>
+  );
 }
 
 function getEditRecurringItemFormState(
@@ -1174,7 +1240,7 @@ function MoneyAccountForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="inline-flex h-8 min-w-14 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 transition hover:bg-sky-200/[0.07] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 min-w-14 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white/76 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSaving ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
@@ -1344,7 +1410,7 @@ function MoneyTransactionForm({ accounts, categories, isSaving, error, onCancel,
     <form onSubmit={(event) => void handleSubmit(event)} className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border">
       <div className="flex h-12 items-center justify-between border-b border-white/[0.065] px-3">
         <div className="flex items-center gap-2"><button type="button" onClick={onCancel} disabled={isSaving} aria-label="Close add transaction editor" className="-ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/48 hover:bg-white/[0.06]"><X className="h-4 w-4" /></button><h3 className="text-sm font-semibold text-white/86">Add Transaction</h3></div>
-        <button type="submit" disabled={isSaving || accounts.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
+        <button type="submit" disabled={isSaving || accounts.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white/76 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
       </div>
       <div className="px-3">
         <div className="border-b border-white/[0.065] py-2"><TransactionTypeSegment value={form.transactionType} onChange={(transactionType) => setForm((current) => ({ ...current, transactionType, categoryId: NO_CATEGORY_VALUE }))} /></div>
@@ -1380,7 +1446,7 @@ function RecurringTypeSegment({
           className={cn(
             "min-h-10 rounded-lg border px-3 text-xs font-semibold transition",
             value === option.value && option.value === "expense"
-              ? "border-amber-200/15 bg-amber-100/[0.09] text-amber-50/90"
+              ? "border-rose-200/15 bg-rose-100/[0.09] text-rose-50/90"
               : value === option.value
                 ? "border-emerald-200/15 bg-emerald-100/[0.09] text-emerald-50/90"
                 : "border-transparent text-white/46 hover:bg-white/[0.055] hover:text-white/78",
@@ -1478,7 +1544,7 @@ function MoneyRecurringItemForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="inline-flex min-h-10 items-center gap-1.5 justify-self-end text-xs font-semibold text-amber-100/80 transition hover:text-amber-50 disabled:opacity-50"
+          className="inline-flex min-h-10 items-center gap-1.5 justify-self-end text-xs font-semibold text-white/76 transition hover:text-white disabled:opacity-50"
         >
           {isSaving ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
@@ -1771,13 +1837,14 @@ function MoneyBudgetForm({ mode, initialState, expenseCategories, budgetedCatego
     <form onSubmit={(event) => void handleSubmit(event)} className="overflow-hidden border-y border-white/[0.075] bg-black/25 sm:rounded-2xl sm:border">
       <div className="flex h-12 items-center justify-between border-b border-white/[0.065] px-3">
         <div className="flex items-center gap-2"><button type="button" onClick={onCancel} disabled={isSaving} aria-label="Close budget editor" className="-ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/48 hover:bg-white/[0.06]"><X className="h-4 w-4" /></button><h3 className="text-sm font-semibold text-white/86">{mode === "add" ? "Add Budget" : "Edit Budget"}</h3></div>
-        <button type="submit" disabled={isSaving} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200/86 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
+        <button type="submit" disabled={isSaving} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white/76 disabled:opacity-50">{isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}{isSaving ? "Saving" : "Save"}</button>
       </div>
       <div className="px-3">
         {mode === "add" ? <>
           {availableCategories.length > 0 ? <div className="grid grid-cols-2 gap-1 border-b border-white/[0.065] py-2"><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "existing", categoryId: current.categoryId || availableCategories[0]?.id || "" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "existing" ? "bg-white text-black" : "text-white/48")}>Existing</button><button type="button" onClick={() => setForm((current) => ({ ...current, categoryMode: "create" }))} className={cn("h-8 rounded-lg text-xs font-semibold", form.categoryMode === "create" ? "bg-white text-black" : "text-white/48")}>Create category</button></div> : null}
-          {form.categoryMode === "existing" && availableCategories.length > 0 ? <div className="border-b border-white/[0.065] py-2"><Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Choose category" triggerClassName="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus:ring-0"><SelectContent>{availableCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div> : <div className="border-b border-white/[0.065] py-2"><Label htmlFor="money-budget-category-name" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id="money-budget-category-name" autoFocus value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div>}
+          {form.categoryMode === "existing" && availableCategories.length > 0 ? <div className="border-b border-white/[0.065] py-2"><Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category</Label><Select value={form.categoryId} onValueChange={(categoryId) => setForm((current) => ({ ...current, categoryId }))} placeholder="Choose category" triggerClassName="h-11 rounded-none border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus:ring-0"><SelectContent>{availableCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name?.trim() || "Untitled category"}</SelectItem>)}</SelectContent></Select></div> : <><div className="border-b border-white/[0.065] py-2"><Label htmlFor="money-budget-category-name" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Category name</Label><Input id="money-budget-category-name" autoFocus value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} placeholder="Food" maxLength={80} className="h-11 rounded-none border-0 bg-transparent px-0 text-xl font-semibold shadow-none focus-visible:ring-0" /></div><MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /></>}
         </> : null}
+        {mode === "edit" ? <MoneyCategoryColorPicker value={form.categoryColorKey} onChange={(categoryColorKey) => setForm((current) => ({ ...current, categoryColorKey }))} /> : null}
         <div className="py-3"><Label htmlFor={`money-budget-limit-${mode}`} className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">Monthly limit</Label><div className="flex items-center"><span className="font-mono text-xl text-white/38">$</span><Input id={`money-budget-limit-${mode}`} inputMode="decimal" value={form.limit} onChange={(event) => setForm((current) => ({ ...current, limit: event.target.value }))} placeholder="400" className="h-12 rounded-none border-0 bg-transparent px-1 font-mono text-3xl font-semibold tabular-nums shadow-none focus-visible:ring-0" /></div></div>
       </div>
       {error ? <p className="border-t border-red-200/10 px-3 py-2 text-xs text-red-100/78">{error}</p> : null}
@@ -1807,10 +1874,8 @@ function TransactionRow({
         </span>
       </span>
       <span
-        className={cn(
-          "font-mono text-sm font-semibold tabular-nums",
-          isOutflow ? "text-red-100/78" : "text-emerald-100/78"
-        )}
+        className="font-mono text-sm font-semibold tabular-nums"
+        style={{ color: isOutflow ? MONEY_SEMANTIC_COLORS.negative : MONEY_SEMANTIC_COLORS.positive }}
       >
         {formatVisualTransactionAmount(transaction)}
       </span>
@@ -1870,10 +1935,8 @@ function RecurringItemRow({
       </span>
       <span className="flex items-center gap-2">
         <span
-          className={cn(
-            "font-mono text-sm font-semibold tabular-nums",
-            isOutflow ? "text-red-100/78" : "text-emerald-100/78"
-          )}
+          className="font-mono text-sm font-semibold tabular-nums"
+          style={{ color: isOutflow ? MONEY_SEMANTIC_COLORS.negative : MONEY_SEMANTIC_COLORS.positive }}
         >
           {formatVisualRecurringAmount(item)}
         </span>
@@ -1886,6 +1949,7 @@ function RecurringItemRow({
 type BudgetDisplayRow = {
   budget: MoneyBudgetRow;
   categoryName: string;
+  categoryColorKey: MoneyCategoryColorKey;
   spentMinor: number;
   limitMinor: number;
   remainingMinor: number;
@@ -1904,6 +1968,7 @@ function BudgetRow({
   const percentLabel = `${Math.round(row.percentageUsed * 100)}%`;
   const progressWidth = `${Math.min(100, Math.max(0, row.percentageUsed * 100))}%`;
   const isOverLimit = row.remainingMinor < 0;
+  const categoryColor = getMoneyCategoryColor(row.categoryColorKey).color;
 
   return (
     <button
@@ -1918,8 +1983,13 @@ function BudgetRow({
     >
       <span className="flex items-start justify-between gap-3">
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-white/84">
-            {row.categoryName}
+          <span className="flex items-center gap-2 truncate text-sm font-semibold text-white/84">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: categoryColor }}
+              aria-hidden="true"
+            />
+            <span className="truncate">{row.categoryName}</span>
           </span>
           <span className="mt-0.5 block text-[11px] font-medium text-white/38">
             {formatMoneyFromMinor(row.spentMinor, row.budget.currency_code ?? "USD")}{" "}
@@ -1930,10 +2000,12 @@ function BudgetRow({
         <span className="flex shrink-0 items-start gap-2">
           <span className="text-right">
             <span
-              className={cn(
-                "block font-mono text-sm font-semibold tabular-nums",
-                isOverLimit ? "text-red-100/78" : "text-white/78"
-              )}
+              className="block font-mono text-sm font-semibold tabular-nums"
+              style={{
+                color: isOverLimit
+                  ? MONEY_SEMANTIC_COLORS.negative
+                  : MONEY_SEMANTIC_COLORS.positive,
+              }}
             >
               {formatMoneyFromMinor(
                 row.remainingMinor,
@@ -1950,11 +2022,8 @@ function BudgetRow({
       <span className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <span className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
           <span
-            className={cn(
-              "block h-full rounded-full",
-              isOverLimit ? "bg-red-100/58" : "bg-white/54"
-            )}
-            style={{ width: progressWidth }}
+            className="block h-full rounded-full"
+            style={{ width: progressWidth, backgroundColor: categoryColor }}
           />
         </span>
         <span className="font-mono text-[11px] font-semibold tabular-nums text-white/42">
@@ -2909,6 +2978,17 @@ export function MoneyAreaDashboard() {
       {} as Record<string, string>
     );
   }, [categories]);
+  const categoryById = useMemo(
+    () =>
+      categories.reduce(
+        (byId, category) => {
+          byId[category.id] = category;
+          return byId;
+        },
+        {} as Record<string, MoneyCategoryRow>,
+      ),
+    [categories],
+  );
   const expenseCategories = useMemo(
     () =>
       categories.filter(
@@ -3033,6 +3113,9 @@ export function MoneyAreaDashboard() {
         return {
           budget,
           categoryName: categoryNameById[budget.category_id] ?? "Untitled category",
+          categoryColorKey: normalizeMoneyCategoryColorKey(
+            categoryById[budget.category_id]?.color_key,
+          ),
           spentMinor,
           limitMinor,
           remainingMinor,
@@ -3043,6 +3126,7 @@ export function MoneyAreaDashboard() {
   }, [
     budgets,
     categoryNameById,
+    categoryById,
     expenseCategoryIds,
     monthMetricsQuery.data,
     monthRange.next,
@@ -3405,6 +3489,16 @@ export function MoneyAreaDashboard() {
             budget.budget_month === monthRange.start &&
             (budget.currency_code ?? "USD") === "USD") ?? null
         : null;
+      const editedBudget = mode === "edit"
+        ? budgets.find(
+            (budget) => budget.id === budgetId && budget.user_id === userId,
+          ) ?? null
+        : null;
+      const editedCategory = editedBudget
+        ? expenseCategories.find(
+            (category) => category.id === editedBudget.category_id,
+          ) ?? null
+        : null;
 
       if (limitAmountMinor === null) {
         setBudgetError("Enter zero or a positive dollar amount with up to two decimals.");
@@ -3442,6 +3536,7 @@ export function MoneyAreaDashboard() {
             user_id: userId,
             name: categoryName,
             category_type: "expense",
+            color_key: form.categoryColorKey,
           });
           if (categoryResult.error) throw new Error(categoryResult.error.message || "Unable to create category.");
         }
@@ -3462,6 +3557,24 @@ export function MoneyAreaDashboard() {
 
         if (result.error) {
           throw new Error(result.error.message || "Unable to save budget.");
+        }
+
+        if (
+          mode === "edit" &&
+          editedCategory &&
+          normalizeMoneyCategoryColorKey(editedCategory.color_key) !==
+            form.categoryColorKey
+        ) {
+          const categoryResult = await db
+            .from("money_categories")
+            .update({ color_key: form.categoryColorKey })
+            .eq("id", editedCategory.id)
+            .eq("user_id", userId);
+          if (categoryResult.error) {
+            throw new Error(
+              categoryResult.error.message || "Unable to update category color.",
+            );
+          }
         }
 
         await Promise.all([invalidateBudgets(), invalidateCategories()]);
@@ -3533,6 +3646,15 @@ export function MoneyAreaDashboard() {
       >
         <div className="px-4 pb-4 pt-5 text-center">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
+            <span
+              className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+              style={{
+                backgroundColor:
+                  safeToSpendSummary.safeToSpendMinor >= 0
+                    ? MONEY_SEMANTIC_COLORS.positive
+                    : MONEY_SEMANTIC_COLORS.negative,
+              }}
+            />
             Safe to spend
           </p>
           <p className="mt-1 text-[clamp(2.25rem,12vw,3.25rem)] font-semibold tabular-nums tracking-[-0.045em] text-white">
@@ -3556,10 +3678,29 @@ export function MoneyAreaDashboard() {
                 index > 0 && "border-l border-white/[0.06]",
               )}
             >
-              <dt className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/34">
+              <dt
+                className="text-[9px] font-semibold uppercase tracking-[0.15em]"
+                style={{
+                  color:
+                    label === "Cash"
+                      ? MONEY_SEMANTIC_COLORS.positive
+                      : label === "Debt" && Number(value) > 0
+                        ? MONEY_SEMANTIC_COLORS.negative
+                        : "rgba(255,255,255,0.34)",
+                }}
+              >
                 {label}
               </dt>
-              <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/82">
+              <dd
+                className="mt-1 truncate text-sm font-semibold tabular-nums"
+                style={{
+                  color:
+                    (label === "Debt" && Number(value) > 0) ||
+                    (label === "Net" && Number(value) < 0)
+                      ? MONEY_SEMANTIC_COLORS.negative
+                      : "rgba(255,255,255,0.82)",
+                }}
+              >
                 {formatMoneyFromMinor(Number(value))}
               </dd>
             </div>
@@ -3740,12 +3881,13 @@ export function MoneyAreaDashboard() {
                   </div>
                   <div className="text-right">
                     <p
-                      className={cn(
-                        "text-sm font-semibold tabular-nums",
-                        item.direction === "outflow"
-                          ? "text-red-100/76"
-                          : "text-emerald-100/76",
-                      )}
+                      className="text-sm font-semibold tabular-nums"
+                      style={{
+                        color:
+                          item.direction === "outflow"
+                            ? MONEY_SEMANTIC_COLORS.negative
+                            : MONEY_SEMANTIC_COLORS.positive,
+                      }}
                     >
                       {formatVisualRecurringAmount(item)}
                     </p>
@@ -3854,7 +3996,17 @@ export function MoneyAreaDashboard() {
                   <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/32">
                     {label}
                   </dt>
-                  <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/78">
+                  <dd
+                    className="mt-1 truncate text-sm font-semibold tabular-nums"
+                    style={{
+                      color:
+                        label === "Income"
+                          ? MONEY_SEMANTIC_COLORS.positive
+                          : label === "Spent" || Number(value) < 0
+                            ? MONEY_SEMANTIC_COLORS.negative
+                            : "rgba(255,255,255,0.78)",
+                    }}
+                  >
                     {formatMoneyFromMinor(Number(value))}
                   </dd>
                 </div>
@@ -3937,7 +4089,17 @@ export function MoneyAreaDashboard() {
                   <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/32">
                     {label}
                   </dt>
-                  <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-white/78">
+                  <dd
+                    className="mt-1 truncate text-sm font-semibold tabular-nums"
+                    style={{
+                      color:
+                        label === "Budgeted"
+                          ? MONEY_SEMANTIC_COLORS.allocated
+                          : label === "Spent" || Number(value) < 0
+                            ? MONEY_SEMANTIC_COLORS.negative
+                            : MONEY_SEMANTIC_COLORS.positive,
+                    }}
+                  >
                     {formatMoneyFromMinor(Number(value))}
                   </dd>
                 </div>
@@ -3996,7 +4158,10 @@ export function MoneyAreaDashboard() {
                       <div className="border-b border-white/[0.06] p-3">
                         <MoneyBudgetForm
                           mode="edit"
-                          initialState={getEditBudgetFormState(row.budget)}
+                          initialState={getEditBudgetFormState(
+                            row.budget,
+                            categoryById[row.budget.category_id],
+                          )}
                           expenseCategories={expenseCategories}
                           budgetedCategoryIds={budgetedCategoryIds}
                           isSaving={budgetSaving}
