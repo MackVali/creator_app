@@ -11,17 +11,32 @@ import {
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Briefcase,
+  Car,
   CalendarDays,
   Check,
   CircleDollarSign,
+  CreditCard,
+  Droplets,
+  Fuel,
+  HeartPulse,
+  Home,
   LoaderCircle,
   MessageSquareText,
+  Music,
   PencilLine,
   Plus,
+  PiggyBank,
+  Receipt,
   Repeat2,
   Tag,
+  ShoppingCart,
+  Smartphone,
+  Utensils,
   WalletCards,
+  Wifi,
   X,
+  Zap,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -92,6 +107,12 @@ type MoneyRecurringFrequency =
   | "quarterly"
   | "yearly";
 type ManualRecurringType = "expense" | "income";
+const MONEY_RECURRING_ICON_KEYS = [
+  "arrow", "home", "wifi", "phone", "car", "fuel", "shopping-cart",
+  "utensils", "zap", "droplets", "credit-card", "receipt", "heart-pulse",
+  "briefcase", "piggy-bank", "music",
+] as const;
+type MoneyRecurringIconKey = (typeof MONEY_RECURRING_ICON_KEYS)[number];
 
 type MoneyCategoryMutationPayload = {
   id?: string;
@@ -158,6 +179,7 @@ type MoneyRecurringItemRow = {
   note: string | null;
   created_at: string | null;
   updated_at: string | null;
+  icon_key: MoneyRecurringIconKey | string | null;
 };
 
 type MoneyRecurringItemMutationPayload = {
@@ -173,6 +195,7 @@ type MoneyRecurringItemMutationPayload = {
   is_active?: boolean;
   source?: "manual";
   note?: string | null;
+  icon_key?: MoneyRecurringIconKey;
 };
 
 type MoneyBudgetMutationPayload = {
@@ -914,7 +937,7 @@ async function fetchActiveMoneyRecurringItems({
   const { data, error } = await db
     .from("money_recurring_items")
     .select(
-      "id,user_id,account_id,category_id,name,direction,amount_minor,currency_code,frequency,anchor_date,end_date,is_active,source,note,created_at,updated_at"
+      "id,user_id,account_id,category_id,name,direction,amount_minor,currency_code,frequency,anchor_date,end_date,is_active,source,note,created_at,updated_at,icon_key"
     )
     .eq("user_id", userId)
     .eq("is_active", true)
@@ -929,8 +952,12 @@ async function fetchActiveMoneyRecurringItems({
 
 function MoneyForecastSummary({
   projection,
+  horizon,
+  onHorizonChange,
 }: {
   projection: MoneyBalanceProjection;
+  horizon: ProjectionHorizonDays;
+  onHorizonChange: (value: ProjectionHorizonDays) => void;
 }) {
   const hasScheduledMovement =
     projection.upcomingInflowMinor !== 0 ||
@@ -942,31 +969,46 @@ function MoneyForecastSummary({
       label: "Lowest",
       value: formatMoneyFromMinor(projection.lowestBalanceMinor),
       detail: formatCompactDate(projection.lowestBalanceDate),
-      valueClassName: "text-white/88",
+      color:
+        projection.lowestBalanceMinor < projection.startingBalanceMinor
+          ? MONEY_SEMANTIC_COLORS.negative
+          : undefined,
     },
     {
       label: "Money in",
       value: formatMoneyFromMinor(projection.upcomingInflowMinor),
-      valueClassName: "text-emerald-100/72",
+      color: MONEY_SEMANTIC_COLORS.positive,
     },
     {
       label: "Money out",
       value: formatMoneyFromMinor(projection.upcomingOutflowMinor),
-      valueClassName: "text-red-100/72",
+      color: MONEY_SEMANTIC_COLORS.negative,
     },
   ];
 
   return (
     <div className="border-b border-white/[0.055] px-3 pb-3">
       <dl aria-label="Forecast summary">
-        <div className="py-1.5">
-          <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38">
-            Projected balance
-          </dt>
+        <div className="py-2">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38">
+              Projected balance
+            </dt>
+            <ProjectionHorizonSegment value={horizon} onChange={onHorizonChange} />
+          </div>
           <dd className="mt-0.5 text-2xl font-semibold tabular-nums tracking-tight text-white/90">
             {formatMoneyFromMinor(projection.projectedBalanceMinor)}
           </dd>
-          <dd className="mt-0.5 text-[11px] font-medium tabular-nums text-white/42">
+          <dd
+            className="mt-0.5 text-[11px] font-medium tabular-nums"
+            style={{
+              color: !hasScheduledMovement || projectedChangeMinor === 0
+                ? "rgba(255,255,255,0.42)"
+                : projectedChangeMinor > 0
+                  ? MONEY_SEMANTIC_COLORS.positive
+                  : MONEY_SEMANTIC_COLORS.negative,
+            }}
+          >
             {hasScheduledMovement ? (
               <>
                 {projectedChangeMinor > 0 ? "+" : ""}
@@ -980,12 +1022,12 @@ function MoneyForecastSummary({
         </div>
 
         {hasScheduledMovement ? (
-          <div className="mt-1 grid grid-cols-3 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.025]">
+          <div className="mt-1 grid grid-cols-3 border-y border-white/[0.055]">
             {cells.map((cell, index) => (
               <div
                 key={cell.label}
                 className={cn(
-                  "min-w-0 px-2 py-2",
+                  "min-w-0 px-2 py-1.5",
                   index > 0 && "border-l border-white/[0.06]"
                 )}
               >
@@ -993,10 +1035,8 @@ function MoneyForecastSummary({
                   {cell.label}
                 </dt>
                 <dd
-                  className={cn(
-                    "mt-0.5 truncate text-sm font-semibold tabular-nums tracking-tight",
-                    cell.valueClassName
-                  )}
+                  className="mt-0.5 truncate text-sm font-semibold tabular-nums tracking-tight text-white/88"
+                  style={{ color: cell.color }}
                 >
                   {cell.value}
                 </dd>
@@ -1883,6 +1923,28 @@ function TransactionRow({
   );
 }
 
+const RECURRING_ICON_COMPONENTS = {
+  home: Home, wifi: Wifi, phone: Smartphone, car: Car, fuel: Fuel,
+  "shopping-cart": ShoppingCart, utensils: Utensils, zap: Zap,
+  droplets: Droplets, "credit-card": CreditCard, receipt: Receipt,
+  "heart-pulse": HeartPulse, briefcase: Briefcase, "piggy-bank": PiggyBank,
+  music: Music,
+} as const;
+
+function normalizeRecurringIconKey(value: string | null): MoneyRecurringIconKey {
+  return MONEY_RECURRING_ICON_KEYS.includes(value as MoneyRecurringIconKey)
+    ? (value as MoneyRecurringIconKey)
+    : "arrow";
+}
+
+function RecurringIcon({ item, className }: { item: MoneyRecurringItemRow; className?: string }) {
+  const key = normalizeRecurringIconKey(item.icon_key);
+  const Icon = key === "arrow"
+    ? item.direction === "outflow" ? ArrowUpRight : ArrowDownLeft
+    : RECURRING_ICON_COMPONENTS[key];
+  return <Icon className={className} aria-hidden="true" />;
+}
+
 function RecurringItemRow({
   item,
   nextDate,
@@ -1890,6 +1952,7 @@ function RecurringItemRow({
   categoryName,
   isEditing,
   onEdit,
+  onIconClick,
 }: {
   item: MoneyRecurringItemRow;
   nextDate: string;
@@ -1897,34 +1960,37 @@ function RecurringItemRow({
   categoryName: string | null;
   isEditing: boolean;
   onEdit: () => void;
+  onIconClick: () => void;
 }) {
   const isOutflow = item.direction === "outflow";
-  const Icon = isOutflow ? ArrowUpRight : ArrowDownLeft;
+  const name = item.name.trim() || "Untitled recurring item";
 
   return (
-    <button
-      type="button"
-      onClick={onEdit}
+    <div
       className={cn(
-        "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 border-b px-2 py-2 text-left transition last:border-b-0 active:scale-[0.995]",
+        "grid w-full grid-cols-[auto_minmax(0,1fr)] items-stretch border-b px-2 py-2 text-left transition last:border-b-0",
         isEditing
           ? "border-white/[0.12] bg-white/[0.06]"
           : "border-white/[0.055] hover:bg-white/[0.035]"
       )}
     >
-      <span
+      <button
+        type="button"
+        onClick={onIconClick}
+        aria-label={`Change icon for ${name}`}
         className={cn(
-          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border",
+          "mr-2 flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-lg border transition active:scale-95",
           isOutflow
             ? "border-red-200/10 bg-red-200/[0.035] text-red-100/70"
             : "border-emerald-200/10 bg-emerald-200/[0.04] text-emerald-100/72"
         )}
       >
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </span>
-      <span className="min-w-0">
+        <RecurringIcon item={item} className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={onEdit} aria-label={`Edit ${name} scheduled money`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-left active:scale-[0.995]">
+      <span className="min-w-0 self-center">
         <span className="block truncate text-sm font-semibold text-white/84">
-          {item.name.trim() || "Untitled recurring item"}
+          {name}
         </span>
         <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
           {formatReadableDate(nextDate)} ·{" "}
@@ -1942,8 +2008,26 @@ function RecurringItemRow({
         </span>
         <PencilLine className="h-3.5 w-3.5 shrink-0 text-white/30" />
       </span>
-    </button>
+      </button>
+    </div>
   );
+}
+
+function RecurringIconPicker({ item, saving, error, onSelect }: {
+  item: MoneyRecurringItemRow; saving: boolean; error: string | null;
+  onSelect: (key: MoneyRecurringIconKey) => void;
+}) {
+  const selected = normalizeRecurringIconKey(item.icon_key);
+  return <div className="mx-2 mb-2 rounded-lg border border-white/[0.09] bg-[#080808] p-2" aria-label={`Choose icon for ${item.name}`}>
+    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42">Choose icon</p>
+    <div className="grid grid-cols-4 gap-1 sm:grid-cols-5">
+      {MONEY_RECURRING_ICON_KEYS.map((key) => {
+        const Icon = key === "arrow" ? (item.direction === "outflow" ? ArrowUpRight : ArrowDownLeft) : RECURRING_ICON_COMPONENTS[key];
+        return <button key={key} type="button" disabled={saving} onClick={() => onSelect(key)} aria-label={key} aria-pressed={selected === key} className={cn("flex h-10 items-center justify-center rounded-md border border-transparent text-white/58 hover:bg-white/[0.06] hover:text-white/84 disabled:opacity-40", selected === key && "border-white/[0.14] bg-white/[0.09] text-white")}><Icon className="h-4 w-4" /></button>;
+      })}
+    </div>
+    {error ? <p className="mt-1.5 text-[11px] text-red-100/76">{error}</p> : null}
+  </div>;
 }
 
 type BudgetDisplayRow = {
@@ -2459,16 +2543,16 @@ function ProjectionHorizonSegment({
   onChange: (value: ProjectionHorizonDays) => void;
 }) {
   return (
-    <div className="grid grid-cols-3 rounded-xl border border-white/[0.075] bg-white/[0.035] p-1">
+    <div className="grid h-7 shrink-0 grid-cols-3 rounded-md border border-white/[0.075] bg-black/20 p-px">
       {PROJECTION_HORIZONS.map((horizon) => (
         <button
           key={horizon}
           type="button"
           onClick={() => onChange(horizon)}
           className={cn(
-            "min-h-8 rounded-lg px-2 text-xs font-semibold transition",
+            "h-6 rounded-[4px] px-1.5 text-[10px] font-semibold transition",
             value === horizon
-              ? "bg-white text-black"
+              ? "bg-white/[0.10] text-white"
               : "text-white/54 hover:bg-white/[0.055] hover:text-white/78"
           )}
         >
@@ -2584,8 +2668,8 @@ function MoneyProjectionChart({
               offset="0%"
               stopColor={
                 hasNegativeBalance
-                  ? "rgba(248,113,113,0.16)"
-                  : "rgba(244,244,245,0.14)"
+                  ? `${MONEY_SEMANTIC_COLORS.negative}24`
+                  : `${MONEY_SEMANTIC_COLORS.positive}18`
               }
             />
             <stop offset="100%" stopColor="rgba(244,244,245,0.01)" />
@@ -2601,8 +2685,7 @@ function MoneyProjectionChart({
                 x2={padding.left + chartWidth}
                 y1={y}
                 y2={y}
-                stroke="rgba(82,82,91,0.2)"
-                strokeDasharray="3 6"
+                stroke="rgba(161,161,170,0.13)"
               />
               <text
                 x={padding.left - 10}
@@ -2626,7 +2709,7 @@ function MoneyProjectionChart({
               y2={baselineY}
               stroke={
                 hasNegativeBalance
-                  ? "rgba(248,113,113,0.42)"
+                  ? `${MONEY_SEMANTIC_COLORS.negative}70`
                   : "rgba(82,82,91,0.34)"
               }
               strokeDasharray="4 7"
@@ -2651,7 +2734,7 @@ function MoneyProjectionChart({
         <path
           d={linePath}
           fill="none"
-          stroke={hasNegativeBalance ? "rgba(254,202,202,0.9)" : "#f4f4f5"}
+          stroke={hasNegativeBalance ? MONEY_SEMANTIC_COLORS.negative : "#f4f4f5"}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={2}
@@ -2681,8 +2764,8 @@ function MoneyProjectionChart({
               r={2.8}
               fill={
                 point.changeMinor < 0
-                  ? "rgba(254,202,202,0.9)"
-                  : "rgba(187,247,208,0.88)"
+                  ? MONEY_SEMANTIC_COLORS.negative
+                  : MONEY_SEMANTIC_COLORS.positive
               }
               stroke="rgba(5,6,8,0.95)"
               strokeWidth={1}
@@ -2745,6 +2828,9 @@ export function MoneyAreaDashboard() {
   );
   const [recurringSaving, setRecurringSaving] = useState(false);
   const [recurringError, setRecurringError] = useState<string | null>(null);
+  const [iconPickerRecurringId, setIconPickerRecurringId] = useState<string | null>(null);
+  const [iconSaving, setIconSaving] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
   const [budgetFormOpen, setBudgetFormOpen] = useState(false);
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetSaving, setBudgetSaving] = useState(false);
@@ -2755,6 +2841,13 @@ export function MoneyAreaDashboard() {
   );
   const [projectionHorizonDays, setProjectionHorizonDays] =
     useState<ProjectionHorizonDays>(30);
+
+  useEffect(() => {
+    if (workspace !== "forecast") {
+      setIconPickerRecurringId(null);
+      setIconError(null);
+    }
+  }, [workspace]);
 
   const editorOpen =
     addOpen ||
@@ -3468,6 +3561,29 @@ export function MoneyAreaDashboard() {
     },
     [accounts, categories, invalidateRecurringItems, supabase, userId]
   );
+
+  const saveRecurringIcon = useCallback(async (itemId: string, iconKey: MoneyRecurringIconKey) => {
+    if (!supabase || !userId) {
+      setIconError("Sign in before changing an icon.");
+      return;
+    }
+    setIconSaving(true);
+    setIconError(null);
+    try {
+      const result = await getMoneyDb(supabase)
+        .from("money_recurring_items")
+        .update({ icon_key: iconKey })
+        .eq("id", itemId)
+        .eq("user_id", userId);
+      if (result.error) throw new Error(result.error.message || "Unable to save icon.");
+      await invalidateRecurringItems();
+      setIconPickerRecurringId(null);
+    } catch (error) {
+      setIconError(error instanceof Error ? error.message : "Unable to save icon.");
+    } finally {
+      setIconSaving(false);
+    }
+  }, [invalidateRecurringItems, supabase, userId]);
 
   const saveBudget = useCallback(
     async (mode: "add" | "edit", form: BudgetFormState, budgetId?: string) => {
@@ -4200,24 +4316,13 @@ export function MoneyAreaDashboard() {
 
         {workspace === "forecast" ? (
           <div>
-            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
-                Outlook
-              </p>
-              <div className="w-36">
-                <ProjectionHorizonSegment
-                  value={projectionHorizonDays}
-                  onChange={setProjectionHorizonDays}
-                />
-              </div>
-            </div>
             {projectionError ? (
               <div className="px-3 py-4 text-xs text-red-100/76">
                 {projectionError}
               </div>
             ) : (
               <>
-                <MoneyForecastSummary projection={balanceProjection} />
+                <MoneyForecastSummary projection={balanceProjection} horizon={projectionHorizonDays} onHorizonChange={setProjectionHorizonDays} />
                 {balanceProjection.upcomingInflowMinor !== 0 ||
                 balanceProjection.upcomingOutflowMinor !== 0 ? (
                   <div className="border-b border-white/[0.06] p-2">
@@ -4240,6 +4345,8 @@ export function MoneyAreaDashboard() {
                 <Button
                   type="button"
                   onClick={() => {
+                    setIconPickerRecurringId(null);
+                    setIconError(null);
                     setEditingRecurringId(null);
                     setRecurringError(null);
                     setRecurringFormOpen(true);
@@ -4306,13 +4413,25 @@ export function MoneyAreaDashboard() {
                         }
                         isEditing={isEditing}
                         onEdit={() => {
+                          setIconPickerRecurringId(null);
+                          setIconError(null);
                           setRecurringFormOpen(false);
                           setRecurringError(null);
                           setEditingRecurringId((current) =>
                             current === item.id ? null : item.id,
                           );
                         }}
+                        onIconClick={() => {
+                          setEditingRecurringId(null);
+                          setRecurringFormOpen(false);
+                          setRecurringError(null);
+                          setIconError(null);
+                          setIconPickerRecurringId((current) => current === item.id ? null : item.id);
+                        }}
                       />
+                      {iconPickerRecurringId === item.id ? (
+                        <RecurringIconPicker item={item} saving={iconSaving} error={iconError} onSelect={(key) => saveRecurringIcon(item.id, key)} />
+                      ) : null}
                       {isEditing ? (
                         <div className="pt-2">
                           <MoneyRecurringItemForm
