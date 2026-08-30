@@ -172,16 +172,17 @@ const getRowControls = (row: HTMLElement) => {
 };
 
 const pointerDown = (target: HTMLElement) => {
-  target.dispatchEvent(
-    new PointerEvent("pointerdown", {
-      bubbles: true,
-      button: 0,
-      clientX: 10,
-      clientY: 10,
-      pointerId: 1,
-      pointerType: "touch",
-    })
-  );
+  const event = new PointerEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+    pointerId: 1,
+    pointerType: "touch",
+  });
+  target.dispatchEvent(event);
+  return event;
 };
 
 const clickCheckbox = async (row: HTMLElement) => {
@@ -345,7 +346,7 @@ describe("MyListSheet checkbox interactions", () => {
       title: "Upgrade Me",
       skillId: "skill-1",
       priority: "HIGH",
-      origin: "my-list-upgrade",
+      origin: "manual-my-list-upgrade",
       sourceManualMyListItemId: manualRowId,
     });
 
@@ -353,6 +354,45 @@ describe("MyListSheet checkbox interactions", () => {
       "schedule:open-quick-create-task-details",
       handleQuickCreate
     );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("prevents native touch selection when a manual todo title starts an upgrade hold", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "No Select Hold",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "No Select Hold");
+    const input = row.querySelector('input[aria-label="To-do text"]');
+    expect(input).toBeTruthy();
+
+    let pointerEvent: PointerEvent | null = null;
+    await act(async () => {
+      pointerEvent = pointerDown(input as HTMLElement);
+    });
+
+    expect(pointerEvent?.defaultPrevented).toBe(true);
+
     await act(async () => {
       root.unmount();
     });
