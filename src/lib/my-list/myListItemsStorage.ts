@@ -20,7 +20,7 @@ export type MyListManualItemConsumedDetail = {
   origin: "manual-my-list-upgrade";
   userId: string;
   itemId: string;
-  createdEntityType: "TASK" | "HABIT";
+  createdEntityType: MyListSourceType;
   createdEntityId: string;
 };
 export type MyListManualItemCreatedDetail = {

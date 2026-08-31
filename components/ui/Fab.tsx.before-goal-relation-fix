@@ -84,7 +84,7 @@ import {
 } from "@/components/ui/select";
 import { WheelPicker, WheelPickerWrapper } from "@/components/wheel-picker";
 import { Label } from "@/components/ui/label";
-import { useToast, useToastHelpers } from "./toast";
+import { useToastHelpers } from "./toast";
 import { teardownFabViewportState } from "./fabViewportCleanup";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
@@ -4563,7 +4563,6 @@ export function Fab({
   const [isDirectCreationOpen, setIsDirectCreationOpen] = useState(false);
   const openOnMountConsumedRef = useRef(false);
   const toast = useToastHelpers();
-  const { setStatusIsland } = useToast();
   const [aiOpen, setAiOpen] = useState(false);
   const [aiOverlayOrigin, setAiOverlayOrigin] = useState<FabAiOverlayOrigin>(
     FAB_AI_DEFAULT_ORIGIN,
@@ -25173,15 +25172,13 @@ export function Fab({
           );
         } else {
           void hapticComplete();
-          setStatusIsland({
-            state: "success",
-            title:
-              createdType === "TO_DO"
-                ? "To-Do created"
-                : isStandaloneUnifiedTaskCreate
-                  ? "To-Do created"
-                  : `${successLabel} created`,
-          });
+          toast.success(
+            createdType === "TO_DO"
+              ? "To-Do created"
+              : isStandaloneUnifiedTaskCreate
+              ? "To-Do created"
+              : `${successLabel} created`,
+          );
         }
         if (tagAttachmentFailed) {
           toast.error(
@@ -30105,28 +30102,40 @@ export function Fab({
                     >
                       {isGoal ? (
                         <Select
-                          value={selectedGoalRelationValue || "__none__"}
-                          onValueChange={(value) =>
-                            handleGoalRelationChange(
-                              value === "__none__" ? "" : value,
-                            )
-                          }
+                          value={goalCampaignId ?? "__none__"}
+                          onValueChange={(value) => {
+                            void hapticSoftTick();
+                            resetGoalCampaignInlineCreation();
+                            setGoalCampaignId(
+                              value === "__none__" ? null : value,
+                            );
+                          }}
                           hideChevron
                           triggerClassName={cn(
                             unifiedRelationshipTriggerClass,
-                            goalRelationType && goalRelationId
+                            hasUnifiedGoalRoadmapRelation
                               ? "text-zinc-200/90 hover:text-white"
                               : "text-zinc-400/85 hover:text-zinc-300",
                           )}
                           trigger={
                             <span
                               className="inline-flex min-w-0 items-center gap-1.5"
-                              data-unified-goal-primary-relation-trigger
+                              data-unified-goal-roadmap-trigger
                             >
+                              {hasUnifiedGoalRoadmapRelation ? (
+                                <span
+                                  className="w-4 shrink-0 text-center text-sm leading-none"
+                                  aria-hidden="true"
+                                >
+                                  {selectedUnifiedGoalCampaign?.emoji ??
+                                    FAB_DEFAULT_CAMPAIGN_EMOJI}
+                                </span>
+                              ) : null}
                               <span className="truncate">
-                                {goalRelationType && goalRelationId
-                                  ? selectedGoalRelationLabel
-                                  : "add MONUMENT/CIRCLE"}
+                                {selectedUnifiedGoalCampaign?.name ??
+                                  (goalCampaignId
+                                    ? "Selected Roadmap"
+                                    : "add ROADMAP")}
                               </span>
                             </span>
                           }
@@ -30144,36 +30153,26 @@ export function Fab({
                             <SelectItem
                               value="__none__"
                               className={fabCreationSelectItemClass(
-                                !selectedGoalRelationValue,
+                                !goalCampaignId,
                               )}
                             >
-                              No Monument / Circle
+                              No Roadmap
                             </SelectItem>
-
-                            <SelectItem
-                              value="__monuments_label"
-                              disabled
-                              className="cursor-default px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
-                            >
-                              MONUMENTS
-                            </SelectItem>
-
-                            {monumentsLoading ? (
+                            {goalCampaignsLoading ? (
                               <SelectItem
-                                value="__monuments_loading"
+                                value="__roadmaps_loading"
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                Loading monuments...
+                                Loading Roadmaps...
                               </SelectItem>
-                            ) : monuments.length > 0 ? (
-                              monuments.map((monument) => (
+                            ) : goalCampaignOptions.length > 0 ? (
+                              goalCampaignOptions.map((campaign) => (
                                 <SelectItem
-                                  key={monument.id}
-                                  value={`MONUMENT:${monument.id}`}
+                                  key={campaign.id}
+                                  value={campaign.id}
                                   className={fabCreationSelectItemClass(
-                                    selectedGoalRelationValue ===
-                                      `MONUMENT:${monument.id}`,
+                                    goalCampaignId === campaign.id,
                                   )}
                                 >
                                   <span className="inline-flex min-w-0 items-center gap-2">
@@ -30181,68 +30180,22 @@ export function Fab({
                                       className="w-5 shrink-0 text-center text-base leading-none"
                                       aria-hidden="true"
                                     >
-                                      {monument.emoji ?? "🏛️"}
+                                      {campaign.emoji ??
+                                        FAB_DEFAULT_CAMPAIGN_EMOJI}
                                     </span>
                                     <span className="min-w-0 truncate">
-                                      {monument.title}
+                                      {campaign.name}
                                     </span>
                                   </span>
                                 </SelectItem>
                               ))
                             ) : (
                               <SelectItem
-                                value="__monuments_empty"
+                                value="__roadmaps_empty"
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                No monuments yet
-                              </SelectItem>
-                            )}
-
-                            <SelectItem
-                              value="__circles_label"
-                              disabled
-                              className="cursor-default px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
-                            >
-                              CIRCLES
-                            </SelectItem>
-
-                            {manageableCirclesLoading ? (
-                              <SelectItem
-                                value="__circles_loading"
-                                disabled
-                                className={fabCreationSelectItemClass(false)}
-                              >
-                                Loading circles...
-                              </SelectItem>
-                            ) : manageableCircles.length > 0 ? (
-                              manageableCircles.map((circle) => (
-                                <SelectItem
-                                  key={circle.id}
-                                  value={`CIRCLE:${circle.id}`}
-                                  className={fabCreationSelectItemClass(
-                                    selectedGoalRelationValue ===
-                                      `CIRCLE:${circle.id}`,
-                                  )}
-                                >
-                                  <span className="inline-flex min-w-0 items-center gap-2">
-                                    <CircleDot
-                                      className="h-4 w-4 shrink-0 text-zinc-300"
-                                      aria-hidden="true"
-                                    />
-                                    <span className="min-w-0 truncate">
-                                      {circle.name}
-                                    </span>
-                                  </span>
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem
-                                value="__circles_empty"
-                                disabled
-                                className={fabCreationSelectItemClass(false)}
-                              >
-                                No managed circles yet
+                                No Roadmaps yet
                               </SelectItem>
                             )}
                           </SelectContent>
@@ -30309,40 +30262,35 @@ export function Fab({
                       ) : null}
                       {isGoal ? (
                         <Select
-                          value={goalCampaignId ?? "__none__"}
+                          value={goalCircleId || "__none__"}
                           onValueChange={(value) => {
                             void hapticSoftTick();
-                            resetGoalCampaignInlineCreation();
-                            setGoalCampaignId(
-                              value === "__none__" ? null : value,
-                            );
+                            setGoalCircleId(value === "__none__" ? "" : value);
                           }}
                           hideChevron
                           triggerClassName={cn(
                             unifiedRelationshipTriggerClass,
-                            hasUnifiedGoalRoadmapRelation
+                            "max-w-[min(16rem,calc(100vw-2rem))]",
+                            hasUnifiedGoalCircleRelation
                               ? "text-zinc-200/90 hover:text-white"
                               : "text-zinc-400/85 hover:text-zinc-300",
                           )}
                           trigger={
                             <span
                               className="inline-flex min-w-0 items-center gap-1.5"
-                              data-unified-goal-roadmap-trigger
+                              data-unified-goal-circle-trigger
                             >
-                              {hasUnifiedGoalRoadmapRelation ? (
-                                <span
-                                  className="w-4 shrink-0 text-center text-sm leading-none"
+                              {hasUnifiedGoalCircleRelation ? (
+                                <CircleDot
+                                  className="h-3.5 w-3.5 shrink-0 text-zinc-300"
                                   aria-hidden="true"
-                                >
-                                  {selectedUnifiedGoalCampaign?.emoji ??
-                                    FAB_DEFAULT_CAMPAIGN_EMOJI}
-                                </span>
+                                />
                               ) : null}
                               <span className="truncate">
-                                {selectedUnifiedGoalCampaign?.name ??
-                                  (goalCampaignId
-                                    ? "Selected Roadmap"
-                                    : "add ROADMAP")}
+                                {selectedUnifiedGoalCircle?.name ??
+                                  (goalCircleId
+                                    ? "Selected Circle"
+                                    : "add CIRCLE")}
                               </span>
                             </span>
                           }
@@ -30350,7 +30298,7 @@ export function Fab({
                             FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS
                           }
                           contentAlign="end"
-                          minContentWidth={240}
+                          minContentWidth={224}
                         >
                           <SelectContent
                             className={cn(
@@ -30361,49 +30309,46 @@ export function Fab({
                             <SelectItem
                               value="__none__"
                               className={fabCreationSelectItemClass(
-                                !goalCampaignId,
+                                !goalCircleId,
                               )}
                             >
-                              No Roadmap
+                              No Circle
                             </SelectItem>
-                            {goalCampaignsLoading ? (
+                            {manageableCirclesLoading ? (
                               <SelectItem
-                                value="__roadmaps_loading"
+                                value="__circles_loading"
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                Loading Roadmaps...
+                                Loading Circles...
                               </SelectItem>
-                            ) : goalCampaignOptions.length > 0 ? (
-                              goalCampaignOptions.map((campaign) => (
+                            ) : manageableCircles.length > 0 ? (
+                              manageableCircles.map((circle) => (
                                 <SelectItem
-                                  key={campaign.id}
-                                  value={campaign.id}
+                                  key={circle.id}
+                                  value={circle.id}
                                   className={fabCreationSelectItemClass(
-                                    goalCampaignId === campaign.id,
+                                    goalCircleId === circle.id,
                                   )}
                                 >
                                   <span className="inline-flex min-w-0 items-center gap-2">
-                                    <span
-                                      className="w-5 shrink-0 text-center text-base leading-none"
+                                    <CircleDot
+                                      className="h-4 w-4 shrink-0 text-zinc-300"
                                       aria-hidden="true"
-                                    >
-                                      {campaign.emoji ??
-                                        FAB_DEFAULT_CAMPAIGN_EMOJI}
-                                    </span>
+                                    />
                                     <span className="min-w-0 truncate">
-                                      {campaign.name}
+                                      {circle.name}
                                     </span>
                                   </span>
                                 </SelectItem>
                               ))
                             ) : (
                               <SelectItem
-                                value="__roadmaps_empty"
+                                value="__circles_empty"
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                No Roadmaps yet
+                                No Circles yet
                               </SelectItem>
                             )}
                           </SelectContent>

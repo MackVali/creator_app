@@ -22,6 +22,19 @@ const roadmapQueryMocks = vi.hoisted(() => ({
   ),
   createCampaign: vi.fn(),
 }));
+const toastMocks = vi.hoisted(() => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+  warning: vi.fn(),
+}));
+const myListStorageMocks = vi.hoisted(() => ({
+  consumeManualMyListUpgradeSource: vi.fn(async () => undefined),
+  createManualMyListItem: vi.fn(async () => ({
+    id: "manual-row-created",
+    origin: "manual-my-list-upgrade",
+  })),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -265,12 +278,7 @@ vi.mock("@/app/(app)/schedule/priorities/PriorityEditorClient", () => ({
 }));
 
 vi.mock("@/components/ui/toast", () => ({
-  useToastHelpers: () => ({
-    error: vi.fn(),
-    info: vi.fn(),
-    success: vi.fn(),
-    warning: vi.fn(),
-  }),
+  useToastHelpers: () => toastMocks,
 }));
 
 vi.mock("@/components/entitlement/EntitlementProvider", () => ({
@@ -295,12 +303,7 @@ vi.mock("@/components/ui/FabCreationContext", () => ({
   }),
 }));
 vi.mock("../../components/ui/toast", () => ({
-  useToastHelpers: () => ({
-    error: vi.fn(),
-    info: vi.fn(),
-    success: vi.fn(),
-    warning: vi.fn(),
-  }),
+  useToastHelpers: () => toastMocks,
 }));
 
 vi.mock("@/lib/haptics/creatorHaptics", () => ({
@@ -329,6 +332,10 @@ type SupabaseMockQuery = {
   data: unknown[];
   error: null;
 };
+type SupabaseMockSingleResult = {
+  data: { id: string } | null;
+  error: { message?: string } | null;
+};
 
 const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111";
 const ROADMAP_ID = "22222222-2222-4222-8222-222222222222";
@@ -337,11 +344,27 @@ const CREATED_GOAL_ID = "44444444-4444-4444-8444-444444444444";
 
 const supabaseMutationState: {
   insertCalls: Array<{ tableName: string; payload: unknown }>;
+  goalSingleError: { message?: string } | null;
+  goalSingleReject: unknown;
+  goalSingleResult: Promise<SupabaseMockSingleResult> | null;
 } = {
   insertCalls: [],
+  goalSingleError: null,
+  goalSingleReject: null,
+  goalSingleResult: null,
 };
 
 const nextTick = () => new Promise((resolve) => window.setTimeout(resolve, 0));
+const createGoalInsertDeferred = () => {
+  let resolve!: (value: SupabaseMockSingleResult) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<SupabaseMockSingleResult>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+};
 
 const setNativeInputValue = (input: HTMLInputElement, value: string) => {
   flushSync(() => {
@@ -351,6 +374,18 @@ const setNativeInputValue = (input: HTMLInputElement, value: string) => {
     )?.set;
     valueSetter?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+
+const setNativeDateInputValue = (input: HTMLInputElement, value: string) => {
+  flushSync(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 };
 
@@ -376,6 +411,12 @@ const getUnifiedRelationshipStrip = () => {
   );
   expect(strip).toBeTruthy();
   return strip as HTMLElement;
+};
+
+const getUnifiedEventSheet = () => {
+  const sheet = document.querySelector<HTMLElement>("[data-unified-event-sheet]");
+  expect(sheet).toBeTruthy();
+  return sheet as HTMLElement;
 };
 
 const getGoalRoadmapTrigger = () => {
@@ -422,6 +463,14 @@ const selectGoalTopRelationshipValue = (
   flushSync(() => {
     option?.click();
   });
+};
+
+const getGoalDueDateInput = () => {
+  const input = document.querySelector<HTMLInputElement>(
+    "#unified-goal-due-date",
+  );
+  expect(input).toBeTruthy();
+  return input as HTMLInputElement;
 };
 
 const submitUnifiedGoal = () => {
@@ -480,10 +529,23 @@ const createSupabaseBuilder = (tableName: string) => {
     maybeSingle: vi.fn(async () => ({ data: null, error: null })),
     order: vi.fn(() => builder),
     select: vi.fn(() => builder),
-    single: vi.fn(async () => ({
-      data: tableName === "goals" ? { id: CREATED_GOAL_ID } : null,
-      error: null,
-    })),
+    single: vi.fn(async () => {
+      if (tableName === "goals") {
+        if (supabaseMutationState.goalSingleReject) {
+          throw supabaseMutationState.goalSingleReject;
+        }
+        if (supabaseMutationState.goalSingleResult) {
+          return supabaseMutationState.goalSingleResult;
+        }
+        return {
+          data: supabaseMutationState.goalSingleError
+            ? null
+            : { id: CREATED_GOAL_ID },
+          error: supabaseMutationState.goalSingleError,
+        };
+      }
+      return { data: null, error: null };
+    }),
     insert: vi.fn((payload: unknown) => {
       supabaseMutationState.insertCalls.push({ tableName, payload });
       return builder;
@@ -550,11 +612,9 @@ vi.mock("@/lib/my-list/pinnedSourceItems", () => ({
 }));
 
 vi.mock("@/lib/my-list/myListItemsStorage", () => ({
-  consumeManualMyListUpgradeSource: vi.fn(async () => undefined),
-  createManualMyListItem: vi.fn(async () => ({
-    id: "manual-row-created",
-    origin: "manual-my-list-upgrade",
-  })),
+  consumeManualMyListUpgradeSource:
+    myListStorageMocks.consumeManualMyListUpgradeSource,
+  createManualMyListItem: myListStorageMocks.createManualMyListItem,
 }));
 
 describe("Fab quick-create task details hydration", () => {
@@ -563,9 +623,21 @@ describe("Fab quick-create task details hydration", () => {
 
   beforeEach(() => {
     supabaseMutationState.insertCalls = [];
+    supabaseMutationState.goalSingleError = null;
+    supabaseMutationState.goalSingleReject = null;
+    supabaseMutationState.goalSingleResult = null;
     roadmapQueryMocks.addCampaignToRoadmap.mockReset();
     roadmapQueryMocks.addGoalToCampaign.mockClear();
     roadmapQueryMocks.createCampaign.mockReset();
+    myListStorageMocks.consumeManualMyListUpgradeSource.mockReset();
+    myListStorageMocks.consumeManualMyListUpgradeSource.mockImplementation(
+      async () => undefined,
+    );
+    myListStorageMocks.createManualMyListItem.mockReset();
+    myListStorageMocks.createManualMyListItem.mockImplementation(async () => ({
+      id: "manual-row-created",
+      origin: "manual-my-list-upgrade",
+    }));
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -702,10 +774,34 @@ describe("Fab quick-create task details hydration", () => {
     expect(relationshipStrip.textContent).toContain("add CIRCLE");
     expect(relationshipStrip.textContent).not.toContain("Add to Roadmap");
     expect(relationshipStrip.textContent).not.toContain("Add to Circle");
+    const goalSheet = getUnifiedEventSheet();
+    expect(goalSheet.querySelector('[aria-label="Pin Goal"]')).toBeTruthy();
+    expect(goalSheet.textContent).toContain("Priority");
+    expect(goalSheet.textContent).toContain("Energy");
+    expect(goalSheet.textContent).toContain("Due date");
+    expect(getGoalDueDateInput().value).toBe("");
+    expect(goalSheet.textContent).toContain("Type");
+    expect(goalSheet.textContent).toContain("Tags");
+    expect(goalSheet.textContent).toContain("Notes");
+    expect(goalSheet.textContent).not.toContain("Manual");
+    expect(goalSheet.textContent).not.toContain("Dynamic");
+    expect(goalSheet.textContent).not.toContain("Starts");
+    expect(goalSheet.textContent).not.toContain("Ends");
+    expect(goalSheet.textContent).not.toContain("Duration");
+    expect(goalSheet.textContent).not.toContain("Recurrence");
+    expect(goalSheet.textContent).not.toContain("Skill");
+    expect(goalSheet.textContent).not.toContain("Forms");
+    expect(goalSheet.textContent).not.toContain("More");
 
-    selectUnifiedTaskSideType("PROJECT");
+    selectUnifiedTaskSideType("TASK");
     await nextTick();
     expect(getUnifiedTitleInput().value).toBe("Test hydration");
+    const taskSheet = getUnifiedEventSheet();
+    expect(taskSheet.textContent).toContain("Manual");
+    expect(taskSheet.textContent).toContain("Dynamic");
+    expect(taskSheet.textContent).toContain("Starts");
+    expect(taskSheet.textContent).toContain("Ends");
+    expect(taskSheet.textContent).toContain("Recurrence");
   });
 
   it("shows Goal relationship controls only in the top relationship strip", async () => {
@@ -829,6 +925,40 @@ describe("Fab quick-create task details hydration", () => {
       campaignId: CAMPAIGN_ID,
       goalId: CREATED_GOAL_ID,
       position: 1,
+    });
+  });
+
+  it("persists Goal due date from the unified Goal control", async () => {
+    const { Fab } = await import("../../components/ui/Fab");
+
+    flushSync(() => {
+      root.render(React.createElement(Fab, { hideLauncher: true }));
+    });
+    await nextTick();
+
+    flushSync(() => {
+      openQuickCreateTaskDetails({
+        origin: "manual-my-list-upgrade",
+        sourceManualMyListItemId: "manual-row-1",
+        title: "Due date goal",
+      });
+    });
+    await nextTick();
+
+    selectUnifiedTaskSideType("GOAL");
+    await nextTick();
+
+    setNativeDateInputValue(getGoalDueDateInput(), "2026-10-31");
+    await nextTick();
+
+    submitUnifiedGoal();
+    await nextTick();
+    await nextTick();
+
+    expect(getInsertedPayloadForTable("goals")).toMatchObject({
+      due_date: "2026-10-31",
+      name: "Due date goal",
+      user_id: "user-1",
     });
   });
 
