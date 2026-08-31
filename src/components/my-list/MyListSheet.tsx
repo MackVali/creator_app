@@ -1736,6 +1736,9 @@ export function MyListSheet({
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
+  const [editingManualTitleRowIds, setEditingManualTitleRowIds] = useState<
+    Set<string>
+  >(new Set());
 
   const areTodoRowControlsRevealed = useCallback(
     (rowKey: MyListRowKey, isDragging = false) =>
@@ -4155,12 +4158,100 @@ export function MyListSheet({
     restoreManualReorderOrigin();
   }, [restoreManualReorderOrigin]);
 
+  const beginManualTitleEditing = useCallback((rowId: string) => {
+    setEditingManualTitleRowIds((currentIds) => {
+      if (currentIds.has(rowId)) return currentIds;
+      const nextIds = new Set(currentIds);
+      nextIds.add(rowId);
+      return nextIds;
+    });
+    setPendingTitleFocusRowId(rowId);
+  }, []);
+
+  const endManualTitleEditing = useCallback((rowId: string) => {
+    if (rowId === EMPTY_DRAFT_MANUAL_ROW_ID) return;
+
+    setEditingManualTitleRowIds((currentIds) => {
+      if (!currentIds.has(rowId)) return currentIds;
+      const nextIds = new Set(currentIds);
+      nextIds.delete(rowId);
+      return nextIds;
+    });
+  }, []);
+
+  const handleManualTitleDisplayPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, rowId: string) => {
+      if (event.pointerType === "mouse") return;
+
+      const press = manualUpgradePressRef.current;
+      if (
+        !press ||
+        press.inputType !== "pointer" ||
+        press.rowId !== rowId ||
+        press.pointerId !== event.pointerId ||
+        press.triggered
+      ) {
+        return;
+      }
+
+      beginManualTitleEditing(rowId);
+    },
+    [beginManualTitleEditing],
+  );
+
+  const handleManualTitleDisplayTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLElement>, rowId: string) => {
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+
+      const press = manualUpgradePressRef.current;
+      if (
+        !press ||
+        press.inputType !== "touch" ||
+        press.rowId !== rowId ||
+        press.pointerId !== touch.identifier ||
+        press.triggered
+      ) {
+        return;
+      }
+
+      beginManualTitleEditing(rowId);
+    },
+    [beginManualTitleEditing],
+  );
+
+  const handleManualTitleDisplayClick = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, rowId: string) => {
+      event.stopPropagation();
+      if (manualUpgradePressRef.current?.triggered) return;
+      beginManualTitleEditing(rowId);
+    },
+    [beginManualTitleEditing],
+  );
+
+  const handleManualTitleDisplayKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>, rowId: string) => {
+      event.stopPropagation();
+      if (event.nativeEvent.isComposing) return;
+      if (event.key !== "Enter" && event.key !== "F2") return;
+
+      event.preventDefault();
+      beginManualTitleEditing(rowId);
+    },
+    [beginManualTitleEditing],
+  );
+
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<MyListManualRow, "id">>) => {
       const realDraftRowId =
         rowId === EMPTY_DRAFT_MANUAL_ROW_ID ? createManualRowId() : null;
 
       if (realDraftRowId) {
+        setEditingManualTitleRowIds((currentIds) => {
+          const nextIds = new Set(currentIds);
+          nextIds.add(realDraftRowId);
+          return nextIds;
+        });
         setPendingTitleFocusRowId(realDraftRowId);
       }
 
@@ -7591,67 +7682,140 @@ export function MyListSheet({
                                             ),
                                         )}
                                       </div>
-                                      <input
-                                        ref={(input) => {
-                                          if (input) {
-                                            manualTitleInputRefs.current.set(
-                                              row.id,
-                                              input,
-                                            );
-                                          } else {
-                                            manualTitleInputRefs.current.delete(
-                                              row.id,
-                                            );
-                                          }
-                                        }}
-                                        type="text"
-                                        draggable={false}
-                                        value={row.text}
-                                        onTouchStart={() => {
-                                          suppressManualUpgradeSelection();
-                                        }}
-                                        onClick={(event) =>
-                                          event.stopPropagation()
-                                        }
-                                        onSelect={(event) => {
-                                          if (manualUpgradePressRef.current) {
-                                            event.preventDefault();
-                                            event.currentTarget.setSelectionRange(
-                                              event.currentTarget.value.length,
-                                              event.currentTarget.value.length,
-                                            );
-                                          }
-                                        }}
-                                        onContextMenu={(event) => {
-                                          event.preventDefault();
-                                        }}
-                                        onDragStart={(event) => {
-                                          event.preventDefault();
-                                        }}
-                                        onKeyDown={(event) =>
-                                          handleTodoTitleKeyDown(
-                                            event,
-                                            "manual",
+                                      {(() => {
+                                        const shouldRenderTitleInput =
+                                          row.id ===
+                                            EMPTY_DRAFT_MANUAL_ROW_ID ||
+                                          editingManualTitleRowIds.has(
                                             row.id,
-                                          )
+                                          ) ||
+                                          pendingTitleFocusRowId === row.id ||
+                                          !row.text.trim();
+
+                                        if (!shouldRenderTitleInput) {
+                                          return (
+                                            <span
+                                              data-my-list-manual-title-display="true"
+                                              draggable={false}
+                                              onPointerUp={(event) =>
+                                                handleManualTitleDisplayPointerUp(
+                                                  event,
+                                                  row.id,
+                                                )
+                                              }
+                                              onTouchEnd={(event) =>
+                                                handleManualTitleDisplayTouchEnd(
+                                                  event,
+                                                  row.id,
+                                                )
+                                              }
+                                              onClick={(event) =>
+                                                handleManualTitleDisplayClick(
+                                                  event,
+                                                  row.id,
+                                                )
+                                              }
+                                              onKeyDown={(event) =>
+                                                handleManualTitleDisplayKeyDown(
+                                                  event,
+                                                  row.id,
+                                                )
+                                              }
+                                              onContextMenu={(event) => {
+                                                event.preventDefault();
+                                              }}
+                                              onDragStart={(event) => {
+                                                event.preventDefault();
+                                              }}
+                                              aria-label="Edit to-do text"
+                                              tabIndex={open ? 0 : -1}
+                                              className={clsx(
+                                                "min-w-0 flex-1 select-none truncate leading-snug text-white/84 outline-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [touch-action:pan-y] [user-select:none]",
+                                                row.done &&
+                                                  "text-white/42 line-through",
+                                              )}
+                                              style={
+                                                MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE
+                                              }
+                                            >
+                                              {row.text}
+                                            </span>
+                                          );
                                         }
-                                        onChange={(event) =>
-                                          updateManualRow(row.id, {
-                                            text: event.target.value,
-                                          })
-                                        }
-                                        placeholder={manualRowInputPlaceholder}
-                                        aria-label={manualRowInputAriaLabel}
-                                        tabIndex={open ? 0 : -1}
-                                        className={clsx(
-                                          "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [touch-action:pan-y] [user-select:none]",
-                                          row.done &&
-                                            "text-white/42 line-through",
-                                        )}
-                                        style={
-                                          MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE
-                                        }
-                                      />
+
+                                        return (
+                                          <input
+                                            ref={(input) => {
+                                              if (input) {
+                                                manualTitleInputRefs.current.set(
+                                                  row.id,
+                                                  input,
+                                                );
+                                              } else {
+                                                manualTitleInputRefs.current.delete(
+                                                  row.id,
+                                                );
+                                              }
+                                            }}
+                                            data-my-list-manual-title-input="true"
+                                            data-my-list-no-upgrade
+                                            type="text"
+                                            draggable={false}
+                                            value={row.text}
+                                            onTouchStart={() => {
+                                              suppressManualUpgradeSelection();
+                                            }}
+                                            onClick={(event) =>
+                                              event.stopPropagation()
+                                            }
+                                            onSelect={(event) => {
+                                              if (manualUpgradePressRef.current) {
+                                                event.preventDefault();
+                                                event.currentTarget.setSelectionRange(
+                                                  event.currentTarget.value
+                                                    .length,
+                                                  event.currentTarget.value
+                                                    .length,
+                                                );
+                                              }
+                                            }}
+                                            onBlur={() =>
+                                              endManualTitleEditing(row.id)
+                                            }
+                                            onContextMenu={(event) => {
+                                              event.preventDefault();
+                                            }}
+                                            onDragStart={(event) => {
+                                              event.preventDefault();
+                                            }}
+                                            onKeyDown={(event) =>
+                                              handleTodoTitleKeyDown(
+                                                event,
+                                                "manual",
+                                                row.id,
+                                              )
+                                            }
+                                            onChange={(event) =>
+                                              updateManualRow(row.id, {
+                                                text: event.target.value,
+                                              })
+                                            }
+                                            placeholder={
+                                              manualRowInputPlaceholder
+                                            }
+                                            aria-label={manualRowInputAriaLabel}
+                                            tabIndex={open ? 0 : -1}
+                                            className={clsx(
+                                              "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [touch-action:pan-y] [user-select:none]",
+                                              row.done &&
+                                                "text-white/42 line-through",
+                                            )}
+                                            style={
+                                              MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE
+                                            }
+                                          />
+                                        );
+                                      })()}
                                       <div
                                         className={clsx(
                                           "-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0 transition-opacity duration-150 group-hover/todo-row:pointer-events-auto group-hover/todo-row:w-auto group-hover/todo-row:overflow-visible group-hover/todo-row:opacity-100 group-focus-within/todo-row:pointer-events-auto group-focus-within/todo-row:w-auto group-focus-within/todo-row:overflow-visible group-focus-within/todo-row:opacity-100",

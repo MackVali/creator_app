@@ -147,6 +147,20 @@ const getTodoRowByText = (container: HTMLElement, text: string) => {
   return row as HTMLElement;
 };
 
+const getManualTitleDisplay = (row: HTMLElement, text: string) => {
+  const display = row.querySelector<HTMLElement>(
+    '[data-my-list-manual-title-display="true"]'
+  );
+  expect(display).toBeTruthy();
+  expect(display?.textContent).toBe(text);
+  return display as HTMLElement;
+};
+
+const getManualTitleInput = (row: HTMLElement) =>
+  row.querySelector<HTMLInputElement>(
+    'input[data-my-list-manual-title-input="true"]'
+  );
+
 const getCheckboxParts = (row: HTMLElement) => {
   const target = row.querySelector("[data-my-list-checkbox]");
   const input = target?.querySelector('input[type="checkbox"]');
@@ -767,7 +781,49 @@ describe("MyListSheet checkbox interactions", () => {
     });
   });
 
-  it("releases focused manual todo text selection before opening upgrade details", async () => {
+  it("renders manual todo titles as display text until explicit edit", async () => {
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "manual-explicit-edit",
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Editable Title",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Editable Title");
+
+    expect(getManualTitleInput(row)).toBeNull();
+    const display = getManualTitleDisplay(row, "Editable Title");
+
+    await act(async () => {
+      display.click();
+    });
+
+    const input = getManualTitleInput(row);
+    expect(input).toBeTruthy();
+    expect(input?.value).toBe("Editable Title");
+    expect(input?.dataset.myListNoUpgrade).toBe("true");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("opens upgrade details from manual title display text without a focused title input", async () => {
     vi.useFakeTimers();
     const manualRowId = "11111111-1111-4111-8111-111111111111";
     window.localStorage.setItem(
@@ -806,18 +862,12 @@ describe("MyListSheet checkbox interactions", () => {
       enableScheduleTimelineDrag: true,
     });
     const row = getTodoRowByText(container, "Focused Upgrade");
-    const input = row.querySelector(
-      'input[aria-label="To-do text"]'
-    ) as HTMLInputElement;
-    expect(input).toBeTruthy();
-    const blurSpy = vi.spyOn(input, "blur");
+    const titleDisplay = getManualTitleDisplay(row, "Focused Upgrade");
+    expect(getManualTitleInput(row)).toBeNull();
 
     const quickCreateStates: Array<{
       activeElement: Element | null;
-      blurCalls: number;
       removeAllRangesCalls: number;
-      selectionEnd: number | null;
-      selectionStart: number | null;
     }> = [];
     const handleQuickCreate = (event: Event) => {
       expect((event as CustomEvent).detail).toMatchObject({
@@ -826,10 +876,7 @@ describe("MyListSheet checkbox interactions", () => {
       });
       quickCreateStates.push({
         activeElement: document.activeElement,
-        blurCalls: blurSpy.mock.calls.length,
         removeAllRangesCalls: removeAllRanges.mock.calls.length,
-        selectionEnd: input.selectionEnd,
-        selectionStart: input.selectionStart,
       });
     };
     window.addEventListener(
@@ -838,32 +885,20 @@ describe("MyListSheet checkbox interactions", () => {
     );
 
     await act(async () => {
-      input.focus();
-      input.setSelectionRange(0, input.value.length);
-    });
-    expect(document.activeElement).toBe(input);
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe(input.value.length);
-
-    await act(async () => {
-      pointerDown(input);
+      pointerDown(titleDisplay);
       vi.advanceTimersByTime(500);
     });
 
     expect(quickCreateStates).toEqual([]);
 
     await act(async () => {
-      pointerUp(input);
+      pointerUp(titleDisplay);
     });
 
-    const caretPosition = input.value.length;
     expect(quickCreateStates).toEqual([
       {
         activeElement: document.body,
-        blurCalls: 2,
         removeAllRangesCalls: expect.any(Number),
-        selectionEnd: caretPosition,
-        selectionStart: caretPosition,
       },
     ]);
     expect(quickCreateStates[0]?.removeAllRangesCalls).toBeGreaterThan(0);
@@ -909,13 +944,13 @@ describe("MyListSheet checkbox interactions", () => {
       enableScheduleTimelineDrag: true,
     });
     const row = getTodoRowByText(container, "No Select Hold");
-    const input = row.querySelector('input[aria-label="To-do text"]');
-    expect(input).toBeTruthy();
+    const titleDisplay = getManualTitleDisplay(row, "No Select Hold");
+    expect(getManualTitleInput(row)).toBeNull();
     expect(row.dataset.myListManualUpgradeRow).toBe("true");
     expect(row.getAttribute("draggable")).toBe("false");
-    expect(input?.getAttribute("draggable")).toBe("false");
+    expect(titleDisplay.getAttribute("draggable")).toBe("false");
 
-    for (const element of [row, input as HTMLElement]) {
+    for (const element of [row, titleDisplay]) {
       expect(element.className).toContain("select-none");
       expect(element.className).toContain(
         "[-webkit-tap-highlight-color:transparent]"
@@ -932,7 +967,7 @@ describe("MyListSheet checkbox interactions", () => {
 
     let pointerEvent: PointerEvent | undefined;
     await act(async () => {
-      pointerEvent = pointerDown(input as HTMLElement);
+      pointerEvent = pointerDown(titleDisplay);
     });
 
     expect(pointerEvent?.defaultPrevented).toBe(true);
@@ -941,14 +976,14 @@ describe("MyListSheet checkbox interactions", () => {
       bubbles: true,
       cancelable: true,
     });
-    input?.dispatchEvent(contextMenuEvent);
+    titleDisplay.dispatchEvent(contextMenuEvent);
     expect(contextMenuEvent.defaultPrevented).toBe(true);
 
     const dragStartEvent = new Event("dragstart", {
       bubbles: true,
       cancelable: true,
     });
-    input?.dispatchEvent(dragStartEvent);
+    titleDisplay.dispatchEvent(dragStartEvent);
     expect(dragStartEvent.defaultPrevented).toBe(true);
 
     await act(async () => {
@@ -1007,8 +1042,11 @@ describe("MyListSheet checkbox interactions", () => {
     });
 
     expect(
-      Array.from(container.querySelectorAll("input")).some(
-        (input) => input instanceof HTMLInputElement && input.value === "Consumed Todo"
+      Array.from(container.querySelectorAll("span, input")).some(
+        (element) =>
+          element.textContent === "Consumed Todo" ||
+          (element instanceof HTMLInputElement &&
+            element.value === "Consumed Todo")
       )
     ).toBe(false);
     expect(getTodoRowByText(container, "Remaining Todo")).toBeTruthy();
