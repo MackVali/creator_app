@@ -173,6 +173,16 @@ const GOAL_PAYWALL_FEATURES = [
   "The full CREATOR Pro planning and execution layer.",
 ];
 const GOAL_BATCH_SIZE = 6;
+const GOALS_PAGE_REFRESH_ENTITY_TYPES = new Set([
+  "GOAL",
+  "PROJECT",
+  "TASK",
+  "HABIT",
+]);
+
+type CreatorEntitySavedEventDetail = {
+  entityType?: string;
+};
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   NO: "NO",
@@ -1058,6 +1068,26 @@ export default function GoalsPage() {
 
   useEffect(() => {
     void refreshGoalsAndRoadmaps();
+  }, [refreshGoalsAndRoadmaps]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<CreatorEntitySavedEventDetail>).detail;
+      const entityType = detail?.entityType;
+      if (!entityType || !GOALS_PAGE_REFRESH_ENTITY_TYPES.has(entityType)) return;
+
+      void refreshGoalsAndRoadmaps();
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    return () => {
+      window.removeEventListener(
+        "creator:entity-saved",
+        handleCreatorEntitySaved,
+      );
+    };
   }, [refreshGoalsAndRoadmaps]);
 
   const filteredGoals = useMemo(() => {
