@@ -195,6 +195,14 @@ type UnifiedCreationMode = "EVENTS" | "TASKS";
 type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
 type UnifiedTaskSideSelectedType = "AUTO" | "TO_DO" | CreationType;
 type UnifiedTaskSideSaveType = Exclude<UnifiedTaskSideSelectedType, "AUTO">;
+type UnifiedPortableDraftType = "EVENT" | CreationType;
+type UnifiedPortableDraft = {
+  title: string;
+  notes: string;
+  priority: string | null;
+  energy: string | null;
+  skillId: string | null;
+};
 type UnifiedEventDraftBlocksTime = "DEFAULT" | "BLOCKS" | "FREE";
 type UnifiedEventDraftMeetingProvider = "URL" | "CREATOR_VIDEO";
 type UnifiedEventDraftRecurrence = string;
@@ -1927,16 +1935,21 @@ const isUnifiedTaskSideRecurrenceActive = ({
 
 const hasGoalSpecificUnifiedTaskSideDraft = ({
   goalName,
+  goalCampaignId,
+  goalCircleId,
   goalRelationType,
   goalRelationId,
 }: {
   goalName: string;
+  goalCampaignId?: string | null;
+  goalCircleId?: string | null;
   goalRelationType: GoalRelationType;
   goalRelationId: string;
 }) =>
   goalName.trim().length > 0 &&
-  Boolean(goalRelationType) &&
-  goalRelationId.trim().length > 0;
+  (Boolean(goalRelationType && goalRelationId.trim().length > 0) ||
+    Boolean(goalCampaignId?.trim()) ||
+    Boolean(goalCircleId?.trim()));
 
 const hasLightweightManualMyListDraft = ({
   taskPinned,
@@ -7219,6 +7232,8 @@ export function Fab({
           }),
           hasGoalSpecificDraft: hasGoalSpecificUnifiedTaskSideDraft({
             goalName,
+            goalCampaignId,
+            goalCircleId,
             goalRelationType,
             goalRelationId,
           }),
@@ -7245,6 +7260,8 @@ export function Fab({
       addEventSubActions.length,
       addEventTimingMode,
       goalName,
+      goalCampaignId,
+      goalCircleId,
       goalRelationId,
       goalRelationType,
       habitRecurrence,
@@ -9439,12 +9456,10 @@ export function Fab({
             roadmapContext?.monument_id ||
             "";
           const hydratedCircleId =
-            hydratedMonumentId
-              ? ""
-              : (goalRow?.circle_id ||
-                campaignContext?.primary_circle_id ||
-                roadmapContext?.circle_id ||
-                "");
+            goalRow?.circle_id ||
+            campaignContext?.primary_circle_id ||
+            roadmapContext?.circle_id ||
+            "";
           const hydratedAreaId =
             hydratedMonumentId || hydratedCircleId
               ? ""
@@ -20180,8 +20195,8 @@ export function Fab({
           setTaskExactEndTime(formatTimeInputValue(endDate));
           setTaskExactTimingTouched(true);
         }
+        setIsUnifiedEventSheetOpen(true);
       });
-      setIsUnifiedEventSheetOpen(true);
     },
     [
       pageX,
@@ -20329,6 +20344,138 @@ export function Fab({
     taskSkillId,
   ]);
 
+  const getActiveUnifiedPortableDraft = useCallback((): UnifiedPortableDraft => {
+    if (unifiedCreationMode === "EVENTS") {
+      return {
+        title: unifiedEventTitle,
+        notes: unifiedEventDescription,
+        priority: null,
+        energy: null,
+        skillId: null,
+      };
+    }
+
+    if (selected === "GOAL") {
+      return {
+        title: goalName,
+        notes: goalWhy,
+        priority: goalPriority,
+        energy: goalEnergy,
+        skillId: null,
+      };
+    }
+
+    if (selected === "PROJECT") {
+      return {
+        title: projectName,
+        notes: projectWhy,
+        priority: projectPriority,
+        energy: projectEnergy,
+        skillId: projectSkillIds[0] ?? null,
+      };
+    }
+
+    if (unifiedEventType === "HABIT") {
+      return {
+        title: habitName,
+        notes: habitWhy,
+        priority: null,
+        energy: habitEnergy,
+        skillId: habitSkillId || null,
+      };
+    }
+
+    return {
+      title: taskName,
+      notes: taskNotes,
+      priority: taskPriority,
+      energy: taskEnergy,
+      skillId: taskSkillId || null,
+    };
+  }, [
+    goalEnergy,
+    goalName,
+    goalPriority,
+    goalWhy,
+    habitEnergy,
+    habitName,
+    habitSkillId,
+    habitWhy,
+    projectEnergy,
+    projectName,
+    projectPriority,
+    projectSkillIds,
+    projectWhy,
+    selected,
+    taskEnergy,
+    taskName,
+    taskNotes,
+    taskPriority,
+    taskSkillId,
+    unifiedCreationMode,
+    unifiedEventDescription,
+    unifiedEventTitle,
+    unifiedEventType,
+  ]);
+
+  const applyUnifiedPortableDraft = useCallback(
+    (destinationType: UnifiedPortableDraftType, draft: UnifiedPortableDraft) => {
+      if (destinationType === "EVENT") {
+        setUnifiedEventTitle(draft.title);
+        setUnifiedEventDescription(draft.notes);
+        return;
+      }
+
+      if (destinationType === "GOAL") {
+        setGoalName(draft.title);
+        setGoalWhy(draft.notes);
+        setGoalPriority(draft.priority ?? "MEDIUM");
+        setGoalEnergy(draft.energy ?? "MEDIUM");
+        return;
+      }
+
+      if (destinationType === "PROJECT") {
+        setProjectName(draft.title);
+        setProjectWhy(draft.notes);
+        setProjectPriority(draft.priority ?? "MEDIUM");
+        setProjectEnergy(draft.energy ?? "MEDIUM");
+        setProjectSkillIds(draft.skillId ? [draft.skillId] : []);
+        return;
+      }
+
+      if (destinationType === "HABIT") {
+        setHabitName(draft.title);
+        setHabitWhy(draft.notes);
+        setHabitEnergy(draft.energy ?? "LOW");
+        setHabitSkillId(draft.skillId ?? "");
+        return;
+      }
+
+      setTaskName(draft.title);
+      setTaskNotes(draft.notes);
+      setTaskPriority(draft.priority ?? "MEDIUM");
+      setTaskEnergy(draft.energy ?? "MEDIUM");
+      setTaskSkillId(draft.skillId ?? "");
+    },
+    [],
+  );
+
+  const resetUnifiedTypeSwitchUiState = useCallback(() => {
+    setActiveCreationMode("main");
+    setHabitTimingPanelView("timing");
+    setShowTaskDurationPicker(false);
+    setTaskDurationPosition(null);
+    setShowHabitDurationPicker(false);
+    setHabitDurationPosition(null);
+    setIsGoalPickerOpen(false);
+    setIsUnifiedGoalPickerOpen(false);
+    setShowUnifiedGoalFilters(false);
+    setUnifiedGoalSearch("");
+    setUnifiedGoalFilterMonumentId("");
+    setUnifiedGoalSortMode("default");
+    resetHabitRoutineInlineCreation();
+  }, [resetHabitRoutineInlineCreation]);
+
   const closeUnifiedEventSheet = useCallback(() => {
     void hapticSnap();
     const wasEventEdit = editTarget?.entityType === "EVENT";
@@ -20389,32 +20536,56 @@ export function Fab({
   const handleUnifiedEventTypeChange = useCallback((type: UnifiedEventType) => {
     void hapticSoftTick();
     setSaveError(null);
+    const portableDraft = getActiveUnifiedPortableDraft();
     setUnifiedEventType(type);
     setSelected(type);
-    setActiveCreationMode("main");
-    setHabitTimingPanelView("timing");
-    setShowTaskDurationPicker(false);
-    setTaskDurationPosition(null);
-    setShowHabitDurationPicker(false);
-    setHabitDurationPosition(null);
-    setIsGoalPickerOpen(false);
-    setIsUnifiedGoalPickerOpen(false);
-    setShowUnifiedGoalFilters(false);
-    setUnifiedGoalSearch("");
-    setUnifiedGoalFilterMonumentId("");
-    setUnifiedGoalSortMode("default");
-    resetHabitRoutineInlineCreation();
-  }, [resetHabitRoutineInlineCreation]);
+    applyUnifiedPortableDraft(type, portableDraft);
+    resetUnifiedTypeSwitchUiState();
+  }, [
+    applyUnifiedPortableDraft,
+    getActiveUnifiedPortableDraft,
+    resetUnifiedTypeSwitchUiState,
+  ]);
+
+  const handleUnifiedTaskSideSelectedTypeChange = useCallback(
+    (nextType: UnifiedTaskSideSelectedType) => {
+      void hapticSoftTick();
+      setSaveError(null);
+      const portableDraft = getActiveUnifiedPortableDraft();
+      const nextSelected =
+        nextType !== "AUTO" && nextType !== "TO_DO" ? nextType : "TASK";
+      setSelectedType(nextType);
+      setSelected(nextSelected);
+      setUnifiedEventType(nextSelected === "HABIT" ? "HABIT" : "TASK");
+      applyUnifiedPortableDraft(nextSelected, portableDraft);
+      resetUnifiedTypeSwitchUiState();
+    },
+    [
+      applyUnifiedPortableDraft,
+      getActiveUnifiedPortableDraft,
+      resetUnifiedTypeSwitchUiState,
+    ],
+  );
 
   const handleUnifiedCreationModeChange = useCallback(
     (mode: UnifiedCreationMode) => {
       if (unifiedCreationMode === mode) return;
       void hapticSoftTick();
       setSaveError(null);
+      const portableDraft = getActiveUnifiedPortableDraft();
+      const destinationType: UnifiedPortableDraftType =
+        mode === "EVENTS"
+          ? "EVENT"
+          : selected === "GOAL" || selected === "PROJECT"
+            ? selected
+            : unifiedEventType === "HABIT"
+              ? "HABIT"
+              : "TASK";
       if (mode !== "TASKS") {
         setUnifiedEventManualUpgradeSource(null);
       }
       setUnifiedCreationMode(mode);
+      applyUnifiedPortableDraft(destinationType, portableDraft);
       setUnifiedTimingPickerOpen(null);
       setIsUnifiedEventLocationSheetOpen(false);
       setIsUnifiedEventLinkSheetOpen(false);
@@ -20424,7 +20595,13 @@ export function Fab({
       setUnifiedGoalFilterMonumentId("");
       setUnifiedGoalSortMode("default");
     },
-    [unifiedCreationMode],
+    [
+      applyUnifiedPortableDraft,
+      getActiveUnifiedPortableDraft,
+      selected,
+      unifiedCreationMode,
+      unifiedEventType,
+    ],
   );
 
   const measureAiOverlayOrigin = useCallback((): FabAiOverlayOrigin => {
@@ -21470,7 +21647,62 @@ export function Fab({
   );
 
   const resolveSelectedGoalRelation =
-    useCallback((): GoalRelationResolution => {
+    useCallback((options?: {
+      requirePrimaryRelation?: boolean;
+    }): GoalRelationResolution => {
+      const requirePrimaryRelation = options?.requirePrimaryRelation ?? true;
+      if (!requirePrimaryRelation) {
+        const selectedCircleId = goalCircleId.trim() || null;
+        if (selectedCircleId && !isValidUuid(selectedCircleId)) {
+          return {
+            selectedMonumentId: null,
+            selectedCircleId: null,
+            selectedAreaId: null,
+            error: "Add this goal to a valid Circle.",
+          };
+        }
+
+        if (goalRelationType === "MONUMENT" && goalRelationId) {
+          if (!isValidUuid(goalRelationId)) {
+            return {
+              selectedMonumentId: null,
+              selectedCircleId: null,
+              selectedAreaId: null,
+              error: "Link this goal to a valid monument.",
+            };
+          }
+          return {
+            selectedMonumentId: goalRelationId,
+            selectedCircleId,
+            selectedAreaId: null,
+            error: null,
+          };
+        }
+
+        if (goalRelationType === "AREA" && goalRelationId) {
+          if (!isAreaId(goalRelationId)) {
+            return {
+              selectedMonumentId: null,
+              selectedCircleId: null,
+              selectedAreaId: null,
+              error: "Link this goal to a valid area.",
+            };
+          }
+          return {
+            selectedMonumentId: null,
+            selectedCircleId,
+            selectedAreaId: goalRelationId,
+            error: null,
+          };
+        }
+
+        return {
+          selectedMonumentId: null,
+          selectedCircleId,
+          selectedAreaId: null,
+          error: null,
+        };
+      }
       if (!goalRelationType || !goalRelationId) {
         return {
           selectedMonumentId: null,
@@ -22227,6 +22459,7 @@ export function Fab({
   );
 
   useEffect(() => {
+    if (isUnifiedEventSheetOpen) return;
     const isEditTargetActive = Boolean(
       editTarget?.entityId && editTarget?.entityType,
     );
@@ -22261,6 +22494,7 @@ export function Fab({
     editTarget?.entityType,
     isDirectCreationOpen,
     isOpen,
+    isUnifiedEventSheetOpen,
     resetPageDragState,
     resetSearchState,
     resetFabFormState,
@@ -23098,7 +23332,9 @@ export function Fab({
       }
       const goalRelationResolution =
         saveSelected === "GOAL" && !activeCourseAuthoringContext
-          ? resolveSelectedGoalRelation()
+          ? resolveSelectedGoalRelation({
+              requirePrimaryRelation: !isUnifiedEventSheetOpen,
+            })
           : {
               selectedMonumentId: null,
               selectedCircleId: null,
@@ -23480,12 +23716,45 @@ export function Fab({
           selectedMonumentId,
           selectedCircleId,
           selectedAreaId,
+          autoResolveContextRoadmap,
         }: {
           selectedMonumentId: string | null;
           selectedCircleId: string | null;
           selectedAreaId: string | null;
+          autoResolveContextRoadmap: boolean;
         }) => {
+          if (goalCampaignId) {
+            const selectedCampaign =
+              goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
+              null;
+            if (selectedCampaign?.roadmap_id) {
+              return selectedCampaign.roadmap_id;
+            }
+
+            const { data: campaignData, error: campaignError } = await supabase
+              .from("campaigns")
+              .select("roadmap_id")
+              .eq("id", goalCampaignId)
+              .eq("user_id", user.id)
+              .maybeSingle();
+            if (campaignError) throwIfLimitError(campaignError);
+            const campaignRoadmapRow = campaignData as {
+              roadmap_id?: string | null;
+            } | null;
+            const roadmapId =
+              typeof campaignRoadmapRow?.roadmap_id === "string"
+                ? campaignRoadmapRow.roadmap_id
+                : null;
+            if (roadmapId) {
+              return roadmapId;
+            }
+          }
+
           if (selectedAreaId) {
+            return null;
+          }
+
+          if (!autoResolveContextRoadmap) {
             return null;
           }
 
@@ -24044,6 +24313,7 @@ export function Fab({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
             selectedAreaId: goalRelationResolution.selectedAreaId,
+            autoResolveContextRoadmap: true,
           });
           const effectiveGoalCampaignId =
             await resolveCompatibleGoalCampaignId({
@@ -24438,6 +24708,7 @@ export function Fab({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
             selectedAreaId: goalRelationResolution.selectedAreaId,
+            autoResolveContextRoadmap: !isUnifiedEventSheetOpen,
           });
           const effectiveGoalCampaignId =
             await resolveCompatibleGoalCampaignId({
@@ -26668,6 +26939,22 @@ export function Fab({
     const hasUnifiedTaskRelation = Boolean(
       selectedUnifiedGoal || selectedUnifiedProject,
     );
+    const selectedUnifiedGoalCampaign = goalCampaignId
+      ? (goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
+        null)
+      : null;
+    const selectedUnifiedGoalCircle = goalCircleId
+      ? (manageableCircleById.get(goalCircleId) ?? null)
+      : null;
+    const hasUnifiedGoalRoadmapRelation = Boolean(
+      selectedUnifiedGoalCampaign || goalCampaignId,
+    );
+    const hasUnifiedGoalCircleRelation = Boolean(
+      selectedUnifiedGoalCircle || goalCircleId,
+    );
+    const isUnifiedRelationshipStripEvent = isGoalLinkedEvent || isGoal;
+    const unifiedRelationshipTriggerClass =
+      "flex h-auto min-w-0 max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition";
     const hasActiveUnifiedGoalPickerFilters =
       unifiedGoalFilterMonumentId.trim().length > 0 ||
       unifiedGoalSortMode !== unifiedGoalDefaultSortMode;
@@ -29796,73 +30083,270 @@ export function Fab({
                     </div>
                   ) : null}
 
-                  {isGoalLinkedEvent ? (
+                  {isUnifiedRelationshipStripEvent ? (
                     <div
                       className={cn(
                         "flex items-center gap-3",
-                        isTask ? "w-full justify-between" : "w-fit",
+                        isTask || isGoal ? "w-full justify-between" : "w-fit",
                       )}
                       data-unified-event-goal-link
                     >
-                      <button
-                        ref={unifiedGoalPickerTriggerRef}
-                        type="button"
-                        {...getUnifiedSheetTouchActivationProps(() => {
-                          setIsUnifiedGoalPickerOpen((open) => {
-                            if (!open) {
-                              setUnifiedGoalSortMode(
-                                unifiedGoalDefaultSortMode,
-                              );
-                              if (isTask) {
-                                setUnifiedTaskRelationPickerMode("goals");
-                              }
-                            }
-                            return !open;
-                          });
-                        })}
-                        className={cn(
-                          "flex min-w-0 max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition",
-                          hasUnifiedTaskRelation
-                            ? "text-zinc-200/90 hover:text-white"
-                            : "text-zinc-400/85 hover:text-zinc-300",
-                        )}
-                      >
-                        {selectedUnifiedProject ? (
-                          <>
-                            <FolderKanban
-                              className="h-3.5 w-3.5 shrink-0 text-zinc-400"
-                              aria-hidden="true"
-                            />
-                            <span className="min-w-0 truncate">
-                              {selectedUnifiedProject.name}
-                            </span>
-                          </>
-                        ) : selectedUnifiedGoal ? (
-                          <>
-                            {getUnifiedGoalIcon(selectedUnifiedGoal) ? (
-                              <span
-                                className="shrink-0 text-sm leading-none"
-                                aria-hidden="true"
-                              >
-                                {getUnifiedGoalIcon(selectedUnifiedGoal)}
+                      {isGoal ? (
+                        <Select
+                          value={goalCampaignId ?? "__none__"}
+                          onValueChange={(value) => {
+                            void hapticSoftTick();
+                            resetGoalCampaignInlineCreation();
+                            setGoalCampaignId(
+                              value === "__none__" ? null : value,
+                            );
+                          }}
+                          hideChevron
+                          triggerClassName={cn(
+                            unifiedRelationshipTriggerClass,
+                            hasUnifiedGoalRoadmapRelation
+                              ? "text-zinc-200/90 hover:text-white"
+                              : "text-zinc-400/85 hover:text-zinc-300",
+                          )}
+                          trigger={
+                            <span
+                              className="inline-flex min-w-0 items-center gap-1.5"
+                              data-unified-goal-roadmap-trigger
+                            >
+                              {hasUnifiedGoalRoadmapRelation ? (
+                                <span
+                                  className="w-4 shrink-0 text-center text-sm leading-none"
+                                  aria-hidden="true"
+                                >
+                                  {selectedUnifiedGoalCampaign?.emoji ??
+                                    FAB_DEFAULT_CAMPAIGN_EMOJI}
+                                </span>
+                              ) : null}
+                              <span className="truncate">
+                                {selectedUnifiedGoalCampaign?.name ??
+                                  (goalCampaignId
+                                    ? "Selected Roadmap"
+                                    : "add ROADMAP")}
                               </span>
-                            ) : null}
-                            <span className="min-w-0 truncate">
-                              {getUnifiedGoalLabel(selectedUnifiedGoal)}
                             </span>
-                          </>
-                        ) : (
-                          <span className="block truncate">
-                            Link to GOAL / PROJECT
-                          </span>
-                        )}
-                      </button>
+                          }
+                          contentWrapperClassName={
+                            FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS
+                          }
+                          minContentWidth={240}
+                        >
+                          <SelectContent
+                            className={cn(
+                              FAB_CREATION_SELECT_CONTENT_CLASS,
+                              "max-h-[18rem]",
+                            )}
+                          >
+                            <SelectItem
+                              value="__none__"
+                              className={fabCreationSelectItemClass(
+                                !goalCampaignId,
+                              )}
+                            >
+                              No Roadmap
+                            </SelectItem>
+                            {goalCampaignsLoading ? (
+                              <SelectItem
+                                value="__roadmaps_loading"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
+                                Loading Roadmaps...
+                              </SelectItem>
+                            ) : goalCampaignOptions.length > 0 ? (
+                              goalCampaignOptions.map((campaign) => (
+                                <SelectItem
+                                  key={campaign.id}
+                                  value={campaign.id}
+                                  className={fabCreationSelectItemClass(
+                                    goalCampaignId === campaign.id,
+                                  )}
+                                >
+                                  <span className="inline-flex min-w-0 items-center gap-2">
+                                    <span
+                                      className="w-5 shrink-0 text-center text-base leading-none"
+                                      aria-hidden="true"
+                                    >
+                                      {campaign.emoji ??
+                                        FAB_DEFAULT_CAMPAIGN_EMOJI}
+                                    </span>
+                                    <span className="min-w-0 truncate">
+                                      {campaign.name}
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem
+                                value="__roadmaps_empty"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
+                                No Roadmaps yet
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <button
+                          ref={unifiedGoalPickerTriggerRef}
+                          type="button"
+                          {...getUnifiedSheetTouchActivationProps(() => {
+                            setIsUnifiedGoalPickerOpen((open) => {
+                              if (!open) {
+                                setUnifiedGoalSortMode(
+                                  unifiedGoalDefaultSortMode,
+                                );
+                                if (isTask) {
+                                  setUnifiedTaskRelationPickerMode("goals");
+                                }
+                              }
+                              return !open;
+                            });
+                          })}
+                          className={cn(
+                            unifiedRelationshipTriggerClass,
+                            hasUnifiedTaskRelation
+                              ? "text-zinc-200/90 hover:text-white"
+                              : "text-zinc-400/85 hover:text-zinc-300",
+                          )}
+                        >
+                          {selectedUnifiedProject ? (
+                            <>
+                              <FolderKanban
+                                className="h-3.5 w-3.5 shrink-0 text-zinc-400"
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0 truncate">
+                                {selectedUnifiedProject.name}
+                              </span>
+                            </>
+                          ) : selectedUnifiedGoal ? (
+                            <>
+                              {getUnifiedGoalIcon(selectedUnifiedGoal) ? (
+                                <span
+                                  className="shrink-0 text-sm leading-none"
+                                  aria-hidden="true"
+                                >
+                                  {getUnifiedGoalIcon(selectedUnifiedGoal)}
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 truncate">
+                                {getUnifiedGoalLabel(selectedUnifiedGoal)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="block truncate">
+                              Link to GOAL / PROJECT
+                            </span>
+                          )}
+                        </button>
+                      )}
                       {isTask ? (
                         <span className="shrink-0 text-xs font-semibold text-zinc-500/85">
                           add to CIRCLE
                         </span>
                       ) : null}
-                      {isUnifiedGoalPickerOpen &&
+                      {isGoal ? (
+                        <Select
+                          value={goalCircleId || "__none__"}
+                          onValueChange={(value) => {
+                            void hapticSoftTick();
+                            setGoalCircleId(value === "__none__" ? "" : value);
+                          }}
+                          hideChevron
+                          triggerClassName={cn(
+                            unifiedRelationshipTriggerClass,
+                            "max-w-[min(16rem,calc(100vw-2rem))]",
+                            hasUnifiedGoalCircleRelation
+                              ? "text-zinc-200/90 hover:text-white"
+                              : "text-zinc-400/85 hover:text-zinc-300",
+                          )}
+                          trigger={
+                            <span
+                              className="inline-flex min-w-0 items-center gap-1.5"
+                              data-unified-goal-circle-trigger
+                            >
+                              {hasUnifiedGoalCircleRelation ? (
+                                <CircleDot
+                                  className="h-3.5 w-3.5 shrink-0 text-zinc-300"
+                                  aria-hidden="true"
+                                />
+                              ) : null}
+                              <span className="truncate">
+                                {selectedUnifiedGoalCircle?.name ??
+                                  (goalCircleId
+                                    ? "Selected Circle"
+                                    : "add CIRCLE")}
+                              </span>
+                            </span>
+                          }
+                          contentWrapperClassName={
+                            FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS
+                          }
+                          contentAlign="end"
+                          minContentWidth={224}
+                        >
+                          <SelectContent
+                            className={cn(
+                              FAB_CREATION_SELECT_CONTENT_CLASS,
+                              "max-h-[18rem]",
+                            )}
+                          >
+                            <SelectItem
+                              value="__none__"
+                              className={fabCreationSelectItemClass(
+                                !goalCircleId,
+                              )}
+                            >
+                              No Circle
+                            </SelectItem>
+                            {manageableCirclesLoading ? (
+                              <SelectItem
+                                value="__circles_loading"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
+                                Loading Circles...
+                              </SelectItem>
+                            ) : manageableCircles.length > 0 ? (
+                              manageableCircles.map((circle) => (
+                                <SelectItem
+                                  key={circle.id}
+                                  value={circle.id}
+                                  className={fabCreationSelectItemClass(
+                                    goalCircleId === circle.id,
+                                  )}
+                                >
+                                  <span className="inline-flex min-w-0 items-center gap-2">
+                                    <CircleDot
+                                      className="h-4 w-4 shrink-0 text-zinc-300"
+                                      aria-hidden="true"
+                                    />
+                                    <span className="min-w-0 truncate">
+                                      {circle.name}
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem
+                                value="__circles_empty"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
+                                No Circles yet
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      ) : null}
+                      {!isGoal &&
+                        isUnifiedGoalPickerOpen &&
                         typeof window !== "undefined" &&
                         createPortal(
                           <div
@@ -31318,20 +31802,9 @@ export function Fab({
                             <Select
                               value={selectedType}
                               onValueChange={(value) => {
-                                void hapticSoftTick();
-                                setSaveError(null);
-                                const nextType =
-                                  value as UnifiedTaskSideSelectedType;
-                                setSelectedType(nextType);
-                                if (nextType !== "AUTO" && nextType !== "TO_DO") {
-                                  setSelected(nextType);
-                                  setUnifiedEventType(
-                                    nextType === "HABIT" ? "HABIT" : "TASK",
-                                  );
-                                } else {
-                                  setSelected("TASK");
-                                  setUnifiedEventType("TASK");
-                                }
+                                handleUnifiedTaskSideSelectedTypeChange(
+                                  value as UnifiedTaskSideSelectedType,
+                                );
                               }}
                               triggerClassName={detailInlineSelectTriggerClass}
                               trigger={

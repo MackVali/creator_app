@@ -49,16 +49,57 @@ describe("Unified Event Sheet Task-side Type selector", () => {
     ).toBeGreaterThanOrEqual(4);
   });
 
-  it("appends the Type row after the existing Skill row", () => {
+  it("keeps the Type row after the existing details section", () => {
     const detailsSnippet = getSnippet(
-      '<Brain className={detailIconClass} aria-hidden="true" />\n                          Skill',
+      "{isEventsMode ? (\n                    renderUnifiedEventDraftDetails()",
       "</section>\n                  )}",
     );
 
     expect(detailsSnippet).toContain("data-unified-task-side-type-row");
+    expect(detailsSnippet).toContain("Skill");
     expect(
       detailsSnippet.indexOf("data-unified-task-side-type-row"),
     ).toBeGreaterThan(detailsSnippet.indexOf("Skill"));
+  });
+
+  it("shows Goal Roadmap and Circle in the existing top relationship strip", () => {
+    const relationshipStripSnippet = getSnippet(
+      "{isUnifiedRelationshipStripEvent ? (",
+      "{isHabit ? (",
+    );
+    const roadmapTriggerIndex = relationshipStripSnippet.indexOf(
+      "data-unified-goal-roadmap-trigger",
+    );
+    const circleTriggerIndex = relationshipStripSnippet.indexOf(
+      "data-unified-goal-circle-trigger",
+    );
+
+    expect(relationshipStripSnippet).toContain("data-unified-event-goal-link");
+    expect(relationshipStripSnippet).toContain("isGoal ? (");
+    expect(relationshipStripSnippet).toContain(
+      'isTask || isGoal ? "w-full justify-between" : "w-fit"',
+    );
+    expect(relationshipStripSnippet).not.toContain('isGoal && "w-full flex-wrap"');
+    expect(relationshipStripSnippet).toContain(
+      "data-unified-goal-roadmap-trigger",
+    );
+    expect(relationshipStripSnippet).toContain("add ROADMAP");
+    expect(relationshipStripSnippet).not.toContain("Add to Roadmap");
+    expect(relationshipStripSnippet).not.toContain("Add ROADMAP");
+    expect(relationshipStripSnippet).toContain("goalCampaignId");
+    expect(relationshipStripSnippet).toContain(
+      "data-unified-goal-circle-trigger",
+    );
+    expect(relationshipStripSnippet).toContain("add CIRCLE");
+    expect(relationshipStripSnippet).not.toContain("Add to Circle");
+    expect(relationshipStripSnippet).not.toContain("Add CIRCLE");
+    expect(relationshipStripSnippet).toContain("goalCircleId");
+    expect(roadmapTriggerIndex).toBeGreaterThanOrEqual(0);
+    expect(circleTriggerIndex).toBeGreaterThan(roadmapTriggerIndex);
+    expect(relationshipStripSnippet).toContain("Link to GOAL / PROJECT");
+    expect(relationshipStripSnippet).toContain("add to CIRCLE");
+    expect(fabSource).not.toContain("data-unified-goal-roadmap-row");
+    expect(fabSource).not.toContain("data-unified-goal-circle-row");
   });
 
   it("hides the selector for saved edit flows", () => {
@@ -71,13 +112,18 @@ describe("Unified Event Sheet Task-side Type selector", () => {
 
   it("does not reset draft fields or drive existing row visibility when Type changes", () => {
     const typeChangeSnippet = getSnippet(
-      "onValueChange={(value) => {\n                                void hapticSoftTick();\n                                setSaveError(null);\n                                setSelectedType",
-      "value as UnifiedTaskSideSelectedType",
+      "const handleUnifiedTaskSideSelectedTypeChange = useCallback",
+      "const handleUnifiedCreationModeChange = useCallback",
     );
 
     expect(typeChangeSnippet).not.toMatch(
-      /set(Task|Habit|Project|Goal|UnifiedEventType|UnifiedCreationMode)/,
+      /set(TaskName|TaskNotes|TaskDue|ProjectName|ProjectWhy|ProjectDue|HabitName|HabitWhy|GoalName|GoalWhy|GoalDue)\(/,
     );
+    expect(typeChangeSnippet).not.toMatch(
+      /reset(Task|Habit|Project|Goal).*Draft/,
+    );
+    expect(typeChangeSnippet).toContain("setSelectedType(nextType)");
+    expect(typeChangeSnippet).toContain("applyUnifiedPortableDraft");
 
     const nonTypeRowSource = fabSource.replace(
       /{!editTarget \? \([\s\S]*?data-unified-task-side-type-row[\s\S]*?\) : null}/,
@@ -183,6 +229,8 @@ describe("Unified Event Sheet Task-side Type selector", () => {
     expect(fabSource).toContain("isUnifiedTaskSideRecurrenceActive");
     expect(fabSource).toContain("hasSubActions: addEventSubActions.length > 0");
     expect(fabSource).toContain("hasGoalSpecificUnifiedTaskSideDraft");
+    expect(fabSource).toContain("goalCampaignId");
+    expect(fabSource).toContain("goalCircleId");
     expect(fabSource).toContain("hasLightweightManualMyListDraft");
     expect(fabSource).not.toMatch(/title.*includes|taskName.*includes/i);
   });
@@ -237,5 +285,31 @@ describe("Unified Event Sheet Task-side Type selector", () => {
       "option.value === resolvedUnifiedAddEventSaveSelected",
     );
     expect(fabSource).not.toContain('saveSelected === "AUTO"');
+  });
+
+  it("keeps unified Goal relationship persistence on canonical ids", () => {
+    const validationSnippet = getSnippet(
+      "const goalRelationResolution =",
+      'if (saveSelected === "PROJECT" && !activeCourseAuthoringContext)',
+    );
+    const createGoalSnippet = getSnippet(
+      'if (saveSelected === "GOAL") {\n          const roadmapId = await resolveGoalRoadmapId',
+      'else if (saveSelected === "PROJECT")',
+    );
+    const roadmapResolutionSnippet = getSnippet(
+      "const resolveGoalRoadmapId = async ({",
+      "const resolveCompatibleGoalCampaignId = async ({",
+    );
+
+    expect(validationSnippet).toContain(
+      "requirePrimaryRelation: !isUnifiedEventSheetOpen",
+    );
+    expect(roadmapResolutionSnippet).toContain("goalCampaignId");
+    expect(roadmapResolutionSnippet).toContain('.from("campaigns")');
+    expect(roadmapResolutionSnippet).toContain('.select("roadmap_id")');
+    expect(createGoalSnippet).toContain("circle_id: goalRelationResolution.selectedCircleId");
+    expect(createGoalSnippet).toContain("roadmap_id: roadmapId");
+    expect(createGoalSnippet).toContain("createdCampaignId = effectiveGoalCampaignId");
+    expect(createGoalSnippet).toContain("await addGoalToCampaign");
   });
 });
