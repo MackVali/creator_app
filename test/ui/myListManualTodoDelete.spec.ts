@@ -97,11 +97,15 @@ async function flushEffects() {
   });
 }
 
-function getTodoRowByInputValue(container: HTMLElement, value: string) {
-  const input = Array.from(container.querySelectorAll("input")).find(
-    (element) => element.value === value
+function getTodoRowByTitle(container: HTMLElement, value: string) {
+  const titleElement = Array.from(
+    container.querySelectorAll("span, input")
+  ).find(
+    (element) =>
+      element.textContent === value ||
+      (element instanceof HTMLInputElement && element.value === value)
   );
-  const row = input?.closest('[data-creator-xp-source="my-list-todo"]');
+  const row = titleElement?.closest('[data-creator-xp-source="my-list-todo"]');
   expect(row).toBeTruthy();
   return row as HTMLElement;
 }
@@ -162,8 +166,11 @@ describe("MyListSheet manual todo delete confirmation", () => {
         '[data-creator-xp-source="my-list-todo"]'
       )
     ).filter((row) =>
-      Array.from(row.querySelectorAll("input")).some(
-        (input) => input.value === "Duplicate title"
+      Array.from(row.querySelectorAll("span, input")).some(
+        (element) =>
+          element.textContent === "Duplicate title" ||
+          (element instanceof HTMLInputElement &&
+            element.value === "Duplicate title")
       )
     );
     expect(duplicateRows).toHaveLength(2);
@@ -181,7 +188,7 @@ describe("MyListSheet manual todo delete confirmation", () => {
         '[data-creator-xp-source="my-list-todo"]'
       )
     ).toHaveLength(2);
-    expect(getTodoRowByInputValue(firstRender.container, "Duplicate title"))
+    expect(getTodoRowByTitle(firstRender.container, "Duplicate title"))
       .toBeTruthy();
     expect(
       JSON.parse(
@@ -197,7 +204,7 @@ describe("MyListSheet manual todo delete confirmation", () => {
         '[data-creator-xp-source="my-list-todo"]'
       )
     ).toHaveLength(2);
-    expect(getTodoRowByInputValue(secondRender.container, "Duplicate title"))
+    expect(getTodoRowByTitle(secondRender.container, "Duplicate title"))
       .toBeTruthy();
     expect(storageMocks.loadManualMyListItems).toHaveBeenCalledTimes(2);
 
@@ -214,13 +221,13 @@ describe("MyListSheet manual todo delete confirmation", () => {
     );
 
     const { container, root } = await renderSheet();
-    const row = getTodoRowByInputValue(container, "Do not remove");
+    const row = getTodoRowByTitle(container, "Do not remove");
 
     await clickDeleteButton(row);
     await clickDeleteButton(row, "Confirm remove to-do");
 
     expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledTimes(1);
-    expect(getTodoRowByInputValue(container, "Do not remove")).toBeTruthy();
+    expect(getTodoRowByTitle(container, "Do not remove")).toBeTruthy();
     expect(consoleError).toHaveBeenCalledWith(
       "Failed to delete My List manual todo",
       expect.any(Error)
@@ -242,7 +249,7 @@ describe("MyListSheet manual todo delete confirmation", () => {
     );
 
     const { container, root } = await renderSheet();
-    const row = getTodoRowByInputValue(container, "Delete once");
+    const row = getTodoRowByTitle(container, "Delete once");
 
     await clickDeleteButton(row);
     await act(async () => {
@@ -263,8 +270,11 @@ describe("MyListSheet manual todo delete confirmation", () => {
     await flushEffects();
 
     expect(
-      Array.from(container.querySelectorAll("input")).some(
-        (input) => input.value === "Delete once"
+      Array.from(container.querySelectorAll("span, input")).some(
+        (element) =>
+          element.textContent === "Delete once" ||
+          (element instanceof HTMLInputElement &&
+            element.value === "Delete once")
       )
     ).toBe(false);
 
