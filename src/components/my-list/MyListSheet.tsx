@@ -7313,6 +7313,7 @@ export function MyListSheet({
                                       data-creator-xp-source="my-list-todo"
                                       data-creator-xp-kind="todo"
                                       data-my-list-manual-upgrade-row="true"
+                                      draggable={false}
                                       onPointerDownCapture={(event) =>
                                         activateTodoRowFromPointer(
                                           event,
@@ -7369,7 +7370,7 @@ export function MyListSheet({
                                         }
                                       }}
                                       className={clsx(
-                                        "group/todo-row relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
+                                        "group/todo-row relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [touch-action:pan-y] [user-select:none]",
                                         open &&
                                           activeView === "list" &&
                                           "cursor-pointer",
@@ -7496,12 +7497,17 @@ export function MyListSheet({
                                           }
                                         }}
                                         type="text"
+                                        draggable={false}
                                         value={row.text}
+                                        onTouchStart={() => {
+                                          suppressManualUpgradeSelection();
+                                        }}
                                         onClick={(event) =>
                                           event.stopPropagation()
                                         }
                                         onSelect={(event) => {
                                           if (manualUpgradePressRef.current) {
+                                            event.preventDefault();
                                             event.currentTarget.setSelectionRange(
                                               event.currentTarget.value.length,
                                               event.currentTarget.value.length,
@@ -7509,9 +7515,10 @@ export function MyListSheet({
                                           }
                                         }}
                                         onContextMenu={(event) => {
-                                          if (manualUpgradePressRef.current) {
-                                            event.preventDefault();
-                                          }
+                                          event.preventDefault();
+                                        }}
+                                        onDragStart={(event) => {
+                                          event.preventDefault();
                                         }}
                                         onKeyDown={(event) =>
                                           handleTodoTitleKeyDown(
@@ -7529,7 +7536,7 @@ export function MyListSheet({
                                         aria-label={manualRowInputAriaLabel}
                                         tabIndex={open ? 0 : -1}
                                         className={clsx(
-                                          "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
+                                          "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none] [touch-action:pan-y] [user-select:none]",
                                           row.done &&
                                             "text-white/42 line-through",
                                         )}
