@@ -950,6 +950,7 @@ type MyListScheduleDragPress = {
 type MyListManualUpgradePress = {
   inputType: "pointer" | "touch";
   pointerId: number;
+  pointerType: string | null;
   startX: number;
   startY: number;
   rowId: string;
@@ -958,6 +959,16 @@ type MyListManualUpgradePress = {
   priorityId: PriorityBucketId;
   timer: ReturnType<typeof setTimeout>;
   triggered: boolean;
+  committed: boolean;
+  pendingDetail: MyListManualUpgradeOpenDetail | null;
+};
+type MyListManualUpgradeOpenDetail = {
+  title: string;
+  skillId: string | null;
+  priority: PriorityBucketId;
+  energy: "MEDIUM";
+  origin: "manual-my-list-upgrade";
+  sourceManualMyListItemId: string;
 };
 type MyListSortableManualTodoHandleProps = {
   attributes: ReturnType<typeof useSortable>["attributes"];
@@ -3185,16 +3196,19 @@ export function MyListSheet({
     [],
   );
 
-  const openManualUpgradeCreateSheet = useCallback(
+  const commitManualUpgradePress = useCallback(
     (press: MyListManualUpgradePress) => {
-      if (manualUpgradePressRef.current !== press) return;
-      const title = press.title.trim();
-      if (!title || typeof window === "undefined") {
-        clearManualUpgradePress();
+      if (
+        manualUpgradePressRef.current !== press ||
+        !press.triggered ||
+        press.committed ||
+        !press.pendingDetail ||
+        typeof window === "undefined"
+      ) {
         return;
       }
 
-      press.triggered = true;
+      press.committed = true;
       clearManualUpgradeNativeSelection(press);
 
       setActiveSkillPickerRowKey(null);
@@ -3205,19 +3219,42 @@ export function MyListSheet({
 
       window.dispatchEvent(
         new CustomEvent(MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT, {
-          detail: {
-            title,
-            skillId: press.skillId,
-            priority: press.priorityId,
-            energy: "MEDIUM",
-            origin: "manual-my-list-upgrade",
-            sourceManualMyListItemId: press.rowId,
-          },
+          detail: press.pendingDetail,
         }),
       );
       clearManualUpgradePress();
     },
     [clearManualUpgradeNativeSelection, clearManualUpgradePress, onOpenChange],
+  );
+
+  const recognizeManualUpgradePress = useCallback(
+    (press: MyListManualUpgradePress) => {
+      if (manualUpgradePressRef.current !== press) return;
+      const title = press.title.trim();
+      if (!title || typeof window === "undefined") {
+        clearManualUpgradePress();
+        return;
+      }
+
+      press.triggered = true;
+      press.pendingDetail = {
+        title,
+        skillId: press.skillId,
+        priority: press.priorityId,
+        energy: "MEDIUM",
+        origin: "manual-my-list-upgrade",
+        sourceManualMyListItemId: press.rowId,
+      };
+      clearManualUpgradeNativeSelection(press);
+      if (press.inputType === "pointer" && press.pointerType === "mouse") {
+        commitManualUpgradePress(press);
+      }
+    },
+    [
+      clearManualUpgradeNativeSelection,
+      clearManualUpgradePress,
+      commitManualUpgradePress,
+    ],
   );
 
   const startManualUpgradePointerPress = useCallback(
@@ -3236,6 +3273,7 @@ export function MyListSheet({
       const press: MyListManualUpgradePress = {
         inputType: "pointer",
         pointerId: event.pointerId,
+        pointerType: event.pointerType,
         startX: event.clientX,
         startY: event.clientY,
         rowId: row.id,
@@ -3243,9 +3281,11 @@ export function MyListSheet({
         skillId: row.skillId,
         priorityId: row.priorityId,
         timer: setTimeout(() => {
-          openManualUpgradeCreateSheet(press);
+          recognizeManualUpgradePress(press);
         }, MY_LIST_MANUAL_UPGRADE_LONG_PRESS_MS),
         triggered: false,
+        committed: false,
+        pendingDetail: null,
       };
       manualUpgradePressRef.current = press;
     },
@@ -3253,7 +3293,7 @@ export function MyListSheet({
       activeView,
       clearManualUpgradePress,
       open,
-      openManualUpgradeCreateSheet,
+      recognizeManualUpgradePress,
       shouldIgnoreManualUpgradeTarget,
       suppressManualUpgradeSelection,
     ],
@@ -3295,9 +3335,18 @@ export function MyListSheet({
       ) {
         return;
       }
+      if (event.type === "pointercancel") {
+        clearManualUpgradePress();
+        return;
+      }
+      if (press.triggered) {
+        event.preventDefault();
+        commitManualUpgradePress(press);
+        return;
+      }
       clearManualUpgradePress();
     },
-    [clearManualUpgradePress],
+    [clearManualUpgradePress, commitManualUpgradePress],
   );
 
   const startManualUpgradeTouchPress = useCallback(
@@ -3318,6 +3367,7 @@ export function MyListSheet({
       const press: MyListManualUpgradePress = {
         inputType: "touch",
         pointerId: touch.identifier,
+        pointerType: null,
         startX: touch.clientX,
         startY: touch.clientY,
         rowId: row.id,
@@ -3325,9 +3375,11 @@ export function MyListSheet({
         skillId: row.skillId,
         priorityId: row.priorityId,
         timer: setTimeout(() => {
-          openManualUpgradeCreateSheet(press);
+          recognizeManualUpgradePress(press);
         }, MY_LIST_MANUAL_UPGRADE_LONG_PRESS_MS),
         triggered: false,
+        committed: false,
+        pendingDetail: null,
       };
       manualUpgradePressRef.current = press;
     },
@@ -3335,7 +3387,7 @@ export function MyListSheet({
       activeView,
       clearManualUpgradePress,
       open,
-      openManualUpgradeCreateSheet,
+      recognizeManualUpgradePress,
       shouldIgnoreManualUpgradeTarget,
       suppressManualUpgradeSelection,
     ],
@@ -3675,9 +3727,22 @@ export function MyListSheet({
       const press = manualUpgradePressRef.current;
       if (!press || press.inputType !== "touch") return;
       if (!getTrackedScheduleDragTouch(event, press.pointerId)) return;
+      if (event.type === "touchcancel") {
+        clearManualUpgradePress();
+        return;
+      }
+      if (press.triggered) {
+        event.preventDefault();
+        commitManualUpgradePress(press);
+        return;
+      }
       clearManualUpgradePress();
     },
-    [clearManualUpgradePress, getTrackedScheduleDragTouch],
+    [
+      clearManualUpgradePress,
+      commitManualUpgradePress,
+      getTrackedScheduleDragTouch,
+    ],
   );
 
   const handleScheduleDragTouchMove = useCallback(

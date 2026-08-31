@@ -67,6 +67,7 @@ const taskRow = (id: string, name: string): TaskLite => ({
 
 const renderSheet = async (options?: {
   tasks?: TaskLite[];
+  onOpenChange?: ReturnType<typeof vi.fn>;
   onTogglePinnedSourceCompletion?: ReturnType<typeof vi.fn>;
   onToggleTask?: ReturnType<typeof vi.fn>;
   userId?: string | null;
@@ -107,7 +108,7 @@ const renderSheet = async (options?: {
     root.render(
       React.createElement(MyListSheet, {
         open: true,
-        onOpenChange: vi.fn(),
+        onOpenChange: options?.onOpenChange ?? vi.fn(),
         userId: options && "userId" in options ? options.userId : "user-1",
         tasks: options?.tasks ?? [],
         pinnedSourceRows,
@@ -185,6 +186,108 @@ const pointerDown = (target: HTMLElement) => {
   return event;
 };
 
+const pointerMove = (
+  target: HTMLElement,
+  init: Partial<PointerEventInit> = {}
+) => {
+  const event = new PointerEvent("pointermove", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: init.clientX ?? 10,
+    clientY: init.clientY ?? 10,
+    pointerId: init.pointerId ?? 1,
+    pointerType: init.pointerType ?? "touch",
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+const pointerUp = (
+  target: HTMLElement,
+  init: Partial<PointerEventInit> = {}
+) => {
+  const event = new PointerEvent("pointerup", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: init.clientX ?? 10,
+    clientY: init.clientY ?? 10,
+    pointerId: init.pointerId ?? 1,
+    pointerType: init.pointerType ?? "touch",
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+const pointerCancel = (
+  target: HTMLElement,
+  init: Partial<PointerEventInit> = {}
+) => {
+  const event = new PointerEvent("pointercancel", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: init.clientX ?? 10,
+    clientY: init.clientY ?? 10,
+    pointerId: init.pointerId ?? 1,
+    pointerType: init.pointerType ?? "touch",
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+const touchStart = (target: HTMLElement) => {
+  const event = new Event("touchstart", {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "touches", {
+    configurable: true,
+    value: [{ identifier: 1, clientX: 10, clientY: 10 }],
+  });
+  Object.defineProperty(event, "changedTouches", {
+    configurable: true,
+    value: [{ identifier: 1, clientX: 10, clientY: 10 }],
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+const touchEnd = (target: HTMLElement) => {
+  const event = new Event("touchend", {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "changedTouches", {
+    configurable: true,
+    value: [{ identifier: 1, clientX: 10, clientY: 10 }],
+  });
+  Object.defineProperty(event, "touches", {
+    configurable: true,
+    value: [],
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+const touchCancel = (target: HTMLElement) => {
+  const event = new Event("touchcancel", {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "changedTouches", {
+    configurable: true,
+    value: [{ identifier: 1, clientX: 10, clientY: 10 }],
+  });
+  Object.defineProperty(event, "touches", {
+    configurable: true,
+    value: [],
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
 const clickCheckbox = async (row: HTMLElement) => {
   const { label, target } = getCheckboxParts(row);
 
@@ -195,16 +298,7 @@ const clickCheckbox = async (row: HTMLElement) => {
   expect(getRowControls(row).className).toContain("w-0");
 
   await act(async () => {
-    target.dispatchEvent(
-      new PointerEvent("pointerup", {
-        bubbles: true,
-        button: 0,
-        clientX: 10,
-        clientY: 10,
-        pointerId: 1,
-        pointerType: "touch",
-      })
-    );
+    pointerUp(target);
     label.click();
   });
 };
@@ -303,7 +397,7 @@ describe("MyListSheet checkbox interactions", () => {
     });
   });
 
-  it("includes the manual row id in the long-press upgrade payload", async () => {
+  it("defers manual todo long-press upgrade dispatch until pointer release", async () => {
     vi.useFakeTimers();
     const manualRowId = "11111111-1111-4111-8111-111111111111";
     window.localStorage.setItem(
@@ -331,14 +425,24 @@ describe("MyListSheet checkbox interactions", () => {
       "schedule:open-quick-create-task-details",
       handleQuickCreate
     );
+    const onOpenChange = vi.fn();
     const { container, root } = await renderSheet({
       userId: null,
       enableScheduleTimelineDrag: true,
+      onOpenChange,
     });
+    const row = getTodoRowByText(container, "Upgrade Me");
 
     await act(async () => {
-      pointerDown(getTodoRowByText(container, "Upgrade Me"));
+      pointerDown(row);
       vi.advanceTimersByTime(500);
+    });
+
+    expect(quickCreateEvents).toHaveLength(0);
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pointerUp(row);
     });
 
     expect(quickCreateEvents).toHaveLength(1);
@@ -349,6 +453,310 @@ describe("MyListSheet checkbox interactions", () => {
       origin: "manual-my-list-upgrade",
       sourceManualMyListItemId: manualRowId,
     });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("does not dispatch a manual todo upgrade when released before the long-press threshold", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "manual-early-release",
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Early Release",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const quickCreateEvents: CustomEvent[] = [];
+    const handleQuickCreate = (event: Event) => {
+      quickCreateEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Early Release");
+
+    await act(async () => {
+      pointerDown(row);
+      vi.advanceTimersByTime(499);
+      pointerUp(row);
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(quickCreateEvents).toHaveLength(0);
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("does not dispatch a manual todo upgrade after movement cancellation", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "manual-move-cancel",
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Move Cancel",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const quickCreateEvents: CustomEvent[] = [];
+    const handleQuickCreate = (event: Event) => {
+      quickCreateEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Move Cancel");
+
+    await act(async () => {
+      pointerDown(row);
+      pointerMove(row, { clientX: 40, clientY: 10 });
+      vi.advanceTimersByTime(500);
+      pointerUp(row, { clientX: 40, clientY: 10 });
+    });
+
+    expect(quickCreateEvents).toHaveLength(0);
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("does not dispatch a recognized manual todo upgrade on pointer cancel", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "manual-pointer-cancel",
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Pointer Cancel",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const quickCreateEvents: CustomEvent[] = [];
+    const handleQuickCreate = (event: Event) => {
+      quickCreateEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Pointer Cancel");
+
+    await act(async () => {
+      pointerDown(row);
+      vi.advanceTimersByTime(500);
+      pointerCancel(row);
+      pointerUp(row);
+    });
+
+    expect(quickCreateEvents).toHaveLength(0);
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("defers fallback touch manual todo upgrades until touch release and cancels on touchcancel", async () => {
+    vi.useFakeTimers();
+    const originalPointerEvent = window.PointerEvent;
+    const hadPointerEvent = Object.prototype.hasOwnProperty.call(
+      window,
+      "PointerEvent"
+    );
+    Reflect.deleteProperty(window, "PointerEvent");
+
+    try {
+      window.localStorage.setItem(
+        "creator:my-list:manual-rows",
+        JSON.stringify([
+          {
+            id: "manual-touch-release",
+            done: false,
+            completedAt: null,
+            skillId: null,
+            skillName: null,
+            skillIcon: "",
+            priorityId: "MEDIUM",
+            dayBucketId: null,
+            text: "Touch Release",
+            insertAfterRowKey: null,
+          },
+          {
+            id: "manual-touch-cancel",
+            done: false,
+            completedAt: null,
+            skillId: null,
+            skillName: null,
+            skillIcon: "",
+            priorityId: "MEDIUM",
+            dayBucketId: null,
+            text: "Touch Cancel",
+            insertAfterRowKey: null,
+          },
+        ])
+      );
+      const quickCreateEvents: CustomEvent[] = [];
+      const handleQuickCreate = (event: Event) => {
+        quickCreateEvents.push(event as CustomEvent);
+      };
+      window.addEventListener(
+        "schedule:open-quick-create-task-details",
+        handleQuickCreate
+      );
+      const { container, root } = await renderSheet({
+        userId: null,
+        enableScheduleTimelineDrag: true,
+      });
+      const releaseRow = getTodoRowByText(container, "Touch Release");
+      const cancelRow = getTodoRowByText(container, "Touch Cancel");
+
+      await act(async () => {
+        touchStart(releaseRow);
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(quickCreateEvents).toHaveLength(0);
+
+      await act(async () => {
+        touchEnd(releaseRow);
+      });
+
+      expect(quickCreateEvents).toHaveLength(1);
+      expect(quickCreateEvents[0]?.detail).toMatchObject({
+        title: "Touch Release",
+        origin: "manual-my-list-upgrade",
+        sourceManualMyListItemId: "manual-touch-release",
+      });
+
+      await act(async () => {
+        touchStart(cancelRow);
+        vi.advanceTimersByTime(500);
+        touchCancel(cancelRow);
+        touchEnd(cancelRow);
+      });
+
+      expect(quickCreateEvents).toHaveLength(1);
+
+      window.removeEventListener(
+        "schedule:open-quick-create-task-details",
+        handleQuickCreate
+      );
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      if (hadPointerEvent) {
+        Object.defineProperty(window, "PointerEvent", {
+          configurable: true,
+          value: originalPointerEvent,
+        });
+      }
+    }
+  });
+
+  it("dispatches a recognized manual todo upgrade once for duplicate completion events", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: "manual-duplicate-complete",
+          done: false,
+          completedAt: null,
+          skillId: "skill-1",
+          skillName: "Writing",
+          skillIcon: "W",
+          priorityId: "HIGH",
+          dayBucketId: null,
+          text: "Complete Once",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+    const quickCreateEvents: CustomEvent[] = [];
+    const handleQuickCreate = (event: Event) => {
+      quickCreateEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Complete Once");
+
+    await act(async () => {
+      pointerDown(row);
+      vi.advanceTimersByTime(500);
+      pointerUp(row);
+      touchEnd(row);
+      pointerUp(row);
+    });
+
+    expect(quickCreateEvents).toHaveLength(1);
 
     window.removeEventListener(
       "schedule:open-quick-create-task-details",
@@ -442,11 +850,17 @@ describe("MyListSheet checkbox interactions", () => {
       vi.advanceTimersByTime(500);
     });
 
+    expect(quickCreateStates).toEqual([]);
+
+    await act(async () => {
+      pointerUp(input);
+    });
+
     const caretPosition = input.value.length;
     expect(quickCreateStates).toEqual([
       {
         activeElement: document.body,
-        blurCalls: 1,
+        blurCalls: 2,
         removeAllRangesCalls: expect.any(Number),
         selectionEnd: caretPosition,
         selectionStart: caretPosition,
