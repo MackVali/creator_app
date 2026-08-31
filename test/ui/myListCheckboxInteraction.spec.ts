@@ -359,6 +359,118 @@ describe("MyListSheet checkbox interactions", () => {
     });
   });
 
+  it("releases focused manual todo text selection before opening upgrade details", async () => {
+    vi.useFakeTimers();
+    const manualRowId = "11111111-1111-4111-8111-111111111111";
+    window.localStorage.setItem(
+      "creator:my-list:manual-rows",
+      JSON.stringify([
+        {
+          id: manualRowId,
+          done: false,
+          completedAt: null,
+          skillId: null,
+          skillName: null,
+          skillIcon: "",
+          priorityId: "MEDIUM",
+          dayBucketId: null,
+          text: "Focused Upgrade",
+          insertAfterRowKey: null,
+        },
+      ])
+    );
+
+    const originalWindowGetSelection = window.getSelection;
+    const originalDocumentGetSelection = document.getSelection;
+    const removeAllRanges = vi.fn();
+    const selection = { removeAllRanges } as unknown as Selection;
+    Object.defineProperty(window, "getSelection", {
+      configurable: true,
+      value: () => selection,
+    });
+    Object.defineProperty(document, "getSelection", {
+      configurable: true,
+      value: () => selection,
+    });
+
+    const { container, root } = await renderSheet({
+      userId: null,
+      enableScheduleTimelineDrag: true,
+    });
+    const row = getTodoRowByText(container, "Focused Upgrade");
+    const input = row.querySelector(
+      'input[aria-label="To-do text"]'
+    ) as HTMLInputElement;
+    expect(input).toBeTruthy();
+    const blurSpy = vi.spyOn(input, "blur");
+
+    const quickCreateStates: Array<{
+      activeElement: Element | null;
+      blurCalls: number;
+      removeAllRangesCalls: number;
+      selectionEnd: number | null;
+      selectionStart: number | null;
+    }> = [];
+    const handleQuickCreate = (event: Event) => {
+      expect((event as CustomEvent).detail).toMatchObject({
+        origin: "manual-my-list-upgrade",
+        sourceManualMyListItemId: manualRowId,
+      });
+      quickCreateStates.push({
+        activeElement: document.activeElement,
+        blurCalls: blurSpy.mock.calls.length,
+        removeAllRangesCalls: removeAllRanges.mock.calls.length,
+        selectionEnd: input.selectionEnd,
+        selectionStart: input.selectionStart,
+      });
+    };
+    window.addEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+
+    await act(async () => {
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+    });
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+
+    await act(async () => {
+      pointerDown(input);
+      vi.advanceTimersByTime(500);
+    });
+
+    const caretPosition = input.value.length;
+    expect(quickCreateStates).toEqual([
+      {
+        activeElement: document.body,
+        blurCalls: 1,
+        removeAllRangesCalls: expect.any(Number),
+        selectionEnd: caretPosition,
+        selectionStart: caretPosition,
+      },
+    ]);
+    expect(quickCreateStates[0]?.removeAllRangesCalls).toBeGreaterThan(0);
+
+    window.removeEventListener(
+      "schedule:open-quick-create-task-details",
+      handleQuickCreate
+    );
+    Object.defineProperty(window, "getSelection", {
+      configurable: true,
+      value: originalWindowGetSelection,
+    });
+    Object.defineProperty(document, "getSelection", {
+      configurable: true,
+      value: originalDocumentGetSelection,
+    });
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("prevents native touch selection when a manual todo title starts an upgrade hold", async () => {
     vi.useFakeTimers();
     window.localStorage.setItem(
@@ -404,7 +516,7 @@ describe("MyListSheet checkbox interactions", () => {
       expect(element.style.userSelect).toBe("none");
     }
 
-    let pointerEvent: PointerEvent | null = null;
+    let pointerEvent: PointerEvent | undefined;
     await act(async () => {
       pointerEvent = pointerDown(input as HTMLElement);
     });
