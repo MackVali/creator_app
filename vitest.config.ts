@@ -31,11 +31,49 @@ export default defineConfig({
         replacement: path.resolve(projectRoot, "components/ui/FabCreationContext.tsx"),
       },
       {
+        find: "@/components/ui/LazyFab",
+        replacement: path.resolve(projectRoot, "components/ui/LazyFab.tsx"),
+      },
+      {
+        find: "@/components/ui/fab-form-classes",
+        replacement: path.resolve(projectRoot, "components/ui/fab-form-classes.ts"),
+      },
+      {
+        find: "@/components/ui/button",
+        replacement: path.resolve(projectRoot, "components/ui/button.tsx"),
+      },
+      {
+        find: "@/components/ui/input",
+        replacement: path.resolve(projectRoot, "components/ui/input.tsx"),
+      },
+      {
+        find: "@/components/ui/label",
+        replacement: path.resolve(projectRoot, "components/ui/label.tsx"),
+      },
+      {
+        find: "@/components/ui/select",
+        replacement: path.resolve(projectRoot, "components/ui/select.tsx"),
+      },
+      {
+        find: "@/components/ui/textarea",
+        replacement: path.resolve(projectRoot, "components/ui/textarea.tsx"),
+      },
+      {
         find: "@/components/auth/AuthProvider",
         replacement: path.resolve(projectRoot, "components/auth/AuthProvider.tsx"),
       },
+      {
+        find: "@/components/entitlement/EntitlementProvider",
+        replacement: path.resolve(projectRoot, "components/entitlement/EntitlementProvider.tsx"),
+      },
+      {
+        find: "@/components/habits/habit-form-fields",
+        replacement: path.resolve(projectRoot, "components/habits/habit-form-fields.tsx"),
+      },
       { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
+      { find: "@/lib/utils/logGate", replacement: path.resolve(projectRoot, "src/lib/utils/logGate.ts") },
       { find: "@/lib/utils", replacement: path.resolve(projectRoot, "lib/utils.ts") },
+      { find: "@/lib/auth", replacement: path.resolve(projectRoot, "lib/auth.ts") },
       { find: "@/lib/scheduler", replacement: path.resolve(projectRoot, "src/lib/scheduler") },
       { find: "@/lib/supabase/server", replacement: path.resolve(projectRoot, "lib/supabase/server.ts") },
       { find: "@/lib/supabase/admin", replacement: path.resolve(projectRoot, "src/lib/supabase/admin.ts") },
