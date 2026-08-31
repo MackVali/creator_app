@@ -3020,18 +3020,69 @@ export function MyListSheet({
     );
   }, []);
 
+  const removeManualUpgradeDomSelectionRanges = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const windowSelection = window.getSelection?.() ?? null;
+    const documentSelection = document.getSelection?.() ?? null;
+
+    windowSelection?.removeAllRanges();
+    if (documentSelection && documentSelection !== windowSelection) {
+      documentSelection.removeAllRanges();
+    }
+  }, []);
+
+  const collapseManualUpgradeInputSelection = useCallback(
+    (input: HTMLInputElement) => {
+      const textLength = input.value.length;
+      try {
+        input.setSelectionRange(textLength, textLength);
+      } catch {
+        // Some input types may reject selection APIs.
+      }
+    },
+    [],
+  );
+
   const suppressManualUpgradeSelection = useCallback(() => {
     if (typeof window === "undefined") return;
-    window.getSelection()?.removeAllRanges();
+    removeManualUpgradeDomSelectionRanges();
     const activeElement = document.activeElement;
     if (
       activeElement instanceof HTMLInputElement &&
       sheetRootRef.current?.contains(activeElement)
     ) {
-      const textLength = activeElement.value.length;
-      activeElement.setSelectionRange(textLength, textLength);
+      collapseManualUpgradeInputSelection(activeElement);
     }
-  }, []);
+  }, [
+    collapseManualUpgradeInputSelection,
+    removeManualUpgradeDomSelectionRanges,
+  ]);
+
+  const clearManualUpgradeNativeSelection = useCallback(
+    (press: MyListManualUpgradePress) => {
+      if (typeof document === "undefined") return;
+
+      const sourceInput = manualTitleInputRefs.current.get(press.rowId) ?? null;
+      const activeElement = document.activeElement;
+      const activeManualInput =
+        activeElement instanceof HTMLInputElement &&
+        activeElement.closest("[data-my-list-manual-upgrade-row]")
+          ? activeElement
+          : null;
+      const inputToRelease = sourceInput ?? activeManualInput;
+
+      removeManualUpgradeDomSelectionRanges();
+      if (inputToRelease) {
+        collapseManualUpgradeInputSelection(inputToRelease);
+        inputToRelease.blur();
+      }
+      removeManualUpgradeDomSelectionRanges();
+    },
+    [
+      collapseManualUpgradeInputSelection,
+      removeManualUpgradeDomSelectionRanges,
+    ],
+  );
 
   const clearManualUpgradePress = useCallback(() => {
     const press = manualUpgradePressRef.current;
@@ -3144,15 +3195,7 @@ export function MyListSheet({
       }
 
       press.triggered = true;
-      suppressManualUpgradeSelection();
-      const activeElement = document.activeElement;
-      if (
-        activeElement instanceof HTMLElement &&
-        sheetRootRef.current?.contains(activeElement) &&
-        activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)
-      ) {
-        activeElement.blur();
-      }
+      clearManualUpgradeNativeSelection(press);
 
       setActiveSkillPickerRowKey(null);
       setActivePriorityPickerRowKey(null);
@@ -3174,7 +3217,7 @@ export function MyListSheet({
       );
       clearManualUpgradePress();
     },
-    [clearManualUpgradePress, onOpenChange, suppressManualUpgradeSelection],
+    [clearManualUpgradeNativeSelection, clearManualUpgradePress, onOpenChange],
   );
 
   const startManualUpgradePointerPress = useCallback(
