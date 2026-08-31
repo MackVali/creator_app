@@ -385,6 +385,24 @@ describe("MyListSheet checkbox interactions", () => {
     const row = getTodoRowByText(container, "No Select Hold");
     const input = row.querySelector('input[aria-label="To-do text"]');
     expect(input).toBeTruthy();
+    expect(row.dataset.myListManualUpgradeRow).toBe("true");
+    expect(row.getAttribute("draggable")).toBe("false");
+    expect(input?.getAttribute("draggable")).toBe("false");
+
+    for (const element of [row, input as HTMLElement]) {
+      expect(element.className).toContain("select-none");
+      expect(element.className).toContain(
+        "[-webkit-tap-highlight-color:transparent]"
+      );
+      expect(element.className).toContain("[-webkit-touch-callout:none]");
+      expect(element.className).toContain("[-webkit-user-select:none]");
+      expect(element.className).toContain("[touch-action:pan-y]");
+      expect(element.className).toContain("[user-select:none]");
+      expect(element.style.getPropertyValue("-webkit-tap-highlight-color")).toBe(
+        "transparent"
+      );
+      expect(element.style.userSelect).toBe("none");
+    }
 
     let pointerEvent: PointerEvent | null = null;
     await act(async () => {
@@ -392,6 +410,20 @@ describe("MyListSheet checkbox interactions", () => {
     });
 
     expect(pointerEvent?.defaultPrevented).toBe(true);
+
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    input?.dispatchEvent(contextMenuEvent);
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+
+    const dragStartEvent = new Event("dragstart", {
+      bubbles: true,
+      cancelable: true,
+    });
+    input?.dispatchEvent(dragStartEvent);
+    expect(dragStartEvent.defaultPrevented).toBe(true);
 
     await act(async () => {
       root.unmount();
