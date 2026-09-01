@@ -384,6 +384,8 @@ export async function persistGoalUpdate({
     active: goal.active,
     status: normalizeGoalStatus(goal.status, goal.active),
     why: goal.why ?? null,
+    circle_id: goal.circleId || null,
+    area_id: goal.circleId ? null : goal.areaId || null,
     monument_id: goal.monumentId || null,
     roadmap_id: goal.roadmapId || null,
     due_date: goal.dueDate ?? null,

@@ -240,13 +240,22 @@ export function MonumentCreationForm({
       return;
     }
 
+    if (!areaId) {
+      setError("Select an Area for this Monument.");
+      setLoading(false);
+      return;
+    }
+
     const nextEmoji = getMonumentIconOrDefault(emoji);
 
-    const { data: createdMonument, error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from("monuments")
-      .insert({ title, emoji: nextEmoji, user_id: user.id })
-      .select("id")
-      .single();
+      .insert({
+        title,
+        emoji: nextEmoji,
+        user_id: user.id,
+        area_id: areaId,
+      });
 
     if (insertError) {
       setError(insertError.message);
@@ -254,23 +263,6 @@ export function MonumentCreationForm({
       return;
     }
 
-    if (createdMonument && skills.length > 0) {
-      const relationPayload = skills.map((skillId) => ({
-        monument_id: createdMonument.id,
-        skill_id: skillId,
-        user_id: user.id,
-      }));
-      const { error: relationError } = await supabase
-        .from("monument_skills")
-        .upsert(relationPayload, { onConflict: "monument_id,skill_id" });
-
-      if (relationError) {
-        console.error("Failed to link skills to monument", relationError);
-        setError("Monument saved, but we couldn't link all skills.");
-        setLoading(false);
-        return;
-      }
-    }
 
     setLoading(false);
     if (onCreate) {

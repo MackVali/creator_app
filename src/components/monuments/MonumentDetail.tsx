@@ -40,13 +40,11 @@ import {
   saveMonumentEditDraft,
 } from "@/components/monuments/MonumentEditDialog";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { getCatsForUser } from "@/lib/data/cats";
 import {
   getMonumentIconOrDefault,
   normalizeMonumentIconInput,
 } from "@/lib/monuments/icon";
-import type { CatRow } from "@/lib/types/cat";
-import type { SkillRow } from "@/lib/types/skill";
+import { AREAS } from "@/config/areas";
 import { useMonumentActivity } from "@/lib/hooks/useMonumentActivity";
 import {
   segmentedToggleActiveClassName,
@@ -58,10 +56,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 export interface MonumentDetailMonument {
@@ -78,14 +73,6 @@ interface MonumentDetailProps {
 }
 
 type MonumentView = "goals" | "roadmap";
-type SkillGroup = {
-  id: string;
-  label: string;
-  skills: SkillRow[];
-};
-
-const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
-const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
 const PULL_EXIT_ACTIVATION_PX = 8;
 const PULL_EXIT_TOUCH_ACTIVATION_PX = 5;
 const PULL_EXIT_THRESHOLD_PX = 128;
@@ -154,13 +141,10 @@ function InlineMonumentHeaderEditor({
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const [title, setTitle] = useState(monument.title);
   const [emoji, setEmoji] = useState(monument.emoji || "🏛️");
-  const [skills, setSkills] = useState<string[]>([]);
-  const [initialSkills, setInitialSkills] = useState<string[]>([]);
-  const [availableSkills, setAvailableSkills] = useState<SkillRow[]>([]);
-  const [categories, setCategories] = useState<CatRow[]>([]);
-  const [monumentSkillLookup, setMonumentSkillLookup] = useState<
-    Map<string, { emoji: string | null; title: string | null }>
-  >(new Map());
+  const [areaId, setAreaId] = useState<string | null>(null);
+  const [areas, setAreas] = useState<
+    { id: string; name: string; icon: string | null }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,79 +161,37 @@ function InlineMonumentHeaderEditor({
     async function loadEditState() {
       setLoading(true);
       setError(null);
+
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (!user) throw new Error("Not authenticated");
+        const draft = await loadMonumentEditDraft(supabase, monument.id);
 
-        const [draft, skillsResult, categoriesData, monumentsResult] =
-          await Promise.all([
-            loadMonumentEditDraft(supabase, monument.id).catch((draftError) => {
-              console.warn("Inline monument editor draft loaded with fallback state", draftError);
-              return {
-                title: monument.title,
-                emoji: monument.emoji || "🏛️",
-                skills: [],
-              };
-            }),
-            supabase
-              .from("skills")
-              .select("id, name, icon, cat_id, monument_id")
-              .eq("user_id", user.id)
-              .order("name", { ascending: true }),
-            getCatsForUser(user.id, supabase),
-            supabase
-              .from("monuments")
-              .select("id, title, emoji")
-              .eq("user_id", user.id),
-          ]);
-
-        if (skillsResult.error) throw skillsResult.error;
-        if (monumentsResult.error) throw monumentsResult.error;
         if (cancelled) return;
-
-        const safeSkills = (skillsResult.data ?? []) as SkillRow[];
-        const monumentMap = new Map<
-          string,
-          { emoji: string | null; title: string | null }
-        >();
-        (monumentsResult.data ?? []).forEach((item) => {
-          if (!item.id) return;
-          monumentMap.set(item.id, {
-            emoji: item.emoji ?? null,
-            title: item.title ?? null,
-          });
-        });
-
-        const resolvedRelatedSkillIds =
-          draft.skills.length > 0
-            ? draft.skills
-            : safeSkills
-                .filter((skill) => skill.monument_id === monument.id)
-                .map((skill) => skill.id)
-                .filter((skillId): skillId is string => Boolean(skillId));
 
         setTitle(draft.title);
         setEmoji(draft.emoji);
-        setSkills(resolvedRelatedSkillIds);
-        setInitialSkills(resolvedRelatedSkillIds);
-        setAvailableSkills(safeSkills);
-        setCategories(categoriesData);
-        setMonumentSkillLookup(monumentMap);
+        setAreaId(draft.areaId);
+        setAreas(
+          AREAS.map((area) => ({
+            id: area.id,
+            name: area.label,
+            icon: area.emoji,
+          })),
+        );
       } catch (err) {
-        console.warn("Inline monument editor failed to load skills", err);
+        console.warn("Inline monument editor failed to load", err);
+
         if (!cancelled) {
           setTitle(monument.title);
           setEmoji(monument.emoji || "🏛️");
-          setSkills([]);
-          setInitialSkills([]);
-          setAvailableSkills([]);
-          setCategories([]);
-          setMonumentSkillLookup(new Map());
-          setError("Unable to load related skills right now.");
+          setAreaId(null);
+          setAreas(
+            AREAS.map((area) => ({
+              id: area.id,
+              name: area.label,
+              icon: area.emoji,
+            })),
+          );
+          setError("Unable to load monument details right now.");
         }
       } finally {
         if (!cancelled) {
@@ -264,75 +206,6 @@ function InlineMonumentHeaderEditor({
       cancelled = true;
     };
   }, [monument.emoji, monument.id, monument.title, supabase]);
-
-  const categoryLookup = useMemo(() => {
-    const map = new Map<string, string>();
-    categories.forEach((category) => {
-      map.set(category.id, category.name?.trim() ?? "");
-    });
-    return map;
-  }, [categories]);
-
-  const groupedAvailableSkills = useMemo(() => {
-    const groups = new Map<string, SkillGroup>();
-
-    availableSkills.forEach((skill) => {
-      const groupId = skill.cat_id ?? UNCATEGORIZED_GROUP_ID;
-      const label =
-        groupId === UNCATEGORIZED_GROUP_ID
-          ? UNCATEGORIZED_GROUP_LABEL
-          : categoryLookup.get(groupId) || UNCATEGORIZED_GROUP_LABEL;
-      const existing = groups.get(groupId);
-      if (existing) {
-        existing.skills.push(skill);
-      } else {
-        groups.set(groupId, { id: groupId, label, skills: [skill] });
-      }
-    });
-
-    const ordered: SkillGroup[] = [];
-
-    categories.forEach((category) => {
-      const group = groups.get(category.id);
-      if (group) {
-        group.label = category.name?.trim() || group.label;
-        ordered.push({ id: category.id, label: group.label, skills: group.skills });
-        groups.delete(category.id);
-      }
-    });
-
-    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
-    if (uncategorizedGroup) {
-      ordered.push({
-        id: UNCATEGORIZED_GROUP_ID,
-        label: UNCATEGORIZED_GROUP_LABEL,
-        skills: uncategorizedGroup.skills,
-      });
-      groups.delete(UNCATEGORIZED_GROUP_ID);
-    }
-
-    for (const [groupId, group] of groups) {
-      ordered.push({ id: groupId, label: group.label, skills: group.skills });
-    }
-
-    return ordered;
-  }, [availableSkills, categories, categoryLookup]);
-
-  const selectedSkillRows = useMemo(
-    () =>
-      skills
-        .map((skillId) => availableSkills.find((skill) => skill.id === skillId))
-        .filter((skill): skill is SkillRow => Boolean(skill)),
-    [availableSkills, skills],
-  );
-
-  const toggleSkill = (skillId: string) => {
-    setSkills((prev) =>
-      prev.includes(skillId)
-        ? prev.filter((currentSkillId) => currentSkillId !== skillId)
-        : [...prev, skillId],
-    );
-  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -356,10 +229,8 @@ function InlineMonumentHeaderEditor({
         monumentId: monument.id,
         title: nextTitle,
         emoji: nextEmoji,
-        skills,
-        initialSkills,
+        areaId,
       });
-      setInitialSkills(skills);
       onSaved({ id: monument.id, title: nextTitle, emoji: nextEmoji });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save monument");
@@ -395,90 +266,51 @@ function InlineMonumentHeaderEditor({
                     disabled={loading}
                     className="inline-flex h-8 items-center gap-2 rounded-full border border-white/15 bg-white/[0.05] px-3 text-xs font-semibold text-white/80 transition hover:border-white/25 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <span>
-                      {loading
-                        ? "Loading skills"
-                        : skills.length > 0
-                          ? `${skills.length} skill${skills.length > 1 ? "s" : ""}`
-                          : "Related skills"}
-                    </span>
-                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                    {(() => {
+                      const selectedArea =
+                        areas.find((area) => area.id === areaId) ?? null;
+
+                      return (
+                        <>
+                          {selectedArea?.icon ? (
+                            <span>{selectedArea.icon}</span>
+                          ) : null}
+                          <span>
+                            {loading
+                              ? "Loading Area"
+                              : selectedArea?.name ?? "Select Area"}
+                          </span>
+                          <ChevronDown
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
+                        </>
+                      );
+                    })()}
                   </button>
                 </DropdownMenuTrigger>
+
                 <DropdownMenuContent
                   align="start"
-                  className="z-[230] min-w-[260px] border-black/80 bg-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
+                  className="z-[230] min-w-[220px] border-black/80 bg-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
                 >
-                  {loading ? (
-                    <DropdownMenuItem disabled className="text-white/60">
-                      Loading skills...
-                    </DropdownMenuItem>
-                  ) : availableSkills.length === 0 ? (
-                    <DropdownMenuItem disabled className="text-white/60">
-                      No skills found yet.
-                    </DropdownMenuItem>
-                  ) : (
-                    groupedAvailableSkills.map((group, index) => (
-                      <DropdownMenuGroup key={group.id}>
-                        {index > 0 ? (
-                          <DropdownMenuSeparator className="bg-white/5" />
+                  {areas.map((area) => (
+                    <DropdownMenuItem
+                      key={area.id}
+                      onSelect={() => setAreaId(area.id)}
+                      className="gap-3 text-sm text-white"
+                    >
+                      <span className="flex size-5 items-center justify-center">
+                        {area.id === areaId ? (
+                          <Check className="size-4" aria-hidden="true" />
                         ) : null}
-                        <DropdownMenuLabel className="px-3 pb-2 pt-3 text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
-                          {group.label}
-                        </DropdownMenuLabel>
-                        {group.skills.map((skill) => (
-                          <DropdownMenuItem
-                            key={skill.id}
-                            onSelect={(event) => {
-                              event.preventDefault();
-                              toggleSkill(skill.id);
-                            }}
-                            className="gap-3 text-sm text-white"
-                          >
-                            {skills.includes(skill.id) ? (
-                              <span className="flex size-5 items-center justify-center text-white">
-                                <Check className="size-4" aria-hidden="true" />
-                              </span>
-                            ) : skill.monument_id &&
-                              skill.monument_id !== monument.id ? (
-                              <span
-                                className="inline-flex size-5 items-center justify-center text-base leading-none"
-                                title={`Assigned to ${
-                                  monumentSkillLookup.get(skill.monument_id)
-                                    ?.title ?? "another monument"
-                                }`}
-                                aria-label={`Assigned to ${
-                                  monumentSkillLookup.get(skill.monument_id)
-                                    ?.title ?? "another monument"
-                                }`}
-                              >
-                                {monumentSkillLookup.get(skill.monument_id)
-                                  ?.emoji ?? "🏛️"}
-                              </span>
-                            ) : (
-                              <span className="size-5" aria-hidden="true" />
-                            )}
-                            <span className="text-base">{skill.icon ?? "*"}</span>
-                            <span>{skill.name}</span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuGroup>
-                    ))
-                  )}
+                      </span>
+                      <span className="text-base">{area.icon ?? ""}</span>
+                      <span>{area.name}</span>
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {selectedSkillRows.map((skill) => (
-                <button
-                  key={skill.id}
-                  type="button"
-                  onClick={() => toggleSkill(skill.id)}
-                  className="inline-flex h-7 items-center gap-1 rounded-full border border-white/15 bg-white/[0.06] px-2.5 text-xs text-white/80 transition hover:border-white/25 hover:bg-white/[0.1]"
-                >
-                  <span>{skill.icon ?? "*"}</span>
-                  <span className="max-w-[8rem] truncate">{skill.name}</span>
-                  <X className="h-3 w-3 text-white/55" aria-hidden="true" />
-                </button>
-              ))}
             </div>
             {error ? (
               <p className="text-xs font-medium text-red-200">{error}</p>

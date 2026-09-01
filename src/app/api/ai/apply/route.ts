@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { AREAS, isAreaId } from "@/config/areas";
 import { SCHEDULER_PRIORITY_LABELS } from "@/lib/types/ai";
 import type {
   AiApplyCandidate,
@@ -19,6 +20,8 @@ const BASE_INTENT_SCHEMA = z.object({
   message: z.string(),
 });
 
+const DEFAULT_GOAL_AREA_ID = AREAS[0]?.id ?? "";
+
 export const runtime = "nodejs";
 
 const DRAFT_CREATE_GOAL_SCHEMA = BASE_INTENT_SCHEMA.extend({
@@ -26,6 +29,7 @@ const DRAFT_CREATE_GOAL_SCHEMA = BASE_INTENT_SCHEMA.extend({
   draft: z.object({
     name: z.string(),
     priority: z.string().optional(),
+    areaId: z.string().optional(),
   }),
 });
 
@@ -623,6 +627,15 @@ const derivePreviewCandidates = async (
         if (trimmedName !== intent.draft.name) {
           warnings.push("Goal name was trimmed for validation.");
         }
+        const areaId = isAreaId(intent.draft.areaId)
+          ? intent.draft.areaId
+          : DEFAULT_GOAL_AREA_ID;
+        if (!areaId) {
+          return NextResponse.json(
+            { error: "Goal area is required" },
+            { status: 400 }
+          );
+        }
         if (isDryRun) {
           return dryRunResponse({ warnings });
         }
@@ -634,6 +647,7 @@ const derivePreviewCandidates = async (
             name: trimmedName,
             priority,
             energy: "NO",
+            area_id: areaId,
           })
           .select("id")
           .single();

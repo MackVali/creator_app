@@ -278,6 +278,7 @@ vi.mock("@/app/(app)/schedule/priorities/PriorityEditorClient", () => ({
 }));
 
 vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ setStatusIsland: vi.fn() }),
   useToastHelpers: () => toastMocks,
 }));
 
@@ -303,6 +304,7 @@ vi.mock("@/components/ui/FabCreationContext", () => ({
   }),
 }));
 vi.mock("../../components/ui/toast", () => ({
+  useToast: () => ({ setStatusIsland: vi.fn() }),
   useToastHelpers: () => toastMocks,
 }));
 
@@ -341,6 +343,7 @@ const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111";
 const ROADMAP_ID = "22222222-2222-4222-8222-222222222222";
 const CIRCLE_ID = "33333333-3333-4333-8333-333333333333";
 const CREATED_GOAL_ID = "44444444-4444-4444-8444-444444444444";
+const DEFAULT_AREA_ID = "body";
 
 const supabaseMutationState: {
   insertCalls: Array<{ tableName: string; payload: unknown }>;
@@ -355,17 +358,6 @@ const supabaseMutationState: {
 };
 
 const nextTick = () => new Promise((resolve) => window.setTimeout(resolve, 0));
-const createGoalInsertDeferred = () => {
-  let resolve!: (value: SupabaseMockSingleResult) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<SupabaseMockSingleResult>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
-  });
-
-  return { promise, resolve, reject };
-};
-
 const setNativeInputValue = (input: HTMLInputElement, value: string) => {
   flushSync(() => {
     const valueSetter = Object.getOwnPropertyDescriptor(
@@ -427,9 +419,9 @@ const getGoalRoadmapTrigger = () => {
   return trigger as HTMLElement;
 };
 
-const getGoalCircleTrigger = () => {
+const getGoalPrimaryRelationTrigger = () => {
   const trigger = document.querySelector<HTMLElement>(
-    "[data-unified-goal-circle-trigger]",
+    "[data-unified-goal-primary-relation-trigger]",
   );
   expect(trigger).toBeTruthy();
   return trigger as HTMLElement;
@@ -452,13 +444,18 @@ const selectGoalTopRelationshipValue = (
   const triggerAttribute =
     relation === "roadmap"
       ? "data-unified-goal-roadmap-trigger"
-      : "data-unified-goal-circle-trigger";
+      : "data-unified-goal-primary-relation-trigger";
+  const itemValue = relation === "circle" ? `CIRCLE:${value}` : value;
   const trigger = document.querySelector<HTMLElement>(`[${triggerAttribute}]`);
   expect(trigger).toBeTruthy();
   const selectRoot = trigger?.closest("div");
-  const option = selectRoot?.querySelector<HTMLButtonElement>(
-    `[data-select-item-value="${value}"]`,
-  );
+  const option =
+    selectRoot?.querySelector<HTMLButtonElement>(
+      `[data-select-item-value="${itemValue}"]`,
+    ) ??
+    document.querySelector<HTMLButtonElement>(
+      `[data-select-item-value="${itemValue}"]`,
+    );
   expect(option).toBeTruthy();
   flushSync(() => {
     option?.click();
@@ -513,7 +510,7 @@ const queryRowsByTable: Record<string, unknown[]> = {
       name: "Roadmap X",
       position: 1,
       primary_area_id: null,
-      primary_circle_id: null,
+      primary_circle_id: CIRCLE_ID,
       primary_monument_id: null,
       roadmap_id: ROADMAP_ID,
       scheduling_state: "ACTIVE",
@@ -769,9 +766,9 @@ describe("Fab quick-create task details hydration", () => {
     expect(getUnifiedTitleInput().value).toBe("Test hydration");
     const relationshipStrip = getUnifiedRelationshipStrip();
     expect(getGoalRoadmapTrigger().textContent?.trim()).toBe("add ROADMAP");
-    expect(getGoalCircleTrigger().textContent?.trim()).toBe("add CIRCLE");
+    expect(getGoalPrimaryRelationTrigger().textContent?.trim()).toBe("Body");
     expect(relationshipStrip.textContent).toContain("add ROADMAP");
-    expect(relationshipStrip.textContent).toContain("add CIRCLE");
+    expect(relationshipStrip.textContent).toContain("Body");
     expect(relationshipStrip.textContent).not.toContain("Add to Roadmap");
     expect(relationshipStrip.textContent).not.toContain("Add to Circle");
     const goalSheet = getUnifiedEventSheet();
@@ -835,9 +832,9 @@ describe("Fab quick-create task details hydration", () => {
     const goalSheet = document.querySelector("[data-unified-event-sheet]");
     const goalRelationshipStrip = getUnifiedRelationshipStrip();
     expect(getGoalRoadmapTrigger().textContent?.trim()).toBe("add ROADMAP");
-    expect(getGoalCircleTrigger().textContent?.trim()).toBe("add CIRCLE");
+    expect(getGoalPrimaryRelationTrigger().textContent?.trim()).toBe("Body");
     expect(goalRelationshipStrip.textContent).toContain("add ROADMAP");
-    expect(goalRelationshipStrip.textContent).toContain("add CIRCLE");
+    expect(goalRelationshipStrip.textContent).toContain("Body");
     expect(goalRelationshipStrip.textContent).not.toContain("Add to Roadmap");
     expect(goalRelationshipStrip.textContent).not.toContain("Add to Circle");
     expect(goalSheet?.querySelector("[data-unified-goal-roadmap-row]")).toBeNull();
@@ -871,18 +868,18 @@ describe("Fab quick-create task details hydration", () => {
 
     expect(getUnifiedTitleInput().value).toBe("Test hydration");
     expect(getGoalRoadmapTrigger().textContent?.trim()).toBe("add ROADMAP");
-    expect(getGoalCircleTrigger().textContent?.trim()).toBe("add CIRCLE");
+    expect(getGoalPrimaryRelationTrigger().textContent?.trim()).toBe("Body");
+
+    selectGoalTopRelationshipValue("circle", CIRCLE_ID);
+    await nextTick();
+    expect(getGoalRoadmapTrigger().textContent?.trim()).toBe("add ROADMAP");
+    expect(getGoalPrimaryRelationTrigger().textContent).toContain("Circle Y");
+    expect(getUnifiedTitleInput().value).toBe("Test hydration");
 
     selectGoalTopRelationshipValue("roadmap", CAMPAIGN_ID);
     await nextTick();
     expect(getGoalRoadmapTrigger().textContent).toContain("Roadmap X");
-    expect(getGoalCircleTrigger().textContent?.trim()).toBe("add CIRCLE");
-    expect(getUnifiedTitleInput().value).toBe("Test hydration");
-
-    selectGoalTopRelationshipValue("circle", CIRCLE_ID);
-    await nextTick();
-    expect(getGoalRoadmapTrigger().textContent).toContain("Roadmap X");
-    expect(getGoalCircleTrigger().textContent).toContain("Circle Y");
+    expect(getGoalPrimaryRelationTrigger().textContent).toContain("Circle Y");
     expect(getUnifiedTitleInput().value).toBe("Test hydration");
   });
 
@@ -907,8 +904,9 @@ describe("Fab quick-create task details hydration", () => {
     await nextTick();
     await nextTick();
 
-    selectGoalTopRelationshipValue("roadmap", CAMPAIGN_ID);
     selectGoalTopRelationshipValue("circle", CIRCLE_ID);
+    await nextTick();
+    selectGoalTopRelationshipValue("roadmap", CAMPAIGN_ID);
     await nextTick();
 
     submitUnifiedGoal();
@@ -916,6 +914,7 @@ describe("Fab quick-create task details hydration", () => {
     await nextTick();
 
     expect(getInsertedPayloadForTable("goals")).toMatchObject({
+      area_id: null,
       circle_id: CIRCLE_ID,
       name: "Roadmap relationship test",
       roadmap_id: ROADMAP_ID,
@@ -956,6 +955,7 @@ describe("Fab quick-create task details hydration", () => {
     await nextTick();
 
     expect(getInsertedPayloadForTable("goals")).toMatchObject({
+      area_id: DEFAULT_AREA_ID,
       due_date: "2026-10-31",
       name: "Due date goal",
       user_id: "user-1",

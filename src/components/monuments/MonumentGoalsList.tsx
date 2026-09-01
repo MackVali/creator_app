@@ -759,12 +759,20 @@ async function fetchGoalsWithRelationsForSource(
   if (!supabase) return [] as GoalRowWithRelations[];
 
   const ownerColumn = getGoalOwnerColumn(sourceType);
-  const { data, error } = await supabase
+
+  let query = supabase
     .from("goals")
     .select(GOAL_RELATIONS_BASE_SELECT)
     .eq("user_id", userId)
-    .eq(ownerColumn, sourceId)
-    .order("created_at", { ascending: false });
+    .eq(ownerColumn, sourceId);
+
+  if (sourceType === "area") {
+    query = query.is("monument_id", null);
+  }
+
+  const { data, error } = await query.order("created_at", {
+    ascending: false,
+  });
 
   if (error) {
     console.error(`Error fetching ${sourceType} goals:`, error);
@@ -783,13 +791,19 @@ async function fetchGoalsFullRelationsForSource(
 
   const ownerColumn = getGoalOwnerColumn(sourceType);
   const ownerLabel = getGoalsOwnerLabel(sourceType);
-  const runQuery = (select: string) =>
-    supabase
+  const runQuery = (select: string) => {
+    let query = supabase
       .from("goals")
       .select(select)
       .eq("user_id", userId)
-      .eq(ownerColumn, sourceId)
-      .order("created_at", { ascending: false });
+      .eq(ownerColumn, sourceId);
+
+    if (sourceType === "area") {
+      query = query.is("monument_id", null);
+    }
+
+    return query.order("created_at", { ascending: false });
+  };
 
   const variants = [
     { description: "enum column project fetch", select: GOAL_RELATIONS_SELECT },
@@ -966,6 +980,7 @@ async function fetchAreaPriorityRoadmapItems(
     )
     .eq("user_id", userId)
     .eq("area_id", areaId)
+    .is("monument_id", null)
     .order("priority_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
 
