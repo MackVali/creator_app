@@ -60,6 +60,7 @@ import {
 } from "@/lib/queries/projects";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { AREAS } from "@/config/areas";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import {
@@ -284,13 +285,15 @@ function HabitRoutineCreateRow({
 const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
+const DEFAULT_GOAL_AREA_ID = AREAS[0]?.id ?? "";
 
 type GoalWizardRpcInput = {
   user_id: string;
   name: string;
   priority: string;
   energy: string;
-  monument_id: string;
+  area_id: string;
+  monument_id: string | null;
   why: string | null;
   due_date: string | null;
 };
@@ -629,6 +632,7 @@ interface GoalWizardFormState {
   name: string;
   priority: string;
   energy: string;
+  area_id: string;
   monument_id: string;
   why: string;
   dueDate: string;
@@ -638,6 +642,7 @@ const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   name: "",
   priority: "",
   energy: "",
+  area_id: DEFAULT_GOAL_AREA_ID,
   monument_id: "",
   why: "",
   dueDate: "",
@@ -2513,10 +2518,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      if (!goalForm.monument_id.trim()) {
+      if (!goalForm.area_id.trim()) {
         toast.error(
-          "Monument required",
-          "Select a monument to ground this goal.",
+          "Area required",
+          "Select an area to organize this goal.",
         );
         return;
       }
@@ -2729,6 +2734,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const hasProjects = sanitizedProjects.length > 0;
         const goalWhy = goalForm.why.trim();
         const trimmedGoalName = goalForm.name.trim();
+        const selectedAreaId = goalForm.area_id.trim();
         const selectedMonumentId = goalForm.monument_id.trim();
         const goalDueDate = goalForm.dueDate.trim();
 
@@ -2760,7 +2766,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           name: formatNameValue(trimmedGoalName),
           priority: priorityIdToEnum[goalPriorityValue] || DEFAULT_PRIORITY,
           energy: energyIdToEnum[goalEnergyValue] || DEFAULT_ENERGY,
-          monument_id: selectedMonumentId,
+          area_id: selectedAreaId,
+          monument_id: selectedMonumentId || null,
           why: goalWhy ? goalWhy : null,
           due_date: goalDueDate ? goalDueDate : null,
         };
@@ -2918,10 +2925,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      if (!goalForm.monument_id.trim()) {
+      if (!goalForm.area_id.trim()) {
         toast.error(
-          "Monument required",
-          "Select a monument to ground this goal.",
+          "Area required",
+          "Select an area to organize this goal.",
         );
         return;
       }
@@ -3073,12 +3080,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const wizardPrimaryDisabled =
     isSaving ||
     (goalWizardStep === "GOAL" &&
-      (loading || !goalForm.name.trim() || !goalForm.monument_id.trim()));
+      (loading || !goalForm.name.trim() || !goalForm.area_id.trim()));
   const canSaveGoalWizard =
     !loading &&
     !isSaving &&
     goalForm.name.trim().length > 0 &&
-    goalForm.monument_id.trim().length > 0;
+    goalForm.area_id.trim().length > 0;
   const saveButtonLabel = isSaving ? "Saving..." : "Save goal";
   const selectedRoutine = routineOptions.find(
     (routine) => routine.id === routineId,
@@ -3211,6 +3218,31 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Area
+                          </Label>
+                          <Select
+                            value={goalForm.area_id}
+                            onValueChange={(value) =>
+                              handleGoalFormChange("area_id", value)
+                            }
+                            placeholder="Select area..."
+                            triggerClassName="h-12"
+                          >
+                            <SelectContent>
+                              {AREAS.map((area) => (
+                                <SelectItem key={area.id} value={area.id}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{area.emoji}</span>
+                                    <span>{area.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Monument
                           </Label>
                           <Select
@@ -3221,13 +3253,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                             placeholder={
                               loading
                                 ? "Loading monuments..."
-                                : "Select monument..."
+                                : "Optional monument..."
                             }
                             triggerClassName="h-12"
                           >
                             <SelectContent>
+                              <SelectItem value="">
+                                Not linked
+                              </SelectItem>
                               {monuments.length === 0 ? (
-                                <SelectItem value="" disabled>
+                                <SelectItem value="__empty_monuments__" disabled>
                                   {loading
                                     ? "Loading monuments..."
                                     : "No monuments found"}
@@ -4623,7 +4658,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         loading ||
                         isSaving ||
                         !goalForm.name.trim() ||
-                        !goalForm.monument_id.trim()
+                        !goalForm.area_id.trim()
                       }
                       variant="secondary"
                       className="h-11 rounded-xl bg-white/[0.08] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"

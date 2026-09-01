@@ -80,7 +80,7 @@ export type AiIntent =
   | ({ type: "NO_OP" } & BaseIntent)
   | ({
       type: "DRAFT_CREATE_GOAL";
-      draft: { name: string; priority?: string };
+      draft: { name: string; priority?: string; areaId?: string };
     } & BaseIntent)
   | ({
       type: "DRAFT_CREATE_PROJECT";

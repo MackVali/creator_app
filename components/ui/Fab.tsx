@@ -172,6 +172,8 @@ import PriorityEditorClient, {
 } from "@/app/(app)/schedule/priorities/PriorityEditorClient";
 import type { Friend } from "@/types/friends";
 
+const DEFAULT_GOAL_AREA_ID = AREAS[0]?.id ?? "";
+
 export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   menuVariant?: "default" | "timeline";
@@ -7504,10 +7506,10 @@ export function Fab({
   const resetGoalFormDraft = useCallback(() => {
     setGoalName("");
     setGoalMonumentId("");
-    setGoalRelationType(null);
-    setGoalRelationId("");
+    setGoalRelationType(DEFAULT_GOAL_AREA_ID ? "AREA" : null);
+    setGoalRelationId(DEFAULT_GOAL_AREA_ID);
     setGoalCircleId("");
-    setGoalAreaId("");
+    setGoalAreaId(DEFAULT_GOAL_AREA_ID);
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalActive(null);
@@ -9458,24 +9460,24 @@ export function Fab({
             roadmapContext?.circle_id ||
             "";
           const hydratedAreaId =
-            hydratedMonumentId || hydratedCircleId
+            hydratedCircleId
               ? ""
               : (goalRow?.area_id ||
                 campaignContext?.primary_area_id ||
                 roadmapContext?.area_id ||
-                "");
+                DEFAULT_GOAL_AREA_ID);
           setGoalMonumentId(hydratedMonumentId);
           setGoalCircleId(hydratedCircleId);
           setGoalAreaId(hydratedAreaId);
-          if (hydratedMonumentId) {
-            setGoalRelationType("MONUMENT");
-            setGoalRelationId(hydratedMonumentId);
-          } else if (hydratedCircleId) {
+          if (hydratedCircleId) {
             setGoalRelationType("CIRCLE");
             setGoalRelationId(hydratedCircleId);
           } else if (hydratedAreaId) {
             setGoalRelationType("AREA");
             setGoalRelationId(hydratedAreaId);
+          } else if (hydratedMonumentId) {
+            setGoalRelationType("MONUMENT");
+            setGoalRelationId(hydratedMonumentId);
           } else {
             setGoalRelationType(null);
             setGoalRelationId("");
@@ -19523,9 +19525,9 @@ export function Fab({
       if (requestedMonumentId && !requestedCampaignId) {
         setGoalMonumentId(requestedMonumentId);
         setGoalCircleId("");
-        setGoalAreaId("");
-        setGoalRelationType("MONUMENT");
-        setGoalRelationId(requestedMonumentId);
+        setGoalAreaId(requestedAreaId || DEFAULT_GOAL_AREA_ID);
+        setGoalRelationType(requestedAreaId || DEFAULT_GOAL_AREA_ID ? "AREA" : "MONUMENT");
+        setGoalRelationId(requestedAreaId || DEFAULT_GOAL_AREA_ID || requestedMonumentId);
       } else if (requestedAreaId && !requestedCampaignId) {
         setGoalMonumentId("");
         setGoalCircleId("");
@@ -19612,9 +19614,11 @@ export function Fab({
             if (hydratedMonumentId) {
               setGoalMonumentId(hydratedMonumentId);
               setGoalCircleId("");
-              setGoalAreaId("");
-              setGoalRelationType("MONUMENT");
-              setGoalRelationId(hydratedMonumentId);
+              setGoalAreaId(hydratedAreaId || DEFAULT_GOAL_AREA_ID);
+              setGoalRelationType(hydratedAreaId || DEFAULT_GOAL_AREA_ID ? "AREA" : "MONUMENT");
+              setGoalRelationId(
+                hydratedAreaId || DEFAULT_GOAL_AREA_ID || hydratedMonumentId,
+              );
             } else if (hydratedCircleId) {
               setGoalMonumentId("");
               setGoalCircleId(hydratedCircleId);
@@ -20553,11 +20557,22 @@ export function Fab({
       setSelected(nextSelected);
       setUnifiedEventType(nextSelected === "HABIT" ? "HABIT" : "TASK");
       applyUnifiedPortableDraft(nextSelected, portableDraft);
+      if (
+        nextSelected === "GOAL" &&
+        !goalRelationType &&
+        DEFAULT_GOAL_AREA_ID
+      ) {
+        setGoalRelationType("AREA");
+        setGoalRelationId(DEFAULT_GOAL_AREA_ID);
+        setGoalAreaId(DEFAULT_GOAL_AREA_ID);
+        setGoalCircleId("");
+      }
       resetUnifiedTypeSwitchUiState();
     },
     [
       applyUnifiedPortableDraft,
       getActiveUnifiedPortableDraft,
+      goalRelationType,
       resetUnifiedTypeSwitchUiState,
     ],
   );
@@ -21577,19 +21592,19 @@ export function Fab({
     if (goalRelationType === "MONUMENT" && goalRelationId) {
       return (
         monuments.find((monument) => monument.id === goalRelationId)?.title ??
-        "Link to MONUMENT / CIRCLE +"
+        "Link to AREA / CIRCLE / MONUMENT +"
       );
     }
     if (goalRelationType === "CIRCLE" && goalRelationId) {
       return (
         manageableCircles.find((circle) => circle.id === goalRelationId)
-          ?.name ?? "Link to MONUMENT / CIRCLE +"
+          ?.name ?? "Link to AREA / CIRCLE / MONUMENT +"
       );
     }
     if (goalRelationType === "AREA" && goalRelationId) {
       return getAreaById(goalRelationId)?.label ?? "Link to AREA +";
     }
-    return "Link to MONUMENT / CIRCLE / AREA +";
+    return "Link to AREA / CIRCLE / MONUMENT +";
   }, [goalRelationId, goalRelationType, manageableCircles, monuments]);
 
   const handleGoalRelationChange = useCallback(
@@ -21669,7 +21684,9 @@ export function Fab({
           return {
             selectedMonumentId: goalRelationId,
             selectedCircleId,
-            selectedAreaId: null,
+            selectedAreaId: isAreaId(goalAreaId)
+              ? goalAreaId
+              : DEFAULT_GOAL_AREA_ID,
             error: null,
           };
         }
@@ -21683,8 +21700,11 @@ export function Fab({
               error: "Link this goal to a valid area.",
             };
           }
+          const selectedMonumentId = isValidUuid(goalMonumentId)
+            ? goalMonumentId
+            : null;
           return {
-            selectedMonumentId: null,
+            selectedMonumentId,
             selectedCircleId,
             selectedAreaId: goalRelationId,
             error: null,
@@ -21694,16 +21714,27 @@ export function Fab({
         return {
           selectedMonumentId: null,
           selectedCircleId,
-          selectedAreaId: null,
+          selectedAreaId: selectedCircleId ? null : DEFAULT_GOAL_AREA_ID,
           error: null,
         };
       }
       if (!goalRelationType || !goalRelationId) {
+        if (DEFAULT_GOAL_AREA_ID) {
+          const selectedMonumentId = isValidUuid(goalMonumentId)
+            ? goalMonumentId
+            : null;
+          return {
+            selectedMonumentId,
+            selectedCircleId: null,
+            selectedAreaId: DEFAULT_GOAL_AREA_ID,
+            error: null,
+          };
+        }
         return {
           selectedMonumentId: null,
           selectedCircleId: null,
           selectedAreaId: null,
-          error: "Link this goal to a Monument, Circle, or Area before saving.",
+          error: "Link this goal to an Area before saving.",
         };
       }
 
@@ -21727,7 +21758,9 @@ export function Fab({
         return {
           selectedMonumentId: goalMonumentId,
           selectedCircleId: null,
-          selectedAreaId: null,
+          selectedAreaId: isAreaId(goalAreaId)
+            ? goalAreaId
+            : DEFAULT_GOAL_AREA_ID,
           error: null,
         };
       }
@@ -21741,8 +21774,11 @@ export function Fab({
             error: "Link this goal to a valid area before saving.",
           };
         }
+        const selectedMonumentId = isValidUuid(goalMonumentId)
+          ? goalMonumentId
+          : null;
         return {
-          selectedMonumentId: null,
+          selectedMonumentId,
           selectedCircleId: null,
           selectedAreaId: goalAreaId,
           error: null,
@@ -23328,7 +23364,7 @@ export function Fab({
       const goalRelationResolution =
         saveSelected === "GOAL" && !activeCourseAuthoringContext
           ? resolveSelectedGoalRelation({
-              requirePrimaryRelation: !isUnifiedEventSheetOpen,
+              requirePrimaryRelation: true,
             })
           : {
               selectedMonumentId: null,
@@ -23862,7 +23898,7 @@ export function Fab({
           selectedCircleId: string | null;
           selectedAreaId: string | null;
         }) => {
-          if (!goalCampaignId || selectedAreaId || !roadmapId) {
+          if (!goalCampaignId || !roadmapId) {
             return null;
           }
 
@@ -23892,8 +23928,13 @@ export function Fab({
           const belongsToSelectedContext = selectedCircleId
             ? selectedCampaign.primary_circle_id === selectedCircleId ||
               selectedCampaign.roadmap_id === roadmapId
-            : selectedCampaign.primary_monument_id === selectedMonumentId ||
-              selectedCampaign.roadmap_id === roadmapId;
+            : selectedMonumentId
+              ? selectedCampaign.primary_monument_id === selectedMonumentId ||
+                selectedCampaign.roadmap_id === roadmapId
+              : selectedAreaId
+                ? selectedCampaign.primary_area_id === selectedAreaId ||
+                  selectedCampaign.roadmap_id === roadmapId
+                : selectedCampaign.roadmap_id === roadmapId;
 
           return belongsToSelectedContext ? goalCampaignId : null;
         };
@@ -24331,13 +24372,7 @@ export function Fab({
               monument_id: goalRelationResolution.selectedMonumentId,
               circle_id: goalRelationResolution.selectedCircleId,
               area_id: goalRelationResolution.selectedAreaId,
-              roadmap_id: goalRelationResolution.selectedCircleId
-                ? resolvedGoalRoadmapId
-                : goalRelationResolution.selectedAreaId
-                  ? null
-                  : existingGoal.roadmap_id
-                  ? resolvedGoalRoadmapId
-                  : (existingGoal.roadmap_id ?? null),
+              roadmap_id: resolvedGoalRoadmapId ?? existingGoal.roadmap_id ?? null,
               due_date: goalDue ?? null,
             })
             .eq("id", activeEditTarget.entityId)
@@ -25318,6 +25353,7 @@ export function Fab({
     onEditClose,
     onEditSaved,
     resetFabFormState,
+    setStatusIsland,
     toast,
     skills,
   ]);
@@ -26955,14 +26991,8 @@ export function Fab({
       ? (goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
         null)
       : null;
-    const selectedUnifiedGoalCircle = goalCircleId
-      ? (manageableCircleById.get(goalCircleId) ?? null)
-      : null;
     const hasUnifiedGoalRoadmapRelation = Boolean(
       selectedUnifiedGoalCampaign || goalCampaignId,
-    );
-    const hasUnifiedGoalCircleRelation = Boolean(
-      selectedUnifiedGoalCircle || goalCircleId,
     );
     const isUnifiedRelationshipStripEvent = isGoalLinkedEvent || isGoal;
     const unifiedRelationshipTriggerClass =
@@ -30126,7 +30156,7 @@ export function Fab({
                               <span className="truncate">
                                 {goalRelationType && goalRelationId
                                   ? selectedGoalRelationLabel
-                                  : "add MONUMENT/CIRCLE"}
+                                  : "add AREA"}
                               </span>
                             </span>
                           }
@@ -30147,8 +30177,39 @@ export function Fab({
                                 !selectedGoalRelationValue,
                               )}
                             >
-                              No Monument / Circle
+                              No Area / Circle / Monument
                             </SelectItem>
+
+                            <SelectItem
+                              value="__areas_label"
+                              disabled
+                              className="cursor-default px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
+                            >
+                              AREAS
+                            </SelectItem>
+
+                            {AREAS.map((area) => (
+                              <SelectItem
+                                key={area.id}
+                                value={`AREA:${area.id}`}
+                                className={fabCreationSelectItemClass(
+                                  selectedGoalRelationValue ===
+                                    `AREA:${area.id}`,
+                                )}
+                              >
+                                <span className="inline-flex min-w-0 items-center gap-2">
+                                  <span
+                                    className="w-5 shrink-0 text-center text-base leading-none"
+                                    aria-hidden="true"
+                                  >
+                                    {area.emoji}
+                                  </span>
+                                  <span className="min-w-0 truncate">
+                                    {area.label}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))}
 
                             <SelectItem
                               value="__monuments_label"

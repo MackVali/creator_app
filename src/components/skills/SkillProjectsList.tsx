@@ -242,7 +242,7 @@ async function fetchGoalsWithRelations(userId: string) {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, area_id, weight, weight_boost, due_date";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -786,7 +786,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     try {
       const { data, error } = await supabase
         .from("goals")
-        .select("priority, energy, monument_id, due_date, why, active, status")
+        .select("priority, energy, monument_id, circle_id, area_id, due_date, why, active, status")
         .eq("id", goal.id)
         .single();
       if (error || !data) {
@@ -803,6 +803,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         energy: energyCode ? mapEnergy(energyCode) : goal.energy,
         energyCode: energyCode ?? goal.energyCode ?? null,
         monumentId: data.monument_id ?? goal.monumentId ?? null,
+        circleId: data.circle_id ?? goal.circleId ?? null,
+        areaId: data.area_id ?? goal.areaId ?? null,
         dueDate: data.due_date ?? goal.dueDate,
         why: data.why ?? goal.why,
         active: typeof data.active === "boolean" ? data.active : goal.active,
@@ -985,6 +987,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
           dueDate: g.due_date ?? undefined,
           projects: projList,
           monumentId: g.monument_id ?? null,
+          circleId: g.circle_id ?? null,
+          areaId: g.area_id ?? null,
           monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,
           priorityCode: normalizedGoalPriorityCode,
           energyCode: normalizedGoalEnergyCode,
@@ -1023,6 +1027,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
             dueDate: project.dueDate ?? undefined,
             projects: [project],
             monumentId: goal.monumentId ?? null,
+            circleId: goal.circleId ?? null,
+            areaId: goal.areaId ?? null,
             monumentEmoji: icon,
             priorityCode: project.priorityCode ?? null,
             energyCode: project.energyCode ?? goal.energyCode ?? null,

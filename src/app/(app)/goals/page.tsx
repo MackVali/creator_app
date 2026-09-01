@@ -348,7 +348,7 @@ async function fetchGoalsWithRelations(
   userId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, global_rank, weight_boost, due_date, emoji, priority_rank";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, area_id, roadmap_id, weight, global_rank, weight_boost, due_date, emoji, priority_rank";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -633,6 +633,15 @@ export default function GoalsPage() {
     string | null
   >(null);
   const [drawerInitialCampaignId, setDrawerInitialCampaignId] = useState<
+    string | null
+  >(null);
+  const [drawerInitialAreaId, setDrawerInitialAreaId] = useState<string | null>(
+    null
+  );
+  const [drawerInitialCircleId, setDrawerInitialCircleId] = useState<string | null>(
+    null
+  );
+  const [drawerInitialMonumentId, setDrawerInitialMonumentId] = useState<
     string | null
   >(null);
   const [editing, setEditing] = useState<Goal | null>(null);
@@ -998,6 +1007,8 @@ export default function GoalsPage() {
             dueDate: g.due_date ?? undefined,
             projects: projList,
             monumentId: g.monument_id ?? null,
+            circleId: g.circle_id ?? null,
+            areaId: g.area_id ?? null,
             roadmapId: g.roadmap_id ?? null,
             priorityRank:
               typeof g.priority_rank === "number" &&
@@ -1264,6 +1275,8 @@ export default function GoalsPage() {
           status: statusDb,
           why: _goal.why ?? null,
           monument_id: _goal.monumentId || null,
+          circle_id: _goal.circleId || null,
+          area_id: _goal.circleId ? null : _goal.areaId || null,
           roadmap_id: _goal.roadmapId || null,
           due_date: _goal.dueDate ?? null,
           emoji: goalEmoji || undefined,
@@ -1293,7 +1306,7 @@ export default function GoalsPage() {
           .from("goals")
           .insert(payload)
           .select(
-            "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date, priority_rank"
+            "id, created_at, weight, weight_boost, monument_id, circle_id, area_id, roadmap_id, due_date, priority_rank"
           )
           .single();
       };
@@ -1324,6 +1337,8 @@ export default function GoalsPage() {
         id: newGoalId,
         createdAt: inserted.created_at ?? _goal.createdAt,
         monumentId: inserted.monument_id ?? _goal.monumentId ?? null,
+        circleId: inserted.circle_id ?? _goal.circleId ?? null,
+        areaId: inserted.area_id ?? _goal.areaId ?? null,
         roadmapId: inserted.roadmap_id ?? _goal.roadmapId ?? null,
         dueDate: inserted.due_date ?? _goal.dueDate,
         weight: inserted.weight ?? _goal.weight,
@@ -1648,7 +1663,18 @@ export default function GoalsPage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,80,80,0.12),_transparent_55%)] opacity-60" />
         </div>
         <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-24 pt-10 sm:px-6 lg:px-8">
-          <GoalsHeader stats={goalStats} onCreate={() => setDrawer(true)} />
+          <GoalsHeader
+            stats={goalStats}
+            onCreate={() => {
+              setEditing(null);
+              setDrawerInitialRoadmapId(null);
+              setDrawerInitialCampaignId(null);
+              setDrawerInitialAreaId(null);
+              setDrawerInitialCircleId(null);
+              setDrawerInitialMonumentId(null);
+              setDrawer(true);
+            }}
+          />
           <GoalsUtilityBar
             search={search}
             onSearch={setSearch}
@@ -1671,7 +1697,17 @@ export default function GoalsPage() {
             </div>
           ) : filteredGoals.length === 0 && campaignCards.length === 0 ? (
             <div className="app-panel rounded-[32px] border-dashed p-10 text-center backdrop-blur">
-              <EmptyState onCreate={() => setDrawer(true)} />
+              <EmptyState
+                onCreate={() => {
+                  setEditing(null);
+                  setDrawerInitialRoadmapId(null);
+                  setDrawerInitialCampaignId(null);
+                  setDrawerInitialAreaId(null);
+                  setDrawerInitialCircleId(null);
+                  setDrawerInitialMonumentId(null);
+                  setDrawer(true);
+                }}
+              />
             </div>
           ) : (
             <div className="relative">
@@ -1690,6 +1726,7 @@ export default function GoalsPage() {
                     emoji: campaign.emoji,
                     monument_id: campaign.primary_monument_id,
                     circle_id: campaign.primary_circle_id,
+                    area_id: campaign.primary_area_id,
                     goals: [],
                   };
                   return (
@@ -1711,6 +1748,9 @@ export default function GoalsPage() {
                           setEditing(null);
                           setDrawerInitialRoadmapId(campaign.roadmap_id);
                           setDrawerInitialCampaignId(campaign.id);
+                          setDrawerInitialAreaId(campaign.primary_area_id);
+                          setDrawerInitialCircleId(campaign.primary_circle_id);
+                          setDrawerInitialMonumentId(campaign.primary_monument_id);
                           setDrawer(true);
                         }}
                       />
@@ -1786,10 +1826,16 @@ export default function GoalsPage() {
             setEditing(null);
             setDrawerInitialRoadmapId(null);
             setDrawerInitialCampaignId(null);
+            setDrawerInitialAreaId(null);
+            setDrawerInitialCircleId(null);
+            setDrawerInitialMonumentId(null);
             router.replace("/goals");
           }}
           onAdd={addGoal}
           initialGoal={editing}
+          initialAreaId={drawerInitialAreaId}
+          initialCircleId={drawerInitialCircleId}
+          initialMonumentId={drawerInitialMonumentId}
           initialRoadmapId={drawerInitialRoadmapId}
           initialCampaignId={drawerInitialCampaignId}
           monuments={monuments}
@@ -1838,6 +1884,9 @@ export default function GoalsPage() {
             setEditing(null);
             setDrawerInitialRoadmapId(selectedRoadmap.id);
             setDrawerInitialCampaignId(null);
+            setDrawerInitialAreaId(selectedRoadmap.area_id ?? null);
+            setDrawerInitialCircleId(selectedRoadmap.circle_id ?? null);
+            setDrawerInitialMonumentId(selectedRoadmap.monument_id ?? null);
             setDrawer(true);
           }}
           onGoalEdit={(goal) => {

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { cn } from "@/lib/utils";
+import { AREAS, type AreaConfig } from "@/config/areas";
 import type { Goal, Project, Task } from "../types";
 
 export interface GoalUpdateContext {
@@ -56,8 +57,12 @@ interface GoalDrawerProps {
   ): Promise<GoalDrawerSubmitResult | void> | GoalDrawerSubmitResult | void;
   /** Optional delete handler shown only while editing */
   onDelete?(goal: Goal): Promise<void> | void;
+  areas?: readonly AreaConfig[];
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
+  initialAreaId?: string | null;
+  initialCircleId?: string | null;
+  initialMonumentId?: string | null;
   initialRoadmapId?: string | null;
   initialCampaignId?: string | null;
   hideProjects?: boolean;
@@ -289,8 +294,12 @@ export function GoalDrawer({
   initialGoal,
   onUpdate,
   onDelete,
+  areas = AREAS,
   monuments = [],
   roadmaps = undefined,
+  initialAreaId = null,
+  initialCircleId = null,
+  initialMonumentId = null,
   initialRoadmapId = null,
   initialCampaignId = null,
   hideProjects = false,
@@ -309,6 +318,8 @@ export function GoalDrawer({
   const [energy, setEnergy] = useState<Goal["energy"]>("No");
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
+  const [areaId, setAreaId] = useState<string>("");
+  const [circleId, setCircleId] = useState<string>("");
   const [monumentId, setMonumentId] = useState<string>("");
   const [roadmapId, setRoadmapId] = useState<string>("");
   const [dueDateInput, setDueDateInput] = useState("");
@@ -339,6 +350,13 @@ export function GoalDrawer({
     [monuments]
   );
 
+  const areaOptions = useMemo(
+    () => [...areas].sort((a, b) => a.sortOrder - b.sortOrder),
+    [areas]
+  );
+
+  const defaultAreaId = areaOptions[0]?.id ?? "";
+
   useEffect(() => {
     if (initialGoal) {
       const resolvedPriority = priorityLabelFromCode(
@@ -359,6 +377,8 @@ export function GoalDrawer({
       setEnergy(resolvedEnergy);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
+      setAreaId(initialGoal.areaId || "");
+      setCircleId(initialGoal.circleId || "");
       setMonumentId(initialGoal.monumentId || "");
       monumentSelectionRef.current = initialGoal.monumentId || "";
       setRoadmapId(initialGoal.roadmapId || "");
@@ -395,8 +415,10 @@ export function GoalDrawer({
       setEnergy("No");
       setActive(true);
       setWhy("");
-      setMonumentId("");
-      monumentSelectionRef.current = "";
+      setAreaId(initialAreaId || (initialCircleId ? "" : defaultAreaId));
+      setCircleId(initialCircleId || "");
+      setMonumentId(initialMonumentId || "");
+      monumentSelectionRef.current = initialMonumentId || "";
       setRoadmapId(initialRoadmapId || "");
       setShowCreateRoadmap(false);
       setNewRoadmapTitle("");
@@ -407,7 +429,16 @@ export function GoalDrawer({
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
-  }, [initialGoal, initialRoadmapId, open, getMonumentEmojiById]);
+  }, [
+    defaultAreaId,
+    getMonumentEmojiById,
+    initialAreaId,
+    initialCircleId,
+    initialMonumentId,
+    initialGoal,
+    initialRoadmapId,
+    open,
+  ]);
 
   useEffect(() => {
     if (monumentSelectionRef.current === monumentId) {
@@ -505,7 +536,8 @@ export function GoalDrawer({
 
   // Allow saving at any point: only require a title.
   // Empty-named projects/tasks will be filtered out during persistence.
-  const canSubmit = title.trim().length > 0;
+  const canSubmit =
+    title.trim().length > 0 && (areaId.length > 0 || circleId.length > 0);
 
   const generateId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -783,6 +815,8 @@ export function GoalDrawer({
       active: computedActive,
       updatedAt: new Date().toISOString(),
       projects: preparedProjects,
+      circleId: circleId || null,
+      areaId: circleId ? null : areaId || null,
       monumentId: monumentId || null,
       roadmapId: roadmapId || null,
       skills: initialGoal?.skills,
@@ -879,6 +913,33 @@ export function GoalDrawer({
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-1 flex-grow w-[75%] sm:w-full">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                    Area<span className="text-rose-300"> *</span>
+                  </Label>
+                  <Select
+                    value={areaId}
+                    onValueChange={(value) => setAreaId(value)}
+                    placeholder="Select area"
+                    className="w-full"
+                    triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                    disabled={circleId.length > 0}
+                  >
+                    <SelectContent>
+                      {areaOptions.map((area) => (
+                        <SelectItem key={area.id} value={area.id}>
+                          <span className="flex items-center gap-2">
+                            <span>{area.emoji}</span>
+                            <span>{area.label}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
                   <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
                     Monument link
                   </Label>
