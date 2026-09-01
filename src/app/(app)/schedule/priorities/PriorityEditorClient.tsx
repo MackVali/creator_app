@@ -91,6 +91,7 @@ export interface PriorityEditorClientProps {
   userId: string;
   initialGlobalPriorityItems: GlobalPriorityRoadmapItem[];
   initialHabitItems: RoadmapHabitItem[];
+  initialAreaOptions: UserPriorityFilterOptionData[];
   initialMonumentOptions: UserPriorityFilterOptionData[];
   initialSkillOptions: UserPriorityFilterOptionData[];
   initialSkillCategories: UserPrioritySkillCategoryData[];
@@ -555,6 +556,7 @@ export default function PriorityEditorClient({
   userId,
   initialGlobalPriorityItems,
   initialHabitItems,
+  initialAreaOptions,
   initialMonumentOptions,
   initialSkillOptions,
   initialSkillCategories,
@@ -578,6 +580,7 @@ export default function PriorityEditorClient({
   const [internalAdjustOpen, setInternalAdjustOpen] = useState(false);
   const [selectedRoadmapType, setSelectedRoadmapType] =
     useState<PriorityRoadmapType>("goals");
+  const [selectedAreaFilterIds, setSelectedAreaFilterIds] = useState<string[]>([]);
   const [selectedMonumentFilterIds, setSelectedMonumentFilterIds] = useState<
     string[]
   >([]);
@@ -695,22 +698,35 @@ export default function PriorityEditorClient({
         : globalPriorityItems,
     [globalPriorityItems, habitRoadmapItems, selectedRoadmapType]
   );
-  const { monuments: monumentFilterOptions, skills: skillFilterOptions } =
+  const {
+    areas: areaFilterOptions,
+    monuments: monumentFilterOptions,
+    skills: skillFilterOptions,
+  } =
     useMemo(
       () =>
         buildAvailablePriorityFilterOptions(
           filterSourceItems,
+          initialAreaOptions,
           initialMonumentOptions,
           initialSkillOptions,
           initialSkillCategories
         ),
       [
         filterSourceItems,
+        initialAreaOptions,
         initialMonumentOptions,
         initialSkillOptions,
         initialSkillCategories,
       ]
     );
+  const selectedAreaFilters = useMemo(
+    () =>
+      selectedAreaFilterIds
+        .map((id) => areaFilterOptions.find((option) => option.id === id))
+        .filter((option): option is PriorityFilterOption => Boolean(option)),
+    [areaFilterOptions, selectedAreaFilterIds]
+  );
   const selectedMonumentFilters = useMemo(
     () =>
       selectedMonumentFilterIds
@@ -735,15 +751,19 @@ export default function PriorityEditorClient({
     [initialTimeBlockOptions, selectedTimeBlockFilterId]
   );
   const hasActiveFilters =
+    selectedAreaFilters.length > 0 ||
     selectedMonumentFilters.length > 0 ||
     selectedSkillFilters.length > 0 ||
     Boolean(selectedTimeBlockFilter);
   const visibleGlobalPriorityItems = useMemo(
     () => {
       const items =
-        selectedMonumentFilters.length > 0 || selectedSkillFilters.length > 0
+        selectedAreaFilters.length > 0 ||
+        selectedMonumentFilters.length > 0 ||
+        selectedSkillFilters.length > 0
           ? filterGlobalPriorityItems(
               globalPriorityItems,
+              selectedAreaFilters,
               selectedMonumentFilters,
               selectedSkillFilters
             )
@@ -754,6 +774,7 @@ export default function PriorityEditorClient({
     },
     [
       globalPriorityItems,
+      selectedAreaFilters,
       selectedMonumentFilters,
       selectedSkillFilters,
       selectedTimeBlockFilter,
@@ -762,9 +783,12 @@ export default function PriorityEditorClient({
   const visibleHabitItems = useMemo(
     () => {
       const items =
-        selectedMonumentFilters.length > 0 || selectedSkillFilters.length > 0
+        selectedAreaFilters.length > 0 ||
+        selectedMonumentFilters.length > 0 ||
+        selectedSkillFilters.length > 0
           ? filterHabitRoadmapItems(
               habitRoadmapItems,
+              selectedAreaFilters,
               selectedMonumentFilters,
               selectedSkillFilters
             )
@@ -775,6 +799,7 @@ export default function PriorityEditorClient({
     },
     [
       habitRoadmapItems,
+      selectedAreaFilters,
       selectedMonumentFilters,
       selectedSkillFilters,
       selectedTimeBlockFilter,
@@ -784,17 +809,22 @@ export default function PriorityEditorClient({
     () =>
       buildPriorityFilterSummary(
         selectedRoadmapType,
+        selectedAreaFilters,
         selectedMonumentFilters,
         selectedSkillFilters,
         selectedTimeBlockFilter
       ),
     [
       selectedRoadmapType,
+      selectedAreaFilters,
       selectedMonumentFilters,
       selectedSkillFilters,
       selectedTimeBlockFilter,
     ]
   );
+  const toggleAreaFilter = useCallback((optionId: string) => {
+    setSelectedAreaFilterIds((current) => toggleSelectedFilterId(current, optionId));
+  }, []);
   const toggleMonumentFilter = useCallback((optionId: string) => {
     setSelectedMonumentFilterIds((current) => toggleSelectedFilterId(current, optionId));
   }, []);
@@ -802,6 +832,7 @@ export default function PriorityEditorClient({
     setSelectedSkillFilterIds((current) => toggleSelectedFilterId(current, optionId));
   }, []);
   const clearPriorityFilters = useCallback(() => {
+    setSelectedAreaFilterIds([]);
     setSelectedMonumentFilterIds([]);
     setSelectedSkillFilterIds([]);
     setSelectedTimeBlockFilterId(null);
@@ -1306,15 +1337,18 @@ export default function PriorityEditorClient({
               isOpen={adjustOpen}
               selectedType={selectedRoadmapType}
               summary={filterSummary}
+              areaOptions={areaFilterOptions}
               monumentOptions={monumentFilterOptions}
               skillOptions={skillFilterOptions}
               timeBlockOptions={initialTimeBlockOptions}
+              selectedAreaIds={selectedAreaFilterIds}
               selectedMonumentIds={selectedMonumentFilterIds}
               selectedSkillIds={selectedSkillFilterIds}
               selectedTimeBlockId={selectedTimeBlockFilterId}
               hasActiveFilters={hasActiveFilters}
               onOpenChange={setAdjustOpen}
               onTypeChange={setSelectedRoadmapType}
+              onToggleArea={toggleAreaFilter}
               onToggleMonument={toggleMonumentFilter}
               onToggleSkill={toggleSkillFilter}
               onSelectTimeBlock={selectTimeBlockFilter}
@@ -1379,15 +1413,18 @@ function PriorityAdjustFilters({
   isOpen,
   selectedType,
   summary,
+  areaOptions,
   monumentOptions,
   skillOptions,
   timeBlockOptions,
+  selectedAreaIds,
   selectedMonumentIds,
   selectedSkillIds,
   selectedTimeBlockId,
   hasActiveFilters,
   onOpenChange,
   onTypeChange,
+  onToggleArea,
   onToggleMonument,
   onToggleSkill,
   onSelectTimeBlock,
@@ -1396,21 +1433,27 @@ function PriorityAdjustFilters({
   isOpen: boolean;
   selectedType: PriorityRoadmapType;
   summary: string;
+  areaOptions: PriorityFilterOption[];
   monumentOptions: PriorityFilterOption[];
   skillOptions: PriorityFilterOption[];
   timeBlockOptions: PriorityTimeBlockFilterOptionData[];
+  selectedAreaIds: string[];
   selectedMonumentIds: string[];
   selectedSkillIds: string[];
   selectedTimeBlockId: string | null;
   hasActiveFilters: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onTypeChange: (type: PriorityRoadmapType) => void;
+  onToggleArea: (optionId: string) => void;
   onToggleMonument: (optionId: string) => void;
   onToggleSkill: (optionId: string) => void;
   onSelectTimeBlock: (optionId: string | null) => void;
   onClear: () => void;
 }) {
   const panelId = "priority-adjust-panel";
+  const clearAreaFilters = useCallback(() => {
+    selectedAreaIds.forEach(onToggleArea);
+  }, [onToggleArea, selectedAreaIds]);
   const clearMonumentFilters = useCallback(() => {
     selectedMonumentIds.forEach(onToggleMonument);
   }, [onToggleMonument, selectedMonumentIds]);
@@ -1480,6 +1523,15 @@ function PriorityAdjustFilters({
                     options={timeBlockOptions}
                     selectedId={selectedTimeBlockId}
                     onSelect={onSelectTimeBlock}
+                  />
+                  <PriorityFilterSection
+                    label="Areas"
+                    emptyLabel="No Areas available."
+                    options={areaOptions}
+                    selectedIds={selectedAreaIds}
+                    fallbackIcon="A"
+                    onToggle={onToggleArea}
+                    onClear={clearAreaFilters}
                   />
                   <PriorityFilterSection
                     label="Monuments"
@@ -1926,6 +1978,24 @@ function getItemMonumentFilterOption(
   return createPriorityFilterOption(id, name, icon);
 }
 
+function getItemAreaFilterOption(
+  item: GlobalPriorityRoadmapItem | RoadmapPriorityGoal | RoadmapHabitItem,
+  areaOptions: PriorityFilterOption[] = []
+) {
+  const record = item as unknown as Record<string, unknown>;
+  const areaId = readString(record.areaId) ?? readString(record.area_id);
+  if (!areaId) return null;
+
+  const canonicalArea = areaOptions.find((option) => option.id === areaId);
+  return createPriorityFilterOption(
+    areaId,
+    canonicalArea?.name ?? areaId,
+    canonicalArea?.icon ?? null,
+    canonicalArea?.categoryId,
+    canonicalArea?.sortOrder
+  );
+}
+
 function getItemSkillFilterOptions(
   item: GlobalPriorityRoadmapItem | RoadmapPriorityGoal | RoadmapHabitItem
 ) {
@@ -2061,15 +2131,33 @@ function sortPrioritySkillFilterOptions(
   });
 }
 
-function buildAvailablePriorityFilterOptions(
+export function buildAvailablePriorityFilterOptions(
   items: (GlobalPriorityRoadmapItem | RoadmapHabitItem)[],
+  baseAreaOptions: PriorityFilterOption[] = [],
   baseMonumentOptions: PriorityFilterOption[] = [],
   baseSkillOptions: PriorityFilterOption[] = [],
   skillCategories: UserPrioritySkillCategoryData[] = []
-): { monuments: PriorityFilterOption[]; skills: PriorityFilterOption[] } {
+): {
+  areas: PriorityFilterOption[];
+  monuments: PriorityFilterOption[];
+  skills: PriorityFilterOption[];
+} {
+  const areas = new Map<string, PriorityFilterOption>();
   const monuments = new Map<string, PriorityFilterOption>();
   const skills = new Map<string, PriorityFilterOption>();
 
+  baseAreaOptions.forEach((option) =>
+    mergePriorityFilterOption(
+      areas,
+      createPriorityFilterOption(
+        option.id,
+        option.name,
+        option.icon,
+        option.categoryId,
+        option.sortOrder
+      )
+    )
+  );
   baseMonumentOptions.forEach((option) =>
     mergePriorityFilterOption(
       monuments,
@@ -2090,12 +2178,14 @@ function buildAvailablePriorityFilterOptions(
   );
 
   for (const item of items) {
+    mergePriorityFilterOption(areas, getItemAreaFilterOption(item, baseAreaOptions));
     mergePriorityFilterOption(monuments, getItemMonumentFilterOption(item));
     getItemSkillFilterOptions(item).forEach((option) =>
       mergePriorityFilterOption(skills, option)
     );
 
     for (const goal of "goals" in item ? item.goals ?? [] : []) {
+      mergePriorityFilterOption(areas, getItemAreaFilterOption(goal, baseAreaOptions));
       mergePriorityFilterOption(monuments, getItemMonumentFilterOption(goal));
       getItemSkillFilterOptions(goal).forEach((option) =>
         mergePriorityFilterOption(skills, option)
@@ -2104,12 +2194,25 @@ function buildAvailablePriorityFilterOptions(
   }
 
   return {
+    areas: Array.from(areas.values()).sort(
+      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+    ),
     monuments: sortPriorityFilterOptions(Array.from(monuments.values())),
     skills: sortPrioritySkillFilterOptions(
       Array.from(skills.values()),
       skillCategories
     ),
   };
+}
+
+function itemMatchesAreaFilter(
+  item: GlobalPriorityRoadmapItem | RoadmapPriorityGoal | RoadmapHabitItem,
+  selectedAreas: PriorityFilterOption[]
+) {
+  if (selectedAreas.length === 0) return false;
+  const option = getItemAreaFilterOption(item, selectedAreas);
+  if (!option) return false;
+  return selectedAreas.some((selected) => selected.id === option.id);
 }
 
 function itemMatchesMonumentFilter(
@@ -2136,10 +2239,12 @@ function itemMatchesSkillFilter(
 
 function itemMatchesAnyPriorityFilter(
   item: GlobalPriorityRoadmapItem | RoadmapPriorityGoal | RoadmapHabitItem,
+  selectedAreas: PriorityFilterOption[],
   selectedMonuments: PriorityFilterOption[],
   selectedSkills: PriorityFilterOption[]
 ) {
   return (
+    itemMatchesAreaFilter(item, selectedAreas) ||
     itemMatchesMonumentFilter(item, selectedMonuments) ||
     itemMatchesSkillFilter(item, selectedSkills)
   );
@@ -2147,24 +2252,27 @@ function itemMatchesAnyPriorityFilter(
 
 function campaignMatchesFilters(
   campaign: GlobalPriorityRoadmapItem,
+  selectedAreas: PriorityFilterOption[],
   selectedMonuments: PriorityFilterOption[],
   selectedSkills: PriorityFilterOption[]
 ) {
   const directMatch = itemMatchesAnyPriorityFilter(
     campaign,
+    selectedAreas,
     selectedMonuments,
     selectedSkills
   );
   const matchingGoals = (campaign.goals ?? []).filter((goal) =>
-    itemMatchesAnyPriorityFilter(goal, selectedMonuments, selectedSkills)
+    itemMatchesAnyPriorityFilter(goal, selectedAreas, selectedMonuments, selectedSkills)
   );
 
   if (!directMatch && matchingGoals.length === 0) return null;
   return { ...campaign, goals: matchingGoals };
 }
 
-function filterGlobalPriorityItems(
+export function filterGlobalPriorityItems(
   items: GlobalPriorityRoadmapItem[],
+  selectedAreas: PriorityFilterOption[],
   selectedMonuments: PriorityFilterOption[],
   selectedSkills: PriorityFilterOption[]
 ) {
@@ -2173,13 +2281,19 @@ function filterGlobalPriorityItems(
       if (item.type === "campaign") {
         const matchingCampaign = campaignMatchesFilters(
           item,
+          selectedAreas,
           selectedMonuments,
           selectedSkills
         );
         return matchingCampaign ? [matchingCampaign] : [];
       }
 
-      return itemMatchesAnyPriorityFilter(item, selectedMonuments, selectedSkills)
+      return itemMatchesAnyPriorityFilter(
+        item,
+        selectedAreas,
+        selectedMonuments,
+        selectedSkills
+      )
         ? [item]
         : [];
     })
@@ -2188,12 +2302,13 @@ function filterGlobalPriorityItems(
 
 function filterHabitRoadmapItems(
   items: RoadmapHabitItem[],
+  selectedAreas: PriorityFilterOption[],
   selectedMonuments: PriorityFilterOption[],
   selectedSkills: PriorityFilterOption[]
 ) {
   return sortHabitRoadmapItems(
     items.filter((item) =>
-      itemMatchesAnyPriorityFilter(item, selectedMonuments, selectedSkills)
+      itemMatchesAnyPriorityFilter(item, selectedAreas, selectedMonuments, selectedSkills)
     )
   );
 }
@@ -2361,13 +2476,16 @@ function filterHabitRoadmapItemsByTimeBlock(
 
 function buildPriorityFilterSummary(
   selectedType: PriorityRoadmapType,
+  selectedAreas: PriorityFilterOption[],
   selectedMonuments: PriorityFilterOption[],
   selectedSkills: PriorityFilterOption[],
   selectedTimeBlock: PriorityTimeBlockFilterOptionData | null
 ) {
   const defaultLabel = selectedType === "habits" ? "All habits" : "All priorities";
   const selectedNames = [
-    ...[...selectedMonuments, ...selectedSkills].map((option) => option.name),
+    ...[...selectedAreas, ...selectedMonuments, ...selectedSkills].map(
+      (option) => option.name
+    ),
     ...(selectedTimeBlock ? [selectedTimeBlock.name] : []),
   ];
   if (selectedNames.length === 0) return defaultLabel;

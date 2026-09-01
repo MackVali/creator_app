@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase";
 import type { FlameLevel } from "@/components/FlameEmber";
+import { AREAS } from "@/config/areas";
 import type { PriorityEditorClientProps } from "./PriorityEditorClient";
 import {
   normalizeHabitBucket,
@@ -26,6 +27,7 @@ type GoalRow = {
   id: string;
   name?: string | null;
   emoji?: string | null;
+  area_id?: string | null;
   monument_id?: string | null;
   roadmap_id?: string | null;
   circle_id?: string | null;
@@ -50,6 +52,7 @@ type CampaignRow = {
   scheduling_state?: string | null;
   position?: number | null;
   roadmap_id?: string | null;
+  primary_area_id?: string | null;
   primary_monument_id?: string | null;
   created_at?: string | null;
 };
@@ -258,6 +261,15 @@ function createSkillFilterOption(
     categoryId: skill.cat_id ?? null,
     sortOrder: parseSortOrder(skill.sort_order),
   };
+}
+
+function createAreaFilterOptions(): UserPriorityFilterOptionData[] {
+  return AREAS.map((area) => ({
+    id: area.id,
+    name: area.label,
+    icon: area.emoji,
+    sortOrder: area.sortOrder,
+  }));
 }
 
 function createSkillCategoryOption(
@@ -529,6 +541,7 @@ function normalizeGoal(
     id: row.id,
     name: (row.name ?? "").trim() || "Untitled Goal",
     emoji: row.emoji ?? null,
+    areaId: row.area_id ?? null,
     monumentId: row.monument_id ?? row.monument?.id ?? null,
     monumentName: row.monument?.title ?? null,
     monumentIcon: row.monument?.emoji ?? null,
@@ -691,6 +704,7 @@ function normalizeCampaign(
     name: (campaign.name ?? "").trim() || "Untitled Campaign",
     emoji: campaign.emoji ?? null,
     description: campaign.description ?? null,
+    areaId: campaign.primary_area_id ?? null,
     monumentId: campaign.primary_monument_id ?? null,
     monumentName: monument?.title ?? null,
     monumentIcon: monument?.emoji ?? null,
@@ -802,6 +816,7 @@ function buildGlobalPriorityItems({
       normalizedName: normalizeGlobalPriorityCampaignName(normalizedCampaign.name),
       name: normalizedCampaign.name,
       emoji: normalizedCampaign.emoji,
+      areaId: normalizedCampaign.areaId,
       monumentId: normalizedCampaign.monumentId,
       monumentName: normalizedCampaign.monumentName,
       monumentIcon: normalizedCampaign.monumentIcon,
@@ -851,6 +866,7 @@ function buildGlobalPriorityItems({
         type: "goal",
         name: normalizedGoal.name,
         emoji: normalizedGoal.emoji,
+        areaId: normalizedGoal.areaId,
         monumentId: normalizedGoal.monumentId,
         monumentName: normalizedGoal.monumentName,
         monumentIcon: normalizedGoal.monumentIcon,
@@ -953,6 +969,10 @@ function mergeGlobalPriorityCampaignGroup(
     type: "campaign",
     name: preferredItem.name,
     emoji: preferredItem.emoji,
+    areaId:
+      preferredItem.areaId ??
+      sortedCandidates.find((candidate) => candidate.areaId)?.areaId ??
+      null,
     monumentId: preferredItem.monumentId,
     monumentName: preferredItem.monumentName,
     monumentIcon: preferredItem.monumentIcon,
@@ -1068,7 +1088,7 @@ export async function loadPriorityEditorProps(
   const { data: goalData, error: goalError } = await supabase
     .from("goals")
     .select(
-      `id,name,emoji,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(id,title,emoji),
+      `id,name,emoji,area_id,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(id,title,emoji),
       projects(
         id,name,priority,energy,stage,completed_at,created_at,global_rank,
         tasks(id,name,skill_id,priority,energy,stage,completed_at,duration_min,created_at,skills(id,name,icon,monument_id,cat_id,sort_order,created_at)),
@@ -1103,7 +1123,7 @@ export async function loadPriorityEditorProps(
   const { data: campaignData, error: campaignError } = await supabase
     .from("campaigns")
     .select(
-      "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,created_at"
+      "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_area_id,primary_monument_id,created_at"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
@@ -1332,6 +1352,7 @@ export async function loadPriorityEditorProps(
   const monumentFilterOptions = allMonuments
     .map(createMonumentFilterOption)
     .filter((option): option is UserPriorityFilterOptionData => Boolean(option));
+  const areaFilterOptions = createAreaFilterOptions();
   const skillFilterOptions = allSkills
     .map(createSkillFilterOption)
     .filter((option): option is UserPriorityFilterOptionData => Boolean(option));
@@ -1351,6 +1372,7 @@ export async function loadPriorityEditorProps(
     userId,
     initialGlobalPriorityItems: globalPriorityItems,
     initialHabitItems: habitItems,
+    initialAreaOptions: areaFilterOptions,
     initialMonumentOptions: monumentFilterOptions,
     initialSkillOptions: skillFilterOptions,
     initialSkillCategories: skillCategoryOptions,
