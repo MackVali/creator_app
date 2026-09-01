@@ -6877,6 +6877,7 @@ export function Fab({
   const [goalCircleId, setGoalCircleId] = useState<string | "">("");
   const [goalAreaId, setGoalAreaId] = useState<string | "">("");
   const [goalCampaignId, setGoalCampaignId] = useState<string | null>(null);
+  const [goalCampaignTouched, setGoalCampaignTouched] = useState(false);
   const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
   const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
   const [isCreatingGoalCampaignInline, setIsCreatingGoalCampaignInline] =
@@ -7519,6 +7520,7 @@ export function Fab({
     setGoalDueMode("dynamic");
     setGoalDue(null);
     setGoalCampaignId(null);
+    setGoalCampaignTouched(false);
     setIsCreatingGoalCampaignInline(false);
     setGoalInlineCampaignName("");
     setGoalInlineCampaignEmoji(FAB_DEFAULT_CAMPAIGN_EMOJI);
@@ -9492,6 +9494,7 @@ export function Fab({
             })),
           );
           setGoalCampaignId(hydratedCampaignId);
+          setGoalCampaignTouched(false);
           setSelectedTagIds(
             Array.isArray(tagRows)
               ? tagRows
@@ -16672,6 +16675,7 @@ export function Fab({
                         onValueChange={(value) => {
                           void hapticSoftTick();
                           resetGoalCampaignInlineCreation();
+                          setGoalCampaignTouched(true);
                           setGoalCampaignId(
                             value.trim().length > 0 ? value : null,
                           );
@@ -24348,34 +24352,36 @@ export function Fab({
           );
           if (rankError) throwIfLimitError(rankError);
 
-          const { error: campaignDeleteError } = await supabase
-            .from("campaign_goals")
-            .delete()
-            .eq("user_id", user.id)
-            .eq("goal_id", activeEditTarget.entityId);
-          if (campaignDeleteError) throwIfLimitError(campaignDeleteError);
+          if (goalCampaignTouched) {
+            const { error: campaignDeleteError } = await supabase
+              .from("campaign_goals")
+              .delete()
+              .eq("user_id", user.id)
+              .eq("goal_id", activeEditTarget.entityId);
+            if (campaignDeleteError) throwIfLimitError(campaignDeleteError);
 
-          if (effectiveGoalCampaignId) {
-            const { data: campaignGoalRowsData, error: campaignGoalError } =
-              await supabase
-                .from("campaign_goals")
-                .select("position")
-                .eq("campaign_id", effectiveGoalCampaignId)
-                .order("position", { ascending: false })
-                .limit(1);
-            if (campaignGoalError) throwIfLimitError(campaignGoalError);
-            const campaignGoalRows =
-              campaignGoalRowsData as FabGoalCampaignRow[] | null;
-            const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
-            const nextPosition =
-              Number.isFinite(lastPosition) && lastPosition > 0
-                ? lastPosition + 1
-                : 1;
-            await addGoalToCampaign(user.id, {
-              campaignId: effectiveGoalCampaignId,
-              goalId: activeEditTarget.entityId,
-              position: nextPosition,
-            });
+            if (effectiveGoalCampaignId) {
+              const { data: campaignGoalRowsData, error: campaignGoalError } =
+                await supabase
+                  .from("campaign_goals")
+                  .select("position")
+                  .eq("campaign_id", effectiveGoalCampaignId)
+                  .order("position", { ascending: false })
+                  .limit(1);
+              if (campaignGoalError) throwIfLimitError(campaignGoalError);
+              const campaignGoalRows =
+                campaignGoalRowsData as FabGoalCampaignRow[] | null;
+              const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+              const nextPosition =
+                Number.isFinite(lastPosition) && lastPosition > 0
+                  ? lastPosition + 1
+                  : 1;
+              await addGoalToCampaign(user.id, {
+                campaignId: effectiveGoalCampaignId,
+                goalId: activeEditTarget.entityId,
+                position: nextPosition,
+              });
+            }
           }
 
           try {
@@ -30359,6 +30365,7 @@ export function Fab({
                           onValueChange={(value) => {
                             void hapticSoftTick();
                             resetGoalCampaignInlineCreation();
+                            setGoalCampaignTouched(true);
                             setGoalCampaignId(
                               value === "__none__" ? null : value,
                             );
@@ -30387,8 +30394,8 @@ export function Fab({
                               <span className="truncate">
                                 {selectedUnifiedGoalCampaign?.name ??
                                   (goalCampaignId
-                                    ? "Selected Roadmap"
-                                    : "add ROADMAP")}
+                                    ? "Selected Campaign"
+                                    : "add CAMPAIGN")}
                               </span>
                             </span>
                           }
@@ -30410,7 +30417,7 @@ export function Fab({
                                 !goalCampaignId,
                               )}
                             >
-                              No Roadmap
+                              No Campaign
                             </SelectItem>
                             {goalCampaignsLoading ? (
                               <SelectItem
@@ -30418,7 +30425,7 @@ export function Fab({
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                Loading Roadmaps...
+                                Loading Campaigns...
                               </SelectItem>
                             ) : goalCampaignOptions.length > 0 ? (
                               goalCampaignOptions.map((campaign) => (
@@ -30449,7 +30456,7 @@ export function Fab({
                                 disabled
                                 className={fabCreationSelectItemClass(false)}
                               >
-                                No Roadmaps yet
+                                No Campaigns yet
                               </SelectItem>
                             )}
                           </SelectContent>
