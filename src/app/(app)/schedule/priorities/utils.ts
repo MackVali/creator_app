@@ -146,6 +146,7 @@ export type GlobalPriorityRoadmapItem = {
   priority: PriorityBucketId;
   priorityOrder?: number;
   emoji?: string | null;
+  areaId?: string | null;
   monumentId?: string | null;
   monumentName?: string | null;
   monumentIcon?: string | null;

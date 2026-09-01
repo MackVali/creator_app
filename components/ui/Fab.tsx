@@ -172,8 +172,6 @@ import PriorityEditorClient, {
 } from "@/app/(app)/schedule/priorities/PriorityEditorClient";
 import type { Friend } from "@/types/friends";
 
-const DEFAULT_GOAL_AREA_ID = AREAS[0]?.id ?? "";
-
 export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   menuVariant?: "default" | "timeline";
@@ -341,6 +339,7 @@ type UnifiedTimingPickerOpen =
   | "startTime"
   | "endTime"
   | "endDate"
+  | "goalDueDate"
   | null;
 type FabAdvancedTimingPickerOpen =
   | "projectExactStartTime"
@@ -352,6 +351,7 @@ type FabAdvancedTimingPickerOpen =
   | null;
 type AddEventTimingMode = "manual" | "dynamic";
 type ProjectScheduleTimingMode = "manual" | "dynamic";
+type GoalDueMode = "manual" | "dynamic";
 type HabitScheduleTimingMode = "manual" | "dynamic";
 type OverlayBlockMode = "MANUAL" | "DYNAMIC";
 type OverlayDynamicBlockType = "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
@@ -6869,6 +6869,7 @@ export function Fab({
   const [goalActive, setGoalActive] = useState<boolean | null>(null);
   const [goalStatus, setGoalStatus] = useState<string | null>(null);
   const [goalWhy, setGoalWhy] = useState("");
+  const [goalDueMode, setGoalDueMode] = useState<GoalDueMode>("dynamic");
   const [goalDue, setGoalDue] = useState<string | null>(null);
   const [goalRelationType, setGoalRelationType] =
     useState<GoalRelationType>(null);
@@ -7506,15 +7507,16 @@ export function Fab({
   const resetGoalFormDraft = useCallback(() => {
     setGoalName("");
     setGoalMonumentId("");
-    setGoalRelationType(DEFAULT_GOAL_AREA_ID ? "AREA" : null);
-    setGoalRelationId(DEFAULT_GOAL_AREA_ID);
+    setGoalRelationType(null);
+    setGoalRelationId("");
     setGoalCircleId("");
-    setGoalAreaId(DEFAULT_GOAL_AREA_ID);
+    setGoalAreaId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalActive(null);
     setGoalStatus(null);
     setGoalWhy("");
+    setGoalDueMode("dynamic");
     setGoalDue(null);
     setGoalCampaignId(null);
     setIsCreatingGoalCampaignInline(false);
@@ -9339,20 +9341,6 @@ export function Fab({
             campaignContext =
               campaignContextData as FabGoalCampaignContextRow | null;
           }
-          const roadmapContextId =
-            goalRow?.roadmap_id ?? campaignContext?.roadmap_id ?? null;
-          let roadmapContext: FabRoadmapContextRow | null = null;
-          if (roadmapContextId) {
-            const { data: roadmapContextData, error: roadmapContextError } =
-              await supabase
-                .from("roadmaps")
-                .select("id, monument_id, circle_id, area_id")
-                .eq("id", roadmapContextId)
-                .eq("user_id", user.id)
-                .maybeSingle();
-            if (roadmapContextError) throw roadmapContextError;
-            roadmapContext = roadmapContextData as FabRoadmapContextRow | null;
-          }
           if (cancelled) return;
 
           const selectedCampaignContext = campaignContext;
@@ -9449,23 +9437,14 @@ export function Fab({
             typeof goalRow?.status === "string" ? goalRow.status : null,
           );
           setGoalWhy(goalRow?.why ?? "");
-          const hydratedMonumentId =
-            goalRow?.monument_id ||
-            campaignContext?.primary_monument_id ||
-            roadmapContext?.monument_id ||
-            "";
-          const hydratedCircleId =
-            goalRow?.circle_id ||
-            campaignContext?.primary_circle_id ||
-            roadmapContext?.circle_id ||
-            "";
+          const hydratedMonumentId = goalRow?.monument_id ?? "";
+          const hydratedCircleId = hydratedMonumentId
+            ? ""
+            : (goalRow?.circle_id ?? "");
           const hydratedAreaId =
-            hydratedCircleId
+            hydratedMonumentId || hydratedCircleId
               ? ""
-              : (goalRow?.area_id ||
-                campaignContext?.primary_area_id ||
-                roadmapContext?.area_id ||
-                DEFAULT_GOAL_AREA_ID);
+              : (goalRow?.area_id ?? "");
           setGoalMonumentId(hydratedMonumentId);
           setGoalCircleId(hydratedCircleId);
           setGoalAreaId(hydratedAreaId);
@@ -9482,11 +9461,13 @@ export function Fab({
             setGoalRelationType(null);
             setGoalRelationId("");
           }
-          setGoalDue(
-            typeof goalRow?.due_date === "string"
+          const hydratedGoalDue =
+            typeof goalRow?.due_date === "string" &&
+            goalRow.due_date.trim().length > 0
               ? goalRow.due_date.slice(0, 10)
-              : null,
-          );
+              : null;
+          setGoalDueMode(hydratedGoalDue ? "manual" : "dynamic");
+          setGoalDue(hydratedGoalDue);
           setEditGoalProjects(
             projectRows.map((project) => ({
               id: project.id,
@@ -11188,6 +11169,8 @@ export function Fab({
         setProjectExactEndTime("");
       }
       setTaskDue("");
+      setGoalDueMode("dynamic");
+      setGoalDue(null);
       setHabitLocationContextId("");
       setHabitDaylightPreference("ALL_DAY");
       setHabitWindowEdgePreference("FRONT");
@@ -11857,11 +11840,13 @@ export function Fab({
     setGoalRelationType(null);
     setGoalRelationId("");
     setGoalCircleId("");
+    setGoalAreaId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalActive(null);
     setGoalStatus(null);
     setGoalWhy("");
+    setGoalDueMode("dynamic");
     setGoalDue(null);
     setGoalCampaignId(null);
     setIsCreatingGoalCampaignInline(false);
@@ -14409,6 +14394,15 @@ export function Fab({
     setFabAdvancedTimingPickerOpen(null);
     if (nextMode === "manual") {
       setProjectHasExactDate(true);
+    }
+  };
+
+  const handleGoalDueModeChange = (nextMode: GoalDueMode) => {
+    setGoalDueMode(nextMode);
+    setUnifiedTimingPickerOpen(null);
+    setIsUnifiedTimingMonthYearPickerOpen(false);
+    if (nextMode === "dynamic") {
+      setGoalDue(null);
     }
   };
 
@@ -19518,6 +19512,11 @@ export function Fab({
     if (creationRequest.type === "GOAL") {
       const requestedCampaignId = creationRequest.campaignId ?? null;
       const requestedMonumentId = creationRequest.monumentId ?? null;
+      const requestedCircleId =
+        typeof creationRequest.circleId === "string" &&
+        isValidUuid(creationRequest.circleId)
+          ? creationRequest.circleId
+          : null;
       const requestedAreaId = isAreaId(creationRequest.areaId)
         ? creationRequest.areaId
         : null;
@@ -19525,9 +19524,15 @@ export function Fab({
       if (requestedMonumentId && !requestedCampaignId) {
         setGoalMonumentId(requestedMonumentId);
         setGoalCircleId("");
-        setGoalAreaId(requestedAreaId || DEFAULT_GOAL_AREA_ID);
-        setGoalRelationType(requestedAreaId || DEFAULT_GOAL_AREA_ID ? "AREA" : "MONUMENT");
-        setGoalRelationId(requestedAreaId || DEFAULT_GOAL_AREA_ID || requestedMonumentId);
+        setGoalAreaId("");
+        setGoalRelationType("MONUMENT");
+        setGoalRelationId(requestedMonumentId);
+      } else if (requestedCircleId && !requestedCampaignId) {
+        setGoalMonumentId("");
+        setGoalCircleId(requestedCircleId);
+        setGoalAreaId("");
+        setGoalRelationType("CIRCLE");
+        setGoalRelationId(requestedCircleId);
       } else if (requestedAreaId && !requestedCampaignId) {
         setGoalMonumentId("");
         setGoalCircleId("");
@@ -19614,11 +19619,9 @@ export function Fab({
             if (hydratedMonumentId) {
               setGoalMonumentId(hydratedMonumentId);
               setGoalCircleId("");
-              setGoalAreaId(hydratedAreaId || DEFAULT_GOAL_AREA_ID);
-              setGoalRelationType(hydratedAreaId || DEFAULT_GOAL_AREA_ID ? "AREA" : "MONUMENT");
-              setGoalRelationId(
-                hydratedAreaId || DEFAULT_GOAL_AREA_ID || hydratedMonumentId,
-              );
+              setGoalAreaId("");
+              setGoalRelationType("MONUMENT");
+              setGoalRelationId(hydratedMonumentId);
             } else if (hydratedCircleId) {
               setGoalMonumentId("");
               setGoalCircleId(hydratedCircleId);
@@ -20557,22 +20560,11 @@ export function Fab({
       setSelected(nextSelected);
       setUnifiedEventType(nextSelected === "HABIT" ? "HABIT" : "TASK");
       applyUnifiedPortableDraft(nextSelected, portableDraft);
-      if (
-        nextSelected === "GOAL" &&
-        !goalRelationType &&
-        DEFAULT_GOAL_AREA_ID
-      ) {
-        setGoalRelationType("AREA");
-        setGoalRelationId(DEFAULT_GOAL_AREA_ID);
-        setGoalAreaId(DEFAULT_GOAL_AREA_ID);
-        setGoalCircleId("");
-      }
       resetUnifiedTypeSwitchUiState();
     },
     [
       applyUnifiedPortableDraft,
       getActiveUnifiedPortableDraft,
-      goalRelationType,
       resetUnifiedTypeSwitchUiState,
     ],
   );
@@ -21592,19 +21584,21 @@ export function Fab({
     if (goalRelationType === "MONUMENT" && goalRelationId) {
       return (
         monuments.find((monument) => monument.id === goalRelationId)?.title ??
-        "Link to AREA / CIRCLE / MONUMENT +"
+        "Add AREA / MONUMENT / CIRCLE"
       );
     }
     if (goalRelationType === "CIRCLE" && goalRelationId) {
       return (
         manageableCircles.find((circle) => circle.id === goalRelationId)
-          ?.name ?? "Link to AREA / CIRCLE / MONUMENT +"
+          ?.name ?? "Add AREA / MONUMENT / CIRCLE"
       );
     }
     if (goalRelationType === "AREA" && goalRelationId) {
-      return getAreaById(goalRelationId)?.label ?? "Link to AREA +";
+      return (
+        getAreaById(goalRelationId)?.label ?? "Add AREA / MONUMENT / CIRCLE"
+      );
     }
-    return "Link to AREA / CIRCLE / MONUMENT +";
+    return "Add AREA / MONUMENT / CIRCLE";
   }, [goalRelationId, goalRelationType, manageableCircles, monuments]);
 
   const handleGoalRelationChange = useCallback(
@@ -21683,10 +21677,8 @@ export function Fab({
           }
           return {
             selectedMonumentId: goalRelationId,
-            selectedCircleId,
-            selectedAreaId: isAreaId(goalAreaId)
-              ? goalAreaId
-              : DEFAULT_GOAL_AREA_ID,
+            selectedCircleId: null,
+            selectedAreaId: null,
             error: null,
           };
         }
@@ -21700,12 +21692,9 @@ export function Fab({
               error: "Link this goal to a valid area.",
             };
           }
-          const selectedMonumentId = isValidUuid(goalMonumentId)
-            ? goalMonumentId
-            : null;
           return {
-            selectedMonumentId,
-            selectedCircleId,
+            selectedMonumentId: null,
+            selectedCircleId: null,
             selectedAreaId: goalRelationId,
             error: null,
           };
@@ -21714,27 +21703,16 @@ export function Fab({
         return {
           selectedMonumentId: null,
           selectedCircleId,
-          selectedAreaId: selectedCircleId ? null : DEFAULT_GOAL_AREA_ID,
+          selectedAreaId: null,
           error: null,
         };
       }
       if (!goalRelationType || !goalRelationId) {
-        if (DEFAULT_GOAL_AREA_ID) {
-          const selectedMonumentId = isValidUuid(goalMonumentId)
-            ? goalMonumentId
-            : null;
-          return {
-            selectedMonumentId,
-            selectedCircleId: null,
-            selectedAreaId: DEFAULT_GOAL_AREA_ID,
-            error: null,
-          };
-        }
         return {
           selectedMonumentId: null,
           selectedCircleId: null,
           selectedAreaId: null,
-          error: "Link this goal to an Area before saving.",
+          error: "Link this goal to an Area, Monument, or Circle before saving.",
         };
       }
 
@@ -21758,9 +21736,7 @@ export function Fab({
         return {
           selectedMonumentId: goalMonumentId,
           selectedCircleId: null,
-          selectedAreaId: isAreaId(goalAreaId)
-            ? goalAreaId
-            : DEFAULT_GOAL_AREA_ID,
+          selectedAreaId: null,
           error: null,
         };
       }
@@ -21774,11 +21750,8 @@ export function Fab({
             error: "Link this goal to a valid area before saving.",
           };
         }
-        const selectedMonumentId = isValidUuid(goalMonumentId)
-          ? goalMonumentId
-          : null;
         return {
-          selectedMonumentId,
+          selectedMonumentId: null,
           selectedCircleId: null,
           selectedAreaId: goalAreaId,
           error: null,
@@ -23386,6 +23359,8 @@ export function Fab({
           return;
         }
       }
+      const resolvedGoalDueDate =
+        saveSelected === "GOAL" && goalDueMode === "manual" ? goalDue : null;
       if (saveSelected === "PROJECT" && !activeCourseAuthoringContext) {
         if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
           setBlockedSaveError("Link this project to a goal before saving.");
@@ -23616,7 +23591,9 @@ export function Fab({
                   priority: goalPriority,
                   energy: goalEnergy,
                   ...(goalWhy.trim() ? { description: goalWhy.trim() } : {}),
-                  ...(goalDue ? { dueDate: goalDue } : {}),
+                  ...(resolvedGoalDueDate
+                    ? { dueDate: resolvedGoalDueDate }
+                    : {}),
                   ...(goalPinned ? { pinned: true } : {}),
                 }
               : saveSelected === "PROJECT"
@@ -24315,15 +24292,15 @@ export function Fab({
             throw new Error("Goal could not be found.");
           }
 
-          const originalRelationType = existingGoal.circle_id
-            ? "CIRCLE"
-            : existingGoal.monument_id
-              ? "MONUMENT"
+          const originalRelationType = existingGoal.monument_id
+            ? "MONUMENT"
+            : existingGoal.circle_id
+              ? "CIRCLE"
               : "AREA";
-          const nextRelationType = goalRelationResolution.selectedCircleId
-            ? "CIRCLE"
-            : goalRelationResolution.selectedMonumentId
-              ? "MONUMENT"
+          const nextRelationType = goalRelationResolution.selectedMonumentId
+            ? "MONUMENT"
+            : goalRelationResolution.selectedCircleId
+              ? "CIRCLE"
               : "AREA";
           if (
             (originalRelationType === "CIRCLE" ||
@@ -24360,7 +24337,7 @@ export function Fab({
               circle_id: goalRelationResolution.selectedCircleId,
               area_id: goalRelationResolution.selectedAreaId,
               roadmap_id: resolvedGoalRoadmapId ?? existingGoal.roadmap_id ?? null,
-              due_date: goalDue ?? null,
+              due_date: resolvedGoalDueDate,
             })
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
@@ -24747,7 +24724,7 @@ export function Fab({
               circle_id: goalRelationResolution.selectedCircleId,
               area_id: goalRelationResolution.selectedAreaId,
               roadmap_id: roadmapId,
-              due_date: goalDue ?? null,
+              due_date: resolvedGoalDueDate,
             })
             .select("id")
             .single();
@@ -25279,6 +25256,7 @@ export function Fab({
     goalDraftProjects,
     goalProjectStack,
     goalDue,
+    goalDueMode,
     goalEnergy,
     goalName,
     goalPinned,
@@ -27731,6 +27709,15 @@ export function Fab({
         );
       }
     };
+    const handleGoalDueDateChange = (value: string) => {
+      setGoalDue(value || null);
+      const nextDate = parseDateInputValueLocal(value);
+      if (nextDate) {
+        setUnifiedTimingViewedMonth(
+          new Date(nextDate.getFullYear(), nextDate.getMonth(), 1),
+        );
+      }
+    };
     const handleTimingModeChange = (mode: AddEventTimingMode) => {
       if (addEventTimingMode === mode) return;
       void hapticSoftTick();
@@ -27872,7 +27859,10 @@ export function Fab({
       </AnimatePresence>
     );
     const renderDatePicker = (
-      picker: Extract<UnifiedTimingPickerOpen, "startDate" | "endDate">,
+      picker: Extract<
+        UnifiedTimingPickerOpen,
+        "startDate" | "endDate" | "goalDueDate"
+      >,
       selectedDate: Date,
       onDateChange: (value: string) => void,
     ) => {
@@ -28085,6 +28075,14 @@ export function Fab({
       renderDatePicker("startDate", selectedStartDate, handleStartDateChange);
     const renderEndDatePicker = () =>
       renderDatePicker("endDate", selectedEndDate, handleEndDateChange);
+    const selectedGoalDueDate =
+      parseDateInputValueLocal(goalDue ?? "") ?? new Date();
+    const renderGoalDueDatePicker = () =>
+      renderDatePicker(
+        "goalDueDate",
+        selectedGoalDueDate,
+        handleGoalDueDateChange,
+      );
     const renderTimePicker = (
       picker: Extract<UnifiedTimingPickerOpen, "startTime" | "endTime">,
       value: string,
@@ -30143,7 +30141,7 @@ export function Fab({
                               <span className="truncate">
                                 {goalRelationType && goalRelationId
                                   ? selectedGoalRelationLabel
-                                  : "add AREA"}
+                                  : "Add AREA / MONUMENT / CIRCLE"}
                               </span>
                             </span>
                           }
@@ -31208,7 +31206,152 @@ export function Fab({
                     </div>
                   </div>
 
-                  {shouldShowUnifiedSchedulingControls ? (
+                  {isGoal ? (
+                  <div className="grid gap-2">
+                    <section className={timingCardClass}>
+                      <h3 className="sr-only">Goal deadline</h3>
+                      <div className="grid gap-2 pb-2">
+                        <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                          <span className={timingRowIconClass} aria-hidden="true">
+                            <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                          </span>
+                          <div className={timingModeToggleClass}>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                goalDueMode === "manual"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Manual
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Switch Goal deadline mode to ${
+                                goalDueMode === "dynamic"
+                                  ? "Manual"
+                                  : "Dynamic"
+                              }`}
+                              role="switch"
+                              aria-checked={goalDueMode === "dynamic"}
+                              {...getUnifiedSheetTouchActivationProps(() => {
+                                void hapticSoftTick();
+                                handleGoalDueModeChange(
+                                  goalDueMode === "dynamic"
+                                    ? "manual"
+                                    : "dynamic",
+                                );
+                              })}
+                              className={cn(
+                                "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                                goalDueMode === "dynamic"
+                                  ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                                  : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                                  goalDueMode === "dynamic"
+                                    ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                                    : "border-zinc-400/20 bg-zinc-500",
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                goalDueMode === "dynamic"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Dynamic
+                            </span>
+                          </div>
+                        </div>
+
+                        {goalDueMode === "manual" ? (
+                          <div className={timelineGroupClass}>
+                            <span
+                              className={timelineGroupLineClass}
+                              aria-hidden="true"
+                            />
+                            <div className={timingTimelineRowClass}>
+                              <span
+                                className={timelineMarkerWrapClass}
+                                aria-hidden="true"
+                              >
+                                <span className={timelineDotClass} />
+                              </span>
+                              <Label className={timingPickerLabelClass}>
+                                Deadline
+                              </Label>
+                              <div
+                                className={cn(
+                                  timingPickerValueClass,
+                                  "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+                                )}
+                              >
+                                <button
+                                  type="button"
+                                  aria-label="Goal deadline date"
+                                  aria-expanded={
+                                    unifiedTimingPickerOpen === "goalDueDate"
+                                  }
+                                  {...getUnifiedSheetTouchActivationProps(() => {
+                                    void hapticSoftTick();
+                                    setIsUnifiedTimingMonthYearPickerOpen(false);
+                                    if (selectedGoalDueDate) {
+                                      setUnifiedTimingViewedMonth(
+                                        new Date(
+                                          selectedGoalDueDate.getFullYear(),
+                                          selectedGoalDueDate.getMonth(),
+                                          1,
+                                        ),
+                                      );
+                                    }
+                                    setUnifiedTimingPickerOpen((current) =>
+                                      current === "goalDueDate"
+                                        ? null
+                                        : "goalDueDate",
+                                    );
+                                  })}
+                                  className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+                                >
+                                  {formatPickerDate(goalDue ?? "")}
+                                </button>
+                              </div>
+                            </div>
+                            {renderGoalDueDatePicker()}
+                          </div>
+                        ) : (
+                          <div className="grid gap-1 px-3 pb-1 sm:px-4">
+                            <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                              <span
+                                className={timingRowIconClass}
+                                aria-hidden="true"
+                              >
+                                <Timer className="h-4 w-4" aria-hidden="true" />
+                              </span>
+                              <span className={timingPickerLabelClass}>
+                                Deadline
+                              </span>
+                              <p className="text-right text-[13px] font-medium text-zinc-500">
+                                No exact date
+                              </p>
+                            </div>
+                            <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                              Goal stays flexible until you set a deadline.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                  ) : shouldShowUnifiedSchedulingControls ? (
                   <div className="grid gap-2">
                     <section
                       className={
@@ -31751,36 +31894,6 @@ export function Fab({
                                 ))}
                               </SelectContent>
                             </Select>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {isGoal ? (
-                      <div className={detailCardClass}>
-                        <div className={detailRowClass}>
-                          <Label
-                            htmlFor="unified-goal-due-date"
-                            className={detailLabelClass}
-                          >
-                            <CalendarDays
-                              className={detailIconClass}
-                              aria-hidden="true"
-                            />
-                            Due date
-                          </Label>
-                          <div className={detailControlWrapClass}>
-                            <Input
-                              id="unified-goal-due-date"
-                              type="date"
-                              value={goalDue ?? ""}
-                              onChange={(event) => {
-                                void hapticSoftTick();
-                                setGoalDue(event.target.value || null);
-                              }}
-                              aria-label="Goal due date"
-                              className="h-9 w-[9.5rem] rounded-xl border border-white/10 bg-white/[0.05] px-3 text-right text-sm font-semibold text-zinc-100 shadow-none selection:bg-zinc-500/40 selection:text-white focus:border-zinc-600/80 focus-visible:border-zinc-600/80 focus-visible:ring-0 focus-visible:ring-offset-0"
-                            />
                           </div>
                         </div>
                       </div>

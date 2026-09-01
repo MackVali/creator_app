@@ -18,6 +18,8 @@ import { AreaDetail } from "@/components/areas/AreaDetail";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { CLOSE_ACTIVE_AREA_DETAIL_EVENT } from "@/components/areas/events";
 import { hapticPress } from "@/lib/haptics/creatorHaptics";
+import { normalizeGoalStatus } from "@/lib/goals/status";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 const DASHBOARD_DETAIL_SAFE_TOP_GAP = 8;
@@ -53,6 +55,12 @@ type AreaDetailTransition = {
   sourceBorderRadius: number;
   targetBorderRadius: number;
   closeRect: MeasuredAreaRect | null;
+};
+
+type AreaGoalCountRow = {
+  area_id: string | null;
+  status: string | null;
+  active: boolean | null;
 };
 
 function measureAreaRect(rect: DOMRect): MeasuredAreaRect {
@@ -184,11 +192,13 @@ function scrollAreaDashboardPageToTop() {
 
 function AreaCard({
   area,
+  goalCount,
   isHidden,
   onClick,
   setCardRef,
 }: {
   area: AreaConfig;
+  goalCount: number;
   isHidden: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   setCardRef: (areaId: string, node: HTMLButtonElement | null) => void;
@@ -221,6 +231,9 @@ function AreaCard({
       <h3 className="w-full select-none break-words text-center text-[10px] font-semibold leading-tight">
         {area.label.toUpperCase()}
       </h3>
+      <p className="mt-0.5 select-none text-[9px] text-zinc-500">
+        {goalCount} Goal{goalCount === 1 ? "" : "s"}
+      </p>
     </button>
   );
 }
@@ -230,6 +243,8 @@ function AreasGrid() {
     () => [...AREAS].sort((a, b) => a.sortOrder - b.sortOrder),
     []
   );
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const [goalCounts, setGoalCounts] = useState<Record<string, number>>({});
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [areaTransition, setAreaTransition] =
     useState<AreaDetailTransition | null>(null);
@@ -249,6 +264,80 @@ function AreasGrid() {
   const selectedArea = activeAreaId
     ? (sortedAreas.find((area) => area.id === activeAreaId) ?? null)
     : null;
+
+  const loadAreaGoalCounts = useCallback(async () => {
+    if (!supabase) {
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error("Failed to load Area goal counts", userError);
+      return;
+    }
+
+    if (!user) {
+      setGoalCounts({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("goals")
+      .select("area_id,status,active")
+      .eq("user_id", user.id)
+      .in(
+        "area_id",
+        sortedAreas.map((area) => area.id)
+      )
+      .is("monument_id", null);
+
+    if (error) {
+      console.error("Failed to load Area goal counts", error);
+      return;
+    }
+
+    const nextCounts = ((data ?? []) as AreaGoalCountRow[]).reduce<
+      Record<string, number>
+    >((counts, goal) => {
+      if (
+        goal.area_id &&
+        normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+      ) {
+        counts[goal.area_id] = (counts[goal.area_id] ?? 0) + 1;
+      }
+
+      return counts;
+    }, {});
+
+    setGoalCounts(nextCounts);
+  }, [sortedAreas, supabase]);
+
+  useEffect(() => {
+    void loadAreaGoalCounts();
+  }, [loadAreaGoalCounts]);
+
+  useEffect(() => {
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+
+      if (detail?.entityType === "GOAL") {
+        void loadAreaGoalCounts();
+      }
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+
+    return () => {
+      window.removeEventListener(
+        "creator:entity-saved",
+        handleCreatorEntitySaved
+      );
+    };
+  }, [loadAreaGoalCounts]);
 
   const setAreaCardRef = useCallback(
     (areaId: string, node: HTMLButtonElement | null) => {
@@ -608,6 +697,7 @@ function AreasGrid() {
             <AreaCard
               key={area.id}
               area={area}
+              goalCount={goalCounts[area.id] ?? 0}
               isHidden={isAreaSourceCardHidden && areaTransition?.areaId === area.id}
               onClick={(event) => openAreaDetail(area.id, event)}
               setCardRef={setAreaCardRef}

@@ -29,6 +29,7 @@ export type FabCreationRequest = {
   id: number;
   type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
   monumentId?: string | null;
+  circleId?: string | null;
   areaId?: string | null;
   goalId?: string | null;
   campaignId?: string | null;
@@ -55,6 +56,7 @@ export type FabCourseAuthoringContext = {
 
 type FabCreationRequestOptions = {
   monumentId?: string | null;
+  circleId?: string | null;
   areaId?: string | null;
   skillId?: string | null;
   preserveDrawer?: FabCreationPreservedDrawer | null;
@@ -197,6 +199,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         id: nextRequestIdRef.current,
         type: "GOAL",
         monumentId: options?.monumentId ?? null,
+        circleId: options?.circleId ?? null,
         areaId: options?.areaId ?? null,
         goalId: null,
         campaignId: campaignId ?? null,
