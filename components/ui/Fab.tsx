@@ -9472,12 +9472,12 @@ export function Fab({
           if (hydratedCircleId) {
             setGoalRelationType("CIRCLE");
             setGoalRelationId(hydratedCircleId);
-          } else if (hydratedAreaId) {
-            setGoalRelationType("AREA");
-            setGoalRelationId(hydratedAreaId);
           } else if (hydratedMonumentId) {
             setGoalRelationType("MONUMENT");
             setGoalRelationId(hydratedMonumentId);
+          } else if (hydratedAreaId) {
+            setGoalRelationType("AREA");
+            setGoalRelationId(hydratedAreaId);
           } else {
             setGoalRelationType(null);
             setGoalRelationId("");
@@ -24317,35 +24317,22 @@ export function Fab({
 
           const originalRelationType = existingGoal.circle_id
             ? "CIRCLE"
-            : existingGoal.area_id
-              ? "AREA"
-              : "MONUMENT";
+            : existingGoal.monument_id
+              ? "MONUMENT"
+              : "AREA";
           const nextRelationType = goalRelationResolution.selectedCircleId
             ? "CIRCLE"
-            : goalRelationResolution.selectedAreaId
-              ? "AREA"
-              : "MONUMENT";
-          if (originalRelationType !== nextRelationType) {
-            setBlockedSaveError(
-              "Moving a Goal between sources is coming next.",
-            );
-            return;
-          }
+            : goalRelationResolution.selectedMonumentId
+              ? "MONUMENT"
+              : "AREA";
           if (
-            originalRelationType === "CIRCLE" &&
+            (originalRelationType === "CIRCLE" ||
+              nextRelationType === "CIRCLE") &&
             existingGoal.circle_id !== goalRelationResolution.selectedCircleId
           ) {
             setBlockedSaveError("Moving a Goal between Circles is coming next.");
             return;
           }
-          if (
-            originalRelationType === "AREA" &&
-            existingGoal.area_id !== goalRelationResolution.selectedAreaId
-          ) {
-            setBlockedSaveError("Moving a Goal between Areas is coming next.");
-            return;
-          }
-
           const resolvedGoalRoadmapId = await resolveGoalRoadmapId({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
