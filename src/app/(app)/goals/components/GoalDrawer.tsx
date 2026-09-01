@@ -58,7 +58,12 @@ interface GoalDrawerProps {
   /** Optional delete handler shown only while editing */
   onDelete?(goal: Goal): Promise<void> | void;
   areas?: readonly AreaConfig[];
-  monuments?: { id: string; title: string; emoji?: string | null }[];
+  monuments?: {
+    id: string;
+    title: string;
+    emoji?: string | null;
+    areaId?: string | null;
+  }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
   initialAreaId?: string | null;
   initialCircleId?: string | null;
@@ -457,7 +462,12 @@ export function GoalDrawer({
 
   const monumentOptions = useMemo(() => {
     if (!monuments.length) {
-      return [] as { id: string; title: string; emoji?: string | null }[];
+      return [] as {
+        id: string;
+        title: string;
+        emoji?: string | null;
+        areaId?: string | null;
+      }[];
     }
     return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
   }, [monuments]);
@@ -913,58 +923,104 @@ export function GoalDrawer({
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-1 flex-grow w-[75%] sm:w-full">
-                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                    Area<span className="text-rose-300"> *</span>
-                  </Label>
-                  <Select
-                    value={areaId}
-                    onValueChange={(value) => setAreaId(value)}
-                    placeholder="Select area"
-                    className="w-full"
-                    triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                    disabled={circleId.length > 0}
-                  >
-                    <SelectContent>
-                      {areaOptions.map((area) => (
-                        <SelectItem key={area.id} value={area.id}>
-                          <span className="flex items-center gap-2">
-                            <span>{area.emoji}</span>
-                            <span>{area.label}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {monumentId ? (
+                    <>
+                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                        Monument<span className="text-rose-300"> *</span>
+                      </Label>
+                      <Select
+                        value={monumentId}
+                        onValueChange={(value) => {
+                          setMonumentId(value);
+                          const monument = monuments.find(
+                            (item) => item.id === value
+                          );
+                          if (monument?.areaId) {
+                            setAreaId(monument.areaId);
+                          }
+                        }}
+                        placeholder="Select monument"
+                        className="w-full"
+                        triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                      >
+                        <SelectContent>
+                          {monumentOptions.map((monument) => (
+                            <SelectItem key={monument.id} value={monument.id}>
+                              <span className="flex items-center gap-2">
+                                <span>{monument.emoji ?? "🏛️"}</span>
+                                <span>{monument.title}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  ) : (
+                    <>
+                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                        Area<span className="text-rose-300"> *</span>
+                      </Label>
+                      <Select
+                        value={areaId}
+                        onValueChange={(value) => setAreaId(value)}
+                        placeholder="Select area"
+                        className="w-full"
+                        triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                        disabled={circleId.length > 0}
+                      >
+                        <SelectContent>
+                          {areaOptions.map((area) => (
+                            <SelectItem key={area.id} value={area.id}>
+                              <span className="flex items-center gap-2">
+                                <span>{area.emoji}</span>
+                                <span>{area.label}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                    Monument link
-                  </Label>
-                  <Select
-                    value={monumentId}
-                    onValueChange={(value) => setMonumentId(value)}
-                    placeholder="Not linked"
-                    className="w-full"
-                    triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                  >
-                    <SelectContent>
-                      <SelectItem value="" label="Not linked">
-                        <span className="text-sm text-white/70">
-                          Not linked
-                        </span>
-                      </SelectItem>
-                      {monumentOptions.map((monument) => (
-                        <SelectItem key={monument.id} value={monument.id}>
-                          {monument.title}
+              {!monumentId ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                      Monument link
+                    </Label>
+                    <Select
+                      value={monumentId}
+                      onValueChange={(value) => {
+                        setMonumentId(value);
+                        const monument = monuments.find(
+                          (item) => item.id === value
+                        );
+                        if (monument?.areaId) {
+                          setAreaId(monument.areaId);
+                        }
+                      }}
+                      placeholder="Not linked"
+                      className="w-full"
+                      triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                    >
+                      <SelectContent>
+                        <SelectItem value="" label="Not linked">
+                          <span className="text-sm text-white/70">
+                            Not linked
+                          </span>
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        {monumentOptions.map((monument) => (
+                          <SelectItem key={monument.id} value={monument.id}>
+                            {monument.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
+              ) : null}
               <div className="space-y-2">
                 <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
                   Roadmap
