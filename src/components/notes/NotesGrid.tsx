@@ -1,21 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, FileText, Folder, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  NoteCard,
-  skillNoteTileInnerClass,
-  skillNoteTileOuterClass,
-} from "./NoteCard";
 import type { Note } from "@/lib/types/note";
 import { getNotes } from "@/lib/notesStorage";
-import { cn } from "@/lib/utils";
-import {
-  NotesHeaderControls,
-  type NoteCardDensity,
-} from "./NotesHeaderControls";
+import { NotesHeaderControls } from "./NotesHeaderControls";
 
 type MemoNoteGroup = {
   containerId: string;
@@ -24,105 +15,9 @@ type MemoNoteGroup = {
   notes: Array<{ note: Note; sequence: number | null }>;
 };
 
-function MemoFolderCard({
-  group,
-  skillId,
-  density = "large",
-}: {
-  group: MemoNoteGroup;
-  skillId: string;
-  density?: NoteCardDensity;
-}) {
-  const memoCount = group.notes.length;
-  const isSmall = density === "small";
-
-  if (isSmall) {
-    return (
-      <Link
-        href={`/skills/${skillId}/notes/${group.containerId}`}
-        className="goal-card group relative col-span-2 flex aspect-square min-h-[86px] w-full flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-2 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:min-h-[92px] sm:p-2.5"
-        aria-label={`Open ${group.habitName || "Memo habit"} memo notes`}
-      >
-        <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-center">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-[9px] font-semibold uppercase leading-none text-white/55 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8 sm:text-[10px]">
-            M
-          </div>
-          <span
-            className="line-clamp-2 w-full min-w-0 break-words px-0.5 text-[8px] font-semibold leading-tight text-white whitespace-normal sm:text-[9px]"
-            style={{ hyphens: "auto" }}
-          >
-            {group.habitName || "Memo habit"}
-          </span>
-          <span className="max-w-full rounded-full border border-white/[0.08] bg-white/[0.04] px-1 py-0 text-[7px] font-semibold leading-tight text-white/42 sm:text-[8px]">
-            {memoCount} memo{memoCount === 1 ? "" : "s"}
-          </span>
-        </div>
-      </Link>
-    );
-  }
-
-  return (
-    <div className="col-span-3 sm:col-span-2 md:col-span-3">
-      <Card className="h-full rounded-[22px] border border-white/[0.08] bg-[#050608]/85 py-0 text-slate-50 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] backdrop-blur">
-        <CardContent className="space-y-3 p-3">
-          <div className="flex items-start justify-between gap-3 rounded-[18px] border border-white/[0.06] bg-[linear-gradient(135deg,rgba(18,20,25,0.84),rgba(7,8,11,0.92))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">
-                Memo habit
-              </p>
-              <h3 className="text-base font-semibold leading-tight text-[#f2f4f8]">
-                {group.habitName || "Memo habit"}
-              </h3>
-            </div>
-            <div className="flex flex-col items-end gap-1.5">
-              <span className="rounded-full border border-white/[0.1] bg-black/25 px-2.5 py-0.5 text-[11px] font-medium text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                {memoCount} memo{memoCount === 1 ? "" : "s"}
-              </span>
-              <Link
-                href={`/skills/${skillId}/notes/${group.containerId}`}
-                className="text-[11px] font-medium text-white/65 underline-offset-4 transition hover:text-white hover:underline"
-              >
-                Open page
-              </Link>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            {group.notes.map(({ note, sequence }, index) => {
-              const label = sequence !== null ? `Memo #${sequence}` : `Memo ${index + 1}`;
-              const createdAt = note.createdAt ? new Date(note.createdAt) : null;
-              const dateLabel =
-                createdAt && !Number.isNaN(createdAt.getTime())
-                  ? createdAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                  : "View";
-              return (
-                <Link
-                  key={note.id}
-                  href={`/skills/${skillId}/notes/${note.id}`}
-                  className="group flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#0b0d12]/75 px-2.5 py-1.5 text-xs text-white/80 shadow-[0_8px_18px_-16px_rgba(0,0,0,0.9)] transition hover:border-white/[0.16] hover:bg-[#10131a] hover:text-white"
-                >
-                  <span className="font-medium">{label}</span>
-                  <span className="text-[11px] text-white/50 group-hover:text-white/70">
-                    {dateLabel}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 interface NotesGridProps {
   skillId: string;
 }
-
-const skillNotesGridClass =
-  "grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
-
-const skillNotesSmallGridClass =
-  "grid grid-cols-4 gap-2 sm:grid-cols-5 sm:gap-2.5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
 
 const skillNotesListSurfaceClass =
   "overflow-hidden border-y border-white/[0.06] bg-white/[0.025] sm:rounded-xl sm:border-x";
@@ -155,18 +50,6 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
-  const [noteCardDensity, setNoteCardDensity] =
-    useState<NoteCardDensity>("large");
-
-  const handleNoteCardDensityToggle = useCallback(() => {
-    setNoteCardDensity((currentDensity) =>
-      currentDensity === "large"
-        ? "small"
-        : currentDensity === "small"
-          ? "list"
-          : "large"
-    );
-  }, []);
 
   useEffect(() => {
     const handleSkillNotesChanged = (event: Event) => {
@@ -348,16 +231,12 @@ export function NotesGrid({ skillId }: NotesGridProps) {
     });
   }, [normalizedSearchQuery, regularNotes]);
   const hasVisibleTopLevelNotes = visibleMemoGroups.length > 0 || visibleRegularNotes.length > 0;
-  const isSmallNoteCardDensity = noteCardDensity === "small";
-  const isListNoteCardDensity = noteCardDensity === "list";
 
   return (
     <div className="space-y-3">
       <NotesHeaderControls
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        density={noteCardDensity}
-        onDensityToggle={handleNoteCardDensityToggle}
       />
       {isLoading ? (
         <Card className="rounded-[22px] border border-white/[0.08] bg-[#050608]/85 py-0 text-slate-50 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] backdrop-blur">
@@ -381,190 +260,104 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         </div>
       ) : null}
 
-        {!hasTopLevelNotes && !isLoading ? (
+      {!hasTopLevelNotes && !isLoading ? (
+        <Link
+          href={`/skills/${skillId}/notes/new`}
+          className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5"
+          aria-label="Create note"
+        >
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
+            aria-hidden="true"
+          >
+            <Plus className="h-4 w-4 text-white/45" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-medium leading-tight text-white/84">
+              No notes linked yet
+            </h3>
+            <p className="mt-0.5 text-[11px] leading-4 text-white/48">
+              Create a note for this skill to keep ideas and references close.
+            </p>
+          </div>
+        </Link>
+      ) : (
+        <div className={skillNotesListSurfaceClass}>
+          {visibleMemoGroups.map((group) => {
+            const memoCount = group.notes.length;
+            return (
+              <Link
+                key={group.habitId}
+                href={`/skills/${skillId}/notes/${group.containerId}`}
+                className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
+                aria-label={`Open ${group.habitName || "Memo habit"} memo notes`}
+              >
+                <Folder
+                  className="h-3.5 w-3.5 shrink-0 text-white/45"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium leading-5 text-white/88">
+                    {group.habitName || "Memo habit"}
+                  </p>
+                  <p className="truncate text-[11px] leading-4 text-white/42">
+                    {memoCount} memo{memoCount === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <ChevronRight
+                  className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </Link>
+            );
+          })}
+
+          {visibleRegularNotes.map((note) => {
+            const childCount = childLookup.get(note.id)?.length ?? 0;
+            return (
+              <Link
+                key={note.id}
+                href={`/skills/${skillId}/notes/${note.id}`}
+                className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
+              >
+                <FileText
+                  className="h-3.5 w-3.5 shrink-0 text-white/45"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium leading-5 text-white/88">
+                    {getSkillNoteTitle(note)}
+                  </p>
+                  <p className="truncate text-[11px] leading-4 text-white/42">
+                    {getSkillNotePreview(note, childCount)}
+                  </p>
+                </div>
+                <ChevronRight
+                  className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </Link>
+            );
+          })}
+
           <Link
             href={`/skills/${skillId}/notes/new`}
-            className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5"
-            aria-label="Create note"
+            className="flex min-h-[54px] items-center gap-2.5 border-t border-white/[0.06] px-3 py-2 text-white/68 transition hover:bg-white/[0.045] hover:text-white active:bg-white/[0.065]"
+            aria-label="Add note"
           >
-            <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
+            <Plus
+              className="h-3.5 w-3.5 shrink-0 text-white/45"
+              strokeWidth={1.8}
               aria-hidden="true"
-            >
-              <Plus className="h-4 w-4 text-white/45" />
-            </span>
-            <div className="min-w-0">
-              <h3 className="text-[13px] font-medium leading-tight text-white/84">
-                No notes linked yet
-              </h3>
-              <p className="mt-0.5 text-[11px] leading-4 text-white/48">
-                Create a note for this skill to keep ideas and references close.
-              </p>
-            </div>
+            />
+            <span className="truncate text-sm font-medium">Add note</span>
           </Link>
-        ) : isListNoteCardDensity ? (
-          <div className={skillNotesListSurfaceClass}>
-            {visibleMemoGroups.map((group) => {
-              const memoCount = group.notes.length;
-              return (
-                <Link
-                  key={group.habitId}
-                  href={`/skills/${skillId}/notes/${group.containerId}`}
-                  className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
-                  aria-label={`Open ${group.habitName || "Memo habit"} memo notes`}
-                >
-                  <Folder
-                    className="h-3.5 w-3.5 shrink-0 text-white/45"
-                    strokeWidth={1.8}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium leading-5 text-white/88">
-                      {group.habitName || "Memo habit"}
-                    </p>
-                    <p className="truncate text-[11px] leading-4 text-white/42">
-                      {memoCount} memo{memoCount === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <ChevronRight
-                    className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
-                    strokeWidth={1.8}
-                    aria-hidden="true"
-                  />
-                </Link>
-              );
-            })}
-
-            {visibleRegularNotes.map((note) => {
-              const childCount = childLookup.get(note.id)?.length ?? 0;
-              return (
-                <Link
-                  key={note.id}
-                  href={`/skills/${skillId}/notes/${note.id}`}
-                  className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
-                >
-                  <FileText
-                    className="h-3.5 w-3.5 shrink-0 text-white/45"
-                    strokeWidth={1.8}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium leading-5 text-white/88">
-                      {getSkillNoteTitle(note)}
-                    </p>
-                    <p className="truncate text-[11px] leading-4 text-white/42">
-                      {getSkillNotePreview(note, childCount)}
-                    </p>
-                  </div>
-                  <ChevronRight
-                    className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
-                    strokeWidth={1.8}
-                    aria-hidden="true"
-                  />
-                </Link>
-              );
-            })}
-
-            <Link
-              href={`/skills/${skillId}/notes/new`}
-              className="flex min-h-[54px] items-center gap-2.5 border-t border-white/[0.06] px-3 py-2 text-white/68 transition hover:bg-white/[0.045] hover:text-white active:bg-white/[0.065]"
-              aria-label="Add note"
-            >
-              <Plus
-                className="h-3.5 w-3.5 shrink-0 text-white/45"
-                strokeWidth={1.8}
-                aria-hidden="true"
-              />
-              <span className="truncate text-sm font-medium">Add note</span>
-            </Link>
-          </div>
-        ) : (
-          <div
-            className={
-              isSmallNoteCardDensity ? skillNotesSmallGridClass : skillNotesGridClass
-            }
-          >
-            {visibleMemoGroups.map((group) => (
-              <MemoFolderCard
-                key={group.habitId}
-                group={group}
-                skillId={skillId}
-                density={noteCardDensity}
-              />
-            ))}
-
-            {visibleRegularNotes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                skillId={skillId}
-                childCount={childLookup.get(note.id)?.length ?? 0}
-                density={noteCardDensity}
-              />
-            ))}
-
-            {(() => {
-              return (
-                <Link
-                  href={`/skills/${skillId}/notes/new`}
-                  className={cn(
-                    skillNoteTileOuterClass,
-                    isSmallNoteCardDensity
-                      ? "aspect-square min-h-[70px] rounded-xl p-2 sm:min-h-[78px] sm:p-2.5"
-                      : ""
-                  )}
-                  aria-label="Add note"
-                >
-                  <div
-                    className={cn(
-                      skillNoteTileInnerClass,
-                      "w-full min-w-0"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
-                        isSmallNoteCardDensity ? "gap-1" : ""
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10",
-                          isSmallNoteCardDensity
-                            ? "h-7 w-7 rounded-md sm:h-8 sm:w-8"
-                            : ""
-                        )}
-                      >
-                        <Plus
-                          className={cn(
-                            "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
-                            isSmallNoteCardDensity
-                              ? "h-3 w-3 sm:h-3.5 sm:w-3.5"
-                              : ""
-                          )}
-                          aria-hidden="true"
-                        />
-                      </div>
-                      <div className="flex w-full min-w-0 items-center justify-center">
-                        <span
-                          className={cn(
-                            "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
-                            isSmallNoteCardDensity
-                              ? "line-clamp-2 text-[8px] sm:text-[9px]"
-                              : ""
-                          )}
-                          style={{ hyphens: "auto" }}
-                        >
-                          Add note
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })()}
-          </div>
-        )}
+        </div>
+      )}
     </div>
   );
 }
