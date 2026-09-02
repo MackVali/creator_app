@@ -491,7 +491,7 @@ export default function NotePage() {
                 title={noteTitle}
                 onIconChange={setNoteIcon}
                 onTitleChange={setNoteTitle}
-                autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
+                autosaveLabel={isSaving ? "Saving…" : undefined}
               />
 
               <NoteTextActionBar

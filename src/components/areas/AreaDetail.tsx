@@ -53,11 +53,11 @@ export function AreaDetail({
   const [goalSection, setGoalSection] = useState<GoalPanel>("active");
   const [focusPomoSource, setFocusPomoSource] =
     useState<FocusPomoSource | null>(null);
-  const containerShell = "relative w-full rounded-3xl border border-white/10";
+  const containerShell = "relative w-full rounded-3xl border border-white/[0.08]";
   const overviewBackground =
-    "bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)]";
+    "bg-[#111216] shadow-[0_34px_110px_-50px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(255,255,255,0.018)]";
   const sectionBackground =
-    "bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]";
+    "bg-[#0D0E11] shadow-[0_24px_70px_-52px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.48)]";
   const activeChargeStageIndex = Math.max(
     CHARGE_MILESTONES.findIndex(
       (milestone) => milestone.label === summary.evoLabel
@@ -268,7 +268,6 @@ export function AreaDetail({
                 "min-h-[220px] overflow-visible p-4 sm:p-5"
               )}
             >
-              <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_62%)]" />
               <div className="relative z-10">
                 <MonumentNotesGrid
                   sourceType="area"

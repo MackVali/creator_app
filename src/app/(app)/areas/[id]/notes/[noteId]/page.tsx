@@ -448,7 +448,7 @@ export default function AreaNotePage() {
   }
 
   function handleParentBack() {
-    router.push(`/dashboard`);
+    router.push(`/areas/${areaId}`);
   }
 
   return (
@@ -470,7 +470,7 @@ export default function AreaNotePage() {
                 title={noteTitle}
                 onIconChange={setNoteIcon}
                 onTitleChange={setNoteTitle}
-                autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
+                autosaveLabel={isSaving ? "Saving…" : undefined}
               />
 
               <NoteTextActionBar

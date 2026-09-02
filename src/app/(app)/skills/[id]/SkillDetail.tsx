@@ -207,6 +207,12 @@ const RELATED_HABIT_ADD_CARD_OUTER_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 const RELATED_HABIT_ADD_CARD_INNER_CLASS =
   "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
+const SKILL_OVERVIEW_SURFACE_CLASS =
+  "relative overflow-hidden rounded-3xl border border-white/10 bg-[#111216] shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)]";
+const SKILL_MODULE_SURFACE_CLASS =
+  "relative overflow-hidden rounded-3xl border-white/10 bg-[#0D0E11] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur";
+const SKILL_MODULE_SECTION_SURFACE_CLASS =
+  "rounded-3xl border border-white/10 bg-[#0D0E11] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)]";
 
 function renderRelatedHabitAddCard({
   isSmall,
@@ -2360,11 +2366,7 @@ export function SkillDetail({
     return (
       <main className={detailMainClassName}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          <section aria-labelledby="skill-overview-loading" className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-4 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5 md:p-6">
-            <div className="absolute inset-0">
-              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_72%)] blur-3xl" />
-              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.035),_transparent_68%)] blur-3xl" />
-            </div>
+          <section aria-labelledby="skill-overview-loading" className={clsx(SKILL_OVERVIEW_SURFACE_CLASS, "p-4 sm:p-5 md:p-6")}>
             <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
               <div className="flex min-w-0 items-start gap-3 sm:gap-4">
                 {skillOpenPreview ? (
@@ -2404,7 +2406,7 @@ export function SkillDetail({
           </section>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] p-5 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-6">
+            <section className={clsx(SKILL_MODULE_SECTION_SURFACE_CLASS, "p-5 sm:p-6")}>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <Skeleton className="h-3 w-20 bg-white/10" />
@@ -2422,8 +2424,7 @@ export function SkillDetail({
             </section>
 
               <section className="relative space-y-6">
-                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
+                <Card className={SKILL_MODULE_SURFACE_CLASS}>
                   <CardHeader className="relative pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -2446,8 +2447,7 @@ export function SkillDetail({
                   </CardContent>
                 </Card>
 
-                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
+                <Card className={SKILL_MODULE_SURFACE_CLASS}>
                   <CardHeader className="relative pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -2623,11 +2623,7 @@ export function SkillDetail({
         onClose={() => setFocusPomoSource(null)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-4 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5 md:p-6">
-            <div className="absolute inset-0">
-              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_72%)] blur-3xl" />
-              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.035),_transparent_68%)] blur-3xl" />
-            </div>
+        <section aria-labelledby="skill-overview" className={clsx(SKILL_OVERVIEW_SURFACE_CLASS, "p-4 sm:p-5 md:p-6")}>
             <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
               <div className="flex min-w-0 items-start gap-3 sm:gap-4">
                 <span
@@ -2733,16 +2729,14 @@ export function SkillDetail({
           </section>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.04),_transparent_62%)]" />
+            <Card className={SKILL_MODULE_SURFACE_CLASS}>
               <CardContent className="relative overflow-visible">
                 <SkillProjectsList skillId={id} icon={icon} />
               </CardContent>
             </Card>
 
           <section className="relative space-y-6">
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
+            <Card className={SKILL_MODULE_SURFACE_CLASS}>
               <CardHeader className="relative pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -3091,8 +3085,7 @@ export function SkillDetail({
               </CardContent>
             </Card>
 
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] p-4 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-5">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.035),_transparent_62%)]" />
+            <div className={clsx(SKILL_MODULE_SURFACE_CLASS, "border p-4 sm:p-5")}>
               <div className="relative">
                 <NotesGrid skillId={id} />
               </div>
@@ -3102,8 +3095,7 @@ export function SkillDetail({
         </div>
 
         <section className="space-y-6" aria-label="Skill social">
-          <Card className="relative min-h-[360px] overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur sm:min-h-[430px]">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_68%)]" />
+          <Card className={clsx(SKILL_MODULE_SURFACE_CLASS, "min-h-[360px] sm:min-h-[430px]")}>
             <CardHeader className="relative">
               <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
                 SKILL COMMUNITY
@@ -3127,8 +3119,7 @@ export function SkillDetail({
             </CardContent>
           </Card>
 
-          <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.035),_transparent_64%)]" />
+          <Card className={SKILL_MODULE_SURFACE_CLASS}>
             <CardHeader className="relative pb-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
