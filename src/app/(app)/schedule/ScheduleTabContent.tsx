@@ -11529,6 +11529,8 @@ export default function ScheduleTabContent({
         allowedInstanceTypes: Array.from(draft.allowedHabitTypes),
         allowAllSkills: draft.allowAllSkills,
         allowedSkillIds: Array.from(draft.allowedSkillIds),
+        allowAllAreas: draft.allowAllAreas,
+        allowedAreaIds: Array.from(draft.allowedAreaIds),
         allowAllMonuments: draft.allowAllMonuments,
         allowedMonumentIds: Array.from(draft.allowedMonumentIds),
         manualPlacements,

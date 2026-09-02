@@ -404,6 +404,8 @@ export type FabTimeBlockAdjustmentSavePayload = {
   allowedInstanceTypes: string[];
   allowAllSkills: boolean;
   allowedSkillIds: string[];
+  allowAllAreas: boolean;
+  allowedAreaIds: string[];
   allowAllMonuments: boolean;
   allowedMonumentIds: string[];
 };
@@ -430,6 +432,8 @@ export type FabTimeBlockAdjustmentRequest = {
   allowedInstanceTypes: string[];
   allowAllSkills: boolean;
   allowedSkillIds: string[];
+  allowAllAreas: boolean;
+  allowedAreaIds: string[];
   allowAllMonuments: boolean;
   allowedMonumentIds: string[];
   manualPlacements: FabTimeBlockAdjustmentPlacement[];
@@ -5237,6 +5241,10 @@ export function Fab({
     useState(true);
   const [overlayDynamicAllowedSkillIds, setOverlayDynamicAllowedSkillIds] =
     useState<string[]>([]);
+  const [overlayDynamicAllowAllAreas, setOverlayDynamicAllowAllAreas] =
+    useState(true);
+  const [overlayDynamicAllowedAreaIds, setOverlayDynamicAllowedAreaIds] =
+    useState<string[]>([]);
   const [overlayDynamicAllowAllMonuments, setOverlayDynamicAllowAllMonuments] =
     useState(true);
   const [overlayDynamicAllowedMonumentIds, setOverlayDynamicAllowedMonumentIds] =
@@ -5772,6 +5780,8 @@ export function Fab({
     );
     setOverlayDynamicAllowAllSkills(timeBlockAdjustmentRequest.allowAllSkills);
     setOverlayDynamicAllowedSkillIds(timeBlockAdjustmentRequest.allowedSkillIds);
+    setOverlayDynamicAllowAllAreas(timeBlockAdjustmentRequest.allowAllAreas);
+    setOverlayDynamicAllowedAreaIds(timeBlockAdjustmentRequest.allowedAreaIds);
     setOverlayDynamicAllowAllMonuments(
       timeBlockAdjustmentRequest.allowAllMonuments,
     );
@@ -10769,6 +10779,16 @@ export function Fab({
       })),
     [skillCategories, skills],
   );
+  const overlayDynamicAreaOptions = useMemo<OverlayConstraintChipOption[]>(
+    () =>
+      AREAS.map((area) => ({
+        id: area.id,
+        label: area.label,
+        icon: area.emoji,
+      })),
+    [],
+  );
+
   const overlayDynamicMonumentOptions = useMemo<OverlayConstraintChipOption[]>(
     () =>
       monuments.map((monument) => ({
@@ -12311,6 +12331,8 @@ export function Fab({
             allowedInstanceTypes: overlayDynamicAllowedInstanceTypes,
             allowAllSkills: overlayDynamicAllowAllSkills,
             allowedSkillIds: overlayDynamicAllowedSkillIds,
+            allowAllAreas: overlayDynamicAllowAllAreas,
+            allowedAreaIds: overlayDynamicAllowedAreaIds,
             allowAllMonuments: overlayDynamicAllowAllMonuments,
             allowedMonumentIds: overlayDynamicAllowedMonumentIds,
           });
@@ -33673,17 +33695,93 @@ export function Fab({
                         emptyLabel: "No skills available",
                       })}
 
-                      {renderOverlayConstraintChips({
-                        group: "monuments",
-                        label: "MONUMENTS",
-                        allowAll: overlayDynamicAllowAllMonuments,
-                        onAllowAllChange: setOverlayDynamicAllowAllMonuments,
-                        values: overlayDynamicAllowedMonumentIds,
-                        setValues: setOverlayDynamicAllowedMonumentIds,
-                        options: overlayDynamicMonumentOptions,
-                        loading: monumentsLoading,
-                        emptyLabel: "No monuments available",
-                      })}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
+                            Scope
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextAllowAll =
+                                !(
+                                  overlayDynamicAllowAllAreas &&
+                                  overlayDynamicAllowAllMonuments
+                                );
+
+                              setOverlayDynamicAllowAllAreas(nextAllowAll);
+                              setOverlayDynamicAllowAllMonuments(nextAllowAll);
+
+                              if (nextAllowAll) {
+                                setOverlayDynamicAllowedAreaIds([]);
+                                setOverlayDynamicAllowedMonumentIds([]);
+                              }
+                            }}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                              overlayDynamicAllowAllAreas &&
+                                overlayDynamicAllowAllMonuments
+                                ? "border-white/20 bg-white/10 text-white"
+                                : "border-white/10 bg-black/20 text-white/45",
+                            )}
+                          >
+                            Allow ALL
+                          </button>
+                        </div>
+
+                        {renderOverlayConstraintChips({
+                          group: "monuments",
+                          label: "AREAS",
+                          allowAll:
+                            overlayDynamicAllowAllAreas &&
+                            overlayDynamicAllowAllMonuments,
+                          onAllowAllChange: (allowAll) => {
+                            setOverlayDynamicAllowAllAreas(allowAll);
+                            setOverlayDynamicAllowAllMonuments(allowAll);
+                            if (allowAll) {
+                              setOverlayDynamicAllowedAreaIds([]);
+                              setOverlayDynamicAllowedMonumentIds([]);
+                            }
+                          },
+                          values: overlayDynamicAllowedAreaIds,
+                          setValues: (nextValues) => {
+                            setOverlayDynamicAllowedAreaIds(nextValues);
+                            if (nextValues.length > 0) {
+                              setOverlayDynamicAllowAllAreas(false);
+                              setOverlayDynamicAllowAllMonuments(false);
+                            }
+                          },
+                          options: overlayDynamicAreaOptions,
+                          emptyLabel: "No areas available",
+                        })}
+
+                        {renderOverlayConstraintChips({
+                          group: "monuments",
+                          label: "MONUMENTS",
+                          allowAll:
+                            overlayDynamicAllowAllAreas &&
+                            overlayDynamicAllowAllMonuments,
+                          onAllowAllChange: (allowAll) => {
+                            setOverlayDynamicAllowAllAreas(allowAll);
+                            setOverlayDynamicAllowAllMonuments(allowAll);
+                            if (allowAll) {
+                              setOverlayDynamicAllowedAreaIds([]);
+                              setOverlayDynamicAllowedMonumentIds([]);
+                            }
+                          },
+                          values: overlayDynamicAllowedMonumentIds,
+                          setValues: (nextValues) => {
+                            setOverlayDynamicAllowedMonumentIds(nextValues);
+                            if (nextValues.length > 0) {
+                              setOverlayDynamicAllowAllAreas(false);
+                              setOverlayDynamicAllowAllMonuments(false);
+                            }
+                          },
+                          options: overlayDynamicMonumentOptions,
+                          loading: monumentsLoading,
+                          emptyLabel: "No monuments available",
+                        })}
+                      </div>
                     </div>
                   ) : null}
 
