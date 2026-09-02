@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ChevronRight, FileText, Folder, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   NoteCard,
@@ -124,6 +124,32 @@ const skillNotesGridClass =
 const skillNotesSmallGridClass =
   "grid grid-cols-4 gap-2 sm:grid-cols-5 sm:gap-2.5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
 
+const skillNotesListSurfaceClass =
+  "overflow-hidden border-y border-white/[0.06] bg-white/[0.025] sm:rounded-xl sm:border-x";
+
+function getSkillNoteTitle(note: Note) {
+  const noteTitle = note.title?.trim();
+  return noteTitle && noteTitle.length > 0
+    ? noteTitle
+    : note.content
+        ?.split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) ?? "Open this note to add a title.";
+}
+
+function getSkillNotePreview(note: Note, childCount: number) {
+  const preview = note.content
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (preview) return preview;
+  if (childCount > 0) {
+    return `${childCount} sub-page${childCount === 1 ? "" : "s"}`;
+  }
+  return "No preview";
+}
+
 export function NotesGrid({ skillId }: NotesGridProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -134,7 +160,11 @@ export function NotesGrid({ skillId }: NotesGridProps) {
 
   const handleNoteCardDensityToggle = useCallback(() => {
     setNoteCardDensity((currentDensity) =>
-      currentDensity === "large" ? "small" : "large"
+      currentDensity === "large"
+        ? "small"
+        : currentDensity === "small"
+          ? "list"
+          : "large"
     );
   }, []);
 
@@ -319,6 +349,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   }, [normalizedSearchQuery, regularNotes]);
   const hasVisibleTopLevelNotes = visibleMemoGroups.length > 0 || visibleRegularNotes.length > 0;
   const isSmallNoteCardDensity = noteCardDensity === "small";
+  const isListNoteCardDensity = noteCardDensity === "list";
 
   return (
     <div className="space-y-3">
@@ -371,6 +402,82 @@ export function NotesGrid({ skillId }: NotesGridProps) {
               </p>
             </div>
           </Link>
+        ) : isListNoteCardDensity ? (
+          <div className={skillNotesListSurfaceClass}>
+            {visibleMemoGroups.map((group) => {
+              const memoCount = group.notes.length;
+              return (
+                <Link
+                  key={group.habitId}
+                  href={`/skills/${skillId}/notes/${group.containerId}`}
+                  className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
+                  aria-label={`Open ${group.habitName || "Memo habit"} memo notes`}
+                >
+                  <Folder
+                    className="h-3.5 w-3.5 shrink-0 text-white/45"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium leading-5 text-white/88">
+                      {group.habitName || "Memo habit"}
+                    </p>
+                    <p className="truncate text-[11px] leading-4 text-white/42">
+                      {memoCount} memo{memoCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <ChevronRight
+                    className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                </Link>
+              );
+            })}
+
+            {visibleRegularNotes.map((note) => {
+              const childCount = childLookup.get(note.id)?.length ?? 0;
+              return (
+                <Link
+                  key={note.id}
+                  href={`/skills/${skillId}/notes/${note.id}`}
+                  className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
+                >
+                  <FileText
+                    className="h-3.5 w-3.5 shrink-0 text-white/45"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium leading-5 text-white/88">
+                      {getSkillNoteTitle(note)}
+                    </p>
+                    <p className="truncate text-[11px] leading-4 text-white/42">
+                      {getSkillNotePreview(note, childCount)}
+                    </p>
+                  </div>
+                  <ChevronRight
+                    className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                </Link>
+              );
+            })}
+
+            <Link
+              href={`/skills/${skillId}/notes/new`}
+              className="flex min-h-[54px] items-center gap-2.5 border-t border-white/[0.06] px-3 py-2 text-white/68 transition hover:bg-white/[0.045] hover:text-white active:bg-white/[0.065]"
+              aria-label="Add note"
+            >
+              <Plus
+                className="h-3.5 w-3.5 shrink-0 text-white/45"
+                strokeWidth={1.8}
+                aria-hidden="true"
+              />
+              <span className="truncate text-sm font-medium">Add note</span>
+            </Link>
+          </div>
         ) : (
           <div
             className={
