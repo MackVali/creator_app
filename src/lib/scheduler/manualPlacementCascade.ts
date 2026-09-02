@@ -50,6 +50,7 @@ type ProjectPlacementContext = {
   project: ProjectLite;
   item: ProjectItem;
   skillIds: string[];
+  areaIds: string[] | null;
   monumentIds: string[] | null;
 };
 
@@ -57,6 +58,7 @@ type ProjectItemConstraint = {
   energy: string;
   duration_min: number;
   skillIds?: string[] | null;
+  areaIds?: string[] | null;
   monumentIds?: string[] | null;
   isProject: true;
 };
@@ -111,6 +113,7 @@ function toProjectConstraintItem(
     energy: projectContext.item.energy,
     duration_min: projectContext.item.duration_min,
     skillIds: projectContext.skillIds.length > 0 ? projectContext.skillIds : null,
+    areaIds: projectContext.areaIds,
     monumentIds: projectContext.monumentIds,
     isProject: true,
   };
@@ -432,6 +435,7 @@ async function loadProjectPlacementContexts(
   const goalMonumentIdById = new Map(
     goals.map((goal) => [goal.id, goal.monumentId ?? null])
   );
+  const goalAreaIdById = new Map(goals.map((goal) => [goal.id, goal.areaId ?? null]));
   const contexts = new Map<string, ProjectPlacementContext>();
   for (const projectId of uniqueIds) {
     const project = projectsById[projectId];
@@ -447,6 +451,13 @@ async function loadProjectPlacementContexts(
           projectTasks,
           projectSkillIdsByProject[projectId] ?? []
         ),
+      areaIds: project.goal_id
+        ? (() => {
+            const areaId =
+              project.goal_area_id ?? goalAreaIdById.get(project.goal_id ?? "");
+            return areaId ? [areaId] : null;
+          })()
+        : null,
       monumentIds: project.goal_id
         ? (() => {
             const monumentId = goalMonumentIdById.get(project.goal_id ?? "");

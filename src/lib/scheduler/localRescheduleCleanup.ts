@@ -74,6 +74,8 @@ export type LocalRescheduleCleanupSourceContext = Pick<
   | "habitType"
   | "skillId"
   | "skillIds"
+  | "areaId"
+  | "areaIds"
   | "monumentId"
   | "skillMonumentId"
   | "monumentIds"
@@ -295,6 +297,8 @@ function buildConstraintItem(
     return {
       skillId: context?.skillId ?? null,
       skillIds: context?.skillIds ?? null,
+      areaId: context?.areaId ?? null,
+      areaIds: context?.areaIds ?? null,
       monumentId: context?.monumentId ?? null,
       skillMonumentId: context?.skillMonumentId ?? null,
       monumentIds: context?.monumentIds ?? null,
@@ -306,6 +310,8 @@ function buildConstraintItem(
     habitType: context?.habitType ?? null,
     skillId: context?.skillId ?? null,
     skillIds: context?.skillIds ?? null,
+    areaId: context?.areaId ?? null,
+    areaIds: context?.areaIds ?? null,
     monumentId: context?.monumentId ?? resolvedPracticeContext,
     skillMonumentId: context?.skillMonumentId ?? resolvedPracticeContext,
     monumentIds: context?.monumentIds ?? null,

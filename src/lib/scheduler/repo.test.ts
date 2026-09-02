@@ -150,6 +150,7 @@ describe("getWindowsForDate_v2", () => {
             energy: "LOW",
             block_type: "FOCUS",
             location_context_id: null,
+            allow_all_areas: false,
             time_blocks: {
               id: "block-1",
               label: "Constrained Block",
@@ -172,6 +173,9 @@ describe("getWindowsForDate_v2", () => {
           { day_type_time_block_id: "dttb-1", skill_id: "skill-1" },
           { day_type_time_block_id: "dttb-1", skill_id: "skill-2" },
         ],
+      },
+      day_type_time_block_allowed_areas: {
+        data: [{ day_type_time_block_id: "dttb-1", area_id: "money" }],
       },
       day_type_time_block_allowed_monuments: {
         data: [{ day_type_time_block_id: "dttb-1", monument_id: "mon-1" }],
@@ -197,7 +201,11 @@ describe("getWindowsForDate_v2", () => {
     expect(windows).toHaveLength(1);
     expect(windows[0]?.allowedHabitTypes).toEqual(["HABIT", "PRACTICE"]);
     expect(windows[0]?.allowedSkillIds).toEqual(["skill-1", "skill-2"]);
+    expect(windows[0]?.allowedAreaIds).toEqual(["money"]);
     expect(windows[0]?.allowedMonumentIds).toEqual(["mon-1"]);
+    expect(windows[0]?.allowedAreaDisplays).toEqual([
+      { id: "money", emoji: "💵", title: "Money" },
+    ]);
     expect(windows[0]?.allowedSkillDisplays).toEqual([
       { id: "skill-1", icon: "🎵", monumentId: "mon-1" },
       { id: "skill-2", icon: "🎛️", monumentId: "mon-2" },
@@ -225,9 +233,11 @@ describe("fetchWindowsSnapshot", () => {
             day_type_time_block_id: "dttb-1",
             allow_all_habit_types: false,
             allow_all_skills: false,
+            allow_all_areas: false,
             allow_all_monuments: false,
             allowed_habit_types: ["HABIT", "PRACTICE"],
             allowed_skill_ids: ["skill-1"],
+            allowed_area_ids: ["money"],
             allowed_monument_ids: ["mon-1"],
             location_context: { value: "GYM", label: "Gym" },
           },
@@ -250,9 +260,11 @@ describe("fetchWindowsSnapshot", () => {
     expect(win.dayTypeTimeBlockId).toBe("dttb-1");
     expect(win.allowAllHabitTypes).toBe(false);
     expect(win.allowAllSkills).toBe(false);
+    expect(win.allowAllAreas).toBe(false);
     expect(win.allowAllMonuments).toBe(false);
     expect(win.allowedHabitTypes).toEqual(["HABIT", "PRACTICE"]);
     expect(win.allowedSkillIds).toEqual(["skill-1"]);
+    expect(win.allowedAreaIds).toEqual(["money"]);
     expect(win.allowedMonumentIds).toEqual(["mon-1"]);
     expect(win.allowedSkillDisplays).toEqual([
       { id: "skill-1", icon: "🎹", monumentId: "mon-1" },

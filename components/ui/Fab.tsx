@@ -348,6 +348,7 @@ type FabAdvancedTimingPickerOpen =
   | "taskExactEndTime"
   | "habitFixedStartTime"
   | "habitFixedEndTime"
+  | "goalDueTime"
   | null;
 type AddEventTimingMode = "manual" | "dynamic";
 type ProjectScheduleTimingMode = "manual" | "dynamic";
@@ -815,6 +816,58 @@ type UnifiedRelationTapState = {
   startY: number;
   scrollTop: number;
   cancelled: boolean;
+};
+
+const splitGoalDueLocalParts = (value?: string | null) => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return { date: null as string | null, time: "00:00" };
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return { date: trimmed, time: "00:00" };
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      date: /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : null,
+      time: "00:00",
+    };
+  }
+
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return {
+    date: `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`,
+    time: `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`,
+  };
+};
+
+const buildGoalDueLocalTimestamp = (
+  dateValue?: string | null,
+  timeValue = "00:00",
+) => {
+  if (!dateValue) return null;
+
+  const dateParts = dateValue.split("-").map(Number);
+  const timeParts = timeValue.split(":").map(Number);
+  if (
+    dateParts.length !== 3 ||
+    dateParts.some((value) => !Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  const [year, month, day] = dateParts;
+  const hour =
+    Number.isFinite(timeParts[0]) ? Math.min(23, Math.max(0, timeParts[0])) : 0;
+  const minute =
+    Number.isFinite(timeParts[1]) ? Math.min(59, Math.max(0, timeParts[1])) : 0;
+
+  const localDeadline = new Date(year, month - 1, day, hour, minute, 0, 0);
+  return Number.isNaN(localDeadline.getTime())
+    ? null
+    : localDeadline.toISOString();
 };
 
 const isFabCompletionStatus = (value?: string | null) => {
@@ -2301,6 +2354,7 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   GOAL: [
     { id: "main", label: "Main", icon: CircleDot },
     { id: "projects", label: "Projects", icon: ListChecks },
+    { id: "notes", label: "Notes", icon: FileText },
     { id: "tags", label: "Advanced", icon: Tags },
   ],
   PROJECT: [
@@ -6871,6 +6925,7 @@ export function Fab({
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDueMode, setGoalDueMode] = useState<GoalDueMode>("dynamic");
   const [goalDue, setGoalDue] = useState<string | null>(null);
+  const [goalDueTime, setGoalDueTime] = useState("00:00");
   const [goalRelationType, setGoalRelationType] =
     useState<GoalRelationType>(null);
   const [goalRelationId, setGoalRelationId] = useState("");
@@ -7519,6 +7574,7 @@ export function Fab({
     setGoalWhy("");
     setGoalDueMode("dynamic");
     setGoalDue(null);
+    setGoalDueTime("00:00");
     setGoalCampaignId(null);
     setGoalCampaignTouched(false);
     setIsCreatingGoalCampaignInline(false);
@@ -9463,13 +9519,12 @@ export function Fab({
             setGoalRelationType(null);
             setGoalRelationId("");
           }
-          const hydratedGoalDue =
-            typeof goalRow?.due_date === "string" &&
-            goalRow.due_date.trim().length > 0
-              ? goalRow.due_date.slice(0, 10)
-              : null;
-          setGoalDueMode(hydratedGoalDue ? "manual" : "dynamic");
-          setGoalDue(hydratedGoalDue);
+          const hydratedGoalDueParts = splitGoalDueLocalParts(
+            typeof goalRow?.due_date === "string" ? goalRow.due_date : null,
+          );
+          setGoalDueMode(hydratedGoalDueParts.date ? "manual" : "dynamic");
+          setGoalDue(hydratedGoalDueParts.date);
+          setGoalDueTime(hydratedGoalDueParts.time);
           setEditGoalProjects(
             projectRows.map((project) => ({
               id: project.id,
@@ -10784,7 +10839,10 @@ export function Fab({
     (mode) => mode.id !== "memoForms" || isMemoHabitCreation,
   );
   const useCompactCreationModeButtons =
-    selected === "PROJECT" || selected === "TASK" || selected === "HABIT";
+    selected === "GOAL" ||
+    selected === "PROJECT" ||
+    selected === "TASK" ||
+    selected === "HABIT";
   const creationModeButtonSize = useCompactCreationModeButtons ? 32 : 36;
   const creationModeButtonGap = useCompactCreationModeButtons ? 5 : 6;
   const creationModeClusterWidth =
@@ -11174,6 +11232,7 @@ export function Fab({
       setTaskDue("");
       setGoalDueMode("dynamic");
       setGoalDue(null);
+    setGoalDueTime("00:00");
       setHabitLocationContextId("");
       setHabitDaylightPreference("ALL_DAY");
       setHabitWindowEdgePreference("FRONT");
@@ -11851,6 +11910,7 @@ export function Fab({
     setGoalWhy("");
     setGoalDueMode("dynamic");
     setGoalDue(null);
+    setGoalDueTime("00:00");
     setGoalCampaignId(null);
     setIsCreatingGoalCampaignInline(false);
     setGoalInlineCampaignName("");
@@ -13811,6 +13871,75 @@ export function Fab({
     );
   };
 
+  const renderAdvancedGoalDeadlineRow = () => (
+    <div className="relative">
+      <span className={advancedTimelineGroupLineClass} aria-hidden="true" />
+
+      <div className={advancedTimingTimelineRowClass}>
+        <span className={advancedTimelineMarkerWrapClass} aria-hidden="true">
+          <span className={advancedTimelineDotClass} />
+        </span>
+
+        <Label className={advancedTimingPickerLabelClass}>Deadline</Label>
+
+        <div
+          className={cn(
+            advancedTimingPickerValueClass,
+            "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+          )}
+        >
+          <div className="min-w-0 max-w-[8.75rem] shrink">
+            <CompactNativeDateTimeField
+              id="goal-deadline-date"
+              type="date"
+              value={goalDue ?? ""}
+              onChange={(event) => {
+                const nextDate = event.target.value;
+                setGoalDue(nextDate || null);
+                setGoalDueMode(nextDate ? "manual" : "dynamic");
+
+                if (!nextDate) {
+                  setGoalDueTime("00:00");
+                  setFabAdvancedTimingPickerOpen(null);
+                }
+              }}
+              className="h-8 min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-right text-[13px] font-medium text-zinc-100/95 transition-colors hover:bg-white/[0.045] peer-focus-visible:border-white/20 peer-focus-visible:bg-white/[0.045] sm:text-[13.5px]"
+              placeholder="Pick date"
+              displayValue={formatAdvancedPickerDate(goalDue ?? "")}
+            />
+          </div>
+
+          <span className="shrink-0 text-zinc-600" aria-hidden="true">
+            ·
+          </span>
+
+          <button
+            type="button"
+            aria-label="Goal deadline time"
+            aria-expanded={fabAdvancedTimingPickerOpen === "goalDueTime"}
+            onClick={() => {
+              void hapticSoftTick();
+              setFabAdvancedTimingPickerOpen((current) =>
+                current === "goalDueTime" ? null : "goalDueTime",
+              );
+            }}
+            className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+          >
+            {formatAdvancedPickerTime(goalDueTime)}
+          </button>
+        </div>
+      </div>
+
+      {renderAdvancedTimePicker({
+        picker: "goalDueTime",
+        value: goalDueTime,
+        onChange: setGoalDueTime,
+        label: "Goal deadline time picker",
+        feedbackKey: "startTime",
+      })}
+    </div>
+  );
+
   const renderAdvancedManualTimeRows = ({
     startPicker,
     endPicker,
@@ -14403,9 +14532,11 @@ export function Fab({
   const handleGoalDueModeChange = (nextMode: GoalDueMode) => {
     setGoalDueMode(nextMode);
     setUnifiedTimingPickerOpen(null);
+    setFabAdvancedTimingPickerOpen(null);
     setIsUnifiedTimingMonthYearPickerOpen(false);
     if (nextMode === "dynamic") {
       setGoalDue(null);
+    setGoalDueTime("00:00");
     }
   };
 
@@ -16393,6 +16524,105 @@ export function Fab({
     </div>
   );
 
+  const renderSavedGoalCampaignSelect = () => {
+    const selectedCampaign =
+      goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ?? null;
+
+    return (
+      <Select
+        value={goalCampaignId ?? ""}
+        onValueChange={(value) => {
+          void hapticSoftTick();
+          resetGoalCampaignInlineCreation();
+          setGoalCampaignTouched(true);
+          setGoalCampaignId(value.trim().length > 0 ? value : null);
+        }}
+        hideChevron
+        triggerClassName="h-auto min-w-0 flex-1 justify-end border-0 bg-transparent p-0 text-right text-xs font-medium text-zinc-500 shadow-none hover:text-zinc-300 focus:ring-0"
+        trigger={
+          <span className="block min-w-0 truncate">
+            {selectedCampaign?.name ?? "No campaign"}
+          </span>
+        }
+        contentWrapperClassName={cn(
+          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+          "min-w-[260px] sm:min-w-[320px]",
+        )}
+        disablePortal
+      >
+        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+          <SelectItem
+            value=""
+            className={fabCreationSelectItemClass(!goalCampaignId)}
+          >
+            No campaign
+          </SelectItem>
+          <GoalCampaignCreateRow
+            active={isCreatingGoalCampaignInline}
+            value={goalInlineCampaignName}
+            emoji={goalInlineCampaignEmoji}
+            error={goalCampaignCreateError}
+            loading={goalCampaignCreating}
+            onStart={() => {
+              setIsCreatingGoalCampaignInline(true);
+              setGoalInlineCampaignEmoji(
+                (current) =>
+                  current.trim() || FAB_DEFAULT_CAMPAIGN_EMOJI,
+              );
+              setGoalCampaignCreateError(null);
+            }}
+            onChange={(value) => {
+              setGoalInlineCampaignName(value);
+              setGoalCampaignCreateError(null);
+            }}
+            onEmojiChange={(value) => {
+              setGoalInlineCampaignEmoji(value);
+              setGoalCampaignCreateError(null);
+            }}
+            onSubmit={() => {
+              void handleCreateGoalCampaignInline();
+            }}
+            onCancel={resetGoalCampaignInlineCreation}
+          />
+          {goalCampaignsLoading ? (
+            <SelectItem
+              value="__loading"
+              disabled
+              className={fabCreationSelectItemClass(false)}
+            >
+              Loading campaigns…
+            </SelectItem>
+          ) : goalCampaignOptions.length > 0 ? (
+            goalCampaignOptions.map((campaign) => (
+              <SelectItem
+                key={campaign.id}
+                value={campaign.id}
+                className={fabCreationSelectItemClass(
+                  goalCampaignId === campaign.id,
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="text-base">
+                    {campaign.emoji ?? FAB_DEFAULT_CAMPAIGN_EMOJI}
+                  </span>
+                  <span className="truncate">{campaign.name}</span>
+                </div>
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem
+              value="__empty"
+              disabled
+              className={fabCreationSelectItemClass(false)}
+            >
+              No campaigns yet
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+    );
+  };
+
   const renderPrimaryPage = () => (
     <div
       className={cn(
@@ -16449,7 +16679,13 @@ export function Fab({
               ) : null}
               {selected === "GOAL" && activeCreationMode === "main" && (
                 <>
-                  <div className="grid gap-3">
+                  <div
+                    className={cn(
+                      "grid gap-3",
+                      editTarget?.entityType === "GOAL" &&
+                        "grid-cols-[minmax(0,1fr)_auto] items-center gap-4",
+                    )}
+                  >
                     <Select
                       value={selectedGoalRelationValue}
                       onValueChange={handleGoalRelationChange}
@@ -16578,6 +16814,9 @@ export function Fab({
                         ))}
                       </SelectContent>
                     </Select>
+                    {editTarget?.entityType === "GOAL"
+                      ? renderSavedGoalCampaignSelect()
+                      : null}
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
                     <div className="relative grid gap-2">
@@ -16630,7 +16869,14 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                  <div
+                    className={cn(
+                      "grid grid-cols-1 gap-3 md:gap-4",
+                      editTarget?.entityType === "GOAL"
+                        ? "md:grid-cols-1"
+                        : "md:grid-cols-2",
+                    )}
+                  >
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -16666,7 +16912,12 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
+                    <div
+                      className={cn(
+                        "grid gap-2",
+                        editTarget?.entityType === "GOAL" && "hidden",
+                      )}
+                    >
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         CAMPAIGN
                       </Label>
@@ -16764,7 +17015,117 @@ export function Fab({
                       </Select>
                     </div>
                   </div>
-                  <div className="grid gap-2">
+                  {editTarget?.entityType === "GOAL" ? (
+                    <section className="overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]">
+                      <h3 className="sr-only">Goal deadline</h3>
+                      <div className="grid gap-2 pb-2">
+                        <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                          <span
+                            className="flex h-7 w-6 items-center justify-start text-zinc-500"
+                            aria-hidden="true"
+                          >
+                            <Clock className="h-4 w-4" aria-hidden="true" />
+                          </span>
+
+                          <div className="inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5">
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                goalDueMode === "manual"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Manual
+                            </span>
+
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={goalDueMode === "dynamic"}
+                              aria-label={`Switch Goal deadline mode to ${
+                                goalDueMode === "dynamic"
+                                  ? "Manual"
+                                  : "Dynamic"
+                              }`}
+                              onClick={() => {
+                                const nextMode =
+                                  goalDueMode === "dynamic"
+                                    ? "manual"
+                                    : "dynamic";
+
+                                handleGoalDueModeChange(nextMode);
+
+                                if (nextMode === "manual" && !goalDue) {
+                                  const defaults =
+                                    getNextSolidHourEventDefaults(new Date());
+                                  setGoalDue(defaults.date);
+                                  setGoalDueTime(defaults.startTime);
+                                }
+                              }}
+                              className={cn(
+                                "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                                goalDueMode === "dynamic"
+                                  ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                                  : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                                  goalDueMode === "dynamic"
+                                    ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                                    : "border-zinc-400/20 bg-zinc-500",
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                goalDueMode === "dynamic"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Dynamic
+                            </span>
+                          </div>
+                        </div>
+
+                        {goalDueMode === "manual" ? (
+                          renderAdvancedGoalDeadlineRow()
+                        ) : (
+                          <div className="grid gap-1 px-3 pb-1 sm:px-4">
+                            <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                              <span
+                                className="flex h-7 w-6 items-center justify-start text-zinc-500"
+                                aria-hidden="true"
+                              >
+                                <Timer
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
+                              </span>
+
+                              <span className={advancedTimingPickerLabelClass}>
+                                Deadline
+                              </span>
+
+                              <p className="text-right text-[13px] font-medium text-zinc-500">
+                                No exact date
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  ) : null}
+
+
+                  {editTarget?.entityType !== "GOAL" ? (
+<div className="grid gap-2">
                     <Label htmlFor="goal-why" className="text-zinc-500">
                       WHY (optional)
                     </Label>
@@ -16776,7 +17137,24 @@ export function Fab({
                       className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                     />
                   </div>
+                  ) : null}
+
                 </>
+              )}
+
+              {selected === "GOAL" && activeCreationMode === "notes" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="goal-why" className="text-zinc-500">
+                    WHY (optional)
+                  </Label>
+                  <Textarea
+                    id="goal-why"
+                    value={goalWhy}
+                    onChange={(e) => setGoalWhy(e.target.value)}
+                    placeholder="Motivation…"
+                    className="min-h-[160px] border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                  />
+                </div>
               )}
 
               {selected === "PROJECT" && activeCreationMode === "main" && (
@@ -23364,7 +23742,9 @@ export function Fab({
         }
       }
       const resolvedGoalDueDate =
-        saveSelected === "GOAL" && goalDueMode === "manual" ? goalDue : null;
+        goalDueMode === "manual" && goalDue
+          ? buildGoalDueLocalTimestamp(goalDue, goalDueTime)
+          : null;
       if (saveSelected === "PROJECT" && !activeCourseAuthoringContext) {
         if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
           setBlockedSaveError("Link this project to a goal before saving.");

@@ -70,6 +70,7 @@ import {
   getMonumentsForUser,
   type Monument,
 } from "@/lib/queries/monuments";
+import { AREAS } from "@/config/areas";
 
 interface JumpToDateSheetProps {
   variant?: "sheet" | "inline";
@@ -292,6 +293,9 @@ export function JumpToDateSheet({
   const [blockAllowAllSkills, setBlockAllowAllSkills] = useState<
     Map<string, boolean>
   >(() => new Map());
+  const [blockAllowAllAreas, setBlockAllowAllAreas] = useState<
+    Map<string, boolean>
+  >(() => new Map());
   const [blockAllowAllMonuments, setBlockAllowAllMonuments] = useState<
     Map<string, boolean>
   >(() => new Map());
@@ -299,6 +303,9 @@ export function JumpToDateSheet({
     Map<string, Set<string>>
   >(() => new Map());
   const [blockAllowedSkillIds, setBlockAllowedSkillIds] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+  const [blockAllowedAreaIds, setBlockAllowedAreaIds] = useState<
     Map<string, Set<string>>
   >(() => new Map());
   const [blockAllowedMonumentIds, setBlockAllowedMonumentIds] = useState<
@@ -716,7 +723,7 @@ export function JumpToDateSheet({
       userId: string
     ) => {
       const columns =
-        "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label),allow_all_habit_types,allow_all_skills,allow_all_monuments";
+        "id,day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label),allow_all_habit_types,allow_all_skills,allow_all_areas,allow_all_monuments";
       const { data, error } = await supabase
         .from("day_type_time_blocks")
         .select(columns)
@@ -726,7 +733,7 @@ export function JumpToDateSheet({
       const retry = await supabase
         .from("day_type_time_blocks")
         .select(
-          "day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_monuments"
+          "id,day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_monuments"
         )
         .eq("user_id", userId);
       return { data: retry.data, error: retry.error };
@@ -748,6 +755,8 @@ export function JumpToDateSheet({
           setBlockLocation(new Map());
           setBlockAllowAllHabitTypes(new Map());
           setBlockAllowedHabitTypes(new Map());
+          setBlockAllowAllAreas(new Map());
+          setBlockAllowedAreaIds(new Map());
           setBlockAllowAllSkills(new Map());
           setBlockAllowedSkillIds(new Map());
           setBlockAllowAllMonuments(new Map());
@@ -787,11 +796,13 @@ export function JumpToDateSheet({
         >();
         const allowAllHabitMap = new Map<string, boolean>();
         const allowAllSkillMap = new Map<string, boolean>();
+        const allowAllAreaMap = new Map<string, boolean>();
         const allowAllMonumentMap = new Map<string, boolean>();
         const dttbKeyById = new Map<string, string>();
         const dttbIds: string[] = [];
         const allowedHabitTypesMap = new Map<string, Set<string>>();
         const allowedSkillIdsMap = new Map<string, Set<string>>();
+        const allowedAreaIdsMap = new Map<string, Set<string>>();
         const allowedMonumentIdsMap = new Map<string, Set<string>>();
         (linksResult.data ?? []).forEach((row) => {
           const dayTypeId = (row as { day_type_id?: string | null })
@@ -852,6 +863,11 @@ export function JumpToDateSheet({
           allowAllSkillMap.set(
             constraintKey,
             (row as { allow_all_skills?: boolean | null })?.allow_all_skills !==
+              false
+          );
+          allowAllAreaMap.set(
+            constraintKey,
+            (row as { allow_all_areas?: boolean | null })?.allow_all_areas !==
               false
           );
           allowAllMonumentMap.set(
@@ -924,6 +940,37 @@ export function JumpToDateSheet({
           }
         }
         if (dttbIds.length > 0) {
+          const { data: allowedAreaEntries, error: allowedAreaError } =
+            await supabase
+              .from("day_type_time_block_allowed_areas")
+              .select("day_type_time_block_id,area_id")
+              .in("day_type_time_block_id", dttbIds);
+          if (allowedAreaError) {
+            console.warn(
+              "Unable to load allowed area ids for time blocks",
+              allowedAreaError
+            );
+          } else {
+            (allowedAreaEntries ?? []).forEach((entry) => {
+              const dayTypeTimeBlockId = (
+                entry as {
+                  day_type_time_block_id?: string | null;
+                  area_id?: string | null;
+                }
+              )?.day_type_time_block_id;
+              const rawAreaId = (entry as { area_id?: string | null })?.area_id;
+              if (!dayTypeTimeBlockId || !rawAreaId) return;
+              const key = dttbKeyById.get(dayTypeTimeBlockId);
+              if (!key) return;
+              const normalizedAreaId = String(rawAreaId).trim();
+              if (!normalizedAreaId) return;
+              const nextSet = allowedAreaIdsMap.get(key) ?? new Set<string>();
+              nextSet.add(normalizedAreaId);
+              allowedAreaIdsMap.set(key, nextSet);
+            });
+          }
+        }
+        if (dttbIds.length > 0) {
           const { data: allowedMonumentEntries, error: allowedMonumentError } =
             await supabase
               .from("day_type_time_block_allowed_monuments")
@@ -976,6 +1023,8 @@ export function JumpToDateSheet({
         setBlockAllowedHabitTypes(allowedHabitTypesMap);
         setBlockAllowAllSkills(allowAllSkillMap);
         setBlockAllowedSkillIds(allowedSkillIdsMap);
+        setBlockAllowAllAreas(allowAllAreaMap);
+        setBlockAllowedAreaIds(allowedAreaIdsMap);
         setBlockAllowAllMonuments(allowAllMonumentMap);
         setBlockAllowedMonumentIds(allowedMonumentIdsMap);
       } catch (error) {
@@ -989,6 +1038,8 @@ export function JumpToDateSheet({
         setBlockAllowAllHabitTypes(new Map());
         setBlockAllowAllSkills(new Map());
         setBlockAllowedSkillIds(new Map());
+        setBlockAllowAllAreas(new Map());
+        setBlockAllowedAreaIds(new Map());
         setBlockAllowAllMonuments(new Map());
         setBlockAllowedMonumentIds(new Map());
         setBlockAllowedHabitTypes(new Map());
@@ -1432,6 +1483,9 @@ export function JumpToDateSheet({
       const allowAllSkills = constraintKey
         ? blockAllowAllSkills.get(constraintKey) ?? true
         : true;
+      const allowAllAreas = constraintKey
+        ? blockAllowAllAreas.get(constraintKey) ?? true
+        : true;
       const allowAllMonuments = constraintKey
         ? blockAllowAllMonuments.get(constraintKey) ?? true
         : true;
@@ -1440,6 +1494,9 @@ export function JumpToDateSheet({
         : undefined;
       const allowedSkillIds = constraintKey
         ? blockAllowedSkillIds.get(constraintKey)
+        : undefined;
+      const allowedAreaIds = constraintKey
+        ? blockAllowedAreaIds.get(constraintKey)
         : undefined;
       const allowedMonumentIds = constraintKey
         ? blockAllowedMonumentIds.get(constraintKey)
@@ -1454,18 +1511,22 @@ export function JumpToDateSheet({
         hasConstraints:
           !allowAllHabits ||
           !allowAllSkills ||
+          !allowAllAreas ||
           !allowAllMonuments ||
           Boolean(allowedHabitTypes?.size) ||
           Boolean(allowedSkillIds?.size) ||
+          Boolean(allowedAreaIds?.size) ||
           Boolean(allowedMonumentIds?.size),
       };
     });
   }, [
     activeDayTypeId,
     blockAllowAllHabitTypes,
+    blockAllowAllAreas,
     blockAllowAllMonuments,
     blockAllowAllSkills,
     blockAllowedHabitTypes,
+    blockAllowedAreaIds,
     blockAllowedMonumentIds,
     blockAllowedSkillIds,
     paintDayType?.id,
@@ -1491,6 +1552,9 @@ export function JumpToDateSheet({
     const allowAllSkills = constraintKey
       ? blockAllowAllSkills.get(constraintKey) ?? true
       : true;
+    const allowAllAreas = constraintKey
+      ? blockAllowAllAreas.get(constraintKey) ?? true
+      : true;
     const allowAllMonuments = constraintKey
       ? blockAllowAllMonuments.get(constraintKey) ?? true
       : true;
@@ -1500,15 +1564,20 @@ export function JumpToDateSheet({
     const allowedSkillIds = constraintKey
       ? blockAllowedSkillIds.get(constraintKey)
       : undefined;
+    const allowedAreaIds = constraintKey
+      ? blockAllowedAreaIds.get(constraintKey)
+      : undefined;
     const allowedMonumentIds = constraintKey
       ? blockAllowedMonumentIds.get(constraintKey)
       : undefined;
     const hasConstraints =
       !allowAllHabits ||
       !allowAllSkills ||
+      !allowAllAreas ||
       !allowAllMonuments ||
       Boolean(allowedHabitTypes?.size) ||
       Boolean(allowedSkillIds?.size) ||
+      Boolean(allowedAreaIds?.size) ||
       Boolean(allowedMonumentIds?.size);
     return {
       blockType: selectedPaintTimeBlock.blockType ?? "FOCUS",
@@ -1522,9 +1591,11 @@ export function JumpToDateSheet({
   }, [
     activeDayTypeId,
     blockAllowAllHabitTypes,
+    blockAllowAllAreas,
     blockAllowAllMonuments,
     blockAllowAllSkills,
     blockAllowedHabitTypes,
+    blockAllowedAreaIds,
     blockAllowedMonumentIds,
     blockAllowedSkillIds,
     paintDayType?.id,
@@ -1542,6 +1613,9 @@ export function JumpToDateSheet({
   const selectedAllowAllSkills = selectedPaintConstraintKey
     ? blockAllowAllSkills.get(selectedPaintConstraintKey) ?? true
     : true;
+  const selectedAllowAllAreas = selectedPaintConstraintKey
+    ? blockAllowAllAreas.get(selectedPaintConstraintKey) ?? true
+    : true;
   const selectedAllowAllMonuments = selectedPaintConstraintKey
     ? blockAllowAllMonuments.get(selectedPaintConstraintKey) ?? true
     : true;
@@ -1550,6 +1624,9 @@ export function JumpToDateSheet({
     : new Set<string>();
   const selectedAllowedSkillIds = selectedPaintConstraintKey
     ? blockAllowedSkillIds.get(selectedPaintConstraintKey) ?? new Set<string>()
+    : new Set<string>();
+  const selectedAllowedAreaIds = selectedPaintConstraintKey
+    ? blockAllowedAreaIds.get(selectedPaintConstraintKey) ?? new Set<string>()
     : new Set<string>();
   const selectedAllowedMonumentIds = selectedPaintConstraintKey
     ? blockAllowedMonumentIds.get(selectedPaintConstraintKey) ??
@@ -1578,6 +1655,15 @@ export function JumpToDateSheet({
       })),
     [monuments]
   );
+  const areaConstraintOptions = useMemo(
+    () => AREAS.map((area) => ({ value: area.id, label: area.label })),
+    []
+  );
+  const selectedAllowAllScope = selectedAllowAllAreas && selectedAllowAllMonuments;
+  const selectedAllowedScopeIds = new Set([
+    ...Array.from(selectedAllowedAreaIds),
+    ...Array.from(selectedAllowedMonumentIds),
+  ]);
   const sortedConstraintSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
@@ -2060,6 +2146,8 @@ export function JumpToDateSheet({
         allowedHabitTypes?: Set<string>;
         allowAllSkills?: boolean;
         allowedSkillIds?: Set<string>;
+        allowAllAreas?: boolean;
+        allowedAreaIds?: Set<string>;
         allowAllMonuments?: boolean;
         allowedMonumentIds?: Set<string>;
       }
@@ -2103,9 +2191,14 @@ export function JumpToDateSheet({
         if (shouldUpdateSkillSettings) {
           payload.allow_all_skills = updates.allowAllSkills ?? true;
         }
+        const shouldUpdateAreaSettings =
+          typeof updates.allowAllAreas === "boolean";
+        if (shouldUpdateAreaSettings) {
+          payload.allow_all_areas = updates.allowAllAreas ?? true;
+        }
         const shouldUpdateMonumentSettings =
           typeof updates.allowAllMonuments === "boolean";
-        if (shouldUpdateMonumentSettings) {
+        if (shouldUpdateAreaSettings) {
           payload.allow_all_monuments = updates.allowAllMonuments ?? true;
         }
         const { error } = await supabase
@@ -2134,6 +2227,14 @@ export function JumpToDateSheet({
         );
         const allowedMonumentIdsSet =
           updates.allowedMonumentIds ?? new Set<string>();
+        const allowedAreaIdsSet = updates.allowedAreaIds ?? new Set<string>();
+        const normalizedAreaIds = Array.from(
+          new Set(
+            Array.from(allowedAreaIdsSet)
+              .map((value) => value.trim())
+              .filter((value): value is string => value.length > 0)
+          )
+        );
         const normalizedMonumentIds = Array.from(
           new Set(
             Array.from(allowedMonumentIdsSet)
@@ -2145,6 +2246,7 @@ export function JumpToDateSheet({
         if (
           shouldUpdateHabitSettings ||
           shouldUpdateSkillSettings ||
+          shouldUpdateAreaSettings ||
           shouldUpdateMonumentSettings
         ) {
           const { data: dayTypeTimeBlock, error: lookupError } =
@@ -2223,6 +2325,37 @@ export function JumpToDateSheet({
           setBlockAllowedSkillIds((prev) => {
             const next = new Map(prev);
             next.set(constraintKey, new Set(normalizedSkillIds));
+            return next;
+          });
+        }
+        if (shouldUpdateMonumentSettings) {
+          const resolvedDttbId = dttbId!;
+          const { error: deleteAreaError } = await supabase
+            .from("day_type_time_block_allowed_areas")
+            .delete()
+            .eq("day_type_time_block_id", resolvedDttbId);
+          if (deleteAreaError) throw deleteAreaError;
+          if (updates.allowAllAreas === false && normalizedAreaIds.length > 0) {
+            const { error: insertAreaError } = await supabase
+              .from("day_type_time_block_allowed_areas")
+              .insert(
+                normalizedAreaIds.map((areaId) => ({
+                  user_id: userId,
+                  day_type_time_block_id: resolvedDttbId,
+                  area_id: areaId,
+                }))
+              );
+            if (insertAreaError) throw insertAreaError;
+          }
+          const constraintKey = `${dayTypeId}:${blockId}`;
+          setBlockAllowAllAreas((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, updates.allowAllAreas ?? true);
+            return next;
+          });
+          setBlockAllowedAreaIds((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, new Set(normalizedAreaIds));
             return next;
           });
         }
@@ -3420,7 +3553,7 @@ export function JumpToDateSheet({
                                                 <details className="group grid gap-1">
                                                   <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
                                                     <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                                                      Monuments
+                                                      Scope
                                                     </span>
                                                     <span
                                                       className={
@@ -3429,9 +3562,12 @@ export function JumpToDateSheet({
                                                     >
                                                       <span className="truncate group-open:hidden">
                                                         {formatConstraintSummary(
-                                                          selectedAllowedMonumentIds,
-                                                          monumentConstraintOptions,
-                                                          selectedAllowAllMonuments
+                                                          selectedAllowedScopeIds,
+                                                          [
+                                                            ...areaConstraintOptions,
+                                                            ...monumentConstraintOptions,
+                                                          ],
+                                                          selectedAllowAllScope
                                                         )}
                                                       </span>
                                                       <span className="hidden truncate group-open:inline">
@@ -3439,54 +3575,119 @@ export function JumpToDateSheet({
                                                       </span>
                                                     </span>
                                                   </summary>
-                                                  <div className="max-h-40 overflow-y-auto pr-1 pt-1">
+                                                  <div className="max-h-40 space-y-2 overflow-y-auto pr-1 pt-1">
+                                                    <div className="space-y-1.5">
+                                                      <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                                                        Areas
+                                                      </div>
+                                                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                                                        <button
+                                                          type="button"
+                                                          className={cn(
+                                                            constraintOptionPillBaseClassName,
+                                                            selectedAllowAllScope
+                                                              ? constraintOptionPillSelectedClassName
+                                                              : constraintOptionPillUnselectedClassName
+                                                          )}
+                                                          onClick={() => {
+                                                            const empty = new Set<string>();
+                                                            setBlockAllowAllAreas((prev) => {
+                                                              const next = new Map(prev);
+                                                              next.set(selectedPaintConstraintKey, true);
+                                                              return next;
+                                                            });
+                                                            setBlockAllowAllMonuments((prev) => {
+                                                              const next = new Map(prev);
+                                                              next.set(selectedPaintConstraintKey, true);
+                                                              return next;
+                                                            });
+                                                            setBlockAllowedAreaIds((prev) => {
+                                                              const next = new Map(prev);
+                                                              next.set(selectedPaintConstraintKey, empty);
+                                                              return next;
+                                                            });
+                                                            setBlockAllowedMonumentIds((prev) => {
+                                                              const next = new Map(prev);
+                                                              next.set(selectedPaintConstraintKey, empty);
+                                                              return next;
+                                                            });
+                                                            void saveBlockSettings(
+                                                              selectedPaintTimeBlock.id,
+                                                              {
+                                                                allowAllAreas: true,
+                                                                allowedAreaIds: empty,
+                                                                allowAllMonuments: true,
+                                                                allowedMonumentIds: empty,
+                                                              }
+                                                            );
+                                                          }}
+                                                        >
+                                                          Allow ALL
+                                                        </button>
+                                                        {AREAS.map((area) => {
+                                                          const selected =
+                                                            !selectedAllowAllScope &&
+                                                            selectedAllowedAreaIds.has(area.id);
+                                                          return (
+                                                            <button
+                                                              key={area.id}
+                                                              type="button"
+                                                              aria-pressed={selected}
+                                                              onClick={() => {
+                                                                const nextAllowed = new Set(selectedAllowedAreaIds);
+                                                                if (nextAllowed.has(area.id)) {
+                                                                  nextAllowed.delete(area.id);
+                                                                } else {
+                                                                  nextAllowed.add(area.id);
+                                                                }
+                                                                setBlockAllowAllAreas((prev) => {
+                                                                  const next = new Map(prev);
+                                                                  next.set(selectedPaintConstraintKey, false);
+                                                                  return next;
+                                                                });
+                                                                setBlockAllowAllMonuments((prev) => {
+                                                                  const next = new Map(prev);
+                                                                  next.set(selectedPaintConstraintKey, false);
+                                                                  return next;
+                                                                });
+                                                                setBlockAllowedAreaIds((prev) => {
+                                                                  const next = new Map(prev);
+                                                                  next.set(selectedPaintConstraintKey, nextAllowed);
+                                                                  return next;
+                                                                });
+                                                                void saveBlockSettings(
+                                                                  selectedPaintTimeBlock.id,
+                                                                  {
+                                                                    allowAllAreas: false,
+                                                                    allowedAreaIds: nextAllowed,
+                                                                    allowAllMonuments: false,
+                                                                    allowedMonumentIds: selectedAllowedMonumentIds,
+                                                                  }
+                                                                );
+                                                              }}
+                                                              className={cn(
+                                                                constraintOptionPillBaseClassName,
+                                                                selected
+                                                                  ? constraintOptionPillSelectedClassName
+                                                                  : constraintOptionPillUnselectedClassName
+                                                              )}
+                                                            >
+                                                              <span className={constraintOptionIconClassName}>
+                                                                {area.emoji}
+                                                              </span>
+                                                              <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                                {area.label}
+                                                              </span>
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                      <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                                                        Monuments
+                                                      </div>
                                                     <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                                      <button
-                                                        type="button"
-                                                        className={cn(
-                                                          constraintOptionPillBaseClassName,
-                                                          selectedAllowAllMonuments
-                                                            ? constraintOptionPillSelectedClassName
-                                                            : constraintOptionPillUnselectedClassName
-                                                        )}
-                                                        onClick={() => {
-                                                          const empty =
-                                                            new Set<string>();
-                                                          setBlockAllowAllMonuments(
-                                                            (prev) => {
-                                                              const next =
-                                                                new Map(prev);
-                                                              next.set(
-                                                                selectedPaintConstraintKey,
-                                                                true
-                                                              );
-                                                              return next;
-                                                            }
-                                                          );
-                                                          setBlockAllowedMonumentIds(
-                                                            (prev) => {
-                                                              const next =
-                                                                new Map(prev);
-                                                              next.set(
-                                                                selectedPaintConstraintKey,
-                                                                empty
-                                                              );
-                                                              return next;
-                                                            }
-                                                          );
-                                                          void saveBlockSettings(
-                                                            selectedPaintTimeBlock.id,
-                                                            {
-                                                              allowAllMonuments:
-                                                                true,
-                                                              allowedMonumentIds:
-                                                                empty,
-                                                            }
-                                                          );
-                                                        }}
-                                                      >
-                                                        Allow ALL
-                                                      </button>
                                                       {monumentsLoading ? (
                                                         <p className="w-full text-[10px] text-white/35">
                                                           Loading monuments...
@@ -3500,7 +3701,7 @@ export function JumpToDateSheet({
                                                         sortedConstraintMonuments.map(
                                                           (monument) => {
                                                             const selected =
-                                                              !selectedAllowAllMonuments &&
+                                                              !selectedAllowAllScope &&
                                                               selectedAllowedMonumentIds.has(
                                                                 monument.id
                                                               );
@@ -3544,6 +3745,19 @@ export function JumpToDateSheet({
                                                                       return next;
                                                                     }
                                                                   );
+                                                                  setBlockAllowAllAreas(
+                                                                    (prev) => {
+                                                                      const next =
+                                                                        new Map(
+                                                                          prev
+                                                                        );
+                                                                      next.set(
+                                                                        selectedPaintConstraintKey,
+                                                                        false
+                                                                      );
+                                                                      return next;
+                                                                    }
+                                                                  );
                                                                   setBlockAllowedMonumentIds(
                                                                     (prev) => {
                                                                       const next =
@@ -3564,6 +3778,10 @@ export function JumpToDateSheet({
                                                                         false,
                                                                       allowedMonumentIds:
                                                                         nextAllowed,
+                                                                      allowAllAreas:
+                                                                        false,
+                                                                      allowedAreaIds:
+                                                                        selectedAllowedAreaIds,
                                                                     }
                                                                   );
                                                                 }}
@@ -3595,12 +3813,13 @@ export function JumpToDateSheet({
                                                         )
                                                       )}
                                                     </div>
+                                                    </div>
                                                   </div>
-                                                  {!selectedAllowAllMonuments &&
-                                                  selectedAllowedMonumentIds.size ===
+                                                  {!selectedAllowAllScope &&
+                                                  selectedAllowedScopeIds.size ===
                                                     0 ? (
                                                     <div className="text-[10px] text-white/35">
-                                                      No monuments allowed.
+                                                      No scope selected.
                                                     </div>
                                                   ) : null}
                                                 </details>

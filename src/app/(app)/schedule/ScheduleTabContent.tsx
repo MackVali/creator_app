@@ -128,6 +128,7 @@ import {
 import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
+import { AREAS } from "@/config/areas";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
   computeTimelineLayoutForSyncHabits,
@@ -1101,6 +1102,8 @@ type TimeBlockConstraintDraft = {
   allowedHabitTypes: Set<string>;
   allowAllSkills: boolean;
   allowedSkillIds: Set<string>;
+  allowAllAreas: boolean;
+  allowedAreaIds: Set<string>;
   allowAllMonuments: boolean;
   allowedMonumentIds: Set<string>;
 };
@@ -11092,6 +11095,10 @@ export default function ScheduleTabContent({
         allowedSkillIds: normalizeConstraintSet(
           block.allowedSkillIdsSet ?? block.allowedSkillIds
         ),
+        allowAllAreas: block.allowAllAreas ?? true,
+        allowedAreaIds: normalizeConstraintSet(
+          block.allowedAreaIdsSet ?? block.allowedAreaIds
+        ),
         allowAllMonuments: block.allowAllMonuments ?? true,
         allowedMonumentIds: normalizeConstraintSet(
           block.allowedMonumentIdsSet ?? block.allowedMonumentIds
@@ -11127,6 +11134,7 @@ export default function ScheduleTabContent({
           location_context_id: draft.locationContextId,
           allow_all_habit_types: draft.allowAllHabitTypes,
           allow_all_skills: draft.allowAllSkills,
+          allow_all_areas: draft.allowAllAreas,
           allow_all_monuments: draft.allowAllMonuments,
         } as never)
         .eq("id", dayTypeTimeBlockId)
@@ -11137,6 +11145,9 @@ export default function ScheduleTabContent({
         .map((value) => value.trim().toUpperCase())
         .filter((value, index, array) => value && array.indexOf(value) === index);
       const allowedSkillIds = Array.from(draft.allowedSkillIds)
+        .map((value) => value.trim())
+        .filter((value, index, array) => value && array.indexOf(value) === index);
+      const allowedAreaIds = Array.from(draft.allowedAreaIds)
         .map((value) => value.trim())
         .filter((value, index, array) => value && array.indexOf(value) === index);
       const allowedMonumentIds = Array.from(draft.allowedMonumentIds)
@@ -11177,6 +11188,24 @@ export default function ScheduleTabContent({
             })) as never
           );
         if (skillInsertError) throw skillInsertError;
+      }
+
+      const { error: areaDeleteError } = await supabase
+        .from("day_type_time_block_allowed_areas")
+        .delete()
+        .eq("day_type_time_block_id", dayTypeTimeBlockId);
+      if (areaDeleteError) throw areaDeleteError;
+      if (!draft.allowAllAreas && allowedAreaIds.length > 0) {
+        const { error: areaInsertError } = await supabase
+          .from("day_type_time_block_allowed_areas")
+          .insert(
+            allowedAreaIds.map((areaId) => ({
+              user_id: userId,
+              day_type_time_block_id: dayTypeTimeBlockId,
+              area_id: areaId,
+            })) as never
+          );
+        if (areaInsertError) throw areaInsertError;
       }
 
       const { error: monumentDeleteError } = await supabase
@@ -11475,6 +11504,8 @@ export default function ScheduleTabContent({
           allowedHabitTypes: normalizeConstraintSet(payload.allowedInstanceTypes),
           allowAllSkills: payload.allowAllSkills,
           allowedSkillIds: normalizeConstraintSet(payload.allowedSkillIds),
+          allowAllAreas: payload.allowAllAreas ?? draft.allowAllAreas,
+          allowedAreaIds: normalizeConstraintSet(payload.allowedAreaIds),
           allowAllMonuments: payload.allowAllMonuments,
           allowedMonumentIds: normalizeConstraintSet(payload.allowedMonumentIds),
         });
@@ -11535,6 +11566,20 @@ export default function ScheduleTabContent({
       })),
     [monuments]
   );
+  const timeBlockConstraintAreaOptions = useMemo(
+    () => AREAS.map((area) => ({ value: area.id, label: area.label })),
+    []
+  );
+  const selectedTimeBlockAllowAllScope = selectedTimeBlockForConstraints
+    ? selectedTimeBlockForConstraints.allowAllAreas &&
+      selectedTimeBlockForConstraints.allowAllMonuments
+    : true;
+  const selectedTimeBlockAllowedScopeIds = selectedTimeBlockForConstraints
+    ? new Set([
+        ...Array.from(selectedTimeBlockForConstraints.allowedAreaIds),
+        ...Array.from(selectedTimeBlockForConstraints.allowedMonumentIds),
+      ])
+    : new Set<string>();
   const sortedTimeBlockConstraintSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
@@ -17646,14 +17691,17 @@ export default function ScheduleTabContent({
                   <details className="group grid gap-1">
                     <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
                       <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                        Monuments
+                        Scope
                       </span>
                       <span className={TIME_BLOCK_CONSTRAINT_CONTROL_PILL}>
                         <span className="truncate group-open:hidden">
                           {formatTimeBlockConstraintSummary(
-                            selectedTimeBlockForConstraints.allowedMonumentIds,
-                            timeBlockConstraintMonumentOptions,
-                            selectedTimeBlockForConstraints.allowAllMonuments
+                            selectedTimeBlockAllowedScopeIds,
+                            [
+                              ...timeBlockConstraintAreaOptions,
+                              ...timeBlockConstraintMonumentOptions,
+                            ],
+                            selectedTimeBlockAllowAllScope
                           )}
                         </span>
                         <span className="hidden truncate group-open:inline">Choose</span>
@@ -17667,15 +17715,18 @@ export default function ScheduleTabContent({
                         className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
                       />
                       <div className="max-h-40 overflow-y-auto pr-1">
+                        <div className="space-y-2">
                         <div className="flex flex-wrap gap-1.5 sm:gap-2">
                           <button
                             type="button"
-                            aria-pressed={selectedTimeBlockForConstraints.allowAllMonuments}
+                            aria-pressed={selectedTimeBlockAllowAllScope}
                             onClick={() =>
                               setSelectedTimeBlockForConstraints((prev) =>
                                 prev
                                   ? {
                                       ...prev,
+                                      allowAllAreas: true,
+                                      allowedAreaIds: new Set<string>(),
                                       allowAllMonuments: true,
                                       allowedMonumentIds: new Set<string>(),
                                     }
@@ -17684,13 +17735,54 @@ export default function ScheduleTabContent({
                             }
                             className={clsx(
                               TIME_BLOCK_CONSTRAINT_PILL_BASE,
-                              selectedTimeBlockForConstraints.allowAllMonuments
+                              selectedTimeBlockAllowAllScope
                                 ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
                                 : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
                             )}
                           >
                             Allow ALL
                           </button>
+                          {AREAS.map((area) => {
+                            const selected =
+                              !selectedTimeBlockAllowAllScope &&
+                              selectedTimeBlockForConstraints.allowedAreaIds.has(area.id);
+                            return (
+                              <button
+                                key={area.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setSelectedTimeBlockForConstraints((prev) => {
+                                    if (!prev) return prev;
+                                    const next = new Set(prev.allowedAreaIds);
+                                    if (next.has(area.id)) next.delete(area.id);
+                                    else next.add(area.id);
+                                    return {
+                                      ...prev,
+                                      allowAllAreas: false,
+                                      allowAllMonuments: false,
+                                      allowedAreaIds: next,
+                                    };
+                                  })
+                                }
+                                className={clsx(
+                                  TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                                  selected
+                                    ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                                    : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                                )}
+                              >
+                                <span className={TIME_BLOCK_CONSTRAINT_OPTION_ICON}>
+                                  {area.emoji}
+                                </span>
+                                <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                  {area.label}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
                           {filteredTimeBlockConstraintMonuments.length === 0 ? (
                             <p className="w-full text-[10px] text-white/35">
                               No monuments found.
@@ -17698,7 +17790,7 @@ export default function ScheduleTabContent({
                           ) : (
                             filteredTimeBlockConstraintMonuments.map((monument) => {
                               const selected =
-                                !selectedTimeBlockForConstraints.allowAllMonuments &&
+                                !selectedTimeBlockAllowAllScope &&
                                 selectedTimeBlockForConstraints.allowedMonumentIds.has(
                                   monument.id
                                 );
@@ -17715,6 +17807,7 @@ export default function ScheduleTabContent({
                                       else next.add(monument.id);
                                       return {
                                         ...prev,
+                                        allowAllAreas: false,
                                         allowAllMonuments: false,
                                         allowedMonumentIds: next,
                                       };
@@ -17738,11 +17831,12 @@ export default function ScheduleTabContent({
                             })
                           )}
                         </div>
+                        </div>
                       </div>
-                      {!selectedTimeBlockForConstraints.allowAllMonuments &&
-                      selectedTimeBlockForConstraints.allowedMonumentIds.size === 0 ? (
+                      {!selectedTimeBlockAllowAllScope &&
+                      selectedTimeBlockAllowedScopeIds.size === 0 ? (
                         <div className="text-[10px] text-white/35">
-                          No monuments allowed.
+                          No scope selected.
                         </div>
                       ) : null}
                     </div>

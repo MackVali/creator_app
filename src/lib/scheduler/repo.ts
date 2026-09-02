@@ -18,6 +18,7 @@ import {
 } from "../goals/status";
 import { log } from "@/lib/utils/logGate";
 import { findRedundantStandaloneRoadmapItemIds } from "@/lib/queries/roadmap-reconciliation";
+import { getAreaById } from "@/config/areas";
 
 const PRIORITY_VALUES = [
   "NO",
@@ -204,6 +205,12 @@ export type WindowMonumentDisplay = {
   title?: string | null;
 };
 
+export type WindowAreaDisplay = {
+  id: string;
+  emoji: string | null;
+  title?: string | null;
+};
+
 export type WindowLite = {
   id: string;
   label: string;
@@ -224,15 +231,19 @@ export type WindowLite = {
   allowAllInstanceTypes?: boolean;
   allowAllHabitTypes?: boolean;
   allowAllSkills?: boolean;
+  allowAllAreas?: boolean;
   allowAllMonuments?: boolean;
   allowedInstanceTypes?: string[] | null;
   allowedHabitTypes?: string[] | null;
   allowedSkillIds?: string[] | null;
+  allowedAreaIds?: string[] | null;
   allowedMonumentIds?: string[] | null;
   allowedInstanceTypesSet?: Set<string>;
   allowedHabitTypesSet?: Set<string>;
   allowedSkillIdsSet?: Set<string>;
+  allowedAreaIdsSet?: Set<string>;
   allowedMonumentIdsSet?: Set<string>;
+  allowedAreaDisplays?: WindowAreaDisplay[];
   allowedSkillDisplays?: WindowSkillDisplay[];
   allowedMonumentDisplays?: WindowMonumentDisplay[];
 };
@@ -251,9 +262,11 @@ type WindowRecord = {
   day_type_time_block_id?: string | null;
   allow_all_habit_types?: boolean | null;
   allow_all_skills?: boolean | null;
+  allow_all_areas?: boolean | null;
   allow_all_monuments?: boolean | null;
   allowed_habit_types?: string[] | null;
   allowed_skill_ids?: string[] | null;
+  allowed_area_ids?: string[] | null;
   allowed_monument_ids?: string[] | null;
   location_context?: {
     id?: string | null;
@@ -272,6 +285,10 @@ type TaskRecord = {
   goal_id?: string | null;
   project_id?: string | null;
   skill_id?: string | null;
+  goals?: {
+    area_id?: string | null;
+    monument_id?: string | null;
+  } | null;
   skills?: {
     icon?: string | null;
     monument_id?: string | null;
@@ -363,7 +380,7 @@ function uniqueConstraintIds(
 
 function collectWindowConstraintIds(
   windows: WindowLite[],
-  key: "allowedSkillIds" | "allowedMonumentIds"
+  key: "allowedSkillIds" | "allowedAreaIds" | "allowedMonumentIds"
 ): string[] {
   return Array.from(
     new Set(windows.flatMap((window) => uniqueConstraintIds(window[key])))
@@ -442,6 +459,17 @@ function attachConstraintDisplays(
   }
 ): WindowLite[] {
   return windows.map((window) => {
+    const areaDisplays = uniqueConstraintIds(window.allowedAreaIds)
+      .map((id) => {
+        const area = getAreaById(id);
+        if (!area) return null;
+        return {
+          id: area.id,
+          emoji: area.emoji,
+          title: area.label,
+        } satisfies WindowAreaDisplay;
+      })
+      .filter((display): display is WindowAreaDisplay => display !== null);
     const skillDisplays = uniqueConstraintIds(window.allowedSkillIds)
       .map((id) => displays.skills.get(id))
       .filter((display): display is WindowSkillDisplay => Boolean(display));
@@ -453,6 +481,7 @@ function attachConstraintDisplays(
 
     return {
       ...window,
+      allowedAreaDisplays: areaDisplays.length > 0 ? areaDisplays : undefined,
       allowedSkillDisplays: skillDisplays.length > 0 ? skillDisplays : undefined,
       allowedMonumentDisplays:
         monumentDisplays.length > 0 ? monumentDisplays : undefined,
@@ -465,8 +494,11 @@ async function enrichWindowConstraintDisplays(
   windows: WindowLite[]
 ): Promise<WindowLite[]> {
   const skillIds = collectWindowConstraintIds(windows, "allowedSkillIds");
+  const areaIds = collectWindowConstraintIds(windows, "allowedAreaIds");
   const monumentIds = collectWindowConstraintIds(windows, "allowedMonumentIds");
-  if (skillIds.length === 0 && monumentIds.length === 0) return windows;
+  if (skillIds.length === 0 && areaIds.length === 0 && monumentIds.length === 0) {
+    return windows;
+  }
 
   const displays = await fetchConstraintDisplayMaps(
     supabase,
@@ -487,6 +519,7 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
   const label = record.location_context?.label ?? (value ? value : null);
   const allowedHabitTypes = normalizeStrings(record.allowed_habit_types);
   const allowedSkillIds = normalizeStrings(record.allowed_skill_ids);
+  const allowedAreaIds = normalizeStrings(record.allowed_area_ids);
   const allowedMonumentIds = normalizeStrings(record.allowed_monument_ids);
 
   return {
@@ -503,12 +536,15 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
     dayTypeTimeBlockId: record.day_type_time_block_id ?? null,
     allowAllHabitTypes: record.allow_all_habit_types === true,
     allowAllSkills: record.allow_all_skills === true,
+    allowAllAreas: record.allow_all_areas === true,
     allowAllMonuments: record.allow_all_monuments === true,
     allowedHabitTypes,
     allowedSkillIds,
+    allowedAreaIds,
     allowedMonumentIds,
     allowedHabitTypesSet: buildHabitTypeSet(allowedHabitTypes),
     allowedSkillIdsSet: buildIdSet(allowedSkillIds),
+    allowedAreaIdsSet: buildIdSet(allowedAreaIds),
     allowedMonumentIdsSet: buildIdSet(allowedMonumentIds),
   };
 }
@@ -534,6 +570,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
     "goal_id",
     "project_id",
     "skill_id",
+    "goals(area_id, monument_id)",
     "skills(icon, monument_id)",
   ].join(", ");
 
@@ -560,6 +597,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       duration_min: safeDuration,
       energy: normalizeEnergyValue(energyName),
       goal_id: record.goal_id ?? null,
+      goal_area_id: record.goals?.area_id ?? null,
       project_id: record.project_id ?? null,
       skill_id: record.skill_id ?? null,
       skill_icon: record.skills?.icon ?? null,
@@ -836,7 +874,7 @@ async function fetchWindowsForDateLegacy(
   const weekday = weekdayInTimeZone(date, timeZone);
   const prevWeekday = (weekday + 6) % 7;
   const contextJoin = "location_context:location_contexts(id, value, label)";
-  const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`;
+  const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_areas, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_area_ids, allowed_monument_ids, ${contextJoin}`;
 
   const userId = options?.userId ?? null;
   const selectWindows = () => supabase.from("windows").select(columns);
@@ -1013,7 +1051,7 @@ export async function getWindowsForDate_v2(
   if (!dayTypeId) return [];
 
   const contextJoin = "location_context:location_contexts(id, value, label)";
-  const columns = `id, day_type_id, energy, block_type, location_context_id, time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, time_blocks ( id, label, start_local, end_local, days ), ${contextJoin}`;
+  const columns = `id, day_type_id, energy, block_type, location_context_id, time_block_id, allow_all_habit_types, allow_all_skills, allow_all_areas, allow_all_monuments, time_blocks ( id, label, start_local, end_local, days ), ${contextJoin}`;
   const { data: linkRows, error: linksError } = await supabase
     .from("day_type_time_blocks")
     .select(columns)
@@ -1038,8 +1076,12 @@ export async function getWindowsForDate_v2(
     day_type_time_block_id: string | null;
     monument_id: string | null;
   };
+  type AreaWhitelistRow = {
+    day_type_time_block_id: string | null;
+    area_id: string | null;
+  };
 
-  const [habitWhitelist, skillWhitelist, monumentWhitelist] =
+  const [habitWhitelist, skillWhitelist, areaWhitelist, monumentWhitelist] =
     dttbIds.length > 0
       ? await Promise.all([
           supabase
@@ -1051,6 +1093,10 @@ export async function getWindowsForDate_v2(
             .select("day_type_time_block_id, skill_id")
             .in("day_type_time_block_id", dttbIds),
           supabase
+            .from("day_type_time_block_allowed_areas")
+            .select("day_type_time_block_id, area_id")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
             .from("day_type_time_block_allowed_monuments")
             .select("day_type_time_block_id, monument_id")
             .in("day_type_time_block_id", dttbIds),
@@ -1058,11 +1104,13 @@ export async function getWindowsForDate_v2(
       : [
           { data: [] as HabitWhitelistRow[] | null, error: null },
           { data: [] as SkillWhitelistRow[] | null, error: null },
+          { data: [] as AreaWhitelistRow[] | null, error: null },
           { data: [] as MonumentWhitelistRow[] | null, error: null },
         ];
 
   if (habitWhitelist.error) throw habitWhitelist.error;
   if (skillWhitelist.error) throw skillWhitelist.error;
+  if (areaWhitelist.error) throw areaWhitelist.error;
   if (monumentWhitelist.error) throw monumentWhitelist.error;
 
   const habitAllowMap = new Map<string, Set<string>>();
@@ -1088,6 +1136,17 @@ export async function getWindowsForDate_v2(
   }
 
   const monumentAllowMap = new Map<string, Set<string>>();
+  const areaAllowMap = new Map<string, Set<string>>();
+  for (const row of (areaWhitelist.data ?? []) as AreaWhitelistRow[]) {
+    const key = row.day_type_time_block_id ?? "";
+    if (!key || !row.area_id) continue;
+    const normalized = row.area_id.trim();
+    if (!normalized) continue;
+    const existing = areaAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    areaAllowMap.set(key, existing);
+  }
+
   for (const row of (monumentWhitelist.data ?? []) as MonumentWhitelistRow[]) {
     const key = row.day_type_time_block_id ?? "";
     if (!key || !row.monument_id) continue;
@@ -1132,6 +1191,7 @@ export async function getWindowsForDate_v2(
       const monumentWhitelist = dttbId
         ? monumentAllowMap.get(dttbId)
         : undefined;
+      const areaWhitelist = dttbId ? areaAllowMap.get(dttbId) : undefined;
 
       const allowAllHabitTypes = normalizeAllowAllFlag(
         row.allow_all_habit_types,
@@ -1140,6 +1200,10 @@ export async function getWindowsForDate_v2(
       const allowAllSkills = normalizeAllowAllFlag(
         row.allow_all_skills,
         skillWhitelist?.size ?? 0
+      );
+      const allowAllAreas = normalizeAllowAllFlag(
+        row.allow_all_areas,
+        areaWhitelist?.size ?? 0
       );
       const allowAllMonuments = normalizeAllowAllFlag(
         row.allow_all_monuments,
@@ -1166,14 +1230,18 @@ export async function getWindowsForDate_v2(
         block_type: row.block_type ?? null,
         blockType: row.block_type ?? null,
         dayTypeTimeBlockId: dttbId,
-       allowAllHabitTypes,
+        allowAllHabitTypes,
         allowAllSkills,
+        allowAllAreas,
         allowAllMonuments,
         allowedHabitTypes: dttbId
           ? Array.from(habitAllowMap.get(dttbId) ?? [])
           : null,
         allowedSkillIds: dttbId
           ? Array.from(skillAllowMap.get(dttbId) ?? [])
+          : null,
+        allowedAreaIds: dttbId
+          ? Array.from(areaAllowMap.get(dttbId) ?? [])
           : null,
         allowedMonumentIds: dttbId
           ? Array.from(monumentAllowMap.get(dttbId) ?? [])
@@ -1221,9 +1289,11 @@ type WindowSignature = {
   locationContextName: string | null;
   allowAllHabitTypes: boolean;
   allowAllSkills: boolean;
+  allowAllAreas: boolean;
   allowAllMonuments: boolean;
   allowedHabitTypes: string[] | null;
   allowedSkillIds: string[] | null;
+  allowedAreaIds: string[] | null;
   allowedMonumentIds: string[] | null;
 };
 
@@ -1275,9 +1345,11 @@ const buildWindowSignature = (win: WindowLite): WindowSignature => {
     locationContextName: win.location_context_name ?? null,
     allowAllHabitTypes: win.allowAllHabitTypes ?? true,
     allowAllSkills: win.allowAllSkills ?? true,
+    allowAllAreas: win.allowAllAreas ?? true,
     allowAllMonuments: win.allowAllMonuments ?? true,
     allowedHabitTypes: normalizeStringArray(win.allowedHabitTypes),
     allowedSkillIds: normalizeStringArray(win.allowedSkillIds),
+    allowedAreaIds: normalizeStringArray(win.allowedAreaIds),
     allowedMonumentIds: normalizeStringArray(win.allowedMonumentIds),
   };
 };
@@ -1370,7 +1442,7 @@ export async function fetchWindowsSnapshot(
   const { data, error } = await supabase
     .from("windows")
     .select(
-      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`
+      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_areas, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_area_ids, allowed_monument_ids, ${contextJoin}`
     )
     .eq("user_id", userId);
 
@@ -1397,7 +1469,7 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
   const { data, error } = await supabase
     .from("windows")
     .select(
-      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`
+      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_areas, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_area_ids, allowed_monument_ids, ${contextJoin}`
     );
 
   if (error) throw error;
@@ -1421,6 +1493,7 @@ export async function fetchProjectsMap(
     "duration_min",
     "effective_duration_min",
     "goal_id",
+    "goals(area_id)",
     "due_date",
     "global_rank",
   ].join(", ");
@@ -1439,7 +1512,11 @@ export async function fetchProjectsMap(
     stage?: string | null;
     energy?: string | number | null;
     duration_min?: number | null;
+    effective_duration_min?: number | null;
     goal_id?: string | null;
+    goals?: {
+      area_id?: string | null;
+    } | null;
     due_date?: string | null;
     global_rank?: number | string | null;
   };
@@ -1462,6 +1539,7 @@ export async function fetchProjectsMap(
         ? effectiveDuration
         : null,
       goal_id: p.goal_id ?? null,
+      goal_area_id: p.goals?.area_id ?? null,
       due_date: p.due_date ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
       global_rank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
@@ -1501,6 +1579,7 @@ export async function fetchAllProjectsMap(
     stage?: string | null;
     energy?: string | number | null;
     duration_min?: number | null;
+    effective_duration_min?: number | null;
     goal_id?: string | null;
     due_date?: string | null;
     global_rank?: number | string | null;
@@ -1572,6 +1651,7 @@ export type GoalSummary = {
   status: GoalStatus;
   weight: number;
   monumentId: string | null;
+  areaId: string | null;
   emoji: string | null;
   global_rank?: number | null;
   globalRank?: number | null;
@@ -1595,6 +1675,7 @@ export async function fetchGoalsForUser(
     roadmap_id?: string | null;
     priority_rank?: number | null;
     monument_id?: string | null;
+    area_id?: string | null;
     emoji?: string | null;
   };
   type MonumentRoadmapRecord = {
@@ -1656,7 +1737,7 @@ export async function fetchGoalsForUser(
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, status, active, global_rank, roadmap_id, priority_rank, monument_id, emoji"
+      "id, name, status, active, global_rank, roadmap_id, priority_rank, area_id, monument_id, emoji"
     )
     .eq("user_id", userId);
 
@@ -1867,6 +1948,7 @@ export async function fetchGoalsForUser(
       status,
       weight,
       monumentId: goal.monument_id ?? null,
+      areaId: goal.area_id ?? null,
       emoji: goal.emoji ?? null,
       global_rank: globalRank,
       globalRank,

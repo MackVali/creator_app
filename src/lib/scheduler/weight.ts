@@ -14,6 +14,7 @@ export type TaskLite = {
   duration_min: number;
   energy: string | null;
   goal_id?: string | null;
+  goal_area_id?: string | null;
   project_id?: string | null;
   skill_id?: string | null;
   skill_icon?: string | null;
@@ -29,6 +30,7 @@ export type ProjectLite = {
   duration_min?: number | null;
   effective_duration_min?: number | null;
   goal_id?: string | null;
+  goal_area_id?: string | null;
   due_date?: string | null;
   dueDate?: string | null;
   globalRank?: number | null;

@@ -107,6 +107,7 @@ type SkillCategoryRow = {
 
 type HabitGoalMetadataRow = {
   id?: string | null;
+  area_id?: string | null;
   monument_id?: string | null;
 };
 
@@ -140,6 +141,7 @@ type DayTypeTimeBlockFilterRow = {
   position?: number | string | null;
   allow_all_habit_types?: boolean | null;
   allow_all_skills?: boolean | null;
+  allow_all_areas?: boolean | null;
   allow_all_monuments?: boolean | null;
   time_blocks?:
     | {
@@ -180,6 +182,11 @@ type DayTypeTimeBlockAllowedSkillRow = {
 type DayTypeTimeBlockAllowedMonumentRow = {
   day_type_time_block_id?: string | null;
   monument_id?: string | null;
+};
+
+type DayTypeTimeBlockAllowedAreaRow = {
+  day_type_time_block_id?: string | null;
+  area_id?: string | null;
 };
 
 type CampaignGoalRow = {
@@ -341,10 +348,12 @@ function buildPriorityTimeBlockFilterOptions(
   rows: DayTypeTimeBlockFilterRow[],
   allowedHabitTypes: DayTypeTimeBlockAllowedHabitTypeRow[],
   allowedSkills: DayTypeTimeBlockAllowedSkillRow[],
+  allowedAreas: DayTypeTimeBlockAllowedAreaRow[],
   allowedMonuments: DayTypeTimeBlockAllowedMonumentRow[]
 ): PriorityTimeBlockFilterOptionData[] {
   const habitTypesByBlockId = new Map<string, Set<string>>();
   const skillIdsByBlockId = new Map<string, Set<string>>();
+  const areaIdsByBlockId = new Map<string, Set<string>>();
   const monumentIdsByBlockId = new Map<string, Set<string>>();
 
   for (const row of allowedHabitTypes) {
@@ -357,6 +366,9 @@ function buildPriorityTimeBlockFilterOptions(
   }
   for (const row of allowedSkills) {
     addAllowedValue(skillIdsByBlockId, row.day_type_time_block_id, row.skill_id);
+  }
+  for (const row of allowedAreas) {
+    addAllowedValue(areaIdsByBlockId, row.day_type_time_block_id, row.area_id);
   }
   for (const row of allowedMonuments) {
     addAllowedValue(
@@ -373,6 +385,7 @@ function buildPriorityTimeBlockFilterOptions(
       const dayType = firstJoinedRow(row.day_types);
       const habitTypes = Array.from(habitTypesByBlockId.get(row.id) ?? []);
       const skillIds = Array.from(skillIdsByBlockId.get(row.id) ?? []);
+      const areaIds = Array.from(areaIdsByBlockId.get(row.id) ?? []);
       const monumentIds = Array.from(monumentIdsByBlockId.get(row.id) ?? []);
       const start = formatTimeBlockTime(timeBlock?.start_local);
       const end = formatTimeBlockTime(timeBlock?.end_local);
@@ -394,12 +407,14 @@ function buildPriorityTimeBlockFilterOptions(
           habitTypes.length
         ),
         allowAllSkills: normalizeAllowAllFlag(row.allow_all_skills, skillIds.length),
+        allowAllAreas: normalizeAllowAllFlag(row.allow_all_areas, areaIds.length),
         allowAllMonuments: normalizeAllowAllFlag(
           row.allow_all_monuments,
           monumentIds.length
         ),
         allowedHabitTypes: habitTypes,
         allowedSkillIds: skillIds,
+        allowedAreaIds: areaIds,
         allowedMonumentIds: monumentIds,
       };
     })
@@ -580,6 +595,7 @@ function normalizeGoal(
               skillName: skill?.name ?? null,
               skillIcon: skill?.icon ?? null,
               skillMonumentId: task.skills?.monument_id ?? null,
+              areaId: row.area_id ?? null,
               priority: normalizePriority(task.priority),
               energy: task.energy ?? null,
               stage: task.stage ?? null,
@@ -624,6 +640,7 @@ function normalizeGoal(
           skillName: primarySkill?.name ?? null,
           skillIcon: primarySkill?.icon ?? null,
           skillMonumentId: skillMonumentIds[0] ?? null,
+          areaId: row.area_id ?? null,
           skillIds,
           skillMonumentIds,
           taskSkillIds: tasks.map((task) => task.skillId ?? null),
@@ -661,6 +678,7 @@ function normalizeHabit(
     skillIcon: skill?.icon ?? null,
     skillMonumentId,
     goalId: row.goal_id ?? goal?.id ?? null,
+    goalAreaId: goal?.area_id ?? null,
     goalMonumentId,
     monumentId,
     monumentName: monument?.title ?? null,
@@ -1071,7 +1089,7 @@ export async function loadPriorityEditorProps(
   const { data: timeBlockData, error: timeBlockError } = await supabase
     .from("day_type_time_blocks")
     .select(
-      `id,day_type_id,energy,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_monuments,
+      `id,day_type_id,energy,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_areas,allow_all_monuments,
       time_blocks(id,label,start_local,end_local),
       day_types(id,name)`
     )
@@ -1106,7 +1124,7 @@ export async function loadPriorityEditorProps(
     .select(
       `id,name,habit_type,global_order,skill_id,goal_id,routine_id,routine_position,duration_minutes,energy,recurrence_mode,current_streak_days,last_completed_at,created_at,updated_at,circle_id,
       skill:skills(id,name,icon,monument_id),
-      goal:goals(id,monument_id)`
+      goal:goals(id,area_id,monument_id)`
     )
     .eq("user_id", userId)
     .is("circle_id", null);
@@ -1163,6 +1181,7 @@ export async function loadPriorityEditorProps(
   const [
     allowedHabitTypesResult,
     allowedSkillsResult,
+    allowedAreasResult,
     allowedMonumentsResult,
   ] =
     !timeBlockError && dayTypeTimeBlockIds.length > 0
@@ -1176,6 +1195,10 @@ export async function loadPriorityEditorProps(
             .select("day_type_time_block_id,skill_id")
             .in("day_type_time_block_id", dayTypeTimeBlockIds),
           supabase
+            .from("day_type_time_block_allowed_areas")
+            .select("day_type_time_block_id,area_id")
+            .in("day_type_time_block_id", dayTypeTimeBlockIds),
+          supabase
             .from("day_type_time_block_allowed_monuments")
             .select("day_type_time_block_id,monument_id")
             .in("day_type_time_block_id", dayTypeTimeBlockIds),
@@ -1183,6 +1206,7 @@ export async function loadPriorityEditorProps(
       : [
           { data: [] as DayTypeTimeBlockAllowedHabitTypeRow[] | null, error: null },
           { data: [] as DayTypeTimeBlockAllowedSkillRow[] | null, error: null },
+          { data: [] as DayTypeTimeBlockAllowedAreaRow[] | null, error: null },
           { data: [] as DayTypeTimeBlockAllowedMonumentRow[] | null, error: null },
         ];
 
@@ -1196,6 +1220,12 @@ export async function loadPriorityEditorProps(
     console.error(
       "Failed to load Time Block Skill constraints for priority editor",
       allowedSkillsResult.error
+    );
+  }
+  if (allowedAreasResult.error) {
+    console.error(
+      "Failed to load Time Block Area constraints for priority editor",
+      allowedAreasResult.error
     );
   }
   if (allowedMonumentsResult.error) {
@@ -1364,6 +1394,7 @@ export async function loadPriorityEditorProps(
     (allowedHabitTypesResult.data ??
       []) as DayTypeTimeBlockAllowedHabitTypeRow[],
     (allowedSkillsResult.data ?? []) as DayTypeTimeBlockAllowedSkillRow[],
+    (allowedAreasResult.data ?? []) as DayTypeTimeBlockAllowedAreaRow[],
     (allowedMonumentsResult.data ??
       []) as DayTypeTimeBlockAllowedMonumentRow[]
   );

@@ -53,6 +53,7 @@ const OWNED_ROW_TARGETS: DeleteTarget[] = [
   { table: "schedule_instances" },
   { table: "day_type_time_block_allowed_habit_types" },
   { table: "day_type_time_block_allowed_skills" },
+  { table: "day_type_time_block_allowed_areas" },
   { table: "day_type_time_block_allowed_monuments" },
   { table: "day_type_assignments" },
   { table: "day_type_time_blocks" },

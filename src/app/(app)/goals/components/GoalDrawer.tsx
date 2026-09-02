@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronDown, Plus, Trash2, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Plus, Timer, Trash2, X } from "lucide-react";
 import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { WheelPicker, WheelPickerWrapper } from "@/components/wheel-picker";
 import type { LimitErrorCode } from "@/lib/goals/persistGoalUpdate";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
@@ -38,6 +39,18 @@ export interface GoalUpdateContext {
 
 type GoalDrawerSubmitResult = {
   limitCode: LimitErrorCode;
+};
+
+type GoalCampaignOption = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  roadmap_id: string | null;
+  primary_monument_id: string | null;
+  primary_circle_id?: string | null;
+  primary_area_id?: string | null;
+  scheduling_state?: string | null;
+  position: number | null;
 };
 
 interface GoalDrawerProps {
@@ -224,11 +237,115 @@ const toDateInputValue = (iso?: string | null) => {
   return parsed.toISOString().slice(0, 10);
 };
 
+const formatDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+
+const formatTimeInputValue = (date: Date) =>
+  `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes()
+  ).padStart(2, "0")}`;
+
+const toTimeInputValue = (iso?: string | null) => {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return formatTimeInputValue(parsed);
+};
+
+const toGoalDateInputValue = (iso?: string | null) => {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return formatDateInputValue(parsed);
+};
+
+const parseDateInputValueLocal = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+};
+
+const getTimeValueMinutes = (value: string) => {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
+const getTimeValueParts = (value: string) => {
+  const totalMinutes = getTimeValueMinutes(value) ?? 0;
+  const hours24 = Math.floor(totalMinutes / 60);
+  return {
+    hour: hours24 % 12 === 0 ? 12 : hours24 % 12,
+    minute: totalMinutes % 60,
+    period: hours24 >= 12 ? "PM" : "AM",
+  } as const;
+};
+
+const getTimeValueFromParts = (
+  hour: number,
+  minute: number,
+  period: "AM" | "PM"
+) => {
+  const normalizedHour = ((hour - 1 + 12) % 12) + 1;
+  let hours24 = normalizedHour % 12;
+  if (period === "PM") {
+    hours24 += 12;
+  }
+  return `${String(hours24).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0"
+  )}`;
+};
+
+const buildGoalLocalDueDateTime = (dateValue: string, timeValue: string) => {
+  const parsedDate = parseDateInputValueLocal(dateValue.trim());
+  if (!parsedDate) return null;
+  const parsedTimeMinutes = getTimeValueMinutes(timeValue.trim()) ?? 0;
+  parsedDate.setHours(
+    Math.floor(parsedTimeMinutes / 60),
+    parsedTimeMinutes % 60,
+    0,
+    0
+  );
+  return parsedDate;
+};
+
 const fromDateInputValue = (value: string): string | undefined => {
   if (!value) return undefined;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) return undefined;
   return parsed.toISOString();
+};
+
+const formatPickerTime = (value: string) => {
+  const minutes = getTimeValueMinutes(value);
+  if (minutes === null) return "Pick time";
+  const date = new Date();
+  date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 };
 
 const projectStageToStatus = (stage: string): Project["status"] => {
@@ -309,6 +426,7 @@ export function GoalDrawer({
   initialCampaignId = null,
   hideProjects = false,
   saveDisabled = false,
+  onGoalLimitReached,
 }: GoalDrawerProps) {
   console.log(
     "🎯 GoalDrawer render - open:",
@@ -328,13 +446,21 @@ export function GoalDrawer({
   const [monumentId, setMonumentId] = useState<string>("");
   const [roadmapId, setRoadmapId] = useState<string>("");
   const [dueDateInput, setDueDateInput] = useState("");
+  const [dueTimeInput, setDueTimeInput] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDueTimePicker, setShowDueTimePicker] = useState(false);
   const [showCreateRoadmap, setShowCreateRoadmap] = useState(false);
   const [newRoadmapTitle, setNewRoadmapTitle] = useState("");
   const [newRoadmapEmoji, setNewRoadmapEmoji] = useState("");
   const [roadmapsList, setRoadmapsList] = useState<
     { id: string; title: string; emoji?: string | null }[]
   >(roadmaps || []);
+  const [goalCampaignId, setGoalCampaignId] = useState<string | null>(
+    initialCampaignId
+  );
+  const [goalCampaignTouched, setGoalCampaignTouched] = useState(false);
+  const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
+  const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
   const [isCreatingRoadmap, setIsCreatingRoadmap] = useState(false);
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
@@ -390,8 +516,12 @@ export function GoalDrawer({
       setShowCreateRoadmap(false);
       setNewRoadmapTitle("");
       setNewRoadmapEmoji("");
-      setDueDateInput(toDateInputValue(initialGoal.dueDate));
+      setDueDateInput(toGoalDateInputValue(initialGoal.dueDate));
+      setDueTimeInput(toTimeInputValue(initialGoal.dueDate));
       setShowAdvanced(Boolean(initialGoal.dueDate));
+      setShowDueTimePicker(false);
+      setGoalCampaignId(initialCampaignId);
+      setGoalCampaignTouched(false);
       setProjectsState(
         (initialGoal.projects || []).map((project) => {
           const stage = project.stage ?? projectStatusToStage(project.status);
@@ -429,7 +559,11 @@ export function GoalDrawer({
       setNewRoadmapTitle("");
       setNewRoadmapEmoji("");
       setDueDateInput("");
+      setDueTimeInput("");
       setShowAdvanced(false);
+      setShowDueTimePicker(false);
+      setGoalCampaignId(initialCampaignId);
+      setGoalCampaignTouched(false);
       setProjectsState([]);
     }
     setRemovedProjectIds([]);
@@ -441,9 +575,70 @@ export function GoalDrawer({
     initialCircleId,
     initialMonumentId,
     initialGoal,
+    initialCampaignId,
     initialRoadmapId,
     open,
   ]);
+
+  useEffect(() => {
+    if (!open || !initialGoal?.id) return;
+    let cancelled = false;
+    const hydrateGoalCampaign = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+
+        const { data: campaignGoalRows, error: campaignGoalError } =
+          await supabase
+            .from("campaign_goals")
+            .select("campaign_id")
+            .eq("user_id", user.id)
+            .eq("goal_id", initialGoal.id)
+            .order("position", { ascending: true })
+            .limit(1);
+        if (campaignGoalError) throw campaignGoalError;
+        if (cancelled) return;
+
+        const hydratedCampaignRows = (campaignGoalRows ?? []) as {
+          campaign_id?: string | null;
+        }[];
+        const hydratedCampaignId =
+          typeof hydratedCampaignRows[0]?.campaign_id === "string"
+            ? hydratedCampaignRows[0].campaign_id
+            : null;
+        setGoalCampaignId(hydratedCampaignId);
+        setGoalCampaignTouched(false);
+
+        if (!hydratedCampaignId) return;
+        const { data: campaignRow, error: campaignError } = await supabase
+          .from("campaigns")
+          .select(
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position"
+          )
+          .eq("id", hydratedCampaignId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (campaignError) throw campaignError;
+        if (cancelled || !campaignRow) return;
+        const campaign = campaignRow as GoalCampaignOption;
+        setGoalCampaigns((current) =>
+          current.some((item) => item.id === campaign.id)
+            ? current
+            : [...current, campaign]
+        );
+      } catch (err) {
+        console.error("Error hydrating goal campaign:", err);
+      }
+    };
+    void hydrateGoalCampaign();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialGoal?.id, open]);
 
   useEffect(() => {
     if (monumentSelectionRef.current === monumentId) {
@@ -479,6 +674,48 @@ export function GoalDrawer({
     return [...roadmapsList].sort((a, b) => a.title.localeCompare(b.title));
   }, [roadmapsList]);
 
+  const goalCampaignOptions = useMemo(() => {
+    if (areaId && !monumentId && !circleId) {
+      return goalCampaignId
+        ? goalCampaigns.filter((campaign) => campaign.id === goalCampaignId)
+        : [];
+    }
+
+    const campaigns = [...goalCampaigns];
+    if (circleId) {
+      return campaigns
+        .filter(
+          (campaign) =>
+            campaign.primary_circle_id === circleId ||
+            campaign.id === goalCampaignId
+        )
+        .sort((a, b) => {
+          const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
+          const bPosition = b.position ?? Number.MAX_SAFE_INTEGER;
+          if (aPosition !== bPosition) return aPosition - bPosition;
+          return a.name.localeCompare(b.name);
+        });
+    }
+
+    campaigns.sort((a, b) => {
+      const aMatches = Boolean(monumentId && a.primary_monument_id === monumentId);
+      const bMatches = Boolean(monumentId && b.primary_monument_id === monumentId);
+      if (aMatches !== bMatches) return aMatches ? -1 : 1;
+      const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
+      const bPosition = b.position ?? Number.MAX_SAFE_INTEGER;
+      if (aPosition !== bPosition) return aPosition - bPosition;
+      return a.name.localeCompare(b.name);
+    });
+    return campaigns;
+  }, [areaId, circleId, goalCampaignId, goalCampaigns, monumentId]);
+
+  const selectedGoalCampaign = goalCampaignId
+    ? goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ?? null
+    : null;
+
+  const goalRelationshipSelectClass =
+    "flex h-auto min-w-0 max-w-full items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition";
+
   // Load roadmaps if not provided as prop
   useEffect(() => {
     if (roadmaps !== undefined) {
@@ -508,6 +745,53 @@ export function GoalDrawer({
       cancelled = true;
     };
   }, [open, roadmaps]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const loadGoalCampaigns = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        setGoalCampaignsLoading(true);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data, error } = await supabase
+          .from("campaigns")
+          .select(
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, primary_area_id, scheduling_state, position"
+          )
+          .eq("user_id", user.id)
+          .order("position", { ascending: true, nullsFirst: false })
+          .order("name", { ascending: true });
+        if (error) throw error;
+        if (cancelled) return;
+        const loadedCampaigns = (data ?? []) as GoalCampaignOption[];
+        setGoalCampaigns((current) => {
+          const loadedIds = new Set(loadedCampaigns.map((item) => item.id));
+          const hydratedCampaigns = current.filter(
+            (campaign) => !loadedIds.has(campaign.id)
+          );
+          return [...loadedCampaigns, ...hydratedCampaigns];
+        });
+      } catch (err) {
+        console.error("Error loading campaigns:", err);
+        if (!cancelled) {
+          setGoalCampaigns([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setGoalCampaignsLoading(false);
+        }
+      }
+    };
+    void loadGoalCampaigns();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleCreateRoadmap = async () => {
     if (!newRoadmapTitle.trim()) return;
@@ -648,17 +932,16 @@ export function GoalDrawer({
   };
 
   const handleRemoveProject = (projectId: string) => {
-    let removedProject: EditableProject | null = null;
-    setProjectsState((projects) => {
-      removedProject =
-        projects.find((project) => project.id === projectId) ?? null;
-      return projects.filter((project) => project.id !== projectId);
-    });
-    if (removedProject && !removedProject.isNew) {
+    const projectToRemove =
+      projectsState.find((project) => project.id === projectId) ?? null;
+    setProjectsState((projects) =>
+      projects.filter((project) => project.id !== projectId)
+    );
+    if (projectToRemove && !projectToRemove.isNew) {
       setRemovedProjectIds((ids) =>
         ids.includes(projectId) ? ids : [...ids, projectId]
       );
-      const existingTaskIds = removedProject.tasks
+      const existingTaskIds = projectToRemove.tasks
         .filter((task) => !task.isNew)
         .map((task) => task.id);
       if (existingTaskIds.length > 0) {
@@ -798,7 +1081,11 @@ export function GoalDrawer({
     const goalProgress = computeGoalProgress(preparedProjects);
 
     const context: GoalUpdateContext = {
-      campaignId: editing ? null : initialCampaignId,
+      campaignId: editing
+        ? goalCampaignTouched
+          ? goalCampaignId
+          : undefined
+        : goalCampaignId ?? initialCampaignId,
       projects: projectsState.map((project) => ({
         ...project,
         tasks: project.tasks.map((task) => ({ ...task })),
@@ -807,7 +1094,9 @@ export function GoalDrawer({
       removedTaskIds,
     };
 
-    const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
+    const normalizedGoalDueDate = dueDateInput
+      ? buildGoalLocalDueDateTime(dueDateInput, dueTimeInput)?.toISOString()
+      : undefined;
     const normalizedPriorityCode = PRIORITY_LABEL_TO_CODE[priority] ?? "LOW";
     const normalizedEnergyCode = ENERGY_LABEL_TO_CODE[energy] ?? "NO";
 
@@ -823,6 +1112,7 @@ export function GoalDrawer({
       progress: goalProgress,
       status: computedStatus,
       active: computedActive,
+      createdAt: initialGoal?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       projects: preparedProjects,
       circleId: circleId || null,
@@ -886,6 +1176,156 @@ export function GoalDrawer({
           <div className="flex-1 min-h-0 space-y-8 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <Select
+                    value={
+                      monumentId
+                        ? `MONUMENT:${monumentId}`
+                        : circleId
+                          ? `CIRCLE:${circleId}`
+                          : areaId
+                            ? `AREA:${areaId}`
+                            : ""
+                    }
+                    onValueChange={(value) => {
+                      const [type, id] = value.split(":");
+                      if (type === "MONUMENT" && id) {
+                        setMonumentId(id);
+                        setCircleId("");
+                        const monument = monuments.find(
+                          (item) => item.id === id
+                        );
+                        setAreaId(monument?.areaId || "");
+                        return;
+                      }
+                      if (type === "AREA" && id) {
+                        setAreaId(id);
+                        setCircleId("");
+                        setMonumentId("");
+                      }
+                    }}
+                    hideChevron
+                    triggerClassName={cn(
+                      goalRelationshipSelectClass,
+                      "text-zinc-400/85 hover:text-zinc-300"
+                    )}
+                    trigger={
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate">
+                          {monumentId
+                            ? (monumentOptions.find(
+                                (monument) => monument.id === monumentId
+                              )?.title ?? "Monument")
+                            : circleId
+                              ? "Circle linked"
+                              : areaOptions.find((area) => area.id === areaId)
+                                  ?.label ?? "Add AREA / MONUMENT / CIRCLE"}
+                        </span>
+                      </span>
+                    }
+                    contentWrapperClassName="rounded-sm border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/50"
+                    minContentWidth={240}
+                  >
+                    <SelectContent className="bg-zinc-950">
+                      {circleId ? (
+                        <SelectItem value={`CIRCLE:${circleId}`} disabled>
+                          Circle linked
+                        </SelectItem>
+                      ) : null}
+                      {areaOptions.map((area) => (
+                        <SelectItem key={area.id} value={`AREA:${area.id}`}>
+                          <span className="flex items-center gap-2">
+                            <span>{area.emoji}</span>
+                            <span>{area.label}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                      {monumentOptions.map((monument) => (
+                        <SelectItem
+                          key={monument.id}
+                          value={`MONUMENT:${monument.id}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{monument.emoji ?? "🏛️"}</span>
+                            <span>{monument.title}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={goalCampaignId ?? "__none__"}
+                    onValueChange={(value) => {
+                      setGoalCampaignTouched(true);
+                      const nextCampaignId = value === "__none__" ? null : value;
+                      setGoalCampaignId(nextCampaignId);
+                      const selectedCampaign = nextCampaignId
+                        ? goalCampaigns.find(
+                            (campaign) => campaign.id === nextCampaignId
+                          )
+                        : null;
+                      if (selectedCampaign?.roadmap_id) {
+                        setRoadmapId(selectedCampaign.roadmap_id);
+                      }
+                    }}
+                    hideChevron
+                    triggerClassName={cn(
+                      goalRelationshipSelectClass,
+                      "max-w-[45%] justify-end text-right",
+                      goalCampaignId
+                        ? "text-zinc-300/90 hover:text-white"
+                        : "text-zinc-500/85 hover:text-zinc-300"
+                    )}
+                    trigger={
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        {goalCampaignId ? (
+                          <span
+                            className="w-4 shrink-0 text-center text-sm leading-none"
+                            aria-hidden="true"
+                          >
+                            {selectedGoalCampaign?.emoji ?? "🎯"}
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate">
+                          {selectedGoalCampaign?.name ??
+                            (goalCampaignId ? "Selected Campaign" : "add CAMPAIGN")}
+                        </span>
+                      </span>
+                    }
+                    contentWrapperClassName="rounded-sm border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/50"
+                    contentAlign="end"
+                    minContentWidth={240}
+                  >
+                    <SelectContent className="max-h-[18rem] bg-zinc-950">
+                      <SelectItem value="__none__">No Campaign</SelectItem>
+                      {goalCampaignsLoading ? (
+                        <SelectItem value="__loading" disabled>
+                          Loading Campaigns...
+                        </SelectItem>
+                      ) : goalCampaignOptions.length > 0 ? (
+                        goalCampaignOptions.map((campaign) => (
+                          <SelectItem key={campaign.id} value={campaign.id}>
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <span
+                                className="w-5 shrink-0 text-center text-base leading-none"
+                                aria-hidden="true"
+                              >
+                                {campaign.emoji ?? "🎯"}
+                              </span>
+                              <span className="min-w-0 truncate">
+                                {campaign.name}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__empty" disabled>
+                          No Campaigns yet
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Label
                   htmlFor="goal-title"
                   className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
@@ -902,86 +1342,24 @@ export function GoalDrawer({
                 />
               </div>
 
-              <div className="flex flex-row gap-4 sm:grid sm:grid-cols-2">
-                <div className="space-y-2 sm:col-span-1 flex-shrink-0 w-[25%] sm:w-full">
-                  <Label
-                    htmlFor="goal-emoji"
-                    className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
-                  >
-                    Emoji
-                  </Label>
-                  <Input
-                    id="goal-emoji"
-                    value={emoji}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setEmoji(value);
-                    }}
-                    maxLength={2}
-                    placeholder="✨"
-                    className="h-12 rounded-xl border-white/20 bg-white/5 text-center text-xl text-white"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-1 flex-grow w-[75%] sm:w-full">
-                  {monumentId ? (
-                    <>
-                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                        Monument<span className="text-rose-300"> *</span>
-                      </Label>
-                      <Select
-                        value={monumentId}
-                        onValueChange={(value) => {
-                          setMonumentId(value);
-                          const monument = monuments.find(
-                            (item) => item.id === value
-                          );
-                          if (monument?.areaId) {
-                            setAreaId(monument.areaId);
-                          }
-                        }}
-                        placeholder="Select monument"
-                        className="w-full"
-                        triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                      >
-                        <SelectContent>
-                          {monumentOptions.map((monument) => (
-                            <SelectItem key={monument.id} value={monument.id}>
-                              <span className="flex items-center gap-2">
-                                <span>{monument.emoji ?? "🏛️"}</span>
-                                <span>{monument.title}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  ) : (
-                    <>
-                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                        Area<span className="text-rose-300"> *</span>
-                      </Label>
-                      <Select
-                        value={areaId}
-                        onValueChange={(value) => setAreaId(value)}
-                        placeholder="Select area"
-                        className="w-full"
-                        triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                        disabled={circleId.length > 0}
-                      >
-                        <SelectContent>
-                          {areaOptions.map((area) => (
-                            <SelectItem key={area.id} value={area.id}>
-                              <span className="flex items-center gap-2">
-                                <span>{area.emoji}</span>
-                                <span>{area.label}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  )}
-                </div>
+              <div className="w-24 space-y-2">
+                <Label
+                  htmlFor="goal-emoji"
+                  className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
+                >
+                  Emoji
+                </Label>
+                <Input
+                  id="goal-emoji"
+                  value={emoji}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEmoji(value);
+                  }}
+                  maxLength={2}
+                  placeholder="✨"
+                  className="h-12 rounded-xl border-white/20 bg-white/5 text-center text-xl text-white"
+                />
               </div>
 
               {!monumentId ? (
@@ -1189,30 +1567,125 @@ export function GoalDrawer({
                 {showAdvanced && (
                   <div className="mt-4 space-y-3">
                     <Label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-                      Goal due date
+                      Goal deadline
                     </Label>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                       <Input
                         type="date"
                         value={dueDateInput}
-                        onChange={(event) =>
-                          setDueDateInput(event.target.value)
-                        }
-                        className="h-11 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white sm:flex-1"
+                        onChange={(event) => {
+                          const nextDate = event.target.value;
+                          setDueDateInput(nextDate);
+                          if (!nextDate) {
+                            setDueTimeInput("");
+                            setShowDueTimePicker(false);
+                          } else if (!dueTimeInput) {
+                            setDueTimeInput("00:00");
+                          }
+                        }}
+                        className="h-11 min-w-0 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white"
                       />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={!dueDateInput}
+                        className="h-11 rounded-xl border border-white/15 bg-white/[0.03] px-3 text-sm text-white/70 hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
+                        onClick={() => setShowDueTimePicker((open) => !open)}
+                      >
+                        <Timer className="h-4 w-4" aria-hidden="true" />
+                        {dueDateInput
+                          ? formatPickerTime(dueTimeInput || "00:00")
+                          : "Pick time"}
+                      </Button>
                       {dueDateInput ? (
                         <Button
                           type="button"
                           variant="ghost"
                           className="h-11 rounded-xl border border-white/15 bg-white/[0.03] text-sm text-white/70 hover:text-white"
-                          onClick={() => setDueDateInput("")}
+                          onClick={() => {
+                            setDueDateInput("");
+                            setDueTimeInput("");
+                            setShowDueTimePicker(false);
+                          }}
                         >
                           Clear
                         </Button>
                       ) : null}
                     </div>
+                    {dueDateInput && showDueTimePicker ? (
+                      <div className="flex justify-center rounded-2xl border border-white/10 bg-black/25 py-3">
+                        <WheelPickerWrapper
+                          aria-label="Goal deadline time picker"
+                          className="border-0 dark:border-0"
+                        >
+                          <WheelPicker
+                            value={getTimeValueParts(dueTimeInput || "00:00").hour}
+                            onValueChange={(hour) => {
+                              const parts = getTimeValueParts(
+                                dueTimeInput || "00:00"
+                              );
+                              setDueTimeInput(
+                                getTimeValueFromParts(
+                                  hour,
+                                  parts.minute,
+                                  parts.period
+                                )
+                              );
+                            }}
+                            options={Array.from({ length: 12 }, (_, index) => {
+                              const hour = index + 1;
+                              return { value: hour, label: hour };
+                            })}
+                            infinite
+                          />
+                          <WheelPicker
+                            value={
+                              getTimeValueParts(dueTimeInput || "00:00").minute
+                            }
+                            onValueChange={(minute) => {
+                              const parts = getTimeValueParts(
+                                dueTimeInput || "00:00"
+                              );
+                              setDueTimeInput(
+                                getTimeValueFromParts(
+                                  parts.hour,
+                                  minute,
+                                  parts.period
+                                )
+                              );
+                            }}
+                            options={Array.from({ length: 60 }, (_, index) => ({
+                              value: index,
+                              label: String(index).padStart(2, "0"),
+                            }))}
+                            infinite
+                          />
+                          <WheelPicker<"AM" | "PM">
+                            value={
+                              getTimeValueParts(dueTimeInput || "00:00").period
+                            }
+                            onValueChange={(period) => {
+                              const parts = getTimeValueParts(
+                                dueTimeInput || "00:00"
+                              );
+                              setDueTimeInput(
+                                getTimeValueFromParts(
+                                  parts.hour,
+                                  parts.minute,
+                                  period
+                                )
+                              );
+                            }}
+                            options={["AM", "PM"].map((period) => ({
+                              value: period as "AM" | "PM",
+                              label: period,
+                            }))}
+                          />
+                        </WheelPickerWrapper>
+                      </div>
+                    ) : null}
                     <p className="text-xs text-white/50">
-                      Due dates slowly boost weight inside a 4-week window and
+                      Deadlines slowly boost weight inside a 4-week window and
                       spike over the final few days so this goal takes the lead
                       when it matters.
                     </p>

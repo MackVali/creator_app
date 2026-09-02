@@ -38,6 +38,7 @@ import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
+import { AREAS } from "@/config/areas";
 import { Input } from "@/components/ui/input";
 import {
   DayType24hPreview,
@@ -73,8 +74,10 @@ type DayTypeBlockLink = {
   time_block_id: string;
   energy?: FlameLevel | null;
   block_type?: BlockType | null;
+  location_context_id?: string | null;
   allow_all_habit_types?: boolean | null;
   allow_all_skills?: boolean | null;
+  allow_all_areas?: boolean | null;
   allow_all_monuments?: boolean | null;
 };
 
@@ -478,6 +481,9 @@ export default function NewDayTypePage() {
   const [blockAllowAllSkills, setBlockAllowAllSkills] = useState<Map<string, boolean>>(
     () => new Map()
   );
+  const [blockAllowAllAreas, setBlockAllowAllAreas] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
   const [blockAllowAllMonuments, setBlockAllowAllMonuments] = useState<Map<string, boolean>>(
     () => new Map()
   );
@@ -485,6 +491,9 @@ export default function NewDayTypePage() {
     () => new Map()
   );
   const [blockAllowedSkillIds, setBlockAllowedSkillIds] = useState<Map<string, Set<string>>>(
+    () => new Map()
+  );
+  const [blockAllowedAreaIds, setBlockAllowedAreaIds] = useState<Map<string, Set<string>>>(
     () => new Map()
   );
   const [blockAllowedMonumentIds, setBlockAllowedMonumentIds] = useState<Map<string, Set<string>>>(
@@ -1105,7 +1114,7 @@ export default function NewDayTypePage() {
       const { data, error: fetchError } = await supabase
         .from("day_type_time_blocks")
         .select(
-          "id,day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_monuments,location_context:location_contexts(value,label)"
+          "id,day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_areas,allow_all_monuments,location_context:location_contexts(value,label)"
         )
         .eq("user_id", user.id);
       if (fetchError) throw fetchError;
@@ -1115,9 +1124,11 @@ export default function NewDayTypePage() {
       const typeMap = new Map<string, BlockType>();
       const allowHabitMap = new Map<string, boolean>();
       const allowSkillMap = new Map<string, boolean>();
+      const allowAreaMap = new Map<string, boolean>();
       const allowMonumentMap = new Map<string, boolean>();
       const allowedHabitMap = new Map<string, Set<string>>();
       const allowedSkillMap = new Map<string, Set<string>>();
+      const allowedAreaMap = new Map<string, Set<string>>();
       const allowedMonumentMap = new Map<string, Set<string>>();
       const dttbToStateInfo = new Map<string, { blockId: string; stateKey: string }>();
       (data as DayTypeBlockLink[] | null)?.forEach((row) => {
@@ -1139,6 +1150,7 @@ export default function NewDayTypePage() {
         typeMap.set(stateKey, type);
         allowHabitMap.set(stateKey, row.allow_all_habit_types !== false);
         allowSkillMap.set(stateKey, row.allow_all_skills !== false);
+        allowAreaMap.set(stateKey, row.allow_all_areas !== false);
         allowMonumentMap.set(stateKey, row.allow_all_monuments !== false);
         if (row.location_context_id) {
           const locationContext = (
@@ -1163,7 +1175,7 @@ export default function NewDayTypePage() {
       });
       const dttbIds = Array.from(dttbToStateInfo.keys());
       if (dttbIds.length > 0) {
-        const [habitWhitelist, skillWhitelist, monumentWhitelist] = await Promise.all([
+        const [habitWhitelist, skillWhitelist, areaWhitelist, monumentWhitelist] = await Promise.all([
           supabase
             .from("day_type_time_block_allowed_habit_types")
             .select("day_type_time_block_id, habit_type")
@@ -1173,12 +1185,17 @@ export default function NewDayTypePage() {
             .select("day_type_time_block_id, skill_id")
             .in("day_type_time_block_id", dttbIds),
           supabase
+            .from("day_type_time_block_allowed_areas")
+            .select("day_type_time_block_id, area_id")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
             .from("day_type_time_block_allowed_monuments")
             .select("day_type_time_block_id, monument_id")
             .in("day_type_time_block_id", dttbIds),
         ]);
         if (habitWhitelist.error) throw habitWhitelist.error;
         if (skillWhitelist.error) throw skillWhitelist.error;
+        if (areaWhitelist.error) throw areaWhitelist.error;
         if (monumentWhitelist.error) throw monumentWhitelist.error;
 
         (habitWhitelist.data ?? []).forEach((row) => {
@@ -1204,6 +1221,17 @@ export default function NewDayTypePage() {
           const existing = allowedSkillMap.get(stateKey) ?? new Set<string>();
           existing.add(skillId);
           allowedSkillMap.set(stateKey, existing);
+        });
+        (areaWhitelist.data ?? []).forEach((row) => {
+          const info = row.day_type_time_block_id
+            ? dttbToStateInfo.get(row.day_type_time_block_id)
+            : null;
+          const stateKey = info?.stateKey;
+          const areaId = (row as { area_id?: string | null })?.area_id?.trim();
+          if (!stateKey || !areaId) return;
+          const existing = allowedAreaMap.get(stateKey) ?? new Set<string>();
+          existing.add(areaId);
+          allowedAreaMap.set(stateKey, existing);
         });
         (monumentWhitelist.data ?? []).forEach((row) => {
           const info = row.day_type_time_block_id
@@ -1242,6 +1270,11 @@ export default function NewDayTypePage() {
         allowSkillMap.forEach((value, id) => merged.set(id, value));
         return merged;
       });
+      setBlockAllowAllAreas((prev) => {
+        const merged = new Map(prev);
+        allowAreaMap.forEach((value, id) => merged.set(id, value));
+        return merged;
+      });
       setBlockAllowAllMonuments((prev) => {
         const merged = new Map(prev);
         allowMonumentMap.forEach((value, id) => merged.set(id, value));
@@ -1255,6 +1288,11 @@ export default function NewDayTypePage() {
       setBlockAllowedSkillIds((prev) => {
         const merged = new Map(prev);
         allowedSkillMap.forEach((value, id) => merged.set(id, new Set(value)));
+        return merged;
+      });
+      setBlockAllowedAreaIds((prev) => {
+        const merged = new Map(prev);
+        allowedAreaMap.forEach((value, id) => merged.set(id, new Set(value)));
         return merged;
       });
       setBlockAllowedMonumentIds((prev) => {
@@ -2225,6 +2263,7 @@ export default function NewDayTypePage() {
               location_context_id: null,
               allow_all_habit_types: true,
               allow_all_skills: true,
+              allow_all_areas: true,
               allow_all_monuments: true,
             }));
 
@@ -2524,6 +2563,7 @@ export default function NewDayTypePage() {
               location_context_id: null,
               allow_all_habit_types: stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true,
               allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+              allow_all_areas: stateKey ? blockAllowAllAreas.get(stateKey) ?? true : true,
               allow_all_monuments: stateKey ? blockAllowAllMonuments.get(stateKey) ?? true : true,
             },
             { onConflict: "day_type_id,time_block_id" }
@@ -2975,6 +3015,11 @@ export default function NewDayTypePage() {
           day_type_time_block_id: string;
           skill_id: string;
         }> = [];
+        const areaRows: Array<{
+          user_id: string;
+          day_type_time_block_id: string;
+          area_id: string;
+        }> = [];
         const monumentRows: Array<{
           user_id: string;
           day_type_time_block_id: string;
@@ -2986,6 +3031,7 @@ export default function NewDayTypePage() {
           if (!stateKey) return;
           const allowHabits = blockAllowAllHabitTypes.get(stateKey) ?? true;
           const allowSkills = blockAllowAllSkills.get(stateKey) ?? true;
+          const allowAreas = blockAllowAllAreas.get(stateKey) ?? true;
           const allowMonuments = blockAllowAllMonuments.get(stateKey) ?? true;
 
           if (!allowHabits) {
@@ -3016,6 +3062,20 @@ export default function NewDayTypePage() {
             });
           }
 
+          if (!allowAreas) {
+            const allowed = blockAllowedAreaIds.get(stateKey) ?? new Set<string>();
+            allowed.forEach((areaId) => {
+              const normalized = areaId.trim();
+              if (normalized) {
+                areaRows.push({
+                  user_id: user.id,
+                  day_type_time_block_id: linkId,
+                  area_id: normalized,
+                });
+              }
+            });
+          }
+
           if (!allowMonuments) {
             const allowed = blockAllowedMonumentIds.get(stateKey) ?? new Set<string>();
             allowed.forEach((monumentId) => {
@@ -3041,6 +3101,12 @@ export default function NewDayTypePage() {
           const { error } = await supabase
             .from("day_type_time_block_allowed_skills")
             .insert(skillRows);
+          if (error) throw error;
+        }
+        if (areaRows.length > 0) {
+          const { error } = await supabase
+            .from("day_type_time_block_allowed_areas")
+            .insert(areaRows);
           if (error) throw error;
         }
         if (monumentRows.length > 0) {
@@ -3162,6 +3228,7 @@ export default function NewDayTypePage() {
                 location_context_id: resolvedLocations.get(id) ?? null,
                 allow_all_habit_types: stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true,
                 allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+                allow_all_areas: stateKey ? blockAllowAllAreas.get(stateKey) ?? true : true,
                 allow_all_monuments: stateKey
                   ? blockAllowAllMonuments.get(stateKey) ?? true
                   : true,
@@ -3196,6 +3263,7 @@ export default function NewDayTypePage() {
                   ? blockAllowAllHabitTypes.get(stateKey) ?? true
                   : true,
                 allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+                allow_all_areas: stateKey ? blockAllowAllAreas.get(stateKey) ?? true : true,
                 allow_all_monuments: stateKey
                   ? blockAllowAllMonuments.get(stateKey) ?? true
                   : true,
@@ -3211,6 +3279,7 @@ export default function NewDayTypePage() {
                   location_context_id: row.location_context_id,
                   allow_all_habit_types: row.allow_all_habit_types,
                   allow_all_skills: row.allow_all_skills,
+                  allow_all_areas: row.allow_all_areas,
                   allow_all_monuments: row.allow_all_monuments,
                 })
                 .eq("day_type_id", selectedDayTypeId)
@@ -3223,6 +3292,7 @@ export default function NewDayTypePage() {
             const whitelistTables = [
               "day_type_time_block_allowed_habit_types",
               "day_type_time_block_allowed_skills",
+              "day_type_time_block_allowed_areas",
               "day_type_time_block_allowed_monuments",
             ];
 
@@ -3333,6 +3403,7 @@ export default function NewDayTypePage() {
               location_context_id: resolvedLocations.get(id) ?? null,
               allow_all_habit_types: stateKey ? (blockAllowAllHabitTypes.get(stateKey) ?? true) : true,
               allow_all_skills: stateKey ? (blockAllowAllSkills.get(stateKey) ?? true) : true,
+              allow_all_areas: stateKey ? (blockAllowAllAreas.get(stateKey) ?? true) : true,
               allow_all_monuments: stateKey ? (blockAllowAllMonuments.get(stateKey) ?? true) : true,
             };
           });
@@ -4299,13 +4370,18 @@ export default function NewDayTypePage() {
                   const locationOption = stateKey ? blockLocation.get(stateKey) : null;
                   const allowAllHabits = stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true;
                   const allowAllSkills = stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true;
+                  const allowAllAreas = stateKey ? blockAllowAllAreas.get(stateKey) ?? true : true;
                   const allowAllMonuments =
                     stateKey ? blockAllowAllMonuments.get(stateKey) ?? true : true;
+                  const allowAllScope = allowAllAreas && allowAllMonuments;
                   const allowedHabitTypes = stateKey
                     ? blockAllowedHabitTypes.get(stateKey) ?? new Set<string>()
                     : new Set<string>();
                   const allowedSkillIds = stateKey
                     ? blockAllowedSkillIds.get(stateKey) ?? new Set<string>()
+                    : new Set<string>();
+                  const allowedAreaIds = stateKey
+                    ? blockAllowedAreaIds.get(stateKey) ?? new Set<string>()
                     : new Set<string>();
                   const allowedMonumentIds = stateKey
                     ? blockAllowedMonumentIds.get(stateKey) ?? new Set<string>()
@@ -4328,6 +4404,14 @@ export default function NewDayTypePage() {
                     value: monument.id,
                     label: monument.title || "Untitled monument",
                   }));
+                  const scopeSummaryOptions = [
+                    ...AREAS.map((area) => ({ value: area.id, label: area.label })),
+                    ...monumentSummaryOptions,
+                  ];
+                  const allowedScopeIds = new Set([
+                    ...Array.from(allowedAreaIds),
+                    ...Array.from(allowedMonumentIds),
+                  ]);
                   return (
 		                    <div
 		                      key={block.id}
@@ -4934,14 +5018,14 @@ export default function NewDayTypePage() {
                               <details className="group grid gap-1">
                                 <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
                                   <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                                    Monuments
+                                    Scope
                                   </span>
                                   <span className={constraintControlPillClassName}>
                                     <span className="truncate group-open:hidden">
                                       {formatConstraintSummary(
-                                        allowedMonumentIds,
-                                        monumentSummaryOptions,
-                                        allowAllMonuments
+                                        allowedScopeIds,
+                                        scopeSummaryOptions,
+                                        allowAllScope
                                       )}
                                     </span>
                                     <span className="hidden truncate group-open:inline">Choose</span>
@@ -4954,27 +5038,101 @@ export default function NewDayTypePage() {
                                     placeholder="Search monuments..."
                                     className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
                                   />
-                                  <div className="max-h-40 overflow-y-auto pr-1">
+                                  <div className="space-y-1.5">
+                                    <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                                      Areas
+                                    </div>
                                     <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                       <button
                                         type="button"
                                         className={cn(
                                           constraintOptionPillBaseClassName,
-                                          allowAllMonuments
+                                          allowAllScope
                                             ? constraintOptionPillSelectedClassName
                                             : constraintOptionPillUnselectedClassName
                                         )}
-                                        onClick={() =>
-                                          setBlockAllowAllMonuments((prev) => {
-                                            if (!stateKey) return prev;
+                                        onClick={() => {
+                                          if (!stateKey) return;
+                                          setBlockAllowAllAreas((prev) => {
                                             const next = new Map(prev);
                                             next.set(stateKey, true);
                                             return next;
-                                          })
-                                        }
+                                          });
+                                          setBlockAllowAllMonuments((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(stateKey, true);
+                                            return next;
+                                          });
+                                          setBlockAllowedAreaIds((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(stateKey, new Set<string>());
+                                            return next;
+                                          });
+                                          setBlockAllowedMonumentIds((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(stateKey, new Set<string>());
+                                            return next;
+                                          });
+                                        }}
                                       >
                                         Allow ALL
                                       </button>
+                                      {AREAS.map((area) => {
+                                        const selectedArea =
+                                          !allowAllScope && allowedAreaIds.has(area.id);
+                                        return (
+                                          <button
+                                            key={area.id}
+                                            type="button"
+                                            aria-pressed={selectedArea}
+                                            onClick={() => {
+                                              if (!stateKey) return;
+                                              setBlockAllowAllAreas((prev) => {
+                                                const next = new Map(prev);
+                                                next.set(stateKey, false);
+                                                return next;
+                                              });
+                                              setBlockAllowAllMonuments((prev) => {
+                                                const next = new Map(prev);
+                                                next.set(stateKey, false);
+                                                return next;
+                                              });
+                                              setBlockAllowedAreaIds((prev) => {
+                                                const next = new Map(prev);
+                                                const set = new Set(next.get(stateKey) ?? []);
+                                                if (set.has(area.id)) {
+                                                  set.delete(area.id);
+                                                } else {
+                                                  set.add(area.id);
+                                                }
+                                                next.set(stateKey, set);
+                                                return next;
+                                              });
+                                            }}
+                                            className={cn(
+                                              constraintOptionPillBaseClassName,
+                                              selectedArea
+                                                ? constraintOptionPillSelectedClassName
+                                                : constraintOptionPillUnselectedClassName
+                                            )}
+                                          >
+                                            <span className={constraintOptionIconClassName}>
+                                              {area.emoji}
+                                            </span>
+                                            <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                              {area.label}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                                      Monuments
+                                    </div>
+                                  <div className="max-h-40 overflow-y-auto pr-1">
+                                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                       {monumentsLoading ? (
                                         <p className="w-full text-[10px] text-white/35">Loading monuments...</p>
                                       ) : filteredMonuments.length === 0 ? (
@@ -4982,7 +5140,7 @@ export default function NewDayTypePage() {
                                       ) : (
                                         filteredMonuments.map((monument) => {
                                           const selectedMonument =
-                                            !allowAllMonuments && allowedMonumentIds.has(monument.id);
+                                            !allowAllScope && allowedMonumentIds.has(monument.id);
                                           return (
                                             <button
                                               key={monument.id}
@@ -4990,6 +5148,12 @@ export default function NewDayTypePage() {
                                               aria-pressed={selectedMonument}
                                               onClick={() => {
                                                 setBlockAllowAllMonuments((prev) => {
+                                                  if (!stateKey) return prev;
+                                                  const next = new Map(prev);
+                                                  next.set(stateKey, false);
+                                                  return next;
+                                                });
+                                                setBlockAllowAllAreas((prev) => {
                                                   if (!stateKey) return prev;
                                                   const next = new Map(prev);
                                                   next.set(stateKey, false);
@@ -5027,9 +5191,10 @@ export default function NewDayTypePage() {
                                       )}
                                     </div>
                                   </div>
-                                  {!allowAllMonuments && allowedMonumentIds.size === 0 ? (
+                                  </div>
+                                  {!allowAllScope && allowedScopeIds.size === 0 ? (
                                     <div className="text-[10px] text-white/35">
-                                      No monuments allowed.
+                                      No scope selected.
                                     </div>
                                   ) : null}
                                 </div>
