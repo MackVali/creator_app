@@ -36,7 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
-import { useToastHelpers } from "@/components/ui/toast";
+import { useToast, useToastHelpers } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import {
   projectWeight,
@@ -2570,6 +2570,7 @@ export function MonumentGoalsList({
   const ownerLabel = getGoalsOwnerLabel(resolvedSourceType);
   const creationContext = useFabCreation();
   const toast = useToastHelpers();
+  const { setStatusIsland } = useToast();
   const [loading, setLoading] = useState(true);
   const goalsDisplayReady = goalsDisplayReadyKey === goalsDisplayKey;
   const roadmapsDisplayReady = roadmapsDisplayReadyKey === goalsDisplayKey;
@@ -2732,16 +2733,18 @@ export function MonumentGoalsList({
     }
 
     readyGoalsToastSignatureRef.current = readyGoalIdsSignature;
-    toast.info(
-      readyGoalIds.length === 1
-        ? "1 goal ready to complete"
-        : `${readyGoalIds.length} goals ready to complete`
-    );
+    setStatusIsland({
+      state: "success",
+      title:
+        readyGoalIds.length === 1
+          ? "1 goal ready to complete"
+          : `${readyGoalIds.length} goals ready to complete`,
+    });
   }, [
     goalsGridLoading,
     readyGoalIds.length,
     readyGoalIdsSignature,
-    toast,
+    setStatusIsland,
   ]);
 
   const getGoalPanelElement = useCallback((panel: GoalPanel) => {

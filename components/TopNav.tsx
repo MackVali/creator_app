@@ -26,7 +26,10 @@ import {
   type NoteDatabaseEntries,
   type NoteDatabaseEntry,
 } from "@/components/notes/NoteSlashTextarea";
-import { isScheduleRoute } from "@/components/appChromeVisibility";
+import {
+  isIndividualNoteRoute,
+  isScheduleRoute,
+} from "@/components/appChromeVisibility";
 import { userIsAdmin } from "@/lib/auth/userRoles";
 import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { getMonumentNote, updateMonumentNote } from "@/lib/monumentNotesStorage";
@@ -698,7 +701,8 @@ function TopNavQuickAddEntrySheet({
 export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const shouldHideNav = isScheduleRoute(pathname);
+  const shouldHideNav =
+    isScheduleRoute(pathname) || isIndividualNoteRoute(pathname);
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);

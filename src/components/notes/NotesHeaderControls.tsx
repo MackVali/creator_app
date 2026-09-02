@@ -1,10 +1,10 @@
 "use client";
 
-import { Filter, Grid2x2, Grid3x3, Search } from "lucide-react";
+import { Filter, Grid2x2, Grid3x3, List, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type NoteCardDensity = "large" | "small";
+export type NoteCardDensity = "large" | "small" | "list";
 
 interface NotesHeaderControlsProps {
   searchQuery: string;
@@ -20,7 +20,14 @@ export function NotesHeaderControls({
   onDensityToggle,
 }: NotesHeaderControlsProps) {
   const isSmallDensity = density === "small";
+  const isListDensity = density === "list";
   const showDensityToggle = Boolean(density && onDensityToggle);
+  const DensityIcon = isListDensity ? List : isSmallDensity ? Grid2x2 : Grid3x3;
+  const nextDensityLabel = isListDensity
+    ? "Use large cards"
+    : isSmallDensity
+      ? "Use list"
+      : "Use small cards";
 
   return (
     <header className="flex min-w-0 items-center justify-between gap-2.5">
@@ -55,19 +62,15 @@ export function NotesHeaderControls({
             type="button"
             className={cn(
               "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-              isSmallDensity
+              isSmallDensity || isListDensity
                 ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
                 : ""
             )}
-            aria-label={isSmallDensity ? "Use large cards" : "Use small cards"}
-            aria-pressed={isSmallDensity}
+            aria-label={nextDensityLabel}
+            aria-pressed={isSmallDensity || isListDensity}
             onClick={onDensityToggle}
           >
-            {isSmallDensity ? (
-              <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-            ) : (
-              <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-            )}
+            <DensityIcon className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
           </button>
         ) : null}
       </div>

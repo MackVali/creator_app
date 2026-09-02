@@ -1,6 +1,6 @@
 const FOCUSED_EDITOR_ROUTES = new Set(["/profile/edit"]);
 const INDIVIDUAL_NOTE_ROUTE_PATTERN =
-  /^\/(?:monuments|skills)\/[^/]+\/notes\/[^/]+\/?$/;
+  /^\/(?:areas|monuments|skills)\/[^/]+\/notes\/[^/]+\/?$/;
 const INDIVIDUAL_INBOX_THREAD_ROUTE_PATTERN = /^\/inbox\/[^/]+\/?$/;
 
 export function isIndividualNoteRoute(pathname: string | null | undefined) {

@@ -15,6 +15,7 @@ import {
   Car,
   CalendarDays,
   Check,
+  ChevronDown,
   CircleDollarSign,
   CreditCard,
   Droplets,
@@ -2881,6 +2882,8 @@ function MoneyProjectionChart({
 export function MoneyAreaDashboard() {
   const queryClient = useQueryClient();
   const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const dashboardBodyId = useId();
+  const [dashboardExpanded, setDashboardExpanded] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -3923,11 +3926,61 @@ export function MoneyAreaDashboard() {
   const hasAccounts = accounts.length > 0;
 
   return (
-    <div className="space-y-3 py-3">
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0a0a0b_60%,#101113_100%)]"
-        aria-label="Money overview"
+    <div
+      className={cn(
+        "space-y-3",
+        dashboardExpanded ? "py-3" : "-mb-1 py-0"
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={dashboardExpanded}
+        aria-controls={dashboardBodyId}
+        onClick={() => setDashboardExpanded((expanded) => !expanded)}
+        className={cn(
+          "grid w-full grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 rounded-2xl border border-white/[0.075] bg-[#090909] px-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] transition hover:border-white/[0.12] hover:bg-[#101011] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24 active:scale-[0.995]",
+          dashboardExpanded ? "min-h-12 py-2" : "min-h-11 py-1",
+        )}
       >
+        <span className="text-sm font-semibold text-white/84">Money</span>
+        <span className="min-w-0 text-right">
+          <span
+            className="block truncate text-sm font-semibold tabular-nums"
+            style={{
+              color:
+                safeToSpendSummary.safeToSpendMinor >= 0
+                  ? MONEY_SEMANTIC_COLORS.positive
+                  : MONEY_SEMANTIC_COLORS.negative,
+            }}
+          >
+            {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
+          </span>
+          <span className="block truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-white/32">
+            Safe
+          </span>
+        </span>
+        <span className="min-w-0 text-right">
+          <span className="block truncate text-sm font-semibold tabular-nums text-white/78">
+            {formatMoneyFromMinor(summary.totalAvailable)}
+          </span>
+          <span className="block truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-white/32">
+            Total
+          </span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-white/32 transition-transform",
+            dashboardExpanded && "rotate-180",
+          )}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div id={dashboardBodyId} hidden={!dashboardExpanded} className="space-y-3">
+        <section
+          className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0a0a0b_60%,#101113_100%)]"
+          aria-label="Money overview"
+        >
         <div className="px-4 pb-4 pt-5 text-center">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
             <span
@@ -4116,12 +4169,12 @@ export function MoneyAreaDashboard() {
             )}
           </div>
         ) : null}
-      </section>
+        </section>
 
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
-        aria-label="Upcoming scheduled money"
-      >
+        <section
+          className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
+          aria-label="Upcoming scheduled money"
+        >
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2.5">
           <div>
             <p className="text-sm font-semibold text-white/84">Upcoming</p>
@@ -4208,12 +4261,12 @@ export function MoneyAreaDashboard() {
             </button>
           </div>
         )}
-      </section>
+        </section>
 
-      <section
-        className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
-        aria-label="Money workspace"
-      >
+        <section
+          className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909]"
+          aria-label="Money workspace"
+        >
         <div
           className="grid grid-cols-3 gap-1 border-b border-white/[0.06] bg-white/[0.018] p-1.5"
           role="tablist"
@@ -4633,7 +4686,8 @@ export function MoneyAreaDashboard() {
             )}
           </div>
         ) : null}
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
