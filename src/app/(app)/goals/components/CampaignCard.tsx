@@ -2820,12 +2820,12 @@ function CampaignDrawer({
   );
 
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/95 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)] text-white/90";
+    "relative isolate overflow-hidden rounded-[24px] border border-white/[0.075] bg-[linear-gradient(180deg,#17191D_0%,#0D0E11_44%,#07080A_100%)] text-white/90 shadow-[0_24px_54px_-28px_rgba(0,0,0,0.9),0_12px_28px_-24px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.065)] sm:rounded-[22px]";
   return createPortal(
     <>
       <motion.button
         type="button"
-        className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/70" : "bg-black/50"}`}
+        className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/60" : "bg-black/45"}`}
         aria-label="Close goals overlay"
         onClick={handleClose}
         initial={{ opacity: 0 }}

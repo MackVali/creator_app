@@ -428,11 +428,11 @@ export function MonumentDetail({
   }, []);
 
   const containerShell =
-    "relative w-full rounded-3xl border border-white/10";
+    "relative w-full rounded-3xl border border-white/[0.08]";
   const sectionBackground =
-    "bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)]";
+    "bg-[#0D0E11] shadow-[0_24px_70px_-52px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.48)]";
   const overviewBackground =
-    "bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)]";
+    "bg-[#111216] shadow-[0_34px_110px_-50px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(255,255,255,0.018)]";
   const activeChargeStageIndex = Math.max(
     CHARGE_MILESTONES.findIndex(
       (milestone) => milestone.label === summary.evoLabel
@@ -724,10 +724,6 @@ export function MonumentDetail({
             "min-h-0 sm:min-h-[210px]"
           )}
         >
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute inset-x-12 -top-16 h-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_72%)] blur-3xl" />
-            <div className="absolute bottom-0 right-0 h-56 w-56 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.025),_transparent_62%)] blur-3xl" />
-          </div>
           <div className="relative z-40 flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
             {inlineEditOpen ? (
               <InlineMonumentHeaderEditor
@@ -871,7 +867,6 @@ export function MonumentDetail({
               "z-0 overflow-visible"
             )}
           >
-            <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.04),_transparent_58%)]" />
             <header className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div
                 className={segmentedToggleContainerClassName}
@@ -924,7 +919,6 @@ export function MonumentDetail({
                 "z-[1] overflow-visible"
               )}
             >
-              <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_62%)]" />
               <div className="relative z-10">
                 <MonumentNotesGrid monumentId={id} initialNotes={notes} />
               </div>

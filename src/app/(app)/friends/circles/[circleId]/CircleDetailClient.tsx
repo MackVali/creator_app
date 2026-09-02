@@ -149,9 +149,9 @@ const inviteRoleOptions: InviteRole[] = [
 type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 
 const liquidGlassPanelClass =
-  "rounded-2xl border border-white/[0.085] bg-[radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.075),transparent_34%),linear-gradient(145deg,rgba(31,31,34,0.82)_0%,rgba(16,16,18,0.94)_50%,rgba(6,6,7,0.98)_100%)] p-4 shadow-[0_22px_55px_rgba(0,0,0,0.44),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl";
+  "rounded-2xl border border-white/[0.085] bg-[#0D0E11] p-4 shadow-[0_22px_55px_rgba(0,0,0,0.44),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl";
 const liquidGlassInsetClass =
-  "border border-white/[0.085] bg-[linear-gradient(145deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_28px_rgba(0,0,0,0.22)] backdrop-blur";
+  "border border-white/[0.085] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_28px_rgba(0,0,0,0.22)] backdrop-blur";
 
 function getScrollParent(element: HTMLElement | null) {
   let current = element?.parentElement ?? null;
@@ -1054,7 +1054,7 @@ export default function CircleDetailClient({
       ref={detailSurfaceRef}
       className="mx-auto mt-0 w-full max-w-4xl space-y-4 px-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-1 text-white sm:pt-1.5"
     >
-      <section className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(145deg,rgba(28,28,30,0.62),rgba(7,7,8,0.84))] px-3 py-2 shadow-lg shadow-black/25 backdrop-blur-xl">
+      <section className="rounded-2xl border border-white/[0.08] bg-[#101114] px-3 py-2 shadow-lg shadow-black/25 backdrop-blur-xl">
         <Link
           href="/friends"
           aria-label="Back to friends"
@@ -1068,7 +1068,7 @@ export default function CircleDetailClient({
       </section>
 
       {isLoading ? (
-        <section className="rounded-2xl border border-white/[0.085] bg-[radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.07),transparent_34%),linear-gradient(145deg,rgba(28,28,30,0.84),rgba(8,8,9,0.96))] p-5 shadow-xl shadow-black/30 backdrop-blur-xl">
+        <section className="rounded-2xl border border-white/[0.085] bg-[#111216] p-5 shadow-xl shadow-black/30 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
@@ -1104,8 +1104,7 @@ export default function CircleDetailClient({
       ) : null}
 
       {circle && !error ? (
-        <section className="relative min-h-[260px] overflow-visible rounded-2xl border border-white/[0.085] bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.07),transparent_34%),linear-gradient(145deg,rgba(30,30,32,0.72),rgba(8,8,9,0.92))] p-4 shadow-lg shadow-black/30 backdrop-blur-xl sm:p-5">
-          <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.04),_transparent_58%)]" />
+        <section className="relative min-h-[260px] overflow-visible rounded-2xl border border-white/[0.085] bg-[#0D0E11] p-4 shadow-lg shadow-black/30 backdrop-blur-xl sm:p-5">
           <div className="relative z-10 space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
@@ -1204,7 +1203,7 @@ export default function CircleDetailClient({
               {showInviteControls && showInviteForm ? (
                 <form
                   onSubmit={handleInviteSubmit}
-                  className="mt-4 rounded-2xl border border-white/[0.085] bg-[linear-gradient(145deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5 backdrop-blur"
+                  className="mt-4 rounded-2xl border border-white/[0.085] bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5 backdrop-blur"
                 >
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto] sm:items-start">
                     <div className="relative min-w-0">
@@ -1367,7 +1366,7 @@ export default function CircleDetailClient({
                   section.rows.map((row) => (
                     <div
                       key={row.key ?? `${section.title}-${row.label}`}
-                      className="rounded-xl border border-white/[0.06] bg-[linear-gradient(145deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+                      className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
@@ -1421,7 +1420,7 @@ export default function CircleDetailClient({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-xl border border-white/[0.06] bg-[linear-gradient(145deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
                     <p className="text-sm font-medium text-white/55">
                       {section.emptyMessage}
                     </p>
@@ -1433,7 +1432,7 @@ export default function CircleDetailClient({
         })}
       </section>
 
-      <section className="rounded-2xl border border-white/[0.085] bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.07),transparent_34%),linear-gradient(145deg,rgba(30,30,32,0.72),rgba(8,8,9,0.92))] p-5 shadow-lg shadow-black/30 backdrop-blur-xl">
+      <section className="rounded-2xl border border-white/[0.085] bg-[#0D0E11] p-5 shadow-lg shadow-black/30 backdrop-blur-xl">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/70 ring-1 ring-white/10">
             <LockKeyhole className="h-5 w-5" aria-hidden="true" />

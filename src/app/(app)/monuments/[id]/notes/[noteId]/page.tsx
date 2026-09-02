@@ -494,7 +494,7 @@ export default function MonumentNotePage() {
                 title={noteTitle}
                 onIconChange={setNoteIcon}
                 onTitleChange={setNoteTitle}
-                autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
+                autosaveLabel={isSaving ? "Saving…" : undefined}
               />
 
               <NoteTextActionBar

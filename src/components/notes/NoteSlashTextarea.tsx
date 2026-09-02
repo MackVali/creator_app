@@ -2067,10 +2067,43 @@ type NoteSlashTextareaProps = {
   "aria-label"?: string;
 };
 
-export type NoteTextFormatCommand = "bold" | "italic" | "underline";
+export type NoteSimpleTextFormat = "bold" | "italic" | "underline" | "strikethrough";
+export type NoteTextFormatCommand = NoteSimpleTextFormat;
+export type NoteHexColor = `#${string}`;
+export type NotePresetHighlightColor =
+  | "yellow"
+  | "amber"
+  | "orange"
+  | "red"
+  | "pink"
+  | "purple"
+  | "blue"
+  | "cyan"
+  | "green"
+  | "mint"
+  | "gray";
+export type NoteHighlightColor = NotePresetHighlightColor | NoteHexColor;
+export type NotePresetTextColor =
+  | "default"
+  | "gray"
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "mint"
+  | "cyan"
+  | "blue"
+  | "purple"
+  | "pink";
+export type NoteTextColor = NotePresetTextColor | NoteHexColor;
+export type NoteTextFormatAction =
+  | { type: "format"; format: NoteSimpleTextFormat }
+  | { type: "highlight"; color: NoteHighlightColor }
+  | { type: "clearHighlight" }
+  | { type: "color"; color: NoteTextColor };
 
 export type NoteSlashTextareaHandle = {
-  applyTextFormat: (command: NoteTextFormatCommand) => void;
+  applyTextFormat: (action: NoteTextFormatAction) => void;
 };
 
 type NoteTextSegment = {
@@ -2159,15 +2192,98 @@ type InlineFormatNode =
     }
   | {
       type: "format";
-      format: NoteTextFormatCommand;
+      format: NoteSimpleTextFormat;
+      children: InlineFormatNode[];
+    }
+  | {
+      type: "highlight";
+      color: NoteHighlightColor;
+      children: InlineFormatNode[];
+    }
+  | {
+      type: "color";
+      color: NoteTextColor;
       children: InlineFormatNode[];
     };
 
-const NOTE_TEXT_FORMAT_MARKERS: Record<NoteTextFormatCommand, [string, string]> = {
+const NOTE_TEXT_FORMAT_MARKERS: Record<NoteSimpleTextFormat, [string, string]> = {
   bold: ["**", "**"],
   italic: ["*", "*"],
   underline: ["<u>", "</u>"],
+  strikethrough: ["~~", "~~"],
 };
+const NOTE_HIGHLIGHT_COLORS = [
+  "yellow",
+  "amber",
+  "orange",
+  "red",
+  "pink",
+  "purple",
+  "blue",
+  "cyan",
+  "green",
+  "mint",
+  "gray",
+] as const;
+const NOTE_TEXT_COLORS = [
+  "default",
+  "gray",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "mint",
+  "cyan",
+  "blue",
+  "purple",
+  "pink",
+] as const;
+const NOTE_HIGHLIGHT_CLASS_NAMES: Record<NotePresetHighlightColor, string> = {
+  yellow: "rounded-[3px] bg-yellow-200/22 px-[0.08em] text-white",
+  amber: "rounded-[3px] bg-amber-300/22 px-[0.08em] text-white",
+  orange: "rounded-[3px] bg-orange-300/20 px-[0.08em] text-white",
+  red: "rounded-[3px] bg-red-300/18 px-[0.08em] text-white",
+  pink: "rounded-[3px] bg-pink-300/18 px-[0.08em] text-white",
+  purple: "rounded-[3px] bg-violet-300/20 px-[0.08em] text-white",
+  blue: "rounded-[3px] bg-sky-300/18 px-[0.08em] text-white",
+  cyan: "rounded-[3px] bg-cyan-300/18 px-[0.08em] text-white",
+  green: "rounded-[3px] bg-emerald-300/18 px-[0.08em] text-white",
+  mint: "rounded-[3px] bg-teal-200/18 px-[0.08em] text-white",
+  gray: "rounded-[3px] bg-zinc-300/18 px-[0.08em] text-white",
+};
+const NOTE_TEXT_COLOR_CLASS_NAMES: Record<NotePresetTextColor, string> = {
+  default: "text-white",
+  gray: "text-zinc-300",
+  red: "text-red-300",
+  orange: "text-orange-300",
+  yellow: "text-yellow-200",
+  green: "text-emerald-300",
+  mint: "text-teal-200",
+  cyan: "text-cyan-200",
+  blue: "text-sky-300",
+  purple: "text-violet-300",
+  pink: "text-pink-300",
+};
+
+type InlineSerializedMarker =
+  | {
+      type: "format";
+      format: NoteSimpleTextFormat;
+      marker: "symmetric" | "open" | "close";
+      length: number;
+    }
+  | {
+      type: "highlight";
+      color: NoteHighlightColor;
+      marker: "open" | "close";
+      length: number;
+    }
+  | {
+      type: "color";
+      color: NoteTextColor;
+      marker: "open" | "close";
+      length: number;
+    };
 
 const NOTE_SEGMENT_DRAG_ID_PREFIX = "note-segment-";
 const NOTE_TEXT_ACTION_BAR_SELECTOR = "[data-note-text-action-bar]";
@@ -2184,22 +2300,113 @@ function isNoteTextActionBarTarget(target: EventTarget | null) {
   return Boolean(getClosestElement(target)?.closest(NOTE_TEXT_ACTION_BAR_SELECTOR));
 }
 
-function getInlineFormatMarkerAt(text: string, index: number): NoteTextFormatCommand | null {
-  if (text.startsWith("**", index)) return "bold";
-  if (text.startsWith("<u>", index) || text.startsWith("</u>", index)) return "underline";
-  if (text[index] === "*" && text[index - 1] !== "*" && text[index + 1] !== "*") {
-    return "italic";
-  }
+export function isNoteHexColor(value: string): value is NoteHexColor {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function normalizeNoteHexColor(value: NoteHexColor): NoteHexColor {
+  return value.toLowerCase() as NoteHexColor;
+}
+
+export function normalizeNoteColorValue(value: string): NoteHexColor | null {
+  return isNoteHexColor(value) ? normalizeNoteHexColor(value) : null;
+}
+
+function isNotePresetHighlightColor(value: string): value is NotePresetHighlightColor {
+  return NOTE_HIGHLIGHT_COLORS.includes(value as NotePresetHighlightColor);
+}
+
+function isNotePresetTextColor(value: string): value is NotePresetTextColor {
+  return NOTE_TEXT_COLORS.includes(value as NotePresetTextColor);
+}
+
+function isNoteHighlightColor(value: string): value is NoteHighlightColor {
+  return isNotePresetHighlightColor(value) || isNoteHexColor(value);
+}
+
+function isNoteTextColor(value: string): value is NoteTextColor {
+  return isNotePresetTextColor(value) || isNoteHexColor(value);
+}
+
+function isNoteSimpleTextFormat(value: string): value is NoteSimpleTextFormat {
+  return value in NOTE_TEXT_FORMAT_MARKERS;
+}
+
+function getHighlightMarkers(color: NoteHighlightColor): [string, string] {
+  const safeColor = isNoteHexColor(color) ? normalizeNoteHexColor(color) : color;
+  return [`<mark data-note-highlight="${safeColor}">`, "</mark>"];
+}
+
+function getColorMarkers(color: NoteTextColor): [string, string] {
+  const safeColor = isNoteHexColor(color) ? normalizeNoteHexColor(color) : color;
+  return [`<span data-note-color="${safeColor}">`, "</span>"];
+}
+
+function getNoteTextFormatActionMarkers(action: NoteTextFormatAction): [string, string] {
+  if (action.type === "format") return NOTE_TEXT_FORMAT_MARKERS[action.format];
+  if (action.type === "highlight") return getHighlightMarkers(action.color);
+  if (action.type === "clearHighlight") return ["", ""];
+  return getColorMarkers(action.color);
+}
+
+function getEditableElementMarkers(node: HTMLElement): [string, string] | null {
+  const format = node.dataset.noteInlineFormat;
+  if (format && isNoteSimpleTextFormat(format)) return NOTE_TEXT_FORMAT_MARKERS[format];
+
+  const highlight = node.dataset.noteHighlight;
+  if (highlight && isNoteHighlightColor(highlight)) return getHighlightMarkers(highlight);
+
+  const color = node.dataset.noteColor;
+  if (color && isNoteTextColor(color)) return getColorMarkers(color);
 
   return null;
 }
 
-function getInlineFormatMarkerLength(text: string, index: number) {
-  if (text.startsWith("**", index)) return 2;
-  if (text.startsWith("<u>", index)) return 3;
-  if (text.startsWith("</u>", index)) return 4;
-  if (text[index] === "*") return 1;
-  return 0;
+function getInlineSerializedMarkerAt(text: string, index: number): InlineSerializedMarker | null {
+  if (text.startsWith("**", index)) {
+    return { type: "format", format: "bold", marker: "symmetric", length: 2 };
+  }
+  if (text.startsWith("~~", index)) {
+    return { type: "format", format: "strikethrough", marker: "symmetric", length: 2 };
+  }
+  if (text.startsWith("<u>", index)) {
+    return { type: "format", format: "underline", marker: "open", length: 3 };
+  }
+  if (text.startsWith("</u>", index)) {
+    return { type: "format", format: "underline", marker: "close", length: 4 };
+  }
+  if (text.startsWith("</mark>", index)) {
+    return { type: "highlight", color: "yellow", marker: "close", length: 7 };
+  }
+  if (text.startsWith("</span>", index)) {
+    return { type: "color", color: "default", marker: "close", length: 7 };
+  }
+
+  const highlightOpen = text.slice(index).match(/^<mark data-note-highlight="([^"]+)">/);
+  if (highlightOpen?.[1] && isNoteHighlightColor(highlightOpen[1])) {
+    return {
+      type: "highlight",
+      color: highlightOpen[1],
+      marker: "open",
+      length: highlightOpen[0].length,
+    };
+  }
+
+  const colorOpen = text.slice(index).match(/^<span data-note-color="([^"]+)">/);
+  if (colorOpen?.[1] && isNoteTextColor(colorOpen[1])) {
+    return {
+      type: "color",
+      color: colorOpen[1],
+      marker: "open",
+      length: colorOpen[0].length,
+    };
+  }
+
+  if (text[index] === "*" && text[index - 1] !== "*" && text[index + 1] !== "*") {
+    return { type: "format", format: "italic", marker: "symmetric", length: 1 };
+  }
+
+  return null;
 }
 
 function findSingleAsterisk(text: string, startIndex: number) {
@@ -2212,9 +2419,112 @@ function findSingleAsterisk(text: string, startIndex: number) {
   return -1;
 }
 
+function findAttributeMarker(
+  text: string,
+  startIndex: number,
+  tagName: "mark" | "span",
+  attributeName: "data-note-highlight" | "data-note-color",
+) {
+  const openPattern = `<${tagName} ${attributeName}="`;
+  const start = text.indexOf(openPattern, startIndex);
+  if (start === -1) return null;
+
+  const valueStart = start + openPattern.length;
+  const valueEnd = text.indexOf('">', valueStart);
+  if (valueEnd === -1) return null;
+
+  const color = text.slice(valueStart, valueEnd);
+  const isValidColor =
+    attributeName === "data-note-highlight"
+      ? isNoteHighlightColor(color)
+      : isNoteTextColor(color);
+  if (!isValidColor) return null;
+
+  const prefix = text.slice(start, valueEnd + 2);
+  const suffix = `</${tagName}>`;
+  let end = -1;
+  let depth = 1;
+  let searchIndex = start + prefix.length;
+
+  while (searchIndex < text.length) {
+    const nextOpen = text.indexOf(openPattern, searchIndex);
+    const nextClose = text.indexOf(suffix, searchIndex);
+    if (nextClose === -1) return null;
+
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      const nestedValueStart = nextOpen + openPattern.length;
+      const nestedValueEnd = text.indexOf('">', nestedValueStart);
+      if (nestedValueEnd === -1) return null;
+
+      const nestedColor = text.slice(nestedValueStart, nestedValueEnd);
+      const nestedIsValidColor =
+        attributeName === "data-note-highlight"
+          ? isNoteHighlightColor(nestedColor)
+          : isNoteTextColor(nestedColor);
+      if (nestedIsValidColor) {
+        depth += 1;
+        searchIndex = nestedValueEnd + 2;
+      } else {
+        searchIndex = nextOpen + openPattern.length;
+      }
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      end = nextClose;
+      break;
+    }
+    searchIndex = nextClose + suffix.length;
+  }
+
+  if (end === -1) return null;
+
+  return { start, end, prefix, suffix, color };
+}
+
+function removeEnclosingAttributeMarker(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  tagName: "mark" | "span",
+  attributeName: "data-note-highlight" | "data-note-color",
+) {
+  let searchIndex = 0;
+  let bestMatch: ReturnType<typeof findAttributeMarker> | null = null;
+
+  while (searchIndex < selectionStart) {
+    const match = findAttributeMarker(text, searchIndex, tagName, attributeName);
+    if (!match || match.start >= selectionStart) break;
+
+    const contentStart = match.start + match.prefix.length;
+    if (contentStart <= selectionStart && match.end >= selectionEnd) {
+      bestMatch = match;
+    }
+    searchIndex = match.start + Math.max(1, match.prefix.length);
+  }
+
+  if (!bestMatch) return null;
+
+  const suffixStart = bestMatch.end;
+  const suffixEnd = suffixStart + bestMatch.suffix.length;
+  const unwrappedText =
+    text.slice(0, bestMatch.start) +
+    text.slice(bestMatch.start + bestMatch.prefix.length, suffixStart) +
+    text.slice(suffixEnd);
+
+  return {
+    text: unwrappedText,
+    selectionStart: selectionStart - bestMatch.prefix.length,
+    selectionEnd: selectionEnd - bestMatch.prefix.length,
+  };
+}
+
 function findNextInlineFormatMatch(text: string, startIndex: number) {
   const candidates: Array<{
-    format: NoteTextFormatCommand;
+    type: InlineFormatNode["type"];
+    format?: NoteSimpleTextFormat;
+    color?: NoteHighlightColor | NoteTextColor;
     start: number;
     end: number;
     prefix: string;
@@ -2225,6 +2535,7 @@ function findNextInlineFormatMatch(text: string, startIndex: number) {
     const boldEnd = text.indexOf("**", boldStart + 2);
     if (boldEnd !== -1) {
       candidates.push({
+        type: "format",
         format: "bold",
         start: boldStart,
         end: boldEnd,
@@ -2239,6 +2550,7 @@ function findNextInlineFormatMatch(text: string, startIndex: number) {
     const underlineEnd = text.indexOf("</u>", underlineStart + 3);
     if (underlineEnd !== -1) {
       candidates.push({
+        type: "format",
         format: "underline",
         start: underlineStart,
         end: underlineEnd,
@@ -2253,6 +2565,7 @@ function findNextInlineFormatMatch(text: string, startIndex: number) {
     const italicEnd = findSingleAsterisk(text, italicStart + 1);
     if (italicEnd !== -1) {
       candidates.push({
+        type: "format",
         format: "italic",
         start: italicStart,
         end: italicEnd,
@@ -2260,6 +2573,46 @@ function findNextInlineFormatMatch(text: string, startIndex: number) {
         suffix: "*",
       });
     }
+  }
+
+  const strikethroughStart = text.indexOf("~~", startIndex);
+  if (strikethroughStart !== -1) {
+    const strikethroughEnd = text.indexOf("~~", strikethroughStart + 2);
+    if (strikethroughEnd !== -1) {
+      candidates.push({
+        type: "format",
+        format: "strikethrough",
+        start: strikethroughStart,
+        end: strikethroughEnd,
+        prefix: "~~",
+        suffix: "~~",
+      });
+    }
+  }
+
+  const highlightMatch = findAttributeMarker(
+    text,
+    startIndex,
+    "mark",
+    "data-note-highlight",
+  );
+  if (highlightMatch && isNoteHighlightColor(highlightMatch.color)) {
+    const { color, ...markerMatch } = highlightMatch;
+    candidates.push({
+      type: "highlight",
+      color,
+      ...markerMatch,
+    });
+  }
+
+  const colorMatch = findAttributeMarker(text, startIndex, "span", "data-note-color");
+  if (colorMatch && isNoteTextColor(colorMatch.color)) {
+    const { color, ...markerMatch } = colorMatch;
+    candidates.push({
+      type: "color",
+      color,
+      ...markerMatch,
+    });
   }
 
   return candidates
@@ -2285,38 +2638,82 @@ function parseInlineFormatting(text: string): InlineFormatNode[] {
 
     const contentStart = match.start + match.prefix.length;
     const content = text.slice(contentStart, match.end);
-    nodes.push({
-      type: "format",
-      format: match.format,
-      children: parseInlineFormatting(content),
-    });
+    const children = parseInlineFormatting(content);
+    if (match.type === "format" && match.format) {
+      nodes.push({ type: "format", format: match.format, children });
+    } else if (
+      match.type === "highlight" &&
+      typeof match.color === "string" &&
+      isNoteHighlightColor(match.color)
+    ) {
+      nodes.push({ type: "highlight", color: match.color, children });
+    } else if (
+      match.type === "color" &&
+      typeof match.color === "string" &&
+      isNoteTextColor(match.color)
+    ) {
+      nodes.push({ type: "color", color: match.color, children });
+    }
     index = match.end + match.suffix.length;
   }
 
   return nodes;
 }
 
-function renderInlineFormattingNodes(nodes: InlineFormatNode[], keyPrefix: string): ReactNode[] {
-  return nodes.map((node, index) => {
-    const key = `${keyPrefix}-${index}`;
-
+function buildInlineFormattingDomNodes(nodes: InlineFormatNode[], documentRef: Document): Node[] {
+  return nodes.map((node) => {
     if (node.type === "text") {
-      return <Fragment key={key}>{node.text}</Fragment>;
+      return documentRef.createTextNode(node.text);
     }
 
-    const className =
-      node.format === "bold"
-        ? "font-bold"
-        : node.format === "italic"
-          ? "italic"
-          : "underline decoration-white/75 underline-offset-2";
+    const element = documentRef.createElement(node.type === "highlight" ? "mark" : "span");
+    if (node.type === "format") {
+      element.dataset.noteInlineFormat = node.format;
+      element.className =
+        node.format === "bold"
+          ? "font-extrabold"
+          : node.format === "italic"
+            ? "italic [font-style:oblique_14deg]"
+            : node.format === "underline"
+              ? "underline decoration-2 decoration-white underline-offset-4"
+              : "line-through decoration-2 decoration-white decoration-solid";
+    } else if (node.type === "highlight") {
+      const color = isNoteHexColor(node.color) ? normalizeNoteHexColor(node.color) : node.color;
+      element.dataset.noteHighlight = color;
+      if (isNotePresetHighlightColor(color)) {
+        element.className = NOTE_HIGHLIGHT_CLASS_NAMES[color];
+      } else {
+        element.className = "rounded-[3px] px-[0.08em] text-white";
+        element.style.backgroundColor = color;
+      }
+    } else {
+      const color = isNoteHexColor(node.color) ? normalizeNoteHexColor(node.color) : node.color;
+      element.dataset.noteColor = color;
+      if (isNotePresetTextColor(color)) {
+        element.className = NOTE_TEXT_COLOR_CLASS_NAMES[color];
+      } else {
+        element.style.color = color;
+      }
+    }
+    element.append(...buildInlineFormattingDomNodes(node.children, documentRef));
 
-    return (
-      <span key={key} data-note-inline-format={node.format} className={className}>
-        {renderInlineFormattingNodes(node.children, key)}
-      </span>
-    );
+    return element;
   });
+}
+
+function syncEditableTextDom(
+  control: EditableTextControl,
+  serializedText: string,
+  options: { force?: boolean } = {},
+) {
+  if (!options.force && control.dataset.noteSerializedText === serializedText) return;
+
+  const nodes = buildInlineFormattingDomNodes(
+    parseInlineFormatting(serializedText),
+    control.ownerDocument,
+  );
+  control.replaceChildren(...nodes);
+  control.dataset.noteSerializedText = serializedText;
 }
 
 function serializeEditableNodeList(nodes: NodeListOf<ChildNode> | ChildNode[]) {
@@ -2342,8 +2739,7 @@ function serializeEditableNodeList(nodes: NodeListOf<ChildNode> | ChildNode[]) {
     }
 
     const childSerialized = serializeEditableNodeList(node.childNodes);
-    const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
-    const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+    const markers = getEditableElementMarkers(node);
 
     serialized += markers ? `${markers[0]}${childSerialized}${markers[1]}` : childSerialized;
 
@@ -2393,28 +2789,30 @@ function readPlainEditableNodeList(nodes: NodeListOf<ChildNode> | ChildNode[]) {
 
 function serializedOffsetFromPlainOffset(serializedText: string, plainOffset: number) {
   const clampedPlainOffset = Math.max(0, plainOffset);
-  const openFormats: NoteTextFormatCommand[] = [];
+  const openMarkers: string[] = [];
   let currentPlainOffset = 0;
   let index = 0;
 
   while (index < serializedText.length) {
-    const format = getInlineFormatMarkerAt(serializedText, index);
-    const markerLength = getInlineFormatMarkerLength(serializedText, index);
+    const marker = getInlineSerializedMarkerAt(serializedText, index);
 
-    if (format && markerLength > 0) {
-      const isClosing = openFormats[openFormats.length - 1] === format;
-
+    if (marker) {
+      const markerKey =
+        marker.type === "format" ? `format:${marker.format}` : `${marker.type}`;
+      const isClosing =
+        marker.marker === "close" ||
+        (marker.marker === "symmetric" && openMarkers[openMarkers.length - 1] === markerKey);
       if (currentPlainOffset === clampedPlainOffset && isClosing) {
         return index;
       }
 
       if (isClosing) {
-        openFormats.pop();
+        openMarkers.pop();
       } else {
-        openFormats.push(format);
+        openMarkers.push(markerKey);
       }
 
-      index += markerLength;
+      index += marker.length;
       continue;
     }
 
@@ -2505,8 +2903,7 @@ function getSerializedEditableNodeLength(node: ChildNode): number {
     (total, childNode) => total + getSerializedEditableNodeLength(childNode),
     0,
   );
-  const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
-  const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+  const markers = getEditableElementMarkers(node);
 
   return childrenLength + (markers ? markers[0].length + markers[1].length : 0);
 }
@@ -2540,8 +2937,7 @@ function getSerializedEditableBoundary(
       return { node: parent, offset: index };
     }
 
-    const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
-    const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+    const markers = getEditableElementMarkers(node);
     if (!markers) {
       return getSerializedEditableBoundary(
         node,
@@ -21796,6 +22192,7 @@ function NoteSlashTextarea({
   const blockButtonRefs = useRef(new Map<number, HTMLButtonElement>());
   const rootRef = useRef<HTMLDivElement | null>(null);
   const activeTextSelectionRef = useRef<EditableTextSelection | null>(null);
+  const composingEditableRefs = useRef(new Set<EditableTextControl>());
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger>(null);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
@@ -22038,17 +22435,35 @@ function NoteSlashTextarea({
 
   const getLiveEditableSelection = useCallback(() => {
     const activeElement = document.activeElement;
+    const cachedSelection = activeTextSelectionRef.current;
 
     if (activeElement instanceof HTMLDivElement) {
       const activeControlSelection = getEditableSelectionFromControl(activeElement);
-      if (activeControlSelection) return activeControlSelection;
+
+      if (activeControlSelection) {
+        const liveSelectionIsCollapsed =
+          activeControlSelection.selectionStart === activeControlSelection.selectionEnd;
+        const cachedSelectionIsExpanded =
+          cachedSelection &&
+          cachedSelection.control === activeElement &&
+          cachedSelection.selectionStart !== cachedSelection.selectionEnd;
+
+        if (liveSelectionIsCollapsed && cachedSelectionIsExpanded) {
+          return {
+            ...activeControlSelection,
+            selectionStart: cachedSelection.selectionStart,
+            selectionEnd: cachedSelection.selectionEnd,
+          };
+        }
+
+        return activeControlSelection;
+      }
     }
 
     if (activeElement && rootRef.current?.contains(activeElement)) {
       return null;
     }
 
-    const cachedSelection = activeTextSelectionRef.current;
     if (!cachedSelection?.control?.isConnected) return null;
 
     const currentControlSelection = getEditableSelectionFromControl(cachedSelection.control);
@@ -22062,7 +22477,7 @@ function NoteSlashTextarea({
   }, [getEditableSelectionFromControl]);
 
   const applyTextFormat = useCallback(
-    (command: NoteTextFormatCommand) => {
+    (action: NoteTextFormatAction) => {
       const liveSelection = getLiveEditableSelection();
       if (!liveSelection) return;
 
@@ -22071,7 +22486,7 @@ function NoteSlashTextarea({
 
       liveSelection.control?.focus({ preventScroll: true });
 
-      const [prefix, suffix] = NOTE_TEXT_FORMAT_MARKERS[command];
+      const [prefix, suffix] = getNoteTextFormatActionMarkers(action);
       const selectionStart = Math.max(
         0,
         Math.min(liveSelection.selectionStart, segment.text.length),
@@ -22081,6 +22496,73 @@ function NoteSlashTextarea({
         Math.min(liveSelection.selectionEnd, segment.text.length),
       );
       if (selectionStart === selectionEnd) {
+        if (liveSelection.control) {
+          setSerializedSelectionInEditable(
+            liveSelection.control,
+            selectionStart,
+            selectionEnd,
+          );
+        }
+        return;
+      }
+
+      const markerRemoval =
+        action.type === "clearHighlight"
+          ? removeEnclosingAttributeMarker(
+              segment.text,
+              selectionStart,
+              selectionEnd,
+              "mark",
+              "data-note-highlight",
+            )
+          : action.type === "color" && action.color === "default"
+            ? removeEnclosingAttributeMarker(
+                segment.text,
+                selectionStart,
+                selectionEnd,
+                "span",
+                "data-note-color",
+              )
+            : null;
+
+      if (markerRemoval) {
+        const nextSegments = segments.map((currentSegment, index) =>
+          index === liveSelection.segmentIndex && currentSegment.type === liveSelection.type
+            ? { ...currentSegment, text: markerRemoval.text }
+            : currentSegment,
+        );
+        const nextSelection: PendingSelection = {
+          type: liveSelection.type,
+          segmentIndex: liveSelection.segmentIndex,
+          caretPosition: markerRemoval.selectionEnd,
+        };
+
+        if (liveSelection.control) {
+          setSerializedSelectionInEditable(
+            liveSelection.control,
+            selectionStart,
+            selectionEnd,
+          );
+        }
+        activeTextSelectionRef.current = {
+          type: liveSelection.type,
+          segmentId: liveSelection.segmentId,
+          segmentIndex: liveSelection.segmentIndex,
+          selectionStart: markerRemoval.selectionEnd,
+          selectionEnd: markerRemoval.selectionEnd,
+          control: liveSelection.control,
+        };
+        onValueChange(serializeNoteSegments(nextSegments));
+        setPendingSelection(nextSelection);
+        setSlashTrigger(null);
+        setSelectedCommandIndex(0);
+        return;
+      }
+
+      if (
+        action.type === "clearHighlight" ||
+        (action.type === "color" && action.color === "default")
+      ) {
         if (liveSelection.control) {
           setSerializedSelectionInEditable(
             liveSelection.control,
@@ -22140,6 +22622,56 @@ function NoteSlashTextarea({
     }),
     [applyTextFormat],
   );
+
+  useEffect(() => {
+    function syncActiveEditableSelectionFromDocument() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      if (!anchorNode || !focusNode) return;
+
+      const anchorElement =
+        anchorNode instanceof Element ? anchorNode : anchorNode.parentElement;
+      const focusElement =
+        focusNode instanceof Element ? focusNode : focusNode.parentElement;
+      if (!anchorElement || !focusElement) return;
+
+      const anchorEditable = anchorElement.closest("[data-note-editable-segment-id]");
+      const focusEditable = focusElement.closest("[data-note-editable-segment-id]");
+
+      if (
+        !(anchorEditable instanceof HTMLDivElement) ||
+        anchorEditable !== focusEditable ||
+        !rootRef.current?.contains(anchorEditable)
+      ) {
+        return;
+      }
+
+      const editableSelection = getEditableSelectionFromControl(anchorEditable);
+      if (!editableSelection) return;
+
+      const cachedSelection = activeTextSelectionRef.current;
+      const cachedSelectionIsExpanded =
+        cachedSelection?.control === anchorEditable &&
+        cachedSelection.selectionStart !== cachedSelection.selectionEnd;
+      const nextSelectionIsCollapsed =
+        editableSelection.selectionStart === editableSelection.selectionEnd;
+
+      if (cachedSelectionIsExpanded && nextSelectionIsCollapsed) {
+        return;
+      }
+
+      activeTextSelectionRef.current = editableSelection;
+    }
+
+    document.addEventListener("selectionchange", syncActiveEditableSelectionFromDocument);
+
+    return () => {
+      document.removeEventListener("selectionchange", syncActiveEditableSelectionFromDocument);
+    };
+  }, [getEditableSelectionFromControl]);
 
   useEffect(() => {
     function keepOrClearEditableSelection(event: PointerEvent | FocusEvent) {
@@ -22239,6 +22771,27 @@ function NoteSlashTextarea({
       window.removeEventListener("touchmove", preventTouchScrollWhileDragging);
     };
   }, [activeSegmentDragId]);
+
+  useLayoutEffect(() => {
+    segments.forEach((segment, segmentIndex) => {
+      if (segment.type !== "text" && segment.type !== "checklist" && segment.type !== "list") {
+        return;
+      }
+
+      const control =
+        segment.type === "text"
+          ? textareaRefs.current.get(segmentIndex)
+          : lineInputRefs.current.get(segmentIndex);
+      if (!control || composingEditableRefs.current.has(control)) return;
+
+      const isFocused = document.activeElement === control;
+      const shouldSyncFocusedControl =
+        pendingSelection?.type === segment.type && pendingSelection.segmentIndex === segmentIndex;
+      if (isFocused && !shouldSyncFocusedControl) return;
+
+      syncEditableTextDom(control, segment.text);
+    });
+  }, [pendingSelection, segments]);
 
   useLayoutEffect(() => {
     if (pendingSelection === null) return;
@@ -23132,6 +23685,7 @@ function NoteSlashTextarea({
   ) {
     const nextText = readSerializedEditableText(control);
     const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(control, nextText);
+    control.dataset.noteSerializedText = nextText;
 
     if (type === "text") {
       updateTextSegment(segmentIndex, nextText);
@@ -23150,12 +23704,6 @@ function NoteSlashTextarea({
       selectionEnd,
       control,
     };
-    setPendingSelection({
-      type,
-      segmentIndex,
-      caretPosition: selectionStart,
-      selectionEnd,
-    });
   }
 
   function renderEditableTextControl(
@@ -23179,6 +23727,7 @@ function NoteSlashTextarea({
           const refs = type === "text" ? textareaRefs : lineInputRefs;
           if (node) {
             refs.current.set(segmentIndex, node);
+            syncEditableTextDom(node, text);
           } else {
             refs.current.delete(segmentIndex);
           }
@@ -23193,6 +23742,13 @@ function NoteSlashTextarea({
         aria-controls={options.ariaControls}
         aria-multiline={options.multiline ?? false}
         onInput={(event) => handleEditableTextInput(type, segmentIndex, event.currentTarget)}
+        onCompositionStart={(event) => {
+          composingEditableRefs.current.add(event.currentTarget);
+        }}
+        onCompositionEnd={(event) => {
+          composingEditableRefs.current.delete(event.currentTarget);
+          handleEditableTextInput(type, segmentIndex, event.currentTarget);
+        }}
         onKeyDown={(event) =>
           type === "text"
             ? handleTextKeyDown(event, segmentIndex)
@@ -23208,12 +23764,56 @@ function NoteSlashTextarea({
             syncSlashTrigger(segmentIndex, text, nextSelection.selectionStart);
           }
         }}
-        onBlur={type === "text" ? closeMenu : undefined}
+        onBlur={(event) => {
+          composingEditableRefs.current.delete(event.currentTarget);
+          syncEditableTextDom(event.currentTarget, readSerializedEditableText(event.currentTarget), {
+            force: true,
+          });
+          if (type === "text") {
+            closeMenu();
+          }
+        }}
         className={`${options.className} whitespace-pre-wrap break-words empty:before:pointer-events-none empty:before:text-white/28 empty:before:content-[attr(data-placeholder)]`}
-      >
-        {renderInlineFormattingNodes(parseInlineFormatting(text), editableId)}
-      </div>
+      />
     );
+  }
+
+  function handleBlankNoteCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement | null;
+
+    if (
+      target?.closest(
+        '[data-note-editable-segment-id], button, input, textarea, select, a, [role="button"], [role="menuitem"], [role="option"]',
+      )
+    ) {
+      return;
+    }
+
+    closeMenu();
+
+    const lastSegmentIndex = segments.length - 1;
+    const lastSegment = segments[lastSegmentIndex];
+
+    if (lastSegment?.type === "text") {
+      const control = textareaRefs.current.get(lastSegmentIndex);
+      if (!control) return;
+
+      control.focus();
+      setSerializedSelectionInEditable(
+        control,
+        lastSegment.text.length,
+        lastSegment.text.length,
+      );
+      rememberEditableSelection("text", lastSegmentIndex, control);
+      return;
+    }
+
+    const nextSegments = [...segments, { type: "text" as const, text: "" }];
+    commitSegments(nextSegments, {
+      type: "text",
+      segmentIndex: nextSegments.length - 1,
+      caretPosition: 0,
+    });
   }
 
   function handleSegmentDragStart(event: DragStartEvent) {
@@ -23278,6 +23878,7 @@ function NoteSlashTextarea({
       ref={rootRef}
       className={`${className ?? ""} relative flex flex-col gap-1 overflow-visible`}
       aria-label={ariaLabel}
+      onClick={handleBlankNoteCanvasClick}
     >
       <DndContext
         sensors={dragSensors}
