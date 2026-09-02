@@ -22,6 +22,11 @@ type NoteTextActionBarProps = {
   onFormat: (action: NoteTextFormatAction) => void;
 };
 
+const NORMAL_ACTION_BAR_BOTTOM = "calc(5.25rem + env(safe-area-inset-bottom, 0px))";
+const KEYBOARD_ACCESSORY_GAP_PX = 6;
+const MIN_KEYBOARD_INSET_PX = 120;
+const MOBILE_VISUAL_VIEWPORT_MAX_WIDTH_PX = 768;
+
 const TEXT_ACTIONS: Array<{
   format: NoteSimpleTextFormat;
   label: string;
@@ -84,6 +89,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
   const textColorInputRef = useRef<HTMLInputElement | null>(null);
   const customColorInputTimerRef = useRef<number | null>(null);
   const [openPalette, setOpenPalette] = useState<"highlight" | "color" | null>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   function handlePointerAction(
     action: NoteTextFormatAction,
@@ -225,16 +231,68 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
   }, [openPalette]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function updateKeyboardInset() {
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setKeyboardInset(0);
+        return;
+      }
+
+      const layoutHeight = window.innerHeight;
+      const visualHeight = viewport.height;
+      const visualTop = viewport.offsetTop;
+      const isMobileViewport =
+        Math.min(window.innerWidth, viewport.width) <= MOBILE_VISUAL_VIEWPORT_MAX_WIDTH_PX;
+
+      if (
+        !isMobileViewport ||
+        !Number.isFinite(layoutHeight) ||
+        !Number.isFinite(visualHeight) ||
+        !Number.isFinite(visualTop)
+      ) {
+        setKeyboardInset(0);
+        return;
+      }
+
+      const visualBottom = visualTop + visualHeight;
+      const nextKeyboardInset = Math.max(0, Math.round(layoutHeight - visualBottom));
+
+      setKeyboardInset(nextKeyboardInset >= MIN_KEYBOARD_INSET_PX ? nextKeyboardInset : 0);
+    }
+
+    const observedVisualViewport = window.visualViewport;
+
+    updateKeyboardInset();
+    window.addEventListener("resize", updateKeyboardInset);
+    observedVisualViewport?.addEventListener("resize", updateKeyboardInset);
+    observedVisualViewport?.addEventListener("scroll", updateKeyboardInset);
+
+    return () => {
+      window.removeEventListener("resize", updateKeyboardInset);
+      observedVisualViewport?.removeEventListener("resize", updateKeyboardInset);
+      observedVisualViewport?.removeEventListener("scroll", updateKeyboardInset);
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       clearCustomColorInputTimer();
     };
   }, []);
 
+  const actionBarBottom =
+    keyboardInset > 0
+      ? `calc(${keyboardInset}px + ${KEYBOARD_ACCESSORY_GAP_PX}px)`
+      : NORMAL_ACTION_BAR_BOTTOM;
+
   return (
     <div
       data-note-text-action-bar
       data-note-palette-open={openPalette ? "true" : undefined}
-      className="fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] z-40 px-4 transition-opacity duration-150"
+      className="fixed inset-x-0 z-[60] px-4 transition-opacity duration-150"
+      style={{ bottom: actionBarBottom }}
     >
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-1.5">
         {openPalette ? (
