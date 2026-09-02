@@ -1894,6 +1894,163 @@ export interface Database {
           created_by?: string | null;
         };
       };
+      day_type_time_block_allowed_areas: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          area_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          area_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          day_type_time_block_id?: string;
+          area_id?: string;
+        };
+      };
+      day_type_time_block_allowed_habit_types: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          habit_type: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          habit_type: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          day_type_time_block_id?: string;
+          habit_type?: string;
+        };
+      };
+      day_type_time_block_allowed_monuments: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          monument_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          monument_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          day_type_time_block_id?: string;
+          monument_id?: string;
+        };
+      };
+      day_type_time_block_allowed_skills: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          skill_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          day_type_time_block_id: string;
+          skill_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          day_type_time_block_id?: string;
+          skill_id?: string;
+        };
+      };
+      day_type_time_blocks: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          day_type_id: string;
+          time_block_id: string;
+          energy: string;
+          block_type: string;
+          location_context_id: string | null;
+          position: number;
+          time_block_label: string | null;
+          allow_all_habit_types: boolean;
+          allow_all_skills: boolean;
+          allow_all_areas: boolean;
+          allow_all_monuments: boolean;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          day_type_id: string;
+          time_block_id: string;
+          energy?: string;
+          block_type?: string;
+          location_context_id?: string | null;
+          position?: number;
+          time_block_label?: string | null;
+          allow_all_habit_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_areas?: boolean;
+          allow_all_monuments?: boolean;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          day_type_id?: string;
+          time_block_id?: string;
+          energy?: string;
+          block_type?: string;
+          location_context_id?: string | null;
+          position?: number;
+          time_block_label?: string | null;
+          allow_all_habit_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_areas?: boolean;
+          allow_all_monuments?: boolean;
+        };
+      };
       time_blocks: {
         Row: {
           id: string;
@@ -1938,6 +2095,15 @@ export interface Database {
           energy: string;
           window_kind: string;
           location_context_id: string | null;
+          allow_all_habit_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_areas?: boolean;
+          allow_all_monuments?: boolean;
+          allowed_habit_types?: string[] | null;
+          allowed_skill_ids?: string[] | null;
+          allowed_area_ids?: string[] | null;
+          allowed_monument_ids?: string[] | null;
+          day_type_time_block_id?: string | null;
         };
         Insert: {
           id?: string;
@@ -1950,6 +2116,15 @@ export interface Database {
           energy?: string;
           window_kind?: string;
           location_context_id?: string | null;
+          allow_all_habit_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_areas?: boolean;
+          allow_all_monuments?: boolean;
+          allowed_habit_types?: string[] | null;
+          allowed_skill_ids?: string[] | null;
+          allowed_area_ids?: string[] | null;
+          allowed_monument_ids?: string[] | null;
+          day_type_time_block_id?: string | null;
         };
         Update: {
           id?: string;
@@ -1962,6 +2137,15 @@ export interface Database {
           energy?: string;
           window_kind?: string;
           location_context_id?: string | null;
+          allow_all_habit_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_areas?: boolean;
+          allow_all_monuments?: boolean;
+          allowed_habit_types?: string[] | null;
+          allowed_skill_ids?: string[] | null;
+          allowed_area_ids?: string[] | null;
+          allowed_monument_ids?: string[] | null;
+          day_type_time_block_id?: string | null;
         };
       };
       overlay_windows: {

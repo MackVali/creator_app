@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
+import { addGoalToCampaign } from "@/lib/queries/roadmaps";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
@@ -422,6 +423,62 @@ export async function persistGoalUpdate({
     throw error;
   }
 
+  let ownerId = userId;
+  if (!ownerId) {
+    const { data, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      console.error("Error fetching user for goal sync:", authError);
+    }
+    ownerId = data.user?.id ?? null;
+    if (ownerId && onUserResolved) {
+      onUserResolved(ownerId);
+    }
+  }
+
+  if (ownerId && context && "campaignId" in context) {
+    const nextCampaignId =
+      typeof context.campaignId === "string" &&
+      context.campaignId.trim().length > 0
+        ? context.campaignId
+        : null;
+
+    const { error: campaignDeleteError } = await supabase
+      .from("campaign_goals")
+      .delete()
+      .eq("user_id", ownerId)
+      .eq("goal_id", goal.id);
+    if (campaignDeleteError) {
+      console.error("Error clearing goal campaign link:", campaignDeleteError);
+      throw campaignDeleteError;
+    }
+
+    if (nextCampaignId) {
+      const { data: campaignGoalRows, error: campaignGoalError } =
+        await supabase
+          .from("campaign_goals")
+          .select("position")
+          .eq("user_id", ownerId)
+          .eq("campaign_id", nextCampaignId)
+          .order("position", { ascending: false })
+          .limit(1);
+      if (campaignGoalError) {
+        console.error("Error loading campaign goal position:", campaignGoalError);
+        throw campaignGoalError;
+      }
+
+      const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+      const nextPosition =
+        Number.isFinite(lastPosition) && lastPosition > 0
+          ? lastPosition + 1
+          : 1;
+      await addGoalToCampaign(ownerId, {
+        campaignId: nextCampaignId,
+        goalId: goal.id,
+        position: nextPosition,
+      });
+    }
+  }
+
   const hasValidIncomingPriorityRank =
     typeof goal.priorityRank === "number" &&
     Number.isFinite(goal.priorityRank) &&
@@ -444,18 +501,6 @@ export async function persistGoalUpdate({
   if (rankError) {
     console.error("Error recalculating goal global rank:", rankError);
     throw rankError;
-  }
-
-  let ownerId = userId;
-  if (!ownerId) {
-    const { data, error: authError } = await supabase.auth.getUser();
-    if (authError) {
-      console.error("Error fetching user for goal sync:", authError);
-    }
-    ownerId = data.user?.id ?? null;
-    if (ownerId && onUserResolved) {
-      onUserResolved(ownerId);
-    }
   }
 
   if (ownerId) {

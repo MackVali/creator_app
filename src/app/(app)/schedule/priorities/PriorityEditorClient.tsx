@@ -2319,9 +2319,11 @@ function toTimeBlockWindowConstraint(
   return {
     allowAllHabitTypes: timeBlock.allowAllHabitTypes,
     allowAllSkills: timeBlock.allowAllSkills,
+    allowAllAreas: timeBlock.allowAllAreas,
     allowAllMonuments: timeBlock.allowAllMonuments,
     allowedHabitTypes: timeBlock.allowedHabitTypes,
     allowedSkillIds: timeBlock.allowedSkillIds,
+    allowedAreaIds: timeBlock.allowedAreaIds,
     allowedMonumentIds: timeBlock.allowedMonumentIds,
     block_type: timeBlock.blockType ?? null,
   };
@@ -2346,12 +2348,15 @@ function uniqueStrings(values: Array<string | null | undefined>) {
 
 function getProjectTimeBlockConstraintItem(
   project: RoadmapPriorityProject,
+  parentAreaIds: string[] = [],
   parentMonumentIds: string[] = []
 ): ConstraintItem {
   return {
     sourceType: "PROJECT",
     skillId: project.skillId ?? null,
     skillIds: uniqueStrings([...(project.skillIds ?? []), project.skillId]),
+    areaId: parentAreaIds[0] ?? project.areaId ?? null,
+    areaIds: uniqueStrings([...parentAreaIds, project.areaId]),
     monumentId: parentMonumentIds[0] ?? project.skillMonumentId ?? null,
     skillMonumentId: project.skillMonumentId ?? null,
     monumentIds: uniqueStrings([
@@ -2366,12 +2371,15 @@ function getProjectTimeBlockConstraintItem(
 
 function getTaskTimeBlockConstraintItem(
   task: RoadmapPriorityTask,
+  parentAreaIds: string[] = [],
   parentMonumentIds: string[] = []
 ): ConstraintItem {
   return {
     sourceType: "TASK",
     skillId: task.skillId ?? null,
     skillIds: task.skillId ? [task.skillId] : [],
+    areaId: parentAreaIds[0] ?? task.areaId ?? null,
+    areaIds: uniqueStrings([...parentAreaIds, task.areaId]),
     monumentId: parentMonumentIds[0] ?? task.skillMonumentId ?? null,
     skillMonumentId: task.skillMonumentId ?? null,
     monumentIds: uniqueStrings([...parentMonumentIds, task.skillMonumentId]),
@@ -2381,16 +2389,20 @@ function getTaskTimeBlockConstraintItem(
 function filterProjectsByTimeBlock(
   projects: RoadmapPriorityProject[] | undefined,
   timeBlock: PriorityTimeBlockFilterOptionData,
+  parentAreaIds: string[] = [],
   parentMonumentIds: string[] = []
 ) {
   return (projects ?? []).flatMap((project) => {
     const projectAllowed = itemPassesPriorityTimeBlock(
-      getProjectTimeBlockConstraintItem(project, parentMonumentIds),
+      getProjectTimeBlockConstraintItem(project, parentAreaIds, parentMonumentIds),
       timeBlock
     );
     const allowedTasks = (project.tasks ?? []).filter((task) =>
       itemPassesPriorityTimeBlock(
         getTaskTimeBlockConstraintItem(task, uniqueStrings([
+          ...parentAreaIds,
+          project.areaId,
+        ]), uniqueStrings([
           ...parentMonumentIds,
           ...(project.skillMonumentIds ?? []),
           project.skillMonumentId,
@@ -2408,10 +2420,12 @@ function filterGoalByTimeBlock(
   goal: RoadmapPriorityGoal,
   timeBlock: PriorityTimeBlockFilterOptionData
 ): RoadmapPriorityGoal | null {
+  const parentAreaIds = uniqueStrings([goal.areaId]);
   const parentMonumentIds = uniqueStrings([goal.monumentId]);
   const projects = filterProjectsByTimeBlock(
     goal.projects,
     timeBlock,
+    parentAreaIds,
     parentMonumentIds
   );
   return projects.length > 0 ? { ...goal, projects } : null;
@@ -2437,6 +2451,7 @@ function filterGlobalPriorityItemsByTimeBlock(
     const projects = filterProjectsByTimeBlock(
       item.projects,
       timeBlock,
+      uniqueStrings([item.areaId]),
       uniqueStrings([item.monumentId])
     );
     if (projects.length > 0) {
@@ -2453,6 +2468,8 @@ function getHabitTimeBlockConstraintItem(habit: RoadmapHabitItem): ConstraintIte
     habitType: habit.rawHabitType ?? habit.habitType,
     skillId: habit.skillId ?? null,
     skillIds: habit.skillId ? [habit.skillId] : [],
+    areaId: habit.goalAreaId ?? null,
+    areaIds: habit.goalAreaId ? [habit.goalAreaId] : [],
     monumentId: habit.monumentId ?? habit.goalMonumentId ?? null,
     skillMonumentId: habit.skillMonumentId ?? null,
     monumentIds: uniqueStrings([

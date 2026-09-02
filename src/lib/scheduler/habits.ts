@@ -27,6 +27,8 @@ export type HabitScheduleItem = {
   skillId: string | null;
   skillMonumentId?: string | null;
   goalId: string | null;
+  goalAreaId?: string | null;
+  goalMonumentId?: string | null;
   completionTarget: number | null;
   finishedAt?: string | null;
   locationContextId: string | null;
@@ -75,6 +77,10 @@ type HabitRecord = {
     monument_id?: string | null;
   } | null;
   goal_id?: string | null;
+  goal?: {
+    area_id?: string | null;
+    monument_id?: string | null;
+  } | null;
   completion_target?: number | null;
   finished_at?: string | null;
   location_context_id?: string | null;
@@ -152,7 +158,7 @@ export async function fetchHabitsForSchedule(
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`;
   const skillJoin = "skill:skills(monument_id)";
   const baseColumns = `id, name, memo_capture_config, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, fixed_start_local, fixed_end_local, fixed_timezone, ${windowJoin}`;
-  const extendedColumns = `${baseColumns}, goal_id, completion_target, finished_at`;
+  const extendedColumns = `${baseColumns}, goal_id, goal:goals(area_id, monument_id), completion_target, finished_at`;
 
   let supportsGoalMetadata = cachedGoalMetadataSupport !== "unsupported";
   let data: HabitRecord[] | null = null;
@@ -269,6 +275,8 @@ export async function fetchHabitsForSchedule(
     skillId: record.skill_id ?? null,
     skillMonumentId: record.skill?.monument_id ?? null,
     goalId: supportsGoalMetadata ? record.goal_id ?? null : null,
+    goalAreaId: supportsGoalMetadata ? record.goal?.area_id ?? null : null,
+    goalMonumentId: supportsGoalMetadata ? record.goal?.monument_id ?? null : null,
     completionTarget:
       supportsGoalMetadata &&
       typeof record.completion_target === "number" &&

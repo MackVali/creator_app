@@ -10,10 +10,11 @@ type SchedulerClient = SupabaseClient<Database>;
 describe("passesTimeBlockConstraints", () => {
   it("allows when allow_all flags are true", () => {
     const result = passesTimeBlockConstraints(
-      { habitType: "HABIT", skillId: "skill-1", monumentId: "mon-1" },
+      { habitType: "HABIT", skillId: "skill-1", areaId: "money", monumentId: "mon-1" },
       {
         allowAllHabitTypes: true,
         allowAllSkills: true,
+        allowAllAreas: true,
         allowAllMonuments: true,
       }
     );
@@ -102,15 +103,106 @@ describe("passesTimeBlockConstraints", () => {
     expect(result).toBe(true);
   });
 
+  it("passes area-only scope constraints by candidate area", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { areaId: "money" },
+        { allowAllAreas: false, allowedAreaIds: ["money"] }
+      )
+    ).toBe(true);
+    expect(
+      passesTimeBlockConstraints(
+        { areaId: "body" },
+        { allowAllAreas: false, allowedAreaIds: ["money"] }
+      )
+    ).toBe(false);
+  });
+
+  it("passes monument-only scope constraints by candidate monument", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { monumentId: "mon-1" },
+        { allowAllMonuments: false, allowedMonumentIds: ["mon-1"] }
+      )
+    ).toBe(true);
+    expect(
+      passesTimeBlockConstraints(
+        { monumentId: "mon-2" },
+        { allowAllMonuments: false, allowedMonumentIds: ["mon-1"] }
+      )
+    ).toBe(false);
+  });
+
+  it("ORs area and monument selections inside shared scope", () => {
+    const window = {
+      allowAllAreas: false,
+      allowAllMonuments: false,
+      allowedAreaIds: ["money"],
+      allowedMonumentIds: ["creator"],
+    };
+    expect(passesTimeBlockConstraints({ areaId: "money", monumentId: "other" }, window)).toBe(true);
+    expect(passesTimeBlockConstraints({ areaId: "body", monumentId: "creator" }, window)).toBe(true);
+    expect(passesTimeBlockConstraints({ areaId: "body", monumentId: "other" }, window)).toBe(false);
+    expect(passesTimeBlockConstraints({ areaId: "money", monumentId: "creator" }, window)).toBe(true);
+  });
+
+  it("keeps skill constraints independent from scope constraints", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { skillId: "skill-1", areaId: "money" },
+        {
+          allowAllSkills: false,
+          allowedSkillIds: ["skill-2"],
+          allowAllAreas: false,
+          allowedAreaIds: ["money"],
+        }
+      )
+    ).toBe(false);
+  });
+
+  it("keeps habit constraints independent from scope constraints", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { habitType: "HABIT", areaId: "money" },
+        {
+          allowAllHabitTypes: false,
+          allowedHabitTypes: ["PRACTICE"],
+          allowAllAreas: false,
+          allowedAreaIds: ["money"],
+        }
+      )
+    ).toBe(false);
+  });
+
+  it("keeps legacy monument-only windows working", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { monumentId: "mon-1" },
+        { allowAllMonuments: false, allowedMonumentIds: ["mon-1"] }
+      )
+    ).toBe(true);
+  });
+
+  it("does not derive areas from skills", () => {
+    expect(
+      passesTimeBlockConstraints(
+        { skillId: "money-skill" },
+        { allowAllAreas: false, allowedAreaIds: ["money"] }
+      )
+    ).toBe(false);
+  });
+
   it("uses cached sets when provided instead of arrays", () => {
     const result = passesTimeBlockConstraints(
-      { habitType: "HABIT", skillId: "skill-a", monumentId: "mon-1" },
+      { habitType: "HABIT", skillId: "skill-a", areaId: "money", monumentId: "mon-1" },
       {
         allowAllHabitTypes: false,
         allowAllSkills: false,
+        allowAllAreas: false,
         allowAllMonuments: false,
         allowedHabitTypesSet: new Set(["HABIT"]),
         allowedSkillIdsSet: new Set(["skill-a"]),
+        allowedAreaIdsSet: new Set(["money"]),
         allowedMonumentIdsSet: new Set(["mon-1"]),
       }
     );

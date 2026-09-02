@@ -112,6 +112,7 @@ import {
   passesTimeBlockConstraints,
   normalizeSet,
   normalizeIdSet,
+  scopeConstraintFails,
 } from "./constraints";
 import { log, type ThrottleOptions } from "@/lib/utils/logGate";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "./limits";
@@ -2585,9 +2586,11 @@ const doesWindowHonorHabitConstraints = (
     habitType: habit.habitType ?? null,
     skillId: habit.skillId ?? null,
     skillIds: null,
+    areaId: habit.goalAreaId ?? null,
+    areaIds: habit.goalAreaId ? [habit.goalAreaId] : null,
     monumentId: null,
     skillMonumentId: habit.skillMonumentId ?? null,
-    monumentIds: null,
+    monumentIds: habit.goalMonumentId ? [habit.goalMonumentId] : null,
   };
   return passesTimeBlockConstraints(constraintItem, windowRecord);
 };
@@ -3445,8 +3448,10 @@ export async function scheduleBacklog(
     return ids;
   };
   const goalMonumentById = new Map<string, string | null>();
+  const goalAreaById = new Map<string, string | null>();
   for (const goal of goals) {
     goalMonumentById.set(goal.id, goal.monumentId ?? null);
+    goalAreaById.set(goal.id, goal.areaId ?? null);
   }
   const getProjectGoalMonumentId = (projectId: string): string | null => {
     const project = projectsMap[projectId];
@@ -3454,6 +3459,13 @@ export async function scheduleBacklog(
     const goalId = project.goal_id ?? null;
     if (!goalId) return null;
     return goalMonumentById.get(goalId) ?? null;
+  };
+  const getProjectGoalAreaId = (projectId: string): string | null => {
+    const project = projectsMap[projectId];
+    if (!project) return null;
+    const goalId = project.goal_id ?? null;
+    if (!goalId) return null;
+    return project.goal_area_id ?? goalAreaById.get(goalId) ?? null;
   };
   const projectMatchesSelectedMonument = (projectId: string): boolean => {
     if (mode.type !== "MONUMENTAL") return false;
@@ -6177,10 +6189,13 @@ export async function scheduleBacklog(
         continue;
       }
       const projectGoalMonumentId = getProjectGoalMonumentId(projectId);
+      const projectGoalAreaId = getProjectGoalAreaId(projectId);
       const constraintItem: ConstraintItem = {
         habitType: null,
         skillId: null,
         skillIds: getProjectSkillIds(projectId),
+        areaId: projectGoalAreaId,
+        areaIds: projectGoalAreaId ? [projectGoalAreaId] : null,
         monumentId: projectGoalMonumentId,
         skillMonumentId: null,
         monumentIds: projectGoalMonumentId ? [projectGoalMonumentId] : null,
@@ -6480,8 +6495,11 @@ export async function scheduleBacklog(
       item.duration_min = durationMin;
     }
     const projectGoalMonumentId = getProjectGoalMonumentId(item.id);
+    const projectGoalAreaId = getProjectGoalAreaId(item.id);
     const projectGoalMonumentIds =
       projectGoalMonumentId !== null ? [projectGoalMonumentId] : null;
+    const projectGoalAreaIds =
+      projectGoalAreaId !== null ? [projectGoalAreaId] : null;
     // Create window availability for project placement (fresh per project)
     const projectWindowAvailability = new Map<string, WindowAvailabilityBounds>();
     if (attempted.has(item.id)) {
@@ -6529,6 +6547,8 @@ export async function scheduleBacklog(
           ...item,
           isProject: true,
           skillIds: projectSkillIds,
+          areaId: projectGoalAreaId,
+          areaIds: projectGoalAreaIds,
           monumentId: projectGoalMonumentId,
           monumentIds: projectGoalMonumentIds,
           allowEmptyProjectCandidates: Boolean(item.instanceId),
@@ -11072,6 +11092,8 @@ async function scheduleHabitsForDay(params: {
           habitType: habit.habitType ?? null,
           skillId: habit.skillId ?? null,
           skillIds: habit.skillIds ?? null,
+          areaId: habit.goalAreaId ?? null,
+          areaIds: habit.goalAreaId ? [habit.goalAreaId] : null,
           monumentId: habit.monumentId ?? null,
           skillMonumentId: habit.skillMonumentId ?? null,
           monumentIds: habit.monumentIds ?? null,
@@ -12666,12 +12688,14 @@ function doesInstanceRespectDaylight(
 }
 
 type ConstraintAwareItem = {
-  energy: string;
-  duration_min: number;
+  energy?: string;
+  duration_min?: number;
   habitType?: string | null;
   sourceType?: string | null;
   skillId?: string | null;
   skillIds?: string[] | null;
+  areaId?: string | null;
+  areaIds?: string[] | null;
   monumentId?: string | null;
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
@@ -12833,6 +12857,8 @@ export async function fetchCompatibleWindowsForItem(
     sourceType: item.sourceType ?? null,
     skillId: item.skillId ?? null,
     skillIds: item.skillIds ?? null,
+    areaId: item.areaId ?? null,
+    areaIds: item.areaIds ?? null,
     monumentId: item.monumentId ?? null,
     skillMonumentId: item.skillMonumentId ?? null,
     monumentIds: item.monumentIds ?? null,
@@ -12925,10 +12951,12 @@ export async function fetchCompatibleWindowsForItem(
         win.allowAllInstanceTypes === false ||
         win.allowAllHabitTypes === false ||
         win.allowAllSkills === false ||
+        win.allowAllAreas === false ||
         win.allowAllMonuments === false ||
         (win.allowedInstanceTypes && win.allowedInstanceTypes.length > 0) ||
         (win.allowedHabitTypes && win.allowedHabitTypes.length > 0) ||
         (win.allowedSkillIds && win.allowedSkillIds.length > 0) ||
+        (win.allowedAreaIds && win.allowedAreaIds.length > 0) ||
         (win.allowedMonumentIds && win.allowedMonumentIds.length > 0)
     ) ??
       false) ||
@@ -12937,10 +12965,12 @@ export async function fetchCompatibleWindowsForItem(
         win.allowAllInstanceTypes === false ||
         win.allowAllHabitTypes === false ||
         win.allowAllSkills === false ||
+        win.allowAllAreas === false ||
         win.allowAllMonuments === false ||
         (win.allowedInstanceTypes && win.allowedInstanceTypes.length > 0) ||
         (win.allowedHabitTypes && win.allowedHabitTypes.length > 0) ||
         (win.allowedSkillIds && win.allowedSkillIds.length > 0) ||
+        (win.allowedAreaIds && win.allowedAreaIds.length > 0) ||
         (win.allowedMonumentIds && win.allowedMonumentIds.length > 0)
     ) ??
       false);
@@ -12955,14 +12985,17 @@ export async function fetchCompatibleWindowsForItem(
         allowAllInstanceTypes: win.allowAllInstanceTypes,
         allowAllHabitTypes: win.allowAllHabitTypes,
         allowAllSkills: win.allowAllSkills,
+        allowAllAreas: win.allowAllAreas,
         allowAllMonuments: win.allowAllMonuments,
         allowedInstanceTypes: win.allowedInstanceTypes,
         allowedHabitTypes: win.allowedHabitTypes,
         allowedSkillIds: win.allowedSkillIds,
+        allowedAreaIds: win.allowedAreaIds,
         allowedMonumentIds: win.allowedMonumentIds,
         allowedInstanceTypesSet: win.allowedInstanceTypesSet ?? null,
         allowedHabitTypesSet: win.allowedHabitTypesSet ?? null,
         allowedSkillIdsSet: win.allowedSkillIdsSet ?? null,
+        allowedAreaIdsSet: win.allowedAreaIdsSet ?? null,
         allowedMonumentIdsSet: win.allowedMonumentIdsSet ?? null,
         window_kind: win.window_kind,
         windowKind: (win as WindowLiteCompat).windowKind ?? null,
@@ -14660,35 +14693,8 @@ function determineConstraintFailureReason(
     }
   }
 
-  if (window.allowAllMonuments === false) {
-    const allowed =
-      window.allowedMonumentIdsSet ?? normalizeIdSet(window.allowedMonumentIds);
-    if (!allowed || allowed.size === 0) {
-      return "MONUMENT_NOT_ALLOWED";
-    }
-    const monumentCandidates = new Set<string>();
-    if (item.monumentId) {
-      const primary = item.monumentId.trim();
-      if (primary) monumentCandidates.add(primary);
-    }
-    if (item.skillMonumentId) {
-      const skillMonument = item.skillMonumentId.trim();
-      if (skillMonument) monumentCandidates.add(skillMonument);
-    }
-    if (Array.isArray(item.monumentIds)) {
-      for (const val of item.monumentIds) {
-        if (!val) continue;
-        const trimmed = val.trim();
-        if (trimmed) monumentCandidates.add(trimmed);
-      }
-    }
-    if (monumentCandidates.size === 0) return "MONUMENT_NOT_ALLOWED";
-    const hasMonumentMatch = Array.from(monumentCandidates).some((candidate) =>
-      allowed.has(candidate)
-    );
-    if (!hasMonumentMatch) {
-      return "MONUMENT_NOT_ALLOWED";
-    }
+  if (scopeConstraintFails(item, window)) {
+    return "MONUMENT_NOT_ALLOWED";
   }
 
   return null;

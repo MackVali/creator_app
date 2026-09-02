@@ -916,6 +916,41 @@ export type Database = {
           },
         ]
       }
+      day_type_time_block_allowed_areas: {
+        Row: {
+          area_id: string
+          created_at: string
+          day_type_time_block_id: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          area_id: string
+          created_at?: string
+          day_type_time_block_id: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          area_id?: string
+          created_at?: string
+          day_type_time_block_id?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "day_type_time_block_allowed_areas_day_type_time_block_id_fkey"
+            columns: ["day_type_time_block_id"]
+            isOneToOne: false
+            referencedRelation: "day_type_time_blocks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       day_type_time_block_allowed_monuments: {
         Row: {
           created_at: string
@@ -988,6 +1023,7 @@ export type Database = {
       }
       day_type_time_blocks: {
         Row: {
+          allow_all_areas: boolean
           allow_all_habit_types: boolean
           allow_all_monuments: boolean
           allow_all_skills: boolean
@@ -1003,6 +1039,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          allow_all_areas?: boolean
           allow_all_habit_types?: boolean
           allow_all_monuments?: boolean
           allow_all_skills?: boolean
@@ -1018,6 +1055,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          allow_all_areas?: boolean
           allow_all_habit_types?: boolean
           allow_all_monuments?: boolean
           allow_all_skills?: boolean

@@ -3,6 +3,8 @@ export type ConstraintItem = {
   sourceType?: string | null;
   skillId?: string | null;
   skillIds?: string[] | null;
+  areaId?: string | null;
+  areaIds?: string[] | null;
   monumentId?: string | null;
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
@@ -14,14 +16,17 @@ export type WindowConstraint = {
   allowAllInstanceTypes?: boolean;
   allowAllHabitTypes?: boolean;
   allowAllSkills?: boolean;
+  allowAllAreas?: boolean;
   allowAllMonuments?: boolean;
   allowedInstanceTypes?: string[] | null;
   allowedHabitTypes?: string[] | null;
   allowedSkillIds?: string[] | null;
+  allowedAreaIds?: string[] | null;
   allowedMonumentIds?: string[] | null;
   allowedInstanceTypesSet?: Set<string> | null;
   allowedHabitTypesSet?: Set<string> | null;
   allowedSkillIdsSet?: Set<string> | null;
+  allowedAreaIdsSet?: Set<string> | null;
   allowedMonumentIdsSet?: Set<string> | null;
   window_kind?: string | null;
   windowKind?: string | null;
@@ -78,10 +83,12 @@ export function passesTimeBlockConstraints(
     allowAllInstanceTypes = true,
     allowAllHabitTypes = true,
     allowAllSkills = true,
+    allowAllAreas = true,
     allowAllMonuments = true,
     allowedInstanceTypes,
     allowedHabitTypes,
     allowedSkillIds,
+    allowedAreaIds,
     allowedMonumentIds,
   } = window;
   const windowKind = extractWindowKind(window);
@@ -143,12 +150,27 @@ export function passesTimeBlockConstraints(
     }
   }
 
-  // Monument dimension
-  if (!allowAllMonuments) {
-    const allowed =
-      window.allowedMonumentIdsSet ??
-      normalizeIdSet(allowedMonumentIds);
-    if (!allowed || allowed.size === 0) return false;
+  // Scope dimension: Areas and Monuments share one OR whitelist.
+  if (!allowAllAreas || !allowAllMonuments) {
+    const allowedAreas =
+      window.allowedAreaIdsSet ?? normalizeIdSet(allowedAreaIds);
+    const allowedMonuments =
+      window.allowedMonumentIdsSet ?? normalizeIdSet(allowedMonumentIds);
+    const hasAreaRestrictions =
+      !allowAllAreas && Boolean(allowedAreas && allowedAreas.size > 0);
+    const hasMonumentRestrictions =
+      !allowAllMonuments &&
+      Boolean(allowedMonuments && allowedMonuments.size > 0);
+    if (!hasAreaRestrictions && !hasMonumentRestrictions) return false;
+
+    const areaCandidates = new Set<string>();
+    const areaPrimary = item.areaId ? item.areaId.trim() : null;
+    const areaExtra = normalizeIdSet(item.areaIds ?? null);
+    if (areaPrimary) areaCandidates.add(areaPrimary);
+    if (areaExtra) {
+      for (const val of areaExtra) areaCandidates.add(val);
+    }
+
     const monumentCandidates = new Set<string>();
     const primary = item.monumentId ? item.monumentId.trim() : null;
     const fromSkill = item.skillMonumentId
@@ -160,19 +182,82 @@ export function passesTimeBlockConstraints(
     if (extra) {
       for (const val of extra) monumentCandidates.add(val);
     }
-    if (monumentCandidates.size === 0) {
+    if (areaCandidates.size === 0 && monumentCandidates.size === 0) {
       if (!item.isProject || !item.allowEmptyProjectCandidates) return false;
     } else {
-      let hasMatch = false;
-      for (const candidate of monumentCandidates) {
-        if (allowed.has(candidate)) {
-          hasMatch = true;
-          break;
+      let areaMatch = false;
+      if (hasAreaRestrictions && allowedAreas) {
+        for (const candidate of areaCandidates) {
+          if (allowedAreas.has(candidate)) {
+            areaMatch = true;
+            break;
+          }
         }
       }
-      if (!hasMatch) return false;
+      let monumentMatch = false;
+      if (hasMonumentRestrictions && allowedMonuments) {
+        for (const candidate of monumentCandidates) {
+          if (allowedMonuments.has(candidate)) {
+            monumentMatch = true;
+            break;
+          }
+        }
+      }
+      if (!areaMatch && !monumentMatch) return false;
     }
   }
 
+  return true;
+}
+
+export function scopeConstraintFails(
+  item: ConstraintItem,
+  window: WindowConstraint
+): boolean {
+  const allowedAreas = window.allowedAreaIdsSet ?? normalizeIdSet(window.allowedAreaIds);
+  const allowedMonuments =
+    window.allowedMonumentIdsSet ?? normalizeIdSet(window.allowedMonumentIds);
+  const hasAreaRestrictions =
+    window.allowAllAreas === false && Boolean(allowedAreas && allowedAreas.size > 0);
+  const hasMonumentRestrictions =
+    window.allowAllMonuments === false &&
+    Boolean(allowedMonuments && allowedMonuments.size > 0);
+  if (!hasAreaRestrictions && !hasMonumentRestrictions) {
+    return window.allowAllAreas === false || window.allowAllMonuments === false;
+  }
+
+  const areaCandidates = new Set<string>();
+  if (item.areaId?.trim()) areaCandidates.add(item.areaId.trim());
+  for (const value of item.areaIds ?? []) {
+    const trimmed = value?.trim();
+    if (trimmed) areaCandidates.add(trimmed);
+  }
+
+  const monumentCandidates = new Set<string>();
+  if (item.monumentId?.trim()) monumentCandidates.add(item.monumentId.trim());
+  if (item.skillMonumentId?.trim()) monumentCandidates.add(item.skillMonumentId.trim());
+  for (const value of item.monumentIds ?? []) {
+    const trimmed = value?.trim();
+    if (trimmed) monumentCandidates.add(trimmed);
+  }
+
+  if (areaCandidates.size === 0 && monumentCandidates.size === 0) {
+    return !item.isProject || !item.allowEmptyProjectCandidates;
+  }
+
+  if (hasAreaRestrictions && allowedAreas) {
+    for (const candidate of areaCandidates) {
+      if (allowedAreas.has(candidate)) {
+        return false;
+      }
+    }
+  }
+  if (hasMonumentRestrictions && allowedMonuments) {
+    for (const candidate of monumentCandidates) {
+      if (allowedMonuments.has(candidate)) {
+        return false;
+      }
+    }
+  }
   return true;
 }

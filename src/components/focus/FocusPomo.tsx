@@ -291,9 +291,11 @@ type FocusPomoTimeBlockOption = {
   blockType: string | null;
   allowAllHabitTypes: boolean;
   allowAllSkills: boolean;
+  allowAllAreas: boolean;
   allowAllMonuments: boolean;
   allowedHabitTypes: string[];
   allowedSkillIds: string[];
+  allowedAreaIds: string[];
   allowedMonumentIds: string[];
 };
 
@@ -2519,9 +2521,11 @@ function toFocusPomoTimeBlockConstraint(
   return {
     allowAllHabitTypes: timeBlock.allowAllHabitTypes,
     allowAllSkills: timeBlock.allowAllSkills,
+    allowAllAreas: timeBlock.allowAllAreas,
     allowAllMonuments: timeBlock.allowAllMonuments,
     allowedHabitTypes: timeBlock.allowedHabitTypes,
     allowedSkillIds: timeBlock.allowedSkillIds,
+    allowedAreaIds: timeBlock.allowedAreaIds,
     allowedMonumentIds: timeBlock.allowedMonumentIds,
     block_type: timeBlock.blockType,
   };
@@ -2533,6 +2537,7 @@ function getFocusPomoTimeBlockConstraintItem(
 ): ConstraintItem {
   const itemKind = getFocusItemKind(item);
   const skillIds = getItemSkillIds(item, source);
+  const areaIds = getFocusPomoCompletionAreaIds(item);
   const monumentIds = getItemMonumentIds(item, source);
   const record = item as unknown as Record<string, unknown>;
 
@@ -2541,6 +2546,8 @@ function getFocusPomoTimeBlockConstraintItem(
     habitType: getFocusItemHabitType(item),
     skillId: readScopeString(item.skillId) ?? skillIds[0] ?? null,
     skillIds,
+    areaId: areaIds[0] ?? null,
+    areaIds,
     monumentId:
       readScopeString(item.goalMonumentId) ??
       readScopeString(record.goal_monument_id) ??
@@ -2835,10 +2842,12 @@ function buildFocusPomoTimeBlockOptions(
   rows: Record<string, unknown>[],
   allowedHabitTypes: Record<string, unknown>[],
   allowedSkills: Record<string, unknown>[],
+  allowedAreas: Record<string, unknown>[],
   allowedMonuments: Record<string, unknown>[]
 ): FocusPomoTimeBlockOption[] {
   const habitTypesByBlockId = new Map<string, Set<string>>();
   const skillIdsByBlockId = new Map<string, Set<string>>();
+  const areaIdsByBlockId = new Map<string, Set<string>>();
   const monumentIdsByBlockId = new Map<string, Set<string>>();
 
   for (const row of allowedHabitTypes) {
@@ -2854,6 +2863,13 @@ function buildFocusPomoTimeBlockOptions(
       skillIdsByBlockId,
       row.day_type_time_block_id,
       row.skill_id
+    );
+  }
+  for (const row of allowedAreas) {
+    addTimeBlockAllowedValue(
+      areaIdsByBlockId,
+      row.day_type_time_block_id,
+      row.area_id
     );
   }
   for (const row of allowedMonuments) {
@@ -2875,6 +2891,7 @@ function buildFocusPomoTimeBlockOptions(
         habitTypesByBlockId.get(id) ?? []
       );
       const allowedSkillValues = Array.from(skillIdsByBlockId.get(id) ?? []);
+      const allowedAreaValues = Array.from(areaIdsByBlockId.get(id) ?? []);
       const allowedMonumentValues = Array.from(
         monumentIdsByBlockId.get(id) ?? []
       );
@@ -2901,12 +2918,17 @@ function buildFocusPomoTimeBlockOptions(
           row.allow_all_skills,
           allowedSkillValues.length
         ),
+        allowAllAreas: normalizeTimeBlockAllowAll(
+          row.allow_all_areas,
+          allowedAreaValues.length
+        ),
         allowAllMonuments: normalizeTimeBlockAllowAll(
           row.allow_all_monuments,
           allowedMonumentValues.length
         ),
         allowedHabitTypes: allowedHabitTypeValues,
         allowedSkillIds: allowedSkillValues,
+        allowedAreaIds: allowedAreaValues,
         allowedMonumentIds: allowedMonumentValues,
       };
     })
@@ -2929,7 +2951,7 @@ async function fetchFocusPomoTimeBlockOptions(
   const { data: timeBlockData, error: timeBlockError } = await supabase
     .from("day_type_time_blocks")
     .select(
-      `id,day_type_id,energy,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_monuments,
+      `id,day_type_id,energy,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_areas,allow_all_monuments,
       time_blocks(id,label,start_local,end_local),
       day_types(id,name)`
     )
@@ -2945,7 +2967,7 @@ async function fetchFocusPomoTimeBlockOptions(
 
   if (timeBlockIds.length === 0) return [];
 
-  const [habitTypesResult, skillsResult, monumentsResult] = await Promise.all([
+  const [habitTypesResult, skillsResult, areasResult, monumentsResult] = await Promise.all([
     supabase
       .from("day_type_time_block_allowed_habit_types")
       .select("day_type_time_block_id,habit_type")
@@ -2955,6 +2977,10 @@ async function fetchFocusPomoTimeBlockOptions(
       .select("day_type_time_block_id,skill_id")
       .in("day_type_time_block_id", timeBlockIds),
     supabase
+      .from("day_type_time_block_allowed_areas")
+      .select("day_type_time_block_id,area_id")
+      .in("day_type_time_block_id", timeBlockIds),
+    supabase
       .from("day_type_time_block_allowed_monuments")
       .select("day_type_time_block_id,monument_id")
       .in("day_type_time_block_id", timeBlockIds),
@@ -2962,12 +2988,14 @@ async function fetchFocusPomoTimeBlockOptions(
 
   if (habitTypesResult.error) throw habitTypesResult.error;
   if (skillsResult.error) throw skillsResult.error;
+  if (areasResult.error) throw areasResult.error;
   if (monumentsResult.error) throw monumentsResult.error;
 
   return buildFocusPomoTimeBlockOptions(
     rows,
     (habitTypesResult.data ?? []) as Record<string, unknown>[],
     (skillsResult.data ?? []) as Record<string, unknown>[],
+    (areasResult.data ?? []) as Record<string, unknown>[],
     (monumentsResult.data ?? []) as Record<string, unknown>[]
   );
 }
