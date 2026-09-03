@@ -164,7 +164,12 @@ const MY_LIST_VIEWPORT_WIDTH_CHANGE_THRESHOLD = 24;
 const MY_LIST_VIEWPORT_WIDTH_RATIO_CHANGE_THRESHOLD = 0.06;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
-const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
+const MY_LIST_LEGACY_NOTES_STORAGE_KEY = "creator:my-list:notes";
+const MY_LIST_NOTES_STORAGE_KEY_PREFIX = "creator:my-list:notes";
+
+function getMyListNotesStorageKey(listId: string | null) {
+  return `${MY_LIST_NOTES_STORAGE_KEY_PREFIX}:${listId ?? "root"}`;
+}
 const MY_LIST_MANUAL_ROWS_STORAGE_KEY = "creator:my-list:manual-rows";
 const MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX = "creator:my-list:view-mode";
 const MY_LIST_VIEW_MODE_ANONYMOUS_ID = "anonymous";
@@ -2644,14 +2649,25 @@ export function MyListSheet({
     if (typeof window === "undefined") return;
 
     try {
-      const storedNote = window.localStorage.getItem(MY_LIST_NOTES_STORAGE_KEY);
-      if (storedNote !== null) {
-        setNote(storedNote);
+      const storageKey = getMyListNotesStorageKey(selectedListId);
+      let storedNote = window.localStorage.getItem(storageKey);
+
+      if (selectedListId === null && storedNote === null) {
+        const legacyNote = window.localStorage.getItem(
+          MY_LIST_LEGACY_NOTES_STORAGE_KEY,
+        );
+        if (legacyNote !== null) {
+          storedNote = legacyNote;
+          window.localStorage.setItem(storageKey, legacyNote);
+        }
       }
+
+      setNote(storedNote ?? "");
     } catch {
+      setNote("");
       // Ignore unavailable storage so the sheet remains usable.
     }
-  }, []);
+  }, [selectedListId]);
 
   useEffect(() => {
     const storedPreference = readStoredMyListViewModePreference(userId);
@@ -2721,12 +2737,15 @@ export function MyListSheet({
       if (typeof window === "undefined") return;
 
       try {
-        window.localStorage.setItem(MY_LIST_NOTES_STORAGE_KEY, nextNote);
+        window.localStorage.setItem(
+          getMyListNotesStorageKey(selectedListId),
+          nextNote,
+        );
       } catch {
         // Ignore unavailable storage so typing notes is never blocked.
       }
     },
-    [],
+    [selectedListId],
   );
 
   const resolveTaskPriorityId = useCallback(
