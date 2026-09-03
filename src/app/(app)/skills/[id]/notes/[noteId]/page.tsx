@@ -496,6 +496,7 @@ export default function NotePage() {
 
               <NoteTextActionBar
                 onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
+                onBlockFormat={(format) => noteTextareaRef.current?.applyBlockFormat(format)}
               />
 
               <NoteSlashTextarea

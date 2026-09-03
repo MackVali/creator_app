@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, FileText, Folder, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Note } from "@/lib/types/note";
+import { getFirstPlainNoteContentLine } from "@/lib/notes/plainText";
 import { getNotes } from "@/lib/notesStorage";
 import { NotesHeaderControls } from "./NotesHeaderControls";
 
@@ -26,17 +27,11 @@ function getSkillNoteTitle(note: Note) {
   const noteTitle = note.title?.trim();
   return noteTitle && noteTitle.length > 0
     ? noteTitle
-    : note.content
-        ?.split(/\r?\n/)
-        .map((line) => line.trim())
-        .find((line) => line.length > 0) ?? "Open this note to add a title.";
+    : getFirstPlainNoteContentLine(note.content) ?? "Open this note to add a title.";
 }
 
 function getSkillNotePreview(note: Note, childCount: number) {
-  const preview = note.content
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
+  const preview = getFirstPlainNoteContentLine(note.content);
 
   if (preview) return preview;
   if (childCount > 0) {

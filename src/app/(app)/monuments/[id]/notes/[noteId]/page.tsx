@@ -499,6 +499,7 @@ export default function MonumentNotePage() {
 
               <NoteTextActionBar
                 onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
+                onBlockFormat={(format) => noteTextareaRef.current?.applyBlockFormat(format)}
               />
 
               <NoteSlashTextarea

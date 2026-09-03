@@ -1,6 +1,22 @@
 "use client";
 
-import { Bold, Highlighter, Italic, Palette, Strikethrough, Underline } from "lucide-react";
+import {
+  Bold,
+  CheckSquare,
+  Heading1,
+  Heading2,
+  Highlighter,
+  Italic,
+  List,
+  ListOrdered,
+  Palette,
+  Pilcrow,
+  Quote,
+  SeparatorHorizontal,
+  Strikethrough,
+  Underline,
+  type LucideIcon,
+} from "lucide-react";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -12,6 +28,7 @@ import {
 } from "react";
 import {
   normalizeNoteColorValue,
+  type NoteBlockFormat,
   type NoteHighlightColor,
   type NoteSimpleTextFormat,
   type NoteTextColor,
@@ -20,6 +37,7 @@ import {
 
 type NoteTextActionBarProps = {
   onFormat: (action: NoteTextFormatAction) => void;
+  onBlockFormat?: (format: NoteBlockFormat) => void;
 };
 
 const NORMAL_ACTION_BAR_BOTTOM = "calc(5.25rem + env(safe-area-inset-bottom, 0px))";
@@ -83,12 +101,27 @@ const COLOR_ACTIONS: Array<{
   { color: "pink", label: "Pink text color", className: "bg-pink-300" },
 ];
 
-export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
+const BLOCK_FORMAT_ACTIONS: Array<{
+  format: NoteBlockFormat;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { format: "text", label: "Text", icon: Pilcrow },
+  { format: "heading1", label: "Heading 1", icon: Heading1 },
+  { format: "heading2", label: "Heading 2", icon: Heading2 },
+  { format: "checklist", label: "Checklist", icon: CheckSquare },
+  { format: "bulletList", label: "Bulleted List", icon: List },
+  { format: "numberedList", label: "Numbered List", icon: ListOrdered },
+  { format: "quote", label: "Quote", icon: Quote },
+  { format: "divider", label: "Divider", icon: SeparatorHorizontal },
+];
+
+export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBarProps) {
   const pointerHandledRef = useRef(false);
   const highlightColorInputRef = useRef<HTMLInputElement | null>(null);
   const textColorInputRef = useRef<HTMLInputElement | null>(null);
   const customColorInputTimerRef = useRef<number | null>(null);
-  const [openPalette, setOpenPalette] = useState<"highlight" | "color" | null>(null);
+  const [openPalette, setOpenPalette] = useState<"highlight" | "color" | "block" | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
 
   function handlePointerAction(
@@ -109,7 +142,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
   }
 
   function handlePointerPalette(
-    palette: "highlight" | "color",
+    palette: "highlight" | "color" | "block",
     event: PointerEvent<HTMLButtonElement>,
   ) {
     event.preventDefault();
@@ -117,7 +150,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
     setOpenPalette((currentPalette) => (currentPalette === palette ? null : palette));
   }
 
-  function handleClickPalette(palette: "highlight" | "color") {
+  function handleClickPalette(palette: "highlight" | "color" | "block") {
     if (pointerHandledRef.current) {
       pointerHandledRef.current = false;
       return;
@@ -132,6 +165,25 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
     event.preventDefault();
     pointerHandledRef.current = true;
     onFormat(action);
+    setOpenPalette(null);
+  }
+
+  function handlePointerBlockFormat(
+    format: NoteBlockFormat,
+    event: PointerEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    pointerHandledRef.current = true;
+    onBlockFormat?.(format);
+    setOpenPalette(null);
+  }
+
+  function handleClickBlockFormat(format: NoteBlockFormat) {
+    if (pointerHandledRef.current) {
+      pointerHandledRef.current = false;
+      return;
+    }
+    onBlockFormat?.(format);
     setOpenPalette(null);
   }
 
@@ -295,7 +347,31 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
       style={{ bottom: actionBarBottom }}
     >
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-1.5">
-        {openPalette ? (
+        {openPalette === "block" ? (
+          <div className="w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-white/[0.1] bg-zinc-950/95 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur">
+            {BLOCK_FORMAT_ACTIONS.map((action) => {
+              const Icon = action.icon;
+
+              return (
+                <button
+                  key={action.format}
+                  type="button"
+                  onPointerDown={(event) => handlePointerBlockFormat(action.format, event)}
+                  onMouseDown={handleMouseDown}
+                  onClick={() => handleClickBlockFormat(action.format)}
+                  className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-white/78 outline-none transition hover:bg-white/[0.07] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.1]"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-black text-white/48">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                    {action.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : openPalette ? (
           <div className="grid grid-flow-col grid-rows-2 gap-1.5 rounded-xl border border-white/[0.1] bg-zinc-950/95 p-2 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur">
             {(openPalette === "highlight" ? HIGHLIGHT_ACTIONS : COLOR_ACTIONS).map((action) => {
               const formatAction: NoteTextFormatAction =
@@ -361,6 +437,23 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
         ) : null}
 
         <div className="flex h-10 max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-black px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onPointerDown={(event) => handlePointerPalette("block", event)}
+            onMouseDown={handleMouseDown}
+            onClick={() => handleClickPalette("block")}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08] ${
+              openPalette === "block"
+                ? "border-white/15 bg-white/[0.08] text-white"
+                : "border-transparent bg-black text-white/70"
+            }`}
+            aria-label="Open block format menu"
+            title="Block format"
+            aria-pressed={openPalette === "block"}
+          >
+            <List className="h-4 w-4" />
+          </button>
+
           {TEXT_ACTIONS.map((action) => {
             const Icon = action.icon;
             const formatAction: NoteTextFormatAction = {
