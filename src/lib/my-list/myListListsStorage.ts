@@ -1,8 +1,23 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { AREAS, getAreaById, isAreaId, type AreaId } from "@/config/areas";
 
 export const MY_LIST_NAME_MAX_LENGTH = 80;
 export const MY_LIST_GROCERY_SYSTEM_KEY = "grocery";
 export const MY_LIST_GROCERY_NAME = "Grocery List";
+const MY_LIST_AREA_SYSTEM_KEY_PREFIX = "area:";
+const MY_LIST_MONUMENT_SYSTEM_KEY_PREFIX = "monument:";
+
+export type MyListSystemListIdentity =
+  | { kind: "grocery" }
+  | { kind: "area"; areaId: AreaId }
+  | { kind: "monument"; monumentId: string }
+  | { kind: "unknown"; systemKey: string };
+
+export type MyListSystemMonumentSource = {
+  id: string;
+  title: string;
+  emoji?: string | null;
+};
 
 export type MyListList = {
   id: string;
@@ -44,11 +59,16 @@ function client(): Client {
 }
 
 function fromRow(row: MyListListRow): MyListList {
+  const systemIdentity = parseMyListSystemKey(row.system_key);
+  const area =
+    systemIdentity.kind === "area" ? getAreaById(systemIdentity.areaId) : null;
+
   return {
     id: row.id,
     userId: row.user_id,
-    name:
-      row.system_key === MY_LIST_GROCERY_SYSTEM_KEY
+    name: area
+      ? area.label
+      : row.system_key === MY_LIST_GROCERY_SYSTEM_KEY
         ? MY_LIST_GROCERY_NAME
         : row.name,
     systemKey: row.system_key ?? null,
@@ -56,6 +76,34 @@ function fromRow(row: MyListListRow): MyListList {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export function getMyListAreaSystemKey(areaId: AreaId) {
+  return `${MY_LIST_AREA_SYSTEM_KEY_PREFIX}${areaId.trim().toLowerCase()}`;
+}
+
+export function getMyListMonumentSystemKey(monumentId: string) {
+  return `${MY_LIST_MONUMENT_SYSTEM_KEY_PREFIX}${monumentId.trim().toLowerCase()}`;
+}
+
+export function parseMyListSystemKey(
+  systemKey: string | null | undefined,
+): MyListSystemListIdentity {
+  const normalized = systemKey?.trim().toLowerCase();
+  if (!normalized) return { kind: "unknown", systemKey: "" };
+  if (normalized === MY_LIST_GROCERY_SYSTEM_KEY) return { kind: "grocery" };
+
+  if (normalized.startsWith(MY_LIST_AREA_SYSTEM_KEY_PREFIX)) {
+    const areaId = normalized.slice(MY_LIST_AREA_SYSTEM_KEY_PREFIX.length);
+    if (isAreaId(areaId)) return { kind: "area", areaId };
+  }
+
+  if (normalized.startsWith(MY_LIST_MONUMENT_SYSTEM_KEY_PREFIX)) {
+    const monumentId = normalized.slice(MY_LIST_MONUMENT_SYSTEM_KEY_PREFIX.length);
+    if (monumentId) return { kind: "monument", monumentId };
+  }
+
+  return { kind: "unknown", systemKey: normalized };
 }
 
 function sortMyListLists(lists: MyListList[]) {
@@ -141,9 +189,104 @@ async function provisionGroceryList(
   return true;
 }
 
-export async function loadMyListLists(userId: string): Promise<MyListList[]> {
+async function provisionSystemList({
+  userId,
+  lists,
+  name,
+  systemKey,
+  sortOrder,
+}: {
+  userId: string;
+  lists: MyListList[];
+  name: string;
+  systemKey: string;
+  sortOrder?: number;
+}): Promise<boolean> {
+  if (lists.some((list) => list.systemKey === systemKey)) {
+    return false;
+  }
+
+  const insertValue: Partial<MyListListRow> = {
+    user_id: userId,
+    name,
+    system_key: systemKey,
+  };
+  if (typeof sortOrder === "number") {
+    insertValue.sort_order = sortOrder;
+  }
+
+  const { error } = await client()
+    .from("my_list_lists")
+    .insert(insertValue)
+    .select("*");
+  if (error && !isUniqueViolation(error)) throw error;
+  return true;
+}
+
+async function provisionAreaLists(
+  userId: string,
+  lists: MyListList[],
+): Promise<boolean> {
+  let didProvision = false;
+  for (const area of AREAS) {
+    didProvision =
+      (await provisionSystemList({
+        userId,
+        lists,
+        name: area.label,
+        systemKey: getMyListAreaSystemKey(area.id),
+        sortOrder: area.sortOrder,
+      })) || didProvision;
+  }
+  return didProvision;
+}
+
+function normalizeMonumentSource(
+  monument: MyListSystemMonumentSource,
+): MyListSystemMonumentSource | null {
+  const id = monument.id.trim();
+  if (!id) return null;
+  return {
+    id,
+    title: monument.title.trim() || "Untitled Monument",
+    emoji: monument.emoji?.trim() || null,
+  };
+}
+
+async function provisionMonumentLists(
+  userId: string,
+  lists: MyListList[],
+  monuments: readonly MyListSystemMonumentSource[],
+): Promise<boolean> {
+  let didProvision = false;
+  for (const monument of monuments) {
+    const normalizedMonument = normalizeMonumentSource(monument);
+    if (!normalizedMonument) continue;
+    didProvision =
+      (await provisionSystemList({
+        userId,
+        lists,
+        name: normalizedMonument.title,
+        systemKey: getMyListMonumentSystemKey(normalizedMonument.id),
+      })) || didProvision;
+  }
+  return didProvision;
+}
+
+export async function loadMyListLists(
+  userId: string,
+  options?: { monuments?: readonly MyListSystemMonumentSource[] },
+): Promise<MyListList[]> {
   const lists = await fetchMyListLists(userId);
-  const didProvision = await provisionGroceryList(userId, lists);
+  const didProvisionGrocery = await provisionGroceryList(userId, lists);
+  const didProvisionAreas = await provisionAreaLists(userId, lists);
+  const didProvisionMonuments = await provisionMonumentLists(
+    userId,
+    lists,
+    options?.monuments ?? [],
+  );
+  const didProvision =
+    didProvisionGrocery || didProvisionAreas || didProvisionMonuments;
   return didProvision ? fetchMyListLists(userId) : lists;
 }
 

@@ -54,6 +54,7 @@ import {
   X,
 } from "lucide-react";
 
+import { AREAS } from "@/config/areas";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
@@ -73,9 +74,12 @@ import {
 } from "@/lib/my-list/myListItemsStorage";
 import {
   createMyListList,
+  getMyListAreaSystemKey,
+  getMyListMonumentSystemKey,
   loadMyListLists,
   MY_LIST_GROCERY_SYSTEM_KEY,
   MY_LIST_NAME_MAX_LENGTH,
+  parseMyListSystemKey,
   type MyListList,
 } from "@/lib/my-list/myListListsStorage";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
@@ -435,6 +439,18 @@ type MyListMonumentGroup = {
   label: string;
   icon?: string | null;
   rows: MyListVisibleTodoRow[];
+};
+
+type MyListSelectorItem = {
+  id: string | null;
+  label: string;
+  icon: ReactNode;
+};
+
+type MyListSelectorSection = {
+  id: string;
+  label: string;
+  items: MyListSelectorItem[];
 };
 
 function buildPinnedSourceRowKey(
@@ -1595,6 +1611,7 @@ export function MyListSheet({
   skills,
   skillCategories,
   pendingTaskIds,
+  preferredListSystemKeyOnOpen,
   useFullExpandedHeight,
   enableScheduleTimelineDrag = false,
   onRemovePinnedSource,
@@ -1619,6 +1636,7 @@ export function MyListSheet({
   skills: SkillRow[];
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
+  preferredListSystemKeyOnOpen?: string | null;
   useFullExpandedHeight: boolean;
   enableScheduleTimelineDrag?: boolean;
   onRemovePinnedSource?: (row: MyListPinnedSourceRow) => void;
@@ -1676,6 +1694,7 @@ export function MyListSheet({
   );
   const [manualRows, setManualRows] = useState<MyListManualRow[]>([]);
   const [customLists, setCustomLists] = useState<MyListList[]>([]);
+  const [areCustomListsLoaded, setAreCustomListsLoaded] = useState(false);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [isListSelectorOpen, setIsListSelectorOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -1770,6 +1789,12 @@ export function MyListSheet({
   const manualRowIdCounterRef = useRef(0);
   const manualRowsPersistenceRef = useRef<Promise<void>>(Promise.resolve());
   const deletingManualRowIdsRef = useRef<Set<string>>(new Set());
+  const previousOpenRef = useRef(open);
+  const openSessionListSelectionRef = useRef({
+    initialized: false,
+    manuallySelected: false,
+    preferredSystemKey: null as string | null,
+  });
   const completionExitTimersRef = useRef(
     new Map<MyListSortableTodoRowKey, MyListCompletionExitTimers>(),
   );
@@ -1799,24 +1824,53 @@ export function MyListSheet({
     typeof setTimeout
   > | null>(null);
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
+  const listSelectorContainerRef = useRef<HTMLDivElement | null>(null);
+  const monumentRows = useMemo(
+    () =>
+      (monuments ?? [])
+        .filter((monument) => monument.id.trim())
+        .map((monument) => ({
+          ...monument,
+          id: monument.id.trim(),
+          title: monument.title.trim() || "Untitled Monument",
+          emoji: monument.emoji?.trim() || null,
+          priorityRank:
+            typeof monument.priorityRank === "number" &&
+            Number.isFinite(monument.priorityRank)
+              ? monument.priorityRank
+              : null,
+        })),
+    [monuments],
+  );
   useEffect(() => {
     setSelectedListId(null);
     setCustomLists([]);
+    setAreCustomListsLoaded(false);
     setIsListSelectorOpen(false);
     setIsCreateListOpen(false);
-    if (!userId) return;
+  }, [userId]);
+  useEffect(() => {
+    if (!userId) {
+      setAreCustomListsLoaded(true);
+      return;
+    }
     let cancelled = false;
-    void loadMyListLists(userId)
+    setAreCustomListsLoaded(false);
+    void loadMyListLists(userId, { monuments: monumentRows })
       .then((lists) => {
-        if (!cancelled) setCustomLists(lists);
+        if (!cancelled) {
+          setCustomLists(lists);
+          setAreCustomListsLoaded(true);
+        }
       })
       .catch((error) => {
         if (!cancelled) console.error("Failed to load My List lists", error);
+        if (!cancelled) setAreCustomListsLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [monumentRows, userId]);
   useEffect(() => {
     if (
       selectedListId &&
@@ -1825,6 +1879,53 @@ export function MyListSheet({
       setSelectedListId(null);
     }
   }, [customLists, selectedListId]);
+  useEffect(() => {
+    const wasOpen = previousOpenRef.current;
+    previousOpenRef.current = open;
+
+    if (wasOpen || !open) {
+      return;
+    }
+
+    const normalizedPreferredSystemKey =
+      preferredListSystemKeyOnOpen?.trim().toLowerCase() || null;
+    openSessionListSelectionRef.current = {
+      initialized: normalizedPreferredSystemKey === null,
+      manuallySelected: false,
+      preferredSystemKey: normalizedPreferredSystemKey,
+    };
+  }, [open, preferredListSystemKeyOnOpen]);
+  useEffect(() => {
+    const session = openSessionListSelectionRef.current;
+
+    if (
+      !open ||
+      session.initialized ||
+      session.manuallySelected ||
+      !areCustomListsLoaded
+    ) {
+      return;
+    }
+
+    const preferredSystemKey = session.preferredSystemKey;
+    if (!preferredSystemKey) {
+      session.initialized = true;
+      return;
+    }
+
+    const preferredList = customLists.find(
+      (list) => list.systemKey?.trim().toLowerCase() === preferredSystemKey,
+    );
+
+    if (preferredList) {
+      setSelectedListId(preferredList.id);
+      setActiveView("list");
+      setIsDayLensActive(false);
+      setIsMonumentLensActive(false);
+    }
+
+    session.initialized = true;
+  }, [areCustomListsLoaded, customLists, open]);
   useEffect(() => {
     if (isCreateListOpen) createListInputRef.current?.focus();
   }, [isCreateListOpen]);
@@ -1837,6 +1938,23 @@ export function MyListSheet({
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isCreateListOpen, isListSelectorOpen]);
+  useEffect(() => {
+    if (!isListSelectorOpen && !isCreateListOpen) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.closest("[data-my-list-list-selector]") ||
+          listSelectorContainerRef.current?.contains(target))
+      ) {
+        return;
+      }
+      setIsListSelectorOpen(false);
+      setIsCreateListOpen(false);
+    };
+    window.addEventListener("pointerdown", closeOnPointerDown);
+    return () => window.removeEventListener("pointerdown", closeOnPointerDown);
   }, [isCreateListOpen, isListSelectorOpen]);
   const manualReorderSensors = useSensors(
     useSensor(PointerSensor, {
@@ -1995,11 +2113,117 @@ export function MyListSheet({
       nextRollover: getNextLocalCreatorDayRollover(creatorDayBoundaryNow),
     };
   }, [creatorDayBoundaryNow]);
+  const listSelectorMonumentById = useMemo(
+    () => new Map(monumentRows.map((monument) => [monument.id, monument])),
+    [monumentRows],
+  );
+  const getListSelectorItem = useCallback(
+    (list: MyListList): MyListSelectorItem => {
+      const identity = parseMyListSystemKey(list.systemKey);
+      if (identity.kind === "area") {
+        const area = AREAS.find((candidate) => candidate.id === identity.areaId);
+        return {
+          id: list.id,
+          label: area?.label ?? list.name,
+          icon: <span aria-hidden="true">{area?.emoji ?? "•"}</span>,
+        };
+      }
+      if (identity.kind === "monument") {
+        const monument = listSelectorMonumentById.get(identity.monumentId);
+        return {
+          id: list.id,
+          label: monument?.title ?? (list.name.trim() || "Untitled Monument"),
+          icon: monument?.emoji ? (
+            <span aria-hidden="true">{monument.emoji}</span>
+          ) : (
+            <Landmark className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+          ),
+        };
+      }
+      if (identity.kind === "grocery") {
+        return { id: list.id, label: "Grocery List", icon: "🛒" };
+      }
+      return {
+        id: list.id,
+        label: list.name,
+        icon: <List className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+      };
+    },
+    [listSelectorMonumentById],
+  );
   const selectedList = customLists.find((list) => list.id === selectedListId);
   const isDefaultMyList = selectedListId === null;
-  const selectedListName = selectedList?.name ?? "My List";
+  const selectedListName = selectedList
+    ? getListSelectorItem(selectedList).label
+    : "My List";
   const isSelectedGroceryList =
     selectedList?.systemKey === MY_LIST_GROCERY_SYSTEM_KEY;
+  const listSelectorSections = useMemo<MyListSelectorSection[]>(() => {
+    const listsBySystemKey = new Map(
+      customLists
+        .filter((list) => list.systemKey)
+        .map((list) => [list.systemKey, list]),
+    );
+    const areaItems = AREAS.map((area) => {
+      const list = listsBySystemKey.get(getMyListAreaSystemKey(area.id));
+      return list ? getListSelectorItem(list) : null;
+    }).filter((item): item is MyListSelectorItem => Boolean(item));
+    const monumentItems = monumentRows
+      .map((monument) => {
+        const list = listsBySystemKey.get(getMyListMonumentSystemKey(monument.id));
+        return list ? getListSelectorItem(list) : null;
+      })
+      .filter((item): item is MyListSelectorItem => Boolean(item));
+    const liveMonumentSystemKeys = new Set(
+      monumentRows.map((monument) => getMyListMonumentSystemKey(monument.id)),
+    );
+    const staleMonumentItems = customLists
+      .filter((list) => {
+        const identity = parseMyListSystemKey(list.systemKey);
+        return (
+          identity.kind === "monument" &&
+          !liveMonumentSystemKeys.has(getMyListMonumentSystemKey(identity.monumentId))
+        );
+      })
+      .map(getListSelectorItem);
+    const listItems = customLists
+      .filter((list) => {
+        const identity = parseMyListSystemKey(list.systemKey);
+        return (
+          identity.kind === "grocery" ||
+          identity.kind === "unknown" ||
+          list.systemKey === null
+        );
+      })
+      .map(getListSelectorItem);
+
+    return [
+      {
+        id: "default",
+        label: "My List",
+        items: [
+          {
+            id: null,
+            label: "My List",
+            icon: (
+              <List
+                className="h-4 w-4"
+                strokeWidth={1.8}
+                aria-hidden="true"
+              />
+            ),
+          },
+        ],
+      },
+      { id: "areas", label: "Areas", items: areaItems },
+      {
+        id: "monuments",
+        label: "Monuments",
+        items: [...monumentItems, ...staleMonumentItems],
+      },
+      { id: "lists", label: "Lists", items: listItems },
+    ].filter((section) => section.items.length > 0);
+  }, [customLists, getListSelectorItem, monumentRows]);
   const manualRowInputPlaceholder = isSelectedGroceryList
     ? "Add item"
     : "To-do";
@@ -2271,23 +2495,6 @@ export function MyListSheet({
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills],
-  );
-  const monumentRows = useMemo(
-    () =>
-      (monuments ?? [])
-        .filter((monument) => monument.id.trim())
-        .map((monument) => ({
-          ...monument,
-          id: monument.id.trim(),
-          title: monument.title.trim() || "Untitled Monument",
-          emoji: monument.emoji?.trim() || null,
-          priorityRank:
-            typeof monument.priorityRank === "number" &&
-            Number.isFinite(monument.priorityRank)
-              ? monument.priorityRank
-              : null,
-        })),
-    [monuments],
   );
   const monumentById = useMemo(
     () => new Map(monumentRows.map((monument) => [monument.id, monument])),
@@ -5669,6 +5876,7 @@ export function MyListSheet({
     try {
       const list = await createMyListList({ userId, name });
       setCustomLists((lists) => [...lists, list]);
+      openSessionListSelectionRef.current.manuallySelected = true;
       setSelectedListId(list.id);
       setActiveView("list");
       setIsDayLensActive(false);
@@ -5895,6 +6103,7 @@ export function MyListSheet({
                 type="button"
                 aria-label="Select list"
                 aria-expanded={isListSelectorOpen}
+                data-my-list-list-selector
                 onClick={(event) => {
                   event.stopPropagation();
                   setIsCreateListOpen(false);
@@ -6000,7 +6209,9 @@ export function MyListSheet({
           ) : null}
           {activeView === "list" && (isListSelectorOpen || isCreateListOpen) ? (
             <div
-              className="absolute left-1/2 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-white/12 bg-[#111113]/95 p-1.5 shadow-2xl backdrop-blur-xl"
+              ref={listSelectorContainerRef}
+              data-my-list-list-selector
+              className="absolute left-1/2 top-[calc(100%+0.45rem)] z-50 w-[min(21rem,calc(100vw-1rem))] -translate-x-1/2 overflow-hidden rounded-[1.15rem] border border-white/[0.105] bg-[#101012]/88 p-1.5 shadow-[0_18px_52px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               {isCreateListOpen ? (
@@ -6050,35 +6261,76 @@ export function MyListSheet({
                 <div
                   role="menu"
                   aria-label="My List lists"
-                  className="max-h-64 overflow-y-auto"
+                  className="max-h-[min(27rem,calc(100vh-9rem))] overflow-y-auto overscroll-contain py-1 [-webkit-overflow-scrolling:touch]"
                 >
-                  {[{ id: null, name: "My List" }, ...customLists].map(
-                    (list) => (
-                      <button
-                        key={list.id ?? "default"}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={selectedListId === list.id}
-                        onClick={() => {
-                          setSelectedListId(list.id);
-                          setActiveView("list");
-                          if (list.id) {
-                            setIsDayLensActive(false);
-                            setIsMonumentLensActive(false);
-                          }
-                          setIsListSelectorOpen(false);
-                        }}
-                        className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-white/85 hover:bg-white/[0.07]"
-                      >
-                        <span className="flex w-4 justify-center">
-                          {selectedListId === list.id ? (
-                            <Check className="h-4 w-4" aria-hidden="true" />
-                          ) : null}
-                        </span>
-                        <span className="truncate">{list.name}</span>
-                      </button>
-                    ),
-                  )}
+                  {listSelectorSections.map((section) => (
+                    <div key={section.id} className="py-1">
+                      <div className="px-3 pb-1 pt-2 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.14em] text-white/36">
+                        {section.label}
+                      </div>
+                      <div className="overflow-hidden rounded-[0.9rem] bg-white/[0.028]">
+                        {section.items.map((item, index) => (
+                          <button
+                            key={item.id ?? "default"}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selectedListId === item.id}
+                            onClick={() => {
+                              openSessionListSelectionRef.current.manuallySelected = true;
+                              setSelectedListId(item.id);
+                              setActiveView("list");
+                              if (item.id) {
+                                setIsDayLensActive(false);
+                                setIsMonumentLensActive(false);
+                              }
+                              setIsListSelectorOpen(false);
+                            }}
+                            className={clsx(
+                              "group flex min-h-11 w-full items-center gap-3 px-3 text-left text-[0.92rem] text-white/88 outline-none transition hover:bg-white/[0.065] focus-visible:bg-white/[0.075]",
+                              index > 0 &&
+                                "border-t border-white/[0.065]",
+                              selectedListId === item.id &&
+                                "bg-white/[0.045] text-white",
+                            )}
+                          >
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[0.7rem] bg-black/24 text-[1.02rem] text-white/72 ring-1 ring-white/[0.06]">
+                              {item.icon}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate font-medium leading-5">
+                              {item.label}
+                            </span>
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center text-white/62">
+                              {selectedListId === item.id ? (
+                                <Check
+                                  className="h-4 w-4"
+                                  strokeWidth={2.1}
+                                  aria-hidden="true"
+                                />
+                              ) : null}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsListSelectorOpen(false);
+                      setIsCreateListOpen(true);
+                    }}
+                    className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-[0.9rem] px-3 text-left text-[0.92rem] font-medium text-white/84 outline-none transition hover:bg-white/[0.065] focus-visible:bg-white/[0.075]"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[0.7rem] bg-white/[0.07] text-white/78 ring-1 ring-white/[0.08]">
+                      <Plus
+                        className="h-4 w-4"
+                        strokeWidth={2.2}
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">New List</span>
+                  </button>
                 </div>
               )}
             </div>
