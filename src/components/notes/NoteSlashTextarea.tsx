@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  ArrowUpRight,
   BookOpen,
   Dumbbell,
   Eye,
@@ -69,6 +70,7 @@ import {
   type Dispatch,
   Fragment,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type SetStateAction,
   forwardRef,
@@ -161,6 +163,22 @@ import {
   getPendingNutritionLogContext,
 } from "@/lib/nutrition/logEvents";
 import type { Json } from "@/types/supabase";
+import {
+  PRIORITY_LABELS,
+  PRIORITY_ORDER,
+  normalizePriority,
+} from "@/app/(app)/schedule/priorities/utils";
+import {
+  NOTE_TODO_DEFAULT_PRIORITY,
+  buildNoteTodoMarker,
+  createNoteTodoId,
+  parseStandaloneNoteTodoMarker,
+  upsertNoteTodo,
+  type NoteTodo,
+  type NoteTodoOwner,
+} from "@/lib/notes/noteTodos";
+import type { CatRow } from "@/lib/types/cat";
+import type { SkillRow } from "@/lib/types/skill";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -297,6 +315,7 @@ import {
 } from "@/lib/fitness/profile";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
 
 type SlashCommandId =
   | "text"
@@ -2094,6 +2113,12 @@ type NoteSlashTextareaProps = {
   onDatabaseDefinitionsChange?: (databases: NoteDatabaseDefinitions) => void;
   databaseEntries?: NoteDatabaseEntries | null;
   onDatabaseEntriesChange?: (entries: NoteDatabaseEntries) => void;
+  noteTodos?: NoteTodo[] | null;
+  onNoteTodosChange?: (todos: NoteTodo[]) => void;
+  noteTodoOwner?: NoteTodoOwner | null;
+  skills?: SkillRow[] | null;
+  skillCategories?: CatRow[] | null;
+  noteId?: string | null;
   onCreateSubpage?: () => Promise<{ id: string; title: string; href?: string } | null>;
   onSubpageCreated?: (
     subpage: { id: string; title: string; href?: string },
@@ -2170,6 +2195,11 @@ type NoteChecklistSegment = {
   text: string;
 };
 
+type NoteTodoSegment = {
+  type: "noteTodo";
+  todoId: string;
+};
+
 type NoteListSegment = {
   type: "list";
   kind: "bullet" | "dash" | "ordered";
@@ -2201,6 +2231,7 @@ type NoteSegment =
   | NoteTextSegment
   | NoteDividerSegment
   | NoteChecklistSegment
+  | NoteTodoSegment
   | NoteListSegment
   | NoteHeadingSegment
   | NoteQuoteSegment
@@ -2221,6 +2252,12 @@ type PendingSelection =
     }
   | {
       type: "checklist";
+      segmentIndex: number;
+      caretPosition: number;
+      selectionEnd?: number;
+    }
+  | {
+      type: "noteTodo";
       segmentIndex: number;
       caretPosition: number;
       selectionEnd?: number;
@@ -2249,7 +2286,7 @@ type PendingSelection =
     };
 
 type EditableTextSelection = {
-  type: "text" | "checklist" | "list" | "heading" | "quote";
+  type: "text" | "checklist" | "noteTodo" | "list" | "heading" | "quote";
   segmentId: string;
   segmentIndex: number;
   selectionStart: number;
@@ -2313,20 +2350,20 @@ const NOTE_TEXT_COLORS = [
   "pink",
 ] as const;
 const NOTE_HIGHLIGHT_CLASS_NAMES: Record<NotePresetHighlightColor, string> = {
-  yellow: "rounded-[3px] bg-yellow-200/22 px-[0.08em] text-white",
-  amber: "rounded-[3px] bg-amber-300/22 px-[0.08em] text-white",
-  orange: "rounded-[3px] bg-orange-300/20 px-[0.08em] text-white",
-  red: "rounded-[3px] bg-red-300/18 px-[0.08em] text-white",
-  pink: "rounded-[3px] bg-pink-300/18 px-[0.08em] text-white",
-  purple: "rounded-[3px] bg-violet-300/20 px-[0.08em] text-white",
-  blue: "rounded-[3px] bg-sky-300/18 px-[0.08em] text-white",
-  cyan: "rounded-[3px] bg-cyan-300/18 px-[0.08em] text-white",
-  green: "rounded-[3px] bg-emerald-300/18 px-[0.08em] text-white",
-  mint: "rounded-[3px] bg-teal-200/18 px-[0.08em] text-white",
-  gray: "rounded-[3px] bg-zinc-300/18 px-[0.08em] text-white",
+  yellow: `rounded-[3px] bg-yellow-200/22 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  amber: `rounded-[3px] bg-amber-300/22 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  orange: `rounded-[3px] bg-orange-300/20 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  red: `rounded-[3px] bg-red-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  pink: `rounded-[3px] bg-pink-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  purple: `rounded-[3px] bg-violet-300/20 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  blue: `rounded-[3px] bg-sky-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  cyan: `rounded-[3px] bg-cyan-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  green: `rounded-[3px] bg-emerald-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  mint: `rounded-[3px] bg-teal-200/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
+  gray: `rounded-[3px] bg-zinc-300/18 px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`,
 };
 const NOTE_TEXT_COLOR_CLASS_NAMES: Record<NotePresetTextColor, string> = {
-  default: "text-white",
+  default: NOTE_SOFT_OLED_CLASSES.body,
   gray: "text-zinc-300",
   red: "text-red-300",
   orange: "text-orange-300",
@@ -2361,6 +2398,38 @@ type InlineSerializedMarker =
 
 const NOTE_SEGMENT_DRAG_ID_PREFIX = "note-segment-";
 const NOTE_TEXT_ACTION_BAR_SELECTOR = "[data-note-text-action-bar]";
+const NOTE_TODO_UPGRADE_LONG_PRESS_MS = 500;
+const NOTE_TODO_UPGRADE_MOVE_CANCEL_PX = 14;
+const NOTE_TODO_UPGRADE_BLOCKED_TARGET_SELECTOR = [
+  "button",
+  "select",
+  "label",
+  "input",
+  "[role='button']",
+  "[role='listbox']",
+  "[contenteditable='true']",
+  "[data-note-todo-no-long-press]",
+].join(",");
+
+const NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_ID = "uncategorized";
+const NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
+
+type NoteTodoSkillGroup = {
+  id: string;
+  label: string;
+  categoryOrder: number | null;
+  skills: SkillRow[];
+};
+
+type NoteTodoUpgradePress = {
+  pointerId: number;
+  pointerType: string;
+  startX: number;
+  startY: number;
+  todo: NoteTodo;
+  timer: ReturnType<typeof setTimeout>;
+  triggered: boolean;
+};
 
 function buildEditableSegmentId(type: EditableTextSelection["type"], segmentIndex: number) {
   return `${type}-${segmentIndex}`;
@@ -2757,7 +2826,7 @@ function buildInlineFormattingDomNodes(nodes: InlineFormatNode[], documentRef: D
       if (isNotePresetHighlightColor(color)) {
         element.className = NOTE_HIGHLIGHT_CLASS_NAMES[color];
       } else {
-        element.className = "rounded-[3px] px-[0.08em] text-white";
+        element.className = `rounded-[3px] px-[0.08em] ${NOTE_SOFT_OLED_CLASSES.body}`;
         element.style.backgroundColor = color;
       }
     } else {
@@ -3093,6 +3162,7 @@ function getNoteSegmentDragLabel(segment: NoteSegment) {
   if (segment.type === "text") return segment.text.trim() ? "text" : "empty text";
   if (segment.type === "divider") return "divider";
   if (segment.type === "checklist") return "checklist";
+  if (segment.type === "noteTodo") return "todo";
   if (segment.type === "list") return segment.kind === "bullet" ? "bullet list" : "dash list";
   if (segment.type === "subpage") return "subpage";
   return "database";
@@ -8828,6 +8898,7 @@ function serializeSegment(segment: NoteSegment) {
   if (segment.type === "text") return segment.text;
   if (segment.type === "divider") return NOTE_DIVIDER_MARKER;
   if (segment.type === "checklist") return `- [${segment.checked ? "x" : " "}] ${segment.text}`;
+  if (segment.type === "noteTodo") return buildNoteTodoMarker(segment.todoId);
   if (segment.type === "list") {
     if (segment.kind === "ordered") return `1. ${segment.text}`;
     return `${segment.kind === "bullet" ? "•" : "-"} ${segment.text}`;
@@ -8946,6 +9017,13 @@ function parseNoteSegments(content: string): NoteSegment[] {
         }),
         ...databaseMarker,
       });
+      return;
+    }
+
+    const noteTodoMarker = parseStandaloneNoteTodoMarker(line);
+    if (noteTodoMarker) {
+      flushText();
+      nextSegments.push({ type: "noteTodo", todoId: noteTodoMarker.todoId });
       return;
     }
 
@@ -22365,6 +22443,12 @@ function NoteSlashTextarea({
   onDatabaseDefinitionsChange,
   databaseEntries,
   onDatabaseEntriesChange,
+  noteTodos,
+  onNoteTodosChange,
+  noteTodoOwner,
+  skills,
+  skillCategories,
+  noteId,
   onCreateSubpage,
   onSubpageCreated,
   onOpenSubpage,
@@ -22378,12 +22462,19 @@ function NoteSlashTextarea({
   const blockButtonRefs = useRef(new Map<number, HTMLButtonElement>());
   const rootRef = useRef<HTMLDivElement | null>(null);
   const activeTextSelectionRef = useRef<EditableTextSelection | null>(null);
+  const noteTodoUpgradePressRef = useRef<NoteTodoUpgradePress | null>(null);
   const composingEditableRefs = useRef(new Set<EditableTextControl>());
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger>(null);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(null);
+  const [activeEditableSegmentIndex, setActiveEditableSegmentIndex] = useState<number | null>(null);
   const [activeEntryDatabaseId, setActiveEntryDatabaseId] = useState<string | null>(null);
+  const [activeNoteTodoSkillPickerId, setActiveNoteTodoSkillPickerId] = useState<string | null>(
+    null,
+  );
+  const [noteTodoSkillSearch, setNoteTodoSkillSearch] = useState("");
+  const [pendingDowngradeTodoId, setPendingDowngradeTodoId] = useState<string | null>(null);
   const [externalDatabaseEntries, setExternalDatabaseEntries] = useState<NoteDatabaseEntry[]>([]);
   const [externalDatabaseError, setExternalDatabaseError] = useState<string | null>(null);
   const [activeSegmentDragId, setActiveSegmentDragId] = useState<string | null>(null);
@@ -22401,6 +22492,94 @@ function NoteSlashTextarea({
   );
 
   const segments = useMemo(() => parseNoteSegments(value), [value]);
+  const normalizedNoteTodos = useMemo(() => noteTodos ?? [], [noteTodos]);
+  const noteTodoById = useMemo(() => {
+    const map = new Map<string, NoteTodo>();
+    normalizedNoteTodos.forEach((todo) => map.set(todo.id, todo));
+    return map;
+  }, [normalizedNoteTodos]);
+  const normalizedSkills = useMemo(() => skills ?? [], [skills]);
+  const normalizedSkillCategories = useMemo(() => skillCategories ?? [], [skillCategories]);
+  const skillById = useMemo(
+    () => new Map(normalizedSkills.map((skill) => [skill.id, skill])),
+    [normalizedSkills],
+  );
+  const noteTodoSkillGroups = useMemo<NoteTodoSkillGroup[]>(() => {
+    const term = noteTodoSkillSearch.trim().toLowerCase();
+    const categoryLookup = new Map(
+      normalizedSkillCategories.map((category) => [category.id, category]),
+    );
+    const originalIndex = new Map(normalizedSkills.map((skill, index) => [skill.id, index]));
+    const groups = new Map<string, NoteTodoSkillGroup>();
+
+    normalizedSkills
+      .filter((skill) => {
+        if (!term) return true;
+        return (
+          (skill.name ?? "").toLowerCase().includes(term) ||
+          (skill.icon ?? "").toLowerCase().includes(term)
+        );
+      })
+      .forEach((skill) => {
+        const groupId = skill.cat_id?.trim() || NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_ID;
+        const category = categoryLookup.get(groupId);
+        const label =
+          groupId === NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_ID
+            ? NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_LABEL
+            : category?.name?.trim() || `Category ${groupId.slice(0, 8)}`;
+        const existing = groups.get(groupId);
+
+        if (existing) {
+          existing.skills.push(skill);
+        } else {
+          groups.set(groupId, {
+            id: groupId,
+            label,
+            categoryOrder: category?.sort_order ?? null,
+            skills: [skill],
+          });
+        }
+      });
+
+    return Array.from(groups.values())
+      .sort((left, right) => {
+        const leftUncategorized = left.id === NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_ID;
+        const rightUncategorized = right.id === NOTE_TODO_UNCATEGORIZED_SKILL_GROUP_ID;
+
+        if (leftUncategorized !== rightUncategorized) return leftUncategorized ? 1 : -1;
+
+        const leftOrder =
+          typeof left.categoryOrder === "number" && Number.isFinite(left.categoryOrder)
+            ? left.categoryOrder
+            : Number.POSITIVE_INFINITY;
+        const rightOrder =
+          typeof right.categoryOrder === "number" && Number.isFinite(right.categoryOrder)
+            ? right.categoryOrder
+            : Number.POSITIVE_INFINITY;
+
+        return leftOrder !== rightOrder
+          ? leftOrder - rightOrder
+          : left.label.localeCompare(right.label);
+      })
+      .map((group) => ({
+        ...group,
+        skills: [...group.skills].sort((left, right) => {
+          const leftOrder =
+            typeof left.sort_order === "number" && Number.isFinite(left.sort_order)
+              ? left.sort_order
+              : Number.POSITIVE_INFINITY;
+          const rightOrder =
+            typeof right.sort_order === "number" && Number.isFinite(right.sort_order)
+              ? right.sort_order
+              : Number.POSITIVE_INFINITY;
+
+          return leftOrder !== rightOrder
+            ? leftOrder - rightOrder
+            : (left.name ?? "").localeCompare(right.name ?? "") ||
+                (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0);
+        }),
+      }));
+  }, [normalizedSkillCategories, normalizedSkills, noteTodoSkillSearch]);
   const segmentDragIds = useMemo(
     () => segments.map((_, index) => buildNoteSegmentDragId(index)),
     [segments],
@@ -22550,7 +22729,11 @@ function NoteSlashTextarea({
     ) => {
       const segment = segments[segmentIndex];
       const serializedText =
-        segment?.type === type && "text" in segment ? segment.text : readSerializedEditableText(control);
+        segment?.type === "noteTodo" && type === "noteTodo"
+          ? (noteTodoById.get(segment.todoId)?.title ?? "")
+          : segment?.type === type && "text" in segment
+            ? segment.text
+            : readSerializedEditableText(control);
       const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
         control,
         serializedText,
@@ -22568,7 +22751,7 @@ function NoteSlashTextarea({
       activeTextSelectionRef.current = nextSelection;
       return nextSelection;
     },
-    [segments],
+    [noteTodoById, segments],
   );
 
   const getEditableSelectionFromControl = useCallback(
@@ -22598,15 +22781,20 @@ function NoteSlashTextarea({
         const segment = segments[segmentIndex];
         if (
           segment?.type !== "checklist" &&
+          segment?.type !== "noteTodo" &&
           segment?.type !== "list" &&
           segment?.type !== "heading" &&
           segment?.type !== "quote"
         ) {
           return null;
         }
+        const segmentText =
+          segment.type === "noteTodo"
+            ? (noteTodoById.get(segment.todoId)?.title ?? "")
+            : segment.text;
         const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
           input,
-          segment.text,
+          segmentText,
         );
 
         return {
@@ -22621,7 +22809,7 @@ function NoteSlashTextarea({
 
       return null;
     },
-    [segments],
+    [noteTodoById, segments],
   );
 
   const getLiveEditableSelection = useCallback(() => {
@@ -22981,6 +23169,12 @@ function NoteSlashTextarea({
     };
   }, [isMenuOpen]);
 
+  useEffect(() => {
+    return () => {
+      clearNoteTodoUpgradePress();
+    };
+  }, []);
+
   const refreshOnHandEntries = useCallback(async () => {
     if (!hasOnHandDatabase) {
       setExternalDatabaseEntries([]);
@@ -23045,6 +23239,7 @@ function NoteSlashTextarea({
       if (
         segment.type !== "text" &&
         segment.type !== "checklist" &&
+        segment.type !== "noteTodo" &&
         segment.type !== "list" &&
         segment.type !== "heading" &&
         segment.type !== "quote"
@@ -23063,9 +23258,14 @@ function NoteSlashTextarea({
         pendingSelection?.type === segment.type && pendingSelection.segmentIndex === segmentIndex;
       if (isFocused && !shouldSyncFocusedControl) return;
 
-      syncEditableTextDom(control, segment.text);
+      syncEditableTextDom(
+        control,
+        segment.type === "noteTodo"
+          ? (noteTodoById.get(segment.todoId)?.title ?? "")
+          : segment.text,
+      );
     });
-  }, [pendingSelection, segments]);
+  }, [noteTodoById, pendingSelection, segments]);
 
   useLayoutEffect(() => {
     if (pendingSelection === null) return;
@@ -23081,6 +23281,7 @@ function NoteSlashTextarea({
 
     if (
       pendingSelection.type === "checklist" ||
+      pendingSelection.type === "noteTodo" ||
       pendingSelection.type === "list" ||
       pendingSelection.type === "heading" ||
       pendingSelection.type === "quote"
@@ -23215,6 +23416,14 @@ function NoteSlashTextarea({
       };
     }
 
+    if (segment.type === "noteTodo") {
+      return {
+        type: "noteTodo",
+        segmentIndex,
+        caretPosition: noteTodoById.get(segment.todoId)?.title.length ?? 0,
+      };
+    }
+
     if (segment.type === "list" || segment.type === "heading" || segment.type === "quote") {
       return {
         type: segment.type,
@@ -23247,6 +23456,14 @@ function NoteSlashTextarea({
     if (segment.type === "checklist") {
       return {
         type: "checklist",
+        segmentIndex,
+        caretPosition: 0,
+      };
+    }
+
+    if (segment.type === "noteTodo") {
+      return {
+        type: "noteTodo",
         segmentIndex,
         caretPosition: 0,
       };
@@ -23366,6 +23583,241 @@ function NoteSlashTextarea({
         : segment,
     );
     onValueChange(serializeNoteSegments(nextSegments));
+  }
+
+  function updateNoteTodo(todoId: string, updater: (todo: NoteTodo) => NoteTodo) {
+    const currentTodo = noteTodoById.get(todoId);
+    if (!currentTodo) return;
+    onNoteTodosChange?.(upsertNoteTodo(normalizedNoteTodos, updater(currentTodo)));
+  }
+
+  function downgradeNoteTodoSegment(segmentIndex: number, todo: NoteTodo) {
+    const segment = segments[segmentIndex];
+    if (segment?.type !== "noteTodo" || segment.todoId !== todo.id) return;
+
+    const nextSegments = segments.map((currentSegment, index) =>
+      index === segmentIndex
+        ? ({
+            type: "checklist" as const,
+            checked: todo.completed,
+            text: todo.title,
+          } satisfies NoteChecklistSegment)
+        : currentSegment,
+    );
+
+    onNoteTodosChange?.(normalizedNoteTodos.filter((candidate) => candidate.id !== todo.id));
+    onValueChange(serializeNoteSegments(nextSegments));
+    setPendingDowngradeTodoId(null);
+    setActiveNoteTodoSkillPickerId(null);
+    setPendingSelection({
+      type: "checklist",
+      segmentIndex,
+      caretPosition: todo.title.length,
+    });
+  }
+
+  function promoteChecklistSegment(segmentIndex: number) {
+    const segment = segments[segmentIndex];
+    if (segment?.type !== "checklist") return;
+    const title = segment.text.trim();
+    if (!title) return;
+
+    const todo: NoteTodo = {
+      id: createNoteTodoId(),
+      title: segment.text,
+      completed: segment.checked,
+      priority: NOTE_TODO_DEFAULT_PRIORITY,
+      skillId: noteTodoOwner?.type === "SKILL" ? noteTodoOwner.id : null,
+      energy: "MEDIUM",
+    };
+    const nextSegments = segments.map((currentSegment, index) =>
+      index === segmentIndex
+        ? ({ type: "noteTodo" as const, todoId: todo.id })
+        : currentSegment,
+    );
+    onNoteTodosChange?.(upsertNoteTodo(normalizedNoteTodos, todo));
+    onValueChange(serializeNoteSegments(nextSegments));
+    setPendingSelection({
+      type: "noteTodo",
+      segmentIndex,
+      caretPosition: todo.title.length,
+    });
+  }
+
+  function openNoteTodoDetails(todo: NoteTodo) {
+    if (typeof window === "undefined") return;
+    const title = todo.title.trim();
+    if (!title) return;
+    window.dispatchEvent(
+      new CustomEvent("schedule:open-quick-create-task-details", {
+        detail: {
+          title,
+          skillId: todo.skillId,
+          priority: todo.priority,
+          energy: todo.energy,
+          origin: "note-todo-upgrade",
+          noteTodoId: todo.id,
+          noteId: noteId ?? null,
+          noteOwnerType: noteTodoOwner?.type ?? null,
+          noteOwnerId: noteTodoOwner?.id ?? null,
+        },
+      }),
+    );
+  }
+
+  const areNoteTodoRowControlsRevealed = useCallback(
+    (todoId: string, segmentIndex: number) =>
+      activeEditableSegmentIndex === segmentIndex ||
+      activeNoteTodoSkillPickerId === todoId ||
+      pendingDowngradeTodoId === todoId,
+    [activeEditableSegmentIndex, activeNoteTodoSkillPickerId, pendingDowngradeTodoId],
+  );
+
+  function renderNoteTodoSkillPicker(todo: NoteTodo) {
+    if (activeNoteTodoSkillPickerId !== todo.id) return null;
+
+    return (
+      <div
+        role="listbox"
+        aria-label="Choose Skill"
+        data-note-todo-no-long-press="true"
+        className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-64 max-w-[calc(100vw-3rem)] rounded-[1.1rem] border border-white/10 bg-zinc-950/94 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+        onPointerDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <input
+          value={noteTodoSkillSearch}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => setNoteTodoSkillSearch(event.target.value)}
+          placeholder="Search skills"
+          className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
+          aria-label="Search skills"
+        />
+        <div className="mt-2 max-h-[min(16rem,calc(100vh-14rem))] touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
+          {noteTodoSkillGroups.length === 0 ? (
+            <div className="px-2 py-3 text-xs text-white/40">No skills found.</div>
+          ) : (
+            <div className="grid gap-2">
+              {noteTodoSkillGroups.map((group) => (
+                <div key={group.id} className="grid gap-1">
+                  <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                    {group.label}
+                  </div>
+                  {group.skills.map((skill) => {
+                    const selected = todo.skillId === skill.id;
+                    const icon = (skill.icon ?? "").trim() || "✦";
+                    const name = skill.name?.trim() || "Untitled skill";
+
+                    return (
+                      <button
+                        key={skill.id}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateNoteTodo(todo.id, (currentTodo) => ({
+                            ...currentTodo,
+                            skillId: skill.id,
+                          }));
+                          setActiveNoteTodoSkillPickerId(null);
+                          setNoteTodoSkillSearch("");
+                          setPendingDowngradeTodoId(null);
+                        }}
+                        className={`flex h-9 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs transition ${
+                          selected
+                            ? "bg-white/[0.16] text-white"
+                            : "text-white/75 hover:bg-white/10 hover:text-white"
+                        }`}
+                      >
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/30 text-sm leading-none">
+                          {icon}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function clearNoteTodoUpgradePress() {
+    const press = noteTodoUpgradePressRef.current;
+    if (press) {
+      clearTimeout(press.timer);
+    }
+    noteTodoUpgradePressRef.current = null;
+  }
+
+  function shouldIgnoreNoteTodoUpgradeTarget(target: EventTarget | null) {
+    return (
+      target instanceof HTMLElement &&
+      Boolean(target.closest(NOTE_TODO_UPGRADE_BLOCKED_TARGET_SELECTOR))
+    );
+  }
+
+  function startNoteTodoUpgradePointerPress(
+    event: ReactPointerEvent<HTMLElement>,
+    todo: NoteTodo,
+  ) {
+    if (event.button !== 0) return;
+    if (shouldIgnoreNoteTodoUpgradeTarget(event.target)) return;
+    if (!todo.title.trim()) return;
+    if (event.pointerType !== "mouse") {
+      event.preventDefault();
+    }
+    clearNoteTodoUpgradePress();
+    const press: NoteTodoUpgradePress = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      startX: event.clientX,
+      startY: event.clientY,
+      todo,
+      timer: setTimeout(() => {
+        const currentPress = noteTodoUpgradePressRef.current;
+        if (currentPress !== press) return;
+        currentPress.triggered = true;
+        openNoteTodoDetails(currentPress.todo);
+      }, NOTE_TODO_UPGRADE_LONG_PRESS_MS),
+      triggered: false,
+    };
+    noteTodoUpgradePressRef.current = press;
+  }
+
+  function handleNoteTodoUpgradePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const press = noteTodoUpgradePressRef.current;
+    if (!press || press.pointerId !== event.pointerId) return;
+    if (press.triggered) {
+      event.preventDefault();
+      return;
+    }
+    const moved = Math.hypot(event.clientX - press.startX, event.clientY - press.startY);
+    if (moved > NOTE_TODO_UPGRADE_MOVE_CANCEL_PX) {
+      clearNoteTodoUpgradePress();
+    }
+  }
+
+  function handleNoteTodoUpgradePointerEnd(event: ReactPointerEvent<HTMLElement>) {
+    const press = noteTodoUpgradePressRef.current;
+    if (!press || press.pointerId !== event.pointerId) return;
+    if (event.type === "pointercancel") {
+      clearNoteTodoUpgradePress();
+      return;
+    }
+    if (press.triggered) {
+      event.preventDefault();
+    }
+    clearNoteTodoUpgradePress();
   }
 
   function updateListSegment(
@@ -23978,17 +24430,23 @@ function NoteSlashTextarea({
     const segment = segments[segmentIndex];
     if (
       segment?.type !== "checklist" &&
+      segment?.type !== "noteTodo" &&
       segment?.type !== "list" &&
       segment?.type !== "heading" &&
       segment?.type !== "quote"
     ) return;
 
+    const segmentText =
+      segment.type === "noteTodo"
+        ? (noteTodoById.get(segment.todoId)?.title ?? "")
+        : segment.text;
+
     if (event.key === "Backspace" || event.key === "Delete") {
       const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
         event.currentTarget,
-        segment.text,
+        segmentText,
       );
-      const isEmptyRow = segment.text.length === 0;
+      const isEmptyRow = segmentText.length === 0;
       const isCollapsedAtStart = selectionStart === 0 && selectionEnd === 0;
 
       if (isEmptyRow && isCollapsedAtStart) {
@@ -24004,10 +24462,31 @@ function NoteSlashTextarea({
     event.preventDefault();
     const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
       event.currentTarget,
-      segment.text,
+      segmentText,
     );
     if (segment.type === "heading" || segment.type === "quote") {
       splitLineTextBlock(segmentIndex, selectionStart, selectionEnd);
+      return;
+    }
+
+    if (segment.type === "noteTodo") {
+      const insertedText = segmentText.slice(selectionEnd);
+      const nextSegments = [...segments];
+      nextSegments.splice(segmentIndex + 1, 0, {
+        type: "checklist",
+        checked: false,
+        text: insertedText,
+      });
+      updateNoteTodo(segment.todoId, (todo) => ({
+        ...todo,
+        title: segmentText.slice(0, selectionStart),
+      }));
+      onValueChange(serializeNoteSegments(nextSegments));
+      setPendingSelection({
+        type: "checklist",
+        segmentIndex: segmentIndex + 1,
+        caretPosition: 0,
+      });
       return;
     }
 
@@ -24028,6 +24507,11 @@ function NoteSlashTextarea({
       syncSlashTrigger(segmentIndex, nextText, selectionStart);
     } else if (type === "checklist") {
       updateChecklistSegment(segmentIndex, { text: nextText });
+    } else if (type === "noteTodo") {
+      const segment = segments[segmentIndex];
+      if (segment?.type === "noteTodo") {
+        updateNoteTodo(segment.todoId, (todo) => ({ ...todo, title: nextText }));
+      }
     } else if (type === "list") {
       updateListSegment(segmentIndex, { text: nextText });
     } else {
@@ -24093,9 +24577,18 @@ function NoteSlashTextarea({
             : handleInlineRowKeyDown(event, segmentIndex)
         }
         onKeyUp={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
-        onFocus={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
-        onClick={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
-        onPointerUp={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
+        onFocus={(event) => {
+          setActiveEditableSegmentIndex(segmentIndex);
+          rememberEditableSelection(type, segmentIndex, event.currentTarget);
+        }}
+        onClick={(event) => {
+          setActiveEditableSegmentIndex(segmentIndex);
+          rememberEditableSelection(type, segmentIndex, event.currentTarget);
+        }}
+        onPointerUp={(event) => {
+          setActiveEditableSegmentIndex(segmentIndex);
+          rememberEditableSelection(type, segmentIndex, event.currentTarget);
+        }}
         onSelect={(event) => {
           const nextSelection = rememberEditableSelection(type, segmentIndex, event.currentTarget);
           if (type === "text" && nextSelection) {
@@ -24107,11 +24600,14 @@ function NoteSlashTextarea({
           syncEditableTextDom(event.currentTarget, readSerializedEditableText(event.currentTarget), {
             force: true,
           });
+          setActiveEditableSegmentIndex((currentIndex) =>
+            currentIndex === segmentIndex ? null : currentIndex,
+          );
           if (type === "text") {
             closeMenu();
           }
         }}
-        className={`${options.className} whitespace-pre-wrap break-words empty:before:pointer-events-none empty:before:text-white/28 empty:before:content-[attr(data-placeholder)]`}
+        className={`${options.className} whitespace-pre-wrap break-words empty:before:pointer-events-none ${NOTE_SOFT_OLED_CLASSES.beforePlaceholder} empty:before:content-[attr(data-placeholder)]`}
       />
     );
   }
@@ -24262,6 +24758,8 @@ function NoteSlashTextarea({
             }
 
             if (segment.type === "checklist") {
+              const isActiveChecklist = activeEditableSegmentIndex === index;
+              const canPromoteChecklist = segment.text.trim().length > 0;
               return renderSortableSegment(
                 index,
                 segment,
@@ -24287,10 +24785,196 @@ function NoteSlashTextarea({
               {renderEditableTextControl("checklist", index, segment.text, {
                 placeholder: "Item text",
                 className: `min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 outline-none selection:bg-emerald-300/25 selection:text-white ${
-                  segment.checked ? "text-white/58" : "text-white"
+                  segment.checked ? NOTE_SOFT_OLED_CLASSES.checkedBody : NOTE_SOFT_OLED_CLASSES.body
                 }`,
                 ariaLabel: "Checklist item text",
               })}
+              {isActiveChecklist && canPromoteChecklist ? (
+                <button
+                  type="button"
+                  aria-label="Promote checklist item to todo"
+                  title="Promote to todo"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    promoteChecklistSegment(index);
+                  }}
+                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.055] bg-white/[0.025] text-white/32 outline-none transition hover:border-emerald-300/20 hover:bg-emerald-300/[0.08] hover:text-emerald-100/78 focus-visible:ring-1 focus-visible:ring-emerald-200/24"
+                >
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>,
+              );
+            }
+
+            if (segment.type === "noteTodo") {
+              const todo = noteTodoById.get(segment.todoId) ?? {
+                id: segment.todoId,
+                title: "",
+                completed: false,
+                priority: NOTE_TODO_DEFAULT_PRIORITY,
+                skillId: null,
+                energy: "MEDIUM" as const,
+              };
+              const priorityOption =
+                PRIORITY_ORDER.find((priority) => priority === todo.priority) ??
+                NOTE_TODO_DEFAULT_PRIORITY;
+              const selectedSkill = todo.skillId ? (skillById.get(todo.skillId) ?? null) : null;
+              const skillIcon = selectedSkill?.icon?.trim() || "✦";
+              const skillName = selectedSkill?.name?.trim() || null;
+              const isConfirmingDowngrade = pendingDowngradeTodoId === todo.id;
+              const areNoteTodoControlsRevealed = areNoteTodoRowControlsRevealed(todo.id, index);
+
+              return renderSortableSegment(
+                index,
+                segment,
+            <div
+              key={`${index}-note-todo`}
+              onPointerDown={(event) => startNoteTodoUpgradePointerPress(event, todo)}
+              onPointerMove={handleNoteTodoUpgradePointerMove}
+              onPointerUp={handleNoteTodoUpgradePointerEnd}
+              onPointerCancel={handleNoteTodoUpgradePointerEnd}
+              className="group flex min-h-7 items-center gap-2 py-0"
+            >
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={todo.completed}
+                onClick={() =>
+                  updateNoteTodo(todo.id, (currentTodo) => ({
+                    ...currentTodo,
+                    completed: !currentTodo.completed,
+                  }))
+                }
+                className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border outline-none transition ${
+                  todo.completed
+                    ? "border-emerald-200/25 bg-emerald-200/70 text-black/85 hover:bg-emerald-100/75 focus-visible:ring-1 focus-visible:ring-emerald-100/32"
+                    : "border-emerald-200/24 bg-emerald-300/[0.055] text-transparent hover:border-emerald-100/34 focus-visible:ring-1 focus-visible:ring-emerald-100/28"
+                }`}
+                aria-label={todo.completed ? "Mark todo incomplete" : "Mark todo complete"}
+              >
+                <Check className="h-3 w-3 stroke-[2.4]" />
+              </button>
+              <div className="relative h-5 w-5 shrink-0" data-note-todo-no-long-press="true">
+                <button
+                  type="button"
+                  aria-label={skillName ? `Change Skill: ${skillName}` : "Choose Skill"}
+                  aria-haspopup="listbox"
+                  aria-expanded={activeNoteTodoSkillPickerId === todo.id}
+                  title={skillName ?? "Choose Skill"}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    clearNoteTodoUpgradePress();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    clearNoteTodoUpgradePress();
+                    setPendingDowngradeTodoId(null);
+                    setNoteTodoSkillSearch("");
+                    setActiveNoteTodoSkillPickerId((currentId) =>
+                      currentId === todo.id ? null : todo.id,
+                    );
+                  }}
+                  className={`flex h-5 w-5 items-center justify-center bg-transparent p-0 text-center text-[0.78rem] leading-none outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 ${
+                    todo.skillId ? "text-white/70" : "text-white/36"
+                  } ${todo.completed ? "text-white/42" : ""}`}
+                >
+                  {skillIcon}
+                </button>
+                {renderNoteTodoSkillPicker(todo)}
+              </div>
+              {renderEditableTextControl("noteTodo", index, todo.title, {
+                placeholder: "Todo text",
+                className: `min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 outline-none selection:bg-emerald-300/25 selection:text-white ${
+                  todo.completed ? NOTE_SOFT_OLED_CLASSES.checkedBody : NOTE_SOFT_OLED_CLASSES.body
+                }`,
+                ariaLabel: "Todo text",
+              })}
+              {areNoteTodoControlsRevealed ? (
+                <div
+                  className="ml-auto flex shrink-0 items-center gap-1"
+                  data-note-todo-no-long-press="true"
+                >
+                  <button
+                    type="button"
+                    aria-label={`Todo priority ${PRIORITY_LABELS[priorityOption]}`}
+                    title="Change priority"
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearNoteTodoUpgradePress();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearNoteTodoUpgradePress();
+                      setPendingDowngradeTodoId(null);
+                      setActiveNoteTodoSkillPickerId(null);
+                      const currentIndex = PRIORITY_ORDER.indexOf(todo.priority);
+                      const nextPriority =
+                        PRIORITY_ORDER[(currentIndex + 1) % PRIORITY_ORDER.length] ??
+                        NOTE_TODO_DEFAULT_PRIORITY;
+                      updateNoteTodo(todo.id, (currentTodo) => ({
+                        ...currentTodo,
+                        priority: normalizePriority(nextPriority),
+                      }));
+                    }}
+                    className="flex h-7 min-w-7 items-center justify-center rounded-md border border-white/[0.055] bg-white/[0.025] px-1.5 text-[11px] font-black leading-none text-white/45 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.055] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/18"
+                  >
+                    {todo.priority === "NO" ? "◇" : "!"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={
+                      isConfirmingDowngrade
+                        ? "Confirm remove todo structure"
+                        : "Remove todo structure"
+                    }
+                    title={isConfirmingDowngrade ? "Confirm downgrade" : "Remove todo structure"}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearNoteTodoUpgradePress();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      clearNoteTodoUpgradePress();
+                      setActiveNoteTodoSkillPickerId(null);
+                      if (!isConfirmingDowngrade) {
+                        setPendingDowngradeTodoId(todo.id);
+                        return;
+                      }
+                      downgradeNoteTodoSegment(index, todo);
+                    }}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent p-0 outline-none transition focus-visible:ring-2 focus-visible:ring-white/30 ${
+                      isConfirmingDowngrade
+                        ? "text-red-300/78 hover:text-red-200"
+                        : "text-white/24 hover:text-white/48"
+                    }`}
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={isConfirmingDowngrade ? "check" : "x"}
+                        initial={{ opacity: 0, scale: 0.72 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.72 }}
+                        transition={{ duration: 0.14 }}
+                        className="flex h-3.5 w-3.5 items-center justify-center"
+                      >
+                        {isConfirmingDowngrade ? (
+                          <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+                        ) : (
+                          <X className="h-3.5 w-3.5" strokeWidth={2} />
+                        )}
+                      </motion.span>
+                    </AnimatePresence>
+                  </button>
+                </div>
+              ) : null}
             </div>,
               );
             }
@@ -24301,7 +24985,7 @@ function NoteSlashTextarea({
                 segment,
             <div key={`${index}-list`} className="group flex min-h-7 items-center gap-2 py-0">
               <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center text-base font-semibold leading-7 text-white/72"
+                className={`flex h-7 w-7 shrink-0 items-center justify-center text-base font-semibold leading-7 ${NOTE_SOFT_OLED_CLASSES.secondary}`}
                 aria-hidden="true"
               >
                 {segment.kind === "ordered"
@@ -24312,7 +24996,7 @@ function NoteSlashTextarea({
               </span>
               {renderEditableTextControl("list", index, segment.text, {
                 placeholder: "List item",
-                className: "min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 text-white outline-none selection:bg-emerald-300/25 selection:text-white",
+                className: `min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} outline-none selection:bg-emerald-300/25 selection:text-white`,
                 ariaLabel:
                   segment.kind === "ordered"
                     ? "Numbered list item text"
@@ -24333,8 +25017,8 @@ function NoteSlashTextarea({
                 placeholder: segment.level === 1 ? "Heading 1" : "Heading 2",
                 className:
                   segment.level === 1
-                    ? "min-h-9 w-full border-0 bg-transparent p-0 text-[1.42rem] font-extrabold leading-9 text-white outline-none selection:bg-emerald-300/25 selection:text-white"
-                    : "min-h-8 w-full border-0 bg-transparent p-0 text-[1.12rem] font-bold leading-8 text-white/90 outline-none selection:bg-emerald-300/25 selection:text-white",
+                    ? `min-h-9 w-full border-0 bg-transparent p-0 text-[1.42rem] font-extrabold leading-9 ${NOTE_SOFT_OLED_CLASSES.heading1} outline-none selection:bg-emerald-300/25 selection:text-white`
+                    : `min-h-8 w-full border-0 bg-transparent p-0 text-[1.12rem] font-bold leading-8 ${NOTE_SOFT_OLED_CLASSES.heading2} outline-none selection:bg-emerald-300/25 selection:text-white`,
                 ariaLabel: segment.level === 1 ? "Heading 1 text" : "Heading 2 text",
               })}
             </div>,
@@ -24352,7 +25036,7 @@ function NoteSlashTextarea({
               />
               {renderEditableTextControl("quote", index, segment.text, {
                 placeholder: "Quote",
-                className: "min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 text-white/78 outline-none selection:bg-emerald-300/25 selection:text-white",
+                className: `min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.secondary} outline-none selection:bg-emerald-300/25 selection:text-white`,
                 ariaLabel: "Quote text",
               })}
             </div>,
@@ -24533,7 +25217,7 @@ function NoteSlashTextarea({
               renderEditableTextControl("text", index, segment.text, {
                 placeholder: segments.length === 1 ? placeholder : undefined,
                 className:
-                  "min-h-7 w-full border-0 bg-transparent p-0 text-base leading-7 text-white outline-none caret-white selection:bg-emerald-300/25 selection:text-white",
+                  `min-h-7 w-full border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} outline-none ${NOTE_SOFT_OLED_CLASSES.caret} selection:bg-emerald-300/25 selection:text-white`,
                 ariaLabel,
                 ariaControls: isMenuOpen ? "note-slash-command-menu" : undefined,
                 multiline: true,

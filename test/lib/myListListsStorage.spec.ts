@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AREAS } from "../../src/config/areas";
 import { getSupabaseBrowser } from "../../lib/supabase";
 import {
   createMyListList,
+  getMyListAreaSystemKey,
+  getMyListMonumentSystemKey,
   loadMyListLists,
   MY_LIST_GROCERY_NAME,
   MY_LIST_GROCERY_SYSTEM_KEY,
@@ -57,8 +60,8 @@ describe("myListListsStorage", () => {
       from: vi.fn(() => chain),
     } as never);
     await loadMyListLists("user-1");
-    expect(filters).toEqual([["user_id", "user-1"]]);
-    expect(chain.order).toHaveBeenCalledTimes(3);
+    expect(filters).toContainEqual(["user_id", "user-1"]);
+    expect(chain.order).toHaveBeenCalled();
   });
 
   it("trims and creates a user-scoped list", async () => {
@@ -111,13 +114,21 @@ describe("myListListsStorage", () => {
         systemKey: MY_LIST_GROCERY_SYSTEM_KEY,
       },
     ]);
-    expect(inserted).toEqual([
-      {
-        user_id: "user-1",
-        name: MY_LIST_GROCERY_NAME,
-        system_key: MY_LIST_GROCERY_SYSTEM_KEY,
-      },
-    ]);
+    expect(inserted).toContainEqual({
+      user_id: "user-1",
+      name: MY_LIST_GROCERY_NAME,
+      system_key: MY_LIST_GROCERY_SYSTEM_KEY,
+    });
+    expect(inserted).toEqual(
+      expect.arrayContaining(
+        AREAS.map((area) => ({
+          user_id: "user-1",
+          name: area.label,
+          system_key: getMyListAreaSystemKey(area.id),
+          sort_order: area.sortOrder,
+        })),
+      ),
+    );
     expect(chain.insert).toHaveBeenCalledWith({
       user_id: "user-1",
       name: MY_LIST_GROCERY_NAME,
@@ -163,6 +174,69 @@ describe("myListListsStorage", () => {
         system_key: MY_LIST_GROCERY_SYSTEM_KEY,
       },
     ]);
+  });
+
+  it("provisions monument lists by stable system key", async () => {
+    const { chain, inserted } = query(
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+    );
+    vi.mocked(getSupabaseBrowser).mockReturnValue({
+      from: vi.fn(() => chain),
+    } as never);
+
+    await loadMyListLists("user-1", {
+      monuments: [{ id: "monument-1", title: "  Cathedral  ", emoji: " 🏛️ " }],
+    });
+
+    expect(inserted).toContainEqual({
+      user_id: "user-1",
+      name: "Cathedral",
+      system_key: getMyListMonumentSystemKey("monument-1"),
+    });
+  });
+
+  it("does not create duplicate area or monument system lists", async () => {
+    const rows = [
+      {
+        id: "list-grocery",
+        user_id: "user-1",
+        name: MY_LIST_GROCERY_NAME,
+        system_key: MY_LIST_GROCERY_SYSTEM_KEY,
+        sort_order: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      ...AREAS.map((area) => ({
+        id: `list-area-${area.id}`,
+        user_id: "user-1",
+        name: area.label,
+        system_key: getMyListAreaSystemKey(area.id),
+        sort_order: area.sortOrder,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      })),
+      {
+        id: "list-monument-1",
+        user_id: "user-1",
+        name: "Cathedral",
+        system_key: getMyListMonumentSystemKey("monument-1"),
+        sort_order: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const { chain, inserted } = query({ data: rows, error: null });
+    vi.mocked(getSupabaseBrowser).mockReturnValue({
+      from: vi.fn(() => chain),
+    } as never);
+
+    await loadMyListLists("user-1", {
+      monuments: [{ id: "monument-1", title: "Cathedral" }],
+    });
+
+    expect(inserted).toEqual([]);
   });
 
   it("orders Grocery List before ordinary custom lists", async () => {

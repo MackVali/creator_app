@@ -70,6 +70,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Icon as IconifyIcon } from "@iconify/react";
+import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
 
 export const DEFAULT_NOTE_ICON = "lucide:NotebookPen";
 
@@ -358,13 +359,13 @@ export function NoteEditorHeader({
         <input
           value={title}
           onChange={(event) => onTitleChange(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-[1.55rem] font-semibold leading-10 tracking-normal text-white outline-none placeholder:text-white/28 focus-visible:ring-0 sm:text-[1.7rem]"
+          className={`min-w-0 flex-1 bg-transparent text-[1.55rem] font-semibold leading-10 tracking-normal ${NOTE_SOFT_OLED_CLASSES.title} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder} focus-visible:ring-0 sm:text-[1.7rem]`}
           placeholder="Untitled"
           aria-label="Note title"
         />
 
         {autosaveLabel ? (
-          <p className="shrink-0 text-[10px] font-medium leading-none text-white/35 sm:text-[11px]">
+          <p className={`shrink-0 text-[10px] font-medium leading-none ${NOTE_SOFT_OLED_CLASSES.tertiary} sm:text-[11px]`}>
             {autosaveLabel}
           </p>
         ) : null}

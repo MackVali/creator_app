@@ -16,8 +16,16 @@ import {
   getNoteWithChildren,
   updateSkillNote,
 } from "@/lib/notesStorage";
+import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
+import {
+  readNoteTodos,
+  writeNoteTodosMetadata,
+  type NoteTodo,
+} from "@/lib/notes/noteTodos";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { CatRow } from "@/lib/types/cat";
 import type { Note } from "@/lib/types/note";
+import type { SkillRow } from "@/lib/types/skill";
 
 const DEFAULT_NOTE_ICON = "📝";
 const DEFAULT_SKILL_ICON = "💡";
@@ -61,6 +69,12 @@ function getMetadataDatabaseEntries(
   return databaseEntries && typeof databaseEntries === "object" && !Array.isArray(databaseEntries)
     ? (databaseEntries as NoteDatabaseEntries)
     : {};
+}
+
+function getMetadataNoteTodos(
+  metadata: Record<string, unknown> | null | undefined,
+) {
+  return readNoteTodos(metadata);
 }
 
 function buildNoteMetadata(
@@ -113,6 +127,52 @@ export default function NotePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
   const [parentContext, setParentContext] = useState<ParentContext | null>(null);
+  const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+
+        const [skillsResult, categoriesResult] = await Promise.all([
+          supabase
+            .from("skills")
+            .select("id,user_id,name,icon,cat_id,monument_id,level,sort_order,created_at,updated_at,is_default,is_locked")
+            .order("sort_order", { ascending: true, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("cats")
+            .select("id,user_id,name,created_at,color_hex,sort_order,icon")
+            .order("sort_order", { ascending: true, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (!isMounted) return;
+
+        if (skillsResult.error) {
+          console.error("Failed to load note todo skills", skillsResult.error);
+        } else {
+          setSkills((skillsResult.data ?? []) as SkillRow[]);
+        }
+
+        if (categoriesResult.error) {
+          console.error("Failed to load note todo skill categories", categoriesResult.error);
+        } else {
+          setSkillCategories((categoriesResult.data ?? []) as CatRow[]);
+        }
+      } catch (error) {
+        console.error("Failed to load note todo skill picker data", error);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -468,16 +528,20 @@ export default function NotePage() {
     setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
   }
 
+  function handleNoteTodosChange(noteTodos: NoteTodo[]) {
+    setNoteMetadata((current) => writeNoteTodosMetadata(current, noteTodos));
+  }
+
   function handleParentBack() {
     router.push(`/skills/${skillId}`);
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white sm:pb-14">
+    <main className={`min-h-screen ${NOTE_SOFT_OLED_CLASSES.backdrop} px-4 pb-16 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] ${NOTE_SOFT_OLED_CLASSES.body} sm:pb-14`}>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 sm:gap-3">
-        <section className="bg-transparent p-0">
+        <section className={`${NOTE_SOFT_OLED_CLASSES.surface} p-0`}>
           {isLoading ? (
-            <p className="text-sm text-white/60">Loading note…</p>
+            <p className={`text-sm ${NOTE_SOFT_OLED_CLASSES.secondary}`}>Loading note…</p>
           ) : (
             <div className="flex flex-col gap-2.5 sm:gap-3">
               <FocusedNoteParentBreadcrumb
@@ -507,12 +571,18 @@ export default function NotePage() {
                 onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
                 databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
                 onDatabaseEntriesChange={handleDatabaseEntriesChange}
+                noteTodos={getMetadataNoteTodos(noteMetadata)}
+                onNoteTodosChange={handleNoteTodosChange}
+                noteTodoOwner={{ type: "SKILL", id: skillId }}
+                skills={skills}
+                skillCategories={skillCategories}
+                noteId={currentNoteId ?? noteId}
                 onCreateSubpage={handleCreateSubpage}
                 onSubpageCreated={handleSubpageCreated}
                 onOpenSubpage={handleOpenSubpage}
                 onOpenDatabase={handleOpenDatabase}
                 placeholder="Start typing, or press / for commands…"
-                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
+                className={`min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
                 aria-label="Note editor"
               />
             </div>

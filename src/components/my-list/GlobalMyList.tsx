@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -50,6 +51,11 @@ import {
   updatePinnedSourceMyListItemOrder,
   type MyListPinnedSourceStorageItem,
 } from "@/lib/my-list/myListItemsStorage";
+import {
+  getMyListAreaSystemKey,
+  getMyListMonumentSystemKey,
+} from "@/lib/my-list/myListListsStorage";
+import { isAreaId } from "@/config/areas";
 
 type MyListXpAwardResult = {
   success?: boolean;
@@ -108,6 +114,22 @@ type MyListHierarchyRoadmapRow = {
   id: string;
   monument_id?: string | null;
 };
+
+function getPreferredMyListSystemKeyFromPathname(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean);
+
+  if (segments.length === 2 && segments[0] === "areas") {
+    const areaId = segments[1]?.trim().toLowerCase();
+    return isAreaId(areaId) ? getMyListAreaSystemKey(areaId) : null;
+  }
+
+  if (segments.length === 2 && segments[0] === "monuments") {
+    const monumentId = segments[1]?.trim();
+    return monumentId ? getMyListMonumentSystemKey(monumentId) : null;
+  }
+
+  return null;
+}
 
 function readCleanId(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -299,6 +321,7 @@ export function GlobalMyList({
   enableScheduleTimelineDrag?: boolean;
 }) {
   const { user, ready } = useAuth();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [pinnedSourceRows, setPinnedSourceRows] = useState<
@@ -325,6 +348,10 @@ export function GlobalMyList({
   const [myListReloadKey, setMyListReloadKey] = useState(0);
   const previousStageRef = useRef<Map<string, TaskLite["stage"]>>(new Map());
   const completingPinnedGoalIdsRef = useRef<Set<string>>(new Set());
+  const preferredListSystemKeyOnOpen = useMemo(
+    () => getPreferredMyListSystemKeyFromPathname(pathname),
+    [pathname],
+  );
 
   useEffect(() => {
     if (!ready || !user?.id) {
@@ -1788,6 +1815,7 @@ export function GlobalMyList({
       skills={skills}
       skillCategories={skillCategories}
       pendingTaskIds={pendingTaskIds}
+      preferredListSystemKeyOnOpen={preferredListSystemKeyOnOpen}
       useFullExpandedHeight={useFullExpandedHeight}
       enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
       onRemovePinnedSource={handleRemovePinnedSource}

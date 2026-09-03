@@ -34,6 +34,7 @@ import {
   type NoteTextColor,
   type NoteTextFormatAction,
 } from "@/components/notes/NoteSlashTextarea";
+import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
 
 type NoteTextActionBarProps = {
   onFormat: (action: NoteTextFormatAction) => void;
@@ -88,7 +89,7 @@ const COLOR_ACTIONS: Array<{
   className: string;
   indicatorClassName?: string;
 }> = [
-  { color: "default", label: "Default text color", className: "bg-white" },
+  { color: "default", label: "Default text color", className: "bg-[#ECECF1]" },
   { color: "gray", label: "Gray text color", className: "bg-zinc-300" },
   { color: "red", label: "Red text color", className: "bg-red-300" },
   { color: "orange", label: "Orange text color", className: "bg-orange-300" },
@@ -348,7 +349,7 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
     >
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-1.5">
         {openPalette === "block" ? (
-          <div className="w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-white/[0.1] bg-zinc-950/95 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur">
+          <div className={`w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-xl border ${NOTE_SOFT_OLED_CLASSES.toolbarPanel} p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur`}>
             {BLOCK_FORMAT_ACTIONS.map((action) => {
               const Icon = action.icon;
 
@@ -359,9 +360,9 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
                   onPointerDown={(event) => handlePointerBlockFormat(action.format, event)}
                   onMouseDown={handleMouseDown}
                   onClick={() => handleClickBlockFormat(action.format)}
-                  className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-white/78 outline-none transition hover:bg-white/[0.07] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.1]"
+                  className={`flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left outline-none transition ${NOTE_SOFT_OLED_CLASSES.toolbarPanelItem} focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.1]`}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-black text-white/48">
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${NOTE_SOFT_OLED_CLASSES.toolbar} text-[rgba(235,235,245,0.62)]`}>
                     <Icon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -372,7 +373,7 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
             })}
           </div>
         ) : openPalette ? (
-          <div className="grid grid-flow-col grid-rows-2 gap-1.5 rounded-xl border border-white/[0.1] bg-zinc-950/95 p-2 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur">
+          <div className={`grid grid-flow-col grid-rows-2 gap-1.5 rounded-xl border ${NOTE_SOFT_OLED_CLASSES.toolbarPanel} p-2 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur`}>
             {(openPalette === "highlight" ? HIGHLIGHT_ACTIONS : COLOR_ACTIONS).map((action) => {
               const formatAction: NoteTextFormatAction =
                 openPalette === "highlight"
@@ -436,16 +437,16 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
           </div>
         ) : null}
 
-        <div className="flex h-10 max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-black px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className={`flex h-10 max-w-full items-center gap-1 overflow-x-auto rounded-xl border ${NOTE_SOFT_OLED_CLASSES.toolbar} px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>
           <button
             type="button"
             onPointerDown={(event) => handlePointerPalette("block", event)}
             onMouseDown={handleMouseDown}
             onClick={() => handleClickPalette("block")}
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08] ${
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition ${NOTE_SOFT_OLED_CLASSES.toolbarButtonHover} ${
               openPalette === "block"
-                ? "border-white/15 bg-white/[0.08] text-white"
-                : "border-transparent bg-black text-white/70"
+                ? NOTE_SOFT_OLED_CLASSES.toolbarButtonActive
+                : NOTE_SOFT_OLED_CLASSES.toolbarButton
             }`}
             aria-label="Open block format menu"
             title="Block format"
@@ -468,7 +469,7 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
                 onPointerDown={(event) => handlePointerAction(formatAction, event)}
                 onMouseDown={handleMouseDown}
                 onClick={() => handleClickAction(formatAction)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent bg-black text-white/70 outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08]"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition ${NOTE_SOFT_OLED_CLASSES.toolbarButton} ${NOTE_SOFT_OLED_CLASSES.toolbarButtonHover}`}
                 aria-label={`Format selected note text as ${action.label}`}
                 title={action.label}
               >
@@ -482,10 +483,10 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
             onPointerDown={(event) => handlePointerPalette("highlight", event)}
             onMouseDown={handleMouseDown}
             onClick={() => handleClickPalette("highlight")}
-            className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08] ${
+            className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition ${NOTE_SOFT_OLED_CLASSES.toolbarButtonHover} ${
               openPalette === "highlight"
-                ? "border-white/15 bg-white/[0.08] text-white"
-                : "border-transparent bg-black text-white/70"
+                ? NOTE_SOFT_OLED_CLASSES.toolbarButtonActive
+                : NOTE_SOFT_OLED_CLASSES.toolbarButton
             }`}
             aria-label="Open highlight palette"
             title="Highlight"
@@ -503,10 +504,10 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
             onPointerDown={(event) => handlePointerPalette("color", event)}
             onMouseDown={handleMouseDown}
             onClick={() => handleClickPalette("color")}
-            className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08] ${
+            className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition ${NOTE_SOFT_OLED_CLASSES.toolbarButtonHover} ${
               openPalette === "color"
-                ? "border-white/15 bg-white/[0.08] text-white"
-                : "border-transparent bg-black text-white/70"
+                ? NOTE_SOFT_OLED_CLASSES.toolbarButtonActive
+                : NOTE_SOFT_OLED_CLASSES.toolbarButton
             }`}
             aria-label="Open text color palette"
             title="Color"
@@ -514,7 +515,7 @@ export function NoteTextActionBar({ onFormat, onBlockFormat }: NoteTextActionBar
           >
             <Palette className="h-4 w-4" />
             <span
-              className="absolute bottom-1 h-0.5 w-4 rounded-full bg-white"
+              className="absolute bottom-1 h-0.5 w-4 rounded-full bg-[#ECECF1]"
               aria-hidden="true"
             />
           </button>
