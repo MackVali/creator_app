@@ -16701,13 +16701,7 @@ export function Fab({
               ) : null}
               {selected === "GOAL" && activeCreationMode === "main" && (
                 <>
-                  <div
-                    className={cn(
-                      "grid gap-3",
-                      editTarget?.entityType === "GOAL" &&
-                        "grid-cols-[minmax(0,1fr)_auto] items-center gap-4",
-                    )}
-                  >
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
                     <Select
                       value={selectedGoalRelationValue}
                       onValueChange={handleGoalRelationChange}
@@ -16836,9 +16830,7 @@ export function Fab({
                         ))}
                       </SelectContent>
                     </Select>
-                    {editTarget?.entityType === "GOAL"
-                      ? renderSavedGoalCampaignSelect()
-                      : null}
+                    {renderSavedGoalCampaignSelect()}
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
                     <div className="relative grid gap-2">
@@ -16891,14 +16883,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div
-                    className={cn(
-                      "grid grid-cols-1 gap-3 md:gap-4",
-                      editTarget?.entityType === "GOAL"
-                        ? "md:grid-cols-1"
-                        : "md:grid-cols-2",
-                    )}
-                  >
+                  <div className="grid grid-cols-1 gap-3 md:gap-4">
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -16934,12 +16919,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div
-                      className={cn(
-                        "grid gap-2",
-                        editTarget?.entityType === "GOAL" && "hidden",
-                      )}
-                    >
+                    <div className="hidden">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         CAMPAIGN
                       </Label>
@@ -17037,129 +17017,112 @@ export function Fab({
                       </Select>
                     </div>
                   </div>
-                  {editTarget?.entityType === "GOAL" ? (
-                    <section className="overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]">
-                      <h3 className="sr-only">Goal deadline</h3>
-                      <div className="grid gap-2 pb-2">
-                        <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                  <section className="overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]">
+                    <h3 className="sr-only">Goal deadline</h3>
+                    <div className="grid gap-2 pb-2">
+                      <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                        <span
+                          className="flex h-7 w-6 items-center justify-start text-zinc-500"
+                          aria-hidden="true"
+                        >
+                          <Clock className="h-4 w-4" aria-hidden="true" />
+                        </span>
+
+                        <div className="inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5">
                           <span
-                            className="flex h-7 w-6 items-center justify-start text-zinc-500"
-                            aria-hidden="true"
+                            className={cn(
+                              "text-[11px] font-semibold transition-colors",
+                              goalDueMode === "manual"
+                                ? "text-zinc-100"
+                                : "text-zinc-500",
+                            )}
                           >
-                            <Clock className="h-4 w-4" aria-hidden="true" />
+                            Manual
                           </span>
 
-                          <div className="inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={goalDueMode === "dynamic"}
+                            aria-label={`Switch Goal deadline mode to ${
+                              goalDueMode === "dynamic"
+                                ? "Manual"
+                                : "Dynamic"
+                            }`}
+                            onClick={() => {
+                              const nextMode =
+                                goalDueMode === "dynamic"
+                                  ? "manual"
+                                  : "dynamic";
+
+                              handleGoalDueModeChange(nextMode);
+
+                              if (nextMode === "manual" && !goalDue) {
+                                const defaults =
+                                  getNextSolidHourEventDefaults(new Date());
+                                setGoalDue(defaults.date);
+                                setGoalDueTime(defaults.startTime);
+                              }
+                            }}
+                            className={cn(
+                              "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                              goalDueMode === "dynamic"
+                                ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                                : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                            )}
+                          >
                             <span
                               className={cn(
-                                "text-[11px] font-semibold transition-colors",
-                                goalDueMode === "manual"
-                                  ? "text-zinc-100"
-                                  : "text-zinc-500",
-                              )}
-                            >
-                              Manual
-                            </span>
-
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={goalDueMode === "dynamic"}
-                              aria-label={`Switch Goal deadline mode to ${
+                                "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
                                 goalDueMode === "dynamic"
-                                  ? "Manual"
-                                  : "Dynamic"
-                              }`}
-                              onClick={() => {
-                                const nextMode =
-                                  goalDueMode === "dynamic"
-                                    ? "manual"
-                                    : "dynamic";
-
-                                handleGoalDueModeChange(nextMode);
-
-                                if (nextMode === "manual" && !goalDue) {
-                                  const defaults =
-                                    getNextSolidHourEventDefaults(new Date());
-                                  setGoalDue(defaults.date);
-                                  setGoalDueTime(defaults.startTime);
-                                }
-                              }}
-                              className={cn(
-                                "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-                                goalDueMode === "dynamic"
-                                  ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
-                                  : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                                  ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                                  : "border-zinc-400/20 bg-zinc-500",
                               )}
+                              aria-hidden="true"
+                            />
+                          </button>
+
+                          <span
+                            className={cn(
+                              "text-[11px] font-semibold transition-colors",
+                              goalDueMode === "dynamic"
+                                ? "text-zinc-100"
+                                : "text-zinc-500",
+                            )}
+                          >
+                            Dynamic
+                          </span>
+                        </div>
+                      </div>
+
+                      {goalDueMode === "manual" ? (
+                        renderAdvancedGoalDeadlineRow()
+                      ) : (
+                        <div className="grid gap-1 px-3 pb-1 sm:px-4">
+                          <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                            <span
+                              className="flex h-7 w-6 items-center justify-start text-zinc-500"
+                              aria-hidden="true"
                             >
-                              <span
-                                className={cn(
-                                  "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
-                                  goalDueMode === "dynamic"
-                                    ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
-                                    : "border-zinc-400/20 bg-zinc-500",
-                                )}
+                              <Timer
+                                className="h-4 w-4"
                                 aria-hidden="true"
                               />
-                            </button>
-
-                            <span
-                              className={cn(
-                                "text-[11px] font-semibold transition-colors",
-                                goalDueMode === "dynamic"
-                                  ? "text-zinc-100"
-                                  : "text-zinc-500",
-                              )}
-                            >
-                              Dynamic
                             </span>
+
+                            <span className={advancedTimingPickerLabelClass}>
+                              Deadline
+                            </span>
+
+                            <p className="text-right text-[13px] font-medium text-zinc-500">
+                              No exact date
+                            </p>
                           </div>
                         </div>
+                      )}
+                    </div>
+                  </section>
 
-                        {goalDueMode === "manual" ? (
-                          renderAdvancedGoalDeadlineRow()
-                        ) : (
-                          <div className="grid gap-1 px-3 pb-1 sm:px-4">
-                            <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
-                              <span
-                                className="flex h-7 w-6 items-center justify-start text-zinc-500"
-                                aria-hidden="true"
-                              >
-                                <Timer
-                                  className="h-4 w-4"
-                                  aria-hidden="true"
-                                />
-                              </span>
-
-                              <span className={advancedTimingPickerLabelClass}>
-                                Deadline
-                              </span>
-
-                              <p className="text-right text-[13px] font-medium text-zinc-500">
-                                No exact date
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </section>
-                  ) : null}
-
-
-                  {editTarget?.entityType !== "GOAL" ? (
-<div className="grid gap-2">
-                    <Label htmlFor="goal-why" className="text-zinc-500">
-                      WHY (optional)
-                    </Label>
-                    <Textarea
-                      id="goal-why"
-                      value={goalWhy}
-                      onChange={(e) => setGoalWhy(e.target.value)}
-                      placeholder="Motivation…"
-                      className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
-                    />
-                  </div>
-                  ) : null}
 
                 </>
               )}

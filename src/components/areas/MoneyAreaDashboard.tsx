@@ -2883,7 +2883,7 @@ export function MoneyAreaDashboard() {
   const queryClient = useQueryClient();
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const dashboardBodyId = useId();
-  const [dashboardExpanded, setDashboardExpanded] = useState(true);
+  const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);

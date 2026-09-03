@@ -13,6 +13,7 @@ import {
   updateAreaNote,
   updateMonumentNote,
 } from "@/lib/monumentNotesStorage";
+import { getFirstPlainNoteContentLine } from "@/lib/notes/plainText";
 import { NotesHeaderControls } from "./NotesHeaderControls";
 
 interface MonumentNotesGridProps {
@@ -33,12 +34,7 @@ function getMonumentNoteTitle(note: MonumentNote) {
 }
 
 function getMonumentNotePreview(note: MonumentNote) {
-  return (
-    note.content
-      ?.split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.length > 0) ?? "No preview"
-  );
+  return getFirstPlainNoteContentLine(note.content) ?? "No preview";
 }
 
 export function MonumentNotesGrid({
