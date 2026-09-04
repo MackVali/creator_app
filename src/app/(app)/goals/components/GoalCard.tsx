@@ -14,6 +14,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  ChevronUp,
   MoreVertical,
   Pause,
   PencilLine,
@@ -257,8 +258,15 @@ function GoalCardImpl({
   completionTheme = "auto",
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
   const isControlled = typeof openProp === "boolean";
   const open = isControlled ? (openProp as boolean) : internalOpen;
+
+  useEffect(() => {
+    if (!open) {
+      setWorkspaceExpanded(false);
+    }
+  }, [open]);
   const [loading] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const fabCreation = useFabCreation();
@@ -991,8 +999,9 @@ function GoalCardImpl({
 
   return (
     <>
-      <motion.div
-        ref={defaultCardRef}
+      <div className="relative">
+        <motion.div
+          ref={defaultCardRef}
         layout={!prefersReducedMotion}
         transition={
           prefersReducedMotion
@@ -1356,6 +1365,7 @@ function GoalCardImpl({
                   <GoalWorkspace
                     goal={goal}
                     loading={loading}
+                    workspaceExpanded={workspaceExpanded}
                     onProjectLongPress={handleProjectLongPress}
                     onProjectUpdated={onProjectUpdated}
                     projectDropdownMode={projectDropdownMode}
@@ -1369,7 +1379,39 @@ function GoalCardImpl({
             ) : null}
           </AnimatePresence>
         </div>
-      </motion.div>
+
+        {open ? (
+          <div className="relative z-[80] -mb-1 flex h-3 w-full items-start justify-center">
+            <button
+              type="button"
+              aria-label={
+                workspaceExpanded
+                  ? "Hide goal notes"
+                  : "Show goal notes"
+              }
+              aria-expanded={workspaceExpanded}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setWorkspaceExpanded((current) => !current);
+              }}
+              className="flex h-5 w-10 -translate-y-[1px] items-start justify-center rounded-t-[9px] border border-b-0 border-white/[0.14] bg-[#07080A] pt-[1px] text-white/80 shadow-[0_-3px_10px_rgba(0,0,0,0.5)] transition hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
+            >
+              {workspaceExpanded ? (
+                <ChevronUp className="h-3.5 w-3.5 shrink-0 stroke-[2]" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 stroke-[2]" />
+              )}
+            </button>
+          </div>
+        ) : null}
+
+        </motion.div>
+      </div>
+
       {!onProjectEditOpen ? (
         <ProjectQuickEditDialog
           project={editingProject}
@@ -1428,6 +1470,7 @@ function CompactProjectsOverlay({
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
   const canToggleGoalStatus =
@@ -1564,10 +1607,17 @@ function CompactProjectsOverlay({
   );
 
   const listContent = (
-    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
+    <div
+      className={
+        workspaceExpanded
+          ? "max-h-[calc(100dvh-12rem)] overflow-y-auto px-3 pb-4 sm:max-h-[72vh] sm:px-5"
+          : "overflow-visible px-3 pb-4 sm:px-5"
+      }
+    >
       <GoalWorkspace
         goal={goal}
         loading={loading}
+        workspaceExpanded={workspaceExpanded}
         onProjectLongPress={onProjectLongPress}
         onProjectUpdated={onProjectUpdated}
         projectDropdownMode={projectDropdownMode}
@@ -1580,13 +1630,15 @@ function CompactProjectsOverlay({
   );
 
   const basePanelClass =
-    "relative isolate overflow-hidden rounded-[24px] border border-white/[0.075] bg-[linear-gradient(180deg,#17191D_0%,#0D0E11_44%,#07080A_100%)] text-white/90 shadow-[0_24px_54px_-28px_rgba(0,0,0,0.9),0_12px_28px_-24px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.065)] sm:rounded-[22px]";
+    "relative isolate overflow-visible rounded-[24px] border border-white/[0.075] bg-[linear-gradient(180deg,#17191D_0%,#0D0E11_44%,#07080A_100%)] text-white/90 shadow-[0_24px_54px_-28px_rgba(0,0,0,0.9),0_12px_28px_-24px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.065)] sm:rounded-[22px]";
 
   return createPortal(
     <>
       <motion.button
         type="button"
-        className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/60" : "bg-black/45"}`}
+        className={`fixed inset-0 z-[60] ${
+          isMobile ? "bg-black/60" : "bg-black/45"
+        }`}
         aria-label="Close projects overlay"
         onClick={onClose}
         initial={{ opacity: 0 }}
@@ -1594,8 +1646,11 @@ function CompactProjectsOverlay({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.14 }}
       />
+
       <div
-        className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-4 py-10" : "px-6 py-12"}`}
+        className={`fixed inset-0 z-[70] flex items-center justify-center ${
+          isMobile ? "px-4 py-10" : "px-6 py-12"
+        }`}
         onClick={onClose}
       >
         <motion.div
@@ -1603,22 +1658,80 @@ function CompactProjectsOverlay({
           aria-modal="true"
           aria-labelledby={headingId}
           onClick={(event) => event.stopPropagation()}
-          className={`w-full ${isMobile ? "max-w-sm" : "max-w-xl"} ${basePanelClass}`}
-          style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.985 }}
-          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.99 }}
-          transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
+          className={`w-full ${
+            isMobile ? "max-w-sm" : "max-w-xl"
+          } ${basePanelClass}`}
+          style={
+            computedMaxWidth
+              ? { maxWidth: computedMaxWidth }
+              : undefined
+          }
+          initial={
+            prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 6, scale: 0.985 }
+          }
+          animate={
+            prefersReducedMotion
+              ? { opacity: 1 }
+              : { opacity: 1, y: 0, scale: 1 }
+          }
+          exit={
+            prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 4, scale: 0.99 }
+          }
+          transition={{
+            duration: prefersReducedMotion ? 0.12 : 0.18,
+            ease: "easeOut",
+          }}
         >
           <motion.div
-            variants={prefersReducedMotion ? undefined : detailContentVariant}
+            variants={
+              prefersReducedMotion
+                ? undefined
+                : detailContentVariant
+            }
             initial={prefersReducedMotion ? false : "hidden"}
-            animate={prefersReducedMotion ? undefined : "visible"}
-            exit={prefersReducedMotion ? undefined : "exit"}
+            animate={
+              prefersReducedMotion
+                ? undefined
+                : "visible"
+            }
+            exit={
+              prefersReducedMotion
+                ? undefined
+                : "exit"
+            }
           >
             {header}
             {listContent}
           </motion.div>
+
+          <button
+            type="button"
+            aria-label={
+              workspaceExpanded
+                ? "Hide goal notes"
+                : "Show goal notes"
+            }
+            aria-expanded={workspaceExpanded}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setWorkspaceExpanded((current) => !current);
+            }}
+            className="absolute bottom-0 left-1/2 z-[100] flex h-[18px] w-9 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-b-[9px] border border-t-0 border-white/[0.07] bg-[#111214]/95 text-white/38 shadow-[0_4px_10px_rgba(0,0,0,0.32)] transition hover:border-white/[0.11] hover:text-white/58 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            {workspaceExpanded ? (
+              <ChevronUp className="h-4 w-4 shrink-0 stroke-[2.4]" />
+            ) : (
+              <ChevronDown className="h-4 w-4 shrink-0 stroke-[2.4]" />
+            )}
+          </button>
         </motion.div>
       </div>
     </>,

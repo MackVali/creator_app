@@ -31,6 +31,7 @@ import {
 type GoalWorkspaceProps = {
   goal: Goal;
   loading: boolean;
+  workspaceExpanded?: boolean;
   projectDropdownMode?: "default" | "tasks-only";
   onProjectLongPress?: (
     project: Project,
@@ -57,6 +58,7 @@ const SAVE_DEBOUNCE_MS = 650;
 export function GoalWorkspace({
   goal,
   loading,
+  workspaceExpanded = false,
   projectDropdownMode = "default",
   onProjectLongPress,
   onProjectUpdated,
@@ -195,9 +197,19 @@ export function GoalWorkspace({
   );
 
   return (
-    <div>
+    <div
+      className={
+        workspaceExpanded
+          ? "flex max-h-[calc(100dvh-8rem)] flex-col overflow-hidden"
+          : ""
+      }
+    >
       <div
-        className="relative isolate min-h-48 bg-black px-1 py-2 text-white"
+        className={`relative isolate bg-black px-1 py-2 text-white ${
+          workspaceExpanded
+            ? "min-h-0 overflow-y-auto"
+            : "min-h-0"
+        }`}
         onFocusCapture={handleEditorFocusCapture}
         onBlurCapture={handleEditorBlurCapture}
         data-goal-workspace-editor
@@ -220,6 +232,8 @@ export function GoalWorkspace({
           />
         </ProjectRowTaskInteractionsProvider>
 
+        {workspaceExpanded ? (
+          <>
         <div
           className={`pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center px-1 transition-[opacity,transform] duration-150 ${
             editorActive && !editingTodo
@@ -256,6 +270,9 @@ export function GoalWorkspace({
           className={`min-h-40 w-full border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
           aria-label="Goal workspace"
         />
+
+          </>
+        ) : null}
 
       </div>
 
