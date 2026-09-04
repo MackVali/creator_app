@@ -12,7 +12,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
-import { ChevronDown, MoreVertical, Sparkles } from "lucide-react";
+import {
+  ChevronDown,
+  MoreVertical,
+  Pause,
+  PencilLine,
+  Play,
+  Sparkles,
+} from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Goal, Project, Task } from "../types";
@@ -600,6 +607,11 @@ function GoalCardImpl({
 
   const energy = energyAccent[goal.energy];
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
+  const canToggleGoalStatus =
+    Boolean(onToggleActive) && normalizedStatus !== "COMPLETED";
+  const goalStatusActionLabel =
+    normalizedStatus === "PAUSED" ? "Resume" : "Pause";
+  const GoalStatusActionIcon = normalizedStatus === "PAUSED" ? Play : Pause;
   const allProjectsCompleted =
     goal.projects.length > 0 && goal.projects.every(isProjectComplete);
   const isCompleted =
@@ -937,6 +949,7 @@ function GoalCardImpl({
                   onAddProject={handleAddProject}
                   addingProject={addingProject}
                   onEdit={onEdit}
+                  onToggleActive={onToggleActive}
                   onTaskEditOpen={onTaskEditOpen}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
@@ -1208,8 +1221,28 @@ function GoalCardImpl({
                 className="absolute right-0 top-full mt-1 hidden z-50 w-48 rounded-md border border-white/10 bg-black shadow-lg"
               >
                 <div className="py-1">
+                  {canToggleGoalStatus ? (
+                    <button
+                      className="flex w-full items-center px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        console.log("🎯 Toggle active button clicked");
+                        document
+                          .getElementById(`dropdown-${goal.id}`)
+                          ?.classList.add("hidden");
+                        onToggleActive?.();
+                      }}
+                    >
+                      <GoalStatusActionIcon
+                        aria-hidden="true"
+                        className="mr-2 h-3.5 w-3.5 text-white/65"
+                      />
+                      {goalStatusActionLabel}
+                    </button>
+                  ) : null}
                   <button
-                    className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                    className="flex w-full items-center px-4 py-2 text-left text-sm text-white hover:bg-white/10"
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -1226,26 +1259,12 @@ function GoalCardImpl({
                 });
                     }}
                   >
+                    <PencilLine
+                      aria-hidden="true"
+                      className="mr-2 h-3.5 w-3.5 text-white/65"
+                    />
                     Edit
                   </button>
-                  {normalizedStatus !== "COMPLETED" ? (
-                    <button
-                      className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        console.log("🎯 Toggle active button clicked");
-                        document
-                          .getElementById(`dropdown-${goal.id}`)
-                          ?.classList.add("hidden");
-                        onToggleActive?.();
-                      }}
-                    >
-                      {normalizedStatus === "ACTIVE"
-                        ? "Pause Goal"
-                        : "Resume Goal"}
-                    </button>
-                  ) : null}
                   <button
                     className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
                     onClick={(event) => {
@@ -1369,6 +1388,7 @@ type CompactProjectsOverlayProps = {
   onAddProject: () => void;
   addingProject: boolean;
   onEdit?: () => void;
+  onToggleActive?: () => void;
   onTaskEditOpen?: (
     task: Task,
     project: Project,
@@ -1393,11 +1413,18 @@ function CompactProjectsOverlay({
   onAddProject,
   addingProject,
   onEdit,
+  onToggleActive,
   onTaskEditOpen,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
+  const canToggleGoalStatus =
+    Boolean(onToggleActive) && normalizedStatus !== "COMPLETED";
+  const goalStatusActionLabel =
+    normalizedStatus === "PAUSED" ? "Resume" : "Pause";
+  const GoalStatusActionIcon = normalizedStatus === "PAUSED" ? Play : Pause;
 
   useEffect(() => {
     setMounted(true);
@@ -1462,21 +1489,64 @@ function CompactProjectsOverlay({
             align="end"
             className="z-[80] min-w-36 rounded-xl border border-white/10 bg-[#090A0C] p-1.5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
           >
-            <DropdownMenuItem
-              className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
-              onSelect={() => {
-                if (projectDropdownMode === "tasks-only") {
-                  const firstProject = goal.projects[0];
-                  if (firstProject) {
-                    onProjectLongPress(firstProject, null);
-                  }
-                  return;
-                }
-                onEdit?.();
-              }}
-            >
-              {projectDropdownMode === "tasks-only" ? "Edit Project" : "Edit Goal"}
-            </DropdownMenuItem>
+            {projectDropdownMode === "tasks-only" ? (
+              <>
+                <DropdownMenuItem
+                  className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                  onSelect={() => {
+                    const firstProject = goal.projects[0];
+                    if (firstProject) {
+                      onProjectLongPress(firstProject, null);
+                    }
+                  }}
+                >
+                  Edit Project
+                </DropdownMenuItem>
+                {canToggleGoalStatus ? (
+                  <DropdownMenuItem
+                    className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                    onSelect={() => {
+                      onToggleActive?.();
+                    }}
+                  >
+                    <GoalStatusActionIcon
+                      aria-hidden="true"
+                      className="mr-2 h-3.5 w-3.5 text-white/65"
+                    />
+                    {goalStatusActionLabel}
+                  </DropdownMenuItem>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {canToggleGoalStatus ? (
+                  <DropdownMenuItem
+                    className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                    onSelect={() => {
+                      onToggleActive?.();
+                    }}
+                  >
+                    <GoalStatusActionIcon
+                      aria-hidden="true"
+                      className="mr-2 h-3.5 w-3.5 text-white/65"
+                    />
+                    {goalStatusActionLabel}
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                  onSelect={() => {
+                    onEdit?.();
+                  }}
+                >
+                  <PencilLine
+                    aria-hidden="true"
+                    className="mr-2 h-3.5 w-3.5 text-white/65"
+                  />
+                  Edit
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

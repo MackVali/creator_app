@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronDown, Plus, Timer, Trash2, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Pause, Play, Plus, Timer, X } from "lucide-react";
 import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
@@ -466,11 +466,27 @@ export function GoalDrawer({
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [statusActionLoading, setStatusActionLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const monumentSelectionRef = useRef<string>("");
 
   const editing = Boolean(initialGoal);
-  const showDeleteAction = editing && Boolean(onDelete && initialGoal);
+  const initialGoalStatus = normalizeGoalStatus(
+    initialGoal?.status,
+    initialGoal?.active
+  );
+  const currentGoalStatus =
+    initialGoalStatus === "COMPLETED"
+      ? "COMPLETED"
+      : active
+        ? "ACTIVE"
+        : "PAUSED";
+  const showPauseResumeAction =
+    editing &&
+    Boolean(onUpdate && initialGoal) &&
+    (currentGoalStatus === "ACTIVE" || currentGoalStatus === "PAUSED");
+  const pauseResumeActionLabel =
+    currentGoalStatus === "PAUSED" ? "Resume Goal" : "Pause Goal";
 
   const getMonumentEmojiById = useCallback(
     (id?: string | null) => {
@@ -506,7 +522,9 @@ export function GoalDrawer({
         initialGoal.energy
       );
       setEnergy(resolvedEnergy);
-      setActive(initialGoal.active ?? true);
+      setActive(
+        normalizeGoalStatus(initialGoal.status, initialGoal.active) === "ACTIVE"
+      );
       setWhy(initialGoal.why || "");
       setAreaId(initialGoal.areaId || "");
       setCircleId(initialGoal.circleId || "");
@@ -568,6 +586,7 @@ export function GoalDrawer({
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
+    setStatusActionLoading(false);
   }, [
     defaultAreaId,
     getMonumentEmojiById,
@@ -838,11 +857,6 @@ export function GoalDrawer({
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
-  const handleDeleteGoal = async () => {
-    if (!initialGoal || !onDelete) return;
-    setShowDeleteConfirm(true);
-  };
-
   const handleConfirmDelete = async () => {
     if (!initialGoal || !onDelete) return;
     let success = false;
@@ -1038,20 +1052,29 @@ export function GoalDrawer({
     }
   };
 
-  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!canSubmit || deleteLoading) return;
+  const saveGoal = async ({
+    closeOnSuccess,
+    statusOverride,
+  }: {
+    closeOnSuccess: boolean;
+    statusOverride?: "ACTIVE" | "PAUSED";
+  }) => {
+    if (!canSubmit || deleteLoading || statusActionLoading) return;
 
     const preservedStatus = normalizeGoalStatus(
       initialGoal?.status,
       initialGoal?.active,
     );
+    if (preservedStatus === "COMPLETED" && statusOverride) {
+      return;
+    }
     const computedStatus =
-      preservedStatus === "COMPLETED"
+      statusOverride ??
+      (preservedStatus === "COMPLETED"
         ? "COMPLETED"
         : active
           ? "ACTIVE"
-          : "PAUSED";
+          : "PAUSED");
     const computedActive = computedStatus === "ACTIVE";
 
     const preparedProjects: Project[] = projectsState.map((project) => {
@@ -1135,7 +1158,35 @@ export function GoalDrawer({
       return;
     }
 
-    onClose();
+    setActive(computedActive);
+
+    if (closeOnSuccess) {
+      onClose();
+    }
+  };
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await saveGoal({ closeOnSuccess: true });
+  };
+
+  const handlePauseResumeGoal = async () => {
+    if (!initialGoal || !onUpdate) return;
+    const nextStatus = currentGoalStatus === "PAUSED" ? "ACTIVE" : "PAUSED";
+    const previousActive = active;
+    try {
+      setStatusActionLoading(true);
+      setActive(nextStatus === "ACTIVE");
+      await saveGoal({
+        closeOnSuccess: false,
+        statusOverride: nextStatus,
+      });
+    } catch (err) {
+      setActive(previousActive);
+      console.error("Error updating goal status from drawer:", err);
+    } finally {
+      setStatusActionLoading(false);
+    }
   };
 
   const isCompletedGoalDrawer =
@@ -2048,17 +2099,22 @@ export function GoalDrawer({
           ) : (
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
-                {showDeleteAction ? (
+                {showPauseResumeAction ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label="Delete goal"
+                    aria-label={pauseResumeActionLabel}
+                    title={pauseResumeActionLabel}
                     className="h-10 w-10 rounded-full border border-white/10 bg-black text-white/78 hover:bg-white/[0.06] hover:text-rose-200 disabled:opacity-70"
-                    onClick={handleDeleteGoal}
-                    disabled={deleteLoading}
+                    onClick={handlePauseResumeGoal}
+                    disabled={deleteLoading || statusActionLoading}
                   >
-                    <Trash2 aria-hidden="true" className="h-4 w-4" />
+                    {currentGoalStatus === "PAUSED" ? (
+                      <Play aria-hidden="true" className="h-4 w-4" />
+                    ) : (
+                      <Pause aria-hidden="true" className="h-4 w-4" />
+                    )}
                   </Button>
                 ) : null}
                 <Button
