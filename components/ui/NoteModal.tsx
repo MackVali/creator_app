@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
-import { Input } from "./input";
-import { Textarea } from "./textarea";
-import { Label } from "./label";
+import { ChevronDown, X } from "lucide-react";
 import { Button } from "./button";
 import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
@@ -14,11 +11,27 @@ import { getCatsForUser } from "@/lib/data/cats";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import type { CatRow } from "@/lib/types/cat";
+import { AREAS, type AreaConfig } from "@/config/areas";
 import { getMonumentIconOrDefault } from "@/lib/monuments/icon";
 import { createSkillNote, getNotes } from "@/lib/notesStorage";
-import { createMonumentNote } from "@/lib/monumentNotesStorage";
+import { createAreaNote, createMonumentNote } from "@/lib/monumentNotesStorage";
 import type { Note } from "@/lib/types/note";
-import { DEFAULT_NOTE_ICON, NoteIconPicker } from "@/components/notes/NoteEditorHeader";
+import { DEFAULT_NOTE_ICON, NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
+import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
+import {
+  NoteSlashTextarea,
+  type NoteDatabaseDefinitions,
+  type NoteDatabaseEntries,
+  type NoteSlashTextareaHandle,
+} from "@/components/notes/NoteSlashTextarea";
+import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
+import {
+  readNoteTodos,
+  writeNoteTodosMetadata,
+  type NoteTodo,
+  type NoteTodoOwner,
+} from "@/lib/notes/noteTodos";
+import type { SkillRow } from "@/lib/types/skill";
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -27,9 +40,8 @@ interface NoteModalProps {
 }
 
 const ROOT_PARENT_VALUE = "__root__";
-type NoteTargetType = "skill" | "monument";
+type NoteRelationType = "area" | "monument" | "skill";
 const DEFAULT_SKILL_ICON = "🧩";
-const DEFAULT_MONUMENT_ICON = getMonumentIconOrDefault(null);
 const UNCATEGORIZED_SKILL_GROUP_ID = "__uncategorized_skill_group__";
 const UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
 
@@ -62,22 +74,38 @@ function compareByName(aName: string, bName: string) {
   return aName.localeCompare(bName, undefined, { sensitivity: "base" });
 }
 
-function TargetIcon({ icon, fallback }: { icon?: string | null; fallback: string }) {
-  return (
-    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.045] text-[0.92rem] leading-none text-white/85">
-      {icon?.trim() || fallback}
-    </span>
-  );
+function getMetadataDatabases(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseDefinitions {
+  const databases = metadata?.databases;
+  return databases && typeof databases === "object" && !Array.isArray(databases)
+    ? (databases as NoteDatabaseDefinitions)
+    : {};
+}
+
+function getMetadataDatabaseEntries(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseEntries {
+  const databaseEntries = metadata?.databaseEntries;
+  return databaseEntries && typeof databaseEntries === "object" && !Array.isArray(databaseEntries)
+    ? (databaseEntries as NoteDatabaseEntries)
+    : {};
 }
 
 export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalProps) {
   const [mounted, setMounted] = useState(false);
   const toast = useToastHelpers();
+  const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
+  const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [noteTodoUserId, setNoteTodoUserId] = useState<string | null>(null);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
-  const [targetType, setTargetType] = useState<NoteTargetType>("skill");
+  const [relationType, setRelationType] = useState<NoteRelationType | null>(null);
+  const [isRelationPickerOpen, setIsRelationPickerOpen] = useState(false);
+  const [isEditorActive, setIsEditorActive] = useState(false);
   const [formData, setFormData] = useState({
+    areaId: "",
     skillId: "",
     monumentId: "",
     title: "",
@@ -86,6 +114,7 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
   });
   const [parentOptions, setParentOptions] = useState<Note[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+  const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
   const [isLoadingParents, setIsLoadingParents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -95,6 +124,12 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
   }, []);
 
   useEffect(() => {
+    if (!isOpen) {
+      setIsEditorActive(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     const loadTargets = async () => {
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
@@ -102,6 +137,7 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      setNoteTodoUserId(user.id);
       const [skillsData, categoriesData, monumentsData] = await Promise.all([
         getSkillsForUser(user.id),
         getCatsForUser(user.id).catch((error) => {
@@ -128,7 +164,7 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     let isActive = true;
 
     const loadParents = async () => {
-      if (forceTopLevel || targetType !== "skill" || !formData.skillId) {
+      if (forceTopLevel || relationType !== "skill" || !formData.skillId) {
         setParentOptions([]);
         setSelectedParentId(null);
         setIsLoadingParents(false);
@@ -162,13 +198,16 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     return () => {
       isActive = false;
     };
-  }, [forceTopLevel, formData.skillId, isOpen, mounted, targetType]);
+  }, [forceTopLevel, formData.skillId, isOpen, mounted, relationType]);
 
   if (!isOpen || !mounted) return null;
 
   const resetForm = () => {
-    setTargetType("skill");
+    setRelationType(null);
+    setIsRelationPickerOpen(false);
+    setIsEditorActive(false);
     setFormData({
+      areaId: "",
       skillId: "",
       monumentId: "",
       title: "",
@@ -177,6 +216,7 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     });
     setParentOptions([]);
     setSelectedParentId(null);
+    setNoteMetadata(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -184,16 +224,32 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     const trimmedTitle = formData.title.trim();
     const trimmedContent = formData.content.trim();
     const hasContent = trimmedTitle.length > 0 || trimmedContent.length > 0;
-    const selectedSkillId = targetType === "skill" ? formData.skillId : "";
-    const selectedMonumentId = targetType === "monument" ? formData.monumentId : "";
+    const selectedAreaId = relationType === "area" ? formData.areaId : "";
+    const selectedSkillId = relationType === "skill" ? formData.skillId : "";
+    const selectedMonumentId =
+      relationType === "monument" ? formData.monumentId : "";
 
-    if (targetType === "skill" && !selectedSkillId) {
-      toast.error("Please select a skill");
+    if (!relationType) {
+      toast.error("Add a relation before saving");
+      setIsRelationPickerOpen(true);
       return;
     }
 
-    if (targetType === "monument" && !selectedMonumentId) {
+    if (relationType === "area" && !selectedAreaId) {
+      toast.error("Please select an area");
+      setIsRelationPickerOpen(true);
+      return;
+    }
+
+    if (relationType === "skill" && !selectedSkillId) {
+      toast.error("Please select a skill");
+      setIsRelationPickerOpen(true);
+      return;
+    }
+
+    if (relationType === "monument" && !selectedMonumentId) {
       toast.error("Please select a monument");
+      setIsRelationPickerOpen(true);
       return;
     }
 
@@ -207,33 +263,54 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     setIsSaving(true);
 
     try {
-      const metadata = { icon: formData.icon || DEFAULT_NOTE_ICON };
+      const metadata: Record<string, unknown> = {
+        ...(noteMetadata ?? {}),
+        icon: formData.icon || DEFAULT_NOTE_ICON,
+      };
       const parentNoteId = forceTopLevel ? null : selectedParentId;
-      const saved =
-        targetType === "skill"
-          ? await createSkillNote(
-              selectedSkillId,
-              {
-                title: formData.title,
-                content: formData.content,
-              },
-              {
-                metadata,
-                parentNoteId,
-              },
-            )
-          : await createMonumentNote(
-              selectedMonumentId,
-              {
-                title: formData.title,
-                content: formData.content,
-                metadata,
-              },
-              {
-                metadata,
-                parentNoteId: null,
-              },
-            );
+      const saved = await (async () => {
+        if (relationType === "skill") {
+          return createSkillNote(
+            selectedSkillId,
+            {
+              title: formData.title,
+              content: formData.content,
+            },
+            {
+              metadata,
+              parentNoteId,
+            },
+          );
+        }
+
+        if (relationType === "area") {
+          return createAreaNote(
+            selectedAreaId,
+            {
+              title: formData.title,
+              content: formData.content,
+              metadata,
+            },
+            {
+              metadata,
+              parentNoteId: null,
+            },
+          );
+        }
+
+        return createMonumentNote(
+          selectedMonumentId,
+          {
+            title: formData.title,
+            content: formData.content,
+            metadata,
+          },
+          {
+            metadata,
+            parentNoteId: null,
+          },
+        );
+      })();
 
       if (!saved) {
         toast.error("We couldn’t save your note. Try again.");
@@ -251,16 +328,91 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     }
   };
 
+  const handleEditorSurfaceBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const nextFocusedElement = event.relatedTarget;
+    const editorSurface = editorSurfaceRef.current ?? event.currentTarget;
+    if (
+      nextFocusedElement instanceof Node &&
+      editorSurface.contains(nextFocusedElement)
+    ) {
+      return;
+    }
+
+    setIsEditorActive(false);
+  };
+
+  const handleDatabaseDefinitionsChange = (
+    databases: NoteDatabaseDefinitions,
+  ) => {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
+  };
+
+  const handleDatabaseEntriesChange = (databaseEntries: NoteDatabaseEntries) => {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
+  };
+
+  const handleNoteTodosChange = (noteTodos: NoteTodo[]) => {
+    setNoteMetadata((current) => writeNoteTodosMetadata(current, noteTodos));
+  };
+
+  const hasSelectedRelation =
+    relationType === "area"
+      ? Boolean(formData.areaId)
+      : relationType === "monument"
+        ? Boolean(formData.monumentId)
+        : relationType === "skill"
+          ? Boolean(formData.skillId)
+          : false;
   const canSubmit =
-    (targetType === "skill" ? formData.skillId : formData.monumentId) &&
+    hasSelectedRelation &&
     (formData.title.trim().length > 0 || formData.content.trim().length > 0) &&
     !isSaving;
-  const titleValue = formData.title.trim() || "Untitled";
+  const noteTodoOwner: NoteTodoOwner | null =
+    relationType === "area" && formData.areaId
+      ? { type: "AREA", id: formData.areaId }
+      : relationType === "monument" && formData.monumentId
+        ? { type: "MONUMENT", id: formData.monumentId }
+        : relationType === "skill" && formData.skillId
+          ? { type: "SKILL", id: formData.skillId }
+          : null;
+  const noteTodoSkills: SkillRow[] = skills.map((skill) => ({
+    id: skill.id,
+    user_id: noteTodoUserId ?? "",
+    name: skill.name,
+    icon: skill.icon ?? null,
+    cat_id: skill.cat_id ?? null,
+    monument_id: skill.monument_id ?? null,
+    level: null,
+    sort_order: skill.sort_order ?? null,
+  }));
+  const selectedArea = AREAS.find((area) => area.id === formData.areaId);
   const selectedSkill = skills.find((skill) => skill.id === formData.skillId);
   const selectedMonument = monuments.find(
     (monument) => monument.id === formData.monumentId,
   );
-  const targetLabel = targetType === "skill" ? "Skill" : "Monument";
+  const selectedRelation =
+    relationType === "area" && selectedArea
+      ? { icon: selectedArea.emoji, name: selectedArea.label }
+      : relationType === "skill" && selectedSkill
+        ? {
+            icon: selectedSkill.icon?.trim() || DEFAULT_SKILL_ICON,
+            name: selectedSkill.name,
+          }
+        : relationType === "monument" && selectedMonument
+          ? {
+              icon: getMonumentIconOrDefault(selectedMonument.emoji),
+              name: selectedMonument.title,
+            }
+          : null;
+  const selectedParent = parentOptions.find((note) => note.id === selectedParentId);
+  const selectedParentTitle = selectedParent
+    ? selectedParent.title?.trim() ||
+      selectedParent.content
+        ?.split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) ||
+      "Untitled"
+    : "Top-level page";
   const groupedSkills = (() => {
     const categoriesById = new Map<string, CatRow>();
     skillCategories.forEach((category) => {
@@ -345,177 +497,189 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
       }));
   })();
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-sm sm:p-5">
-      <div className="max-h-[min(calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),680px)] w-full max-w-[430px] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.10),transparent_58%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_52%,rgba(39,39,45,0.82)_100%)] text-white shadow-[0_28px_90px_-36px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,0.07)]">
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <NoteIconPicker
-              icon={formData.icon}
-              onIconChange={(icon) => setFormData({ ...formData, icon })}
-              popoverClassName="left-[-0.75rem] sm:left-0"
-            />
-            <div className="min-w-0 flex-1">
-              <Label className="sr-only">Note title</Label>
-              <Input
-                value={formData.title}
-                onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
-                }
-                placeholder="Untitled"
-                className="h-auto border-0 bg-transparent px-0 py-0 text-[1.55rem] font-semibold leading-10 text-white shadow-none outline-none placeholder:text-white/28 focus-visible:ring-0 sm:text-[1.7rem]"
-                aria-label="Note title"
-                title={titleValue}
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white focus-visible:ring-2 focus-visible:ring-white/15"
-            aria-label="Close Add Note"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[calc(min(calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),680px)-68px)] space-y-4 overflow-y-auto px-4 pb-4 pt-4 [-webkit-overflow-scrolling:touch] sm:px-5 sm:pb-5"
+  const selectAreaRelation = (area: AreaConfig) => {
+    setRelationType("area");
+    setIsRelationPickerOpen(false);
+    setFormData((current) => ({
+      ...current,
+      areaId: area.id,
+      skillId: "",
+      monumentId: "",
+    }));
+    setSelectedParentId(null);
+  };
+
+  const selectMonumentRelation = (monument: Monument) => {
+    setRelationType("monument");
+    setIsRelationPickerOpen(false);
+    setFormData((current) => ({
+      ...current,
+      areaId: "",
+      skillId: "",
+      monumentId: monument.id,
+    }));
+    setSelectedParentId(null);
+  };
+
+  const selectSkillRelation = (skill: Skill) => {
+    setRelationType("skill");
+    setIsRelationPickerOpen(!forceTopLevel);
+    setFormData((current) => ({
+      ...current,
+      areaId: "",
+      skillId: skill.id,
+      monumentId: "",
+    }));
+    setSelectedParentId(null);
+  };
+
+  const renderRelationButton = ({
+    id,
+    icon,
+    label,
+    isSelected,
+    onClick,
+  }: {
+    id: string;
+    icon?: string | null;
+    label: string;
+    isSelected: boolean;
+    onClick: () => void;
+  }) => (
+    <button
+      key={id}
+      type="button"
+      onClick={onClick}
+      className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm outline-none transition focus-visible:ring-1 focus-visible:ring-white/22 ${
+        isSelected
+          ? "bg-white/[0.075] text-white/82"
+          : "text-white/54 hover:bg-white/[0.045] hover:text-white/78"
+      }`}
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[0.84rem] leading-none">
+        {icon?.trim() || DEFAULT_SKILL_ICON}
+      </span>
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
+  );
+
+  const relationControl = (
+    <div className="relative flex h-5 items-center">
+      <button
+        type="button"
+        onClick={() => setIsRelationPickerOpen((isOpen) => !isOpen)}
+        className="inline-flex min-w-0 items-center gap-1.5 px-0.5 py-0.5 text-[11px] font-medium leading-none text-white/38 outline-none transition hover:text-white/68 focus-visible:ring-1 focus-visible:ring-white/24"
+        aria-expanded={isRelationPickerOpen}
+        aria-haspopup="dialog"
+      >
+        {selectedRelation ? (
+          <>
+            <span
+              className="shrink-0 text-[11px] leading-none"
+              aria-hidden="true"
+            >
+              {selectedRelation.icon}
+            </span>
+            <span className="min-w-0 truncate uppercase tracking-[0.12em]">
+              {selectedRelation.name}
+            </span>
+          </>
+        ) : (
+          <span>
+            add <span className="tracking-[0.16em]">RELATION</span>
+          </span>
+        )}
+      </button>
+
+      {isRelationPickerOpen ? (
+        <div
+          role="dialog"
+          aria-label="Choose note relation"
+          className="absolute left-0 top-6 z-10 max-h-[min(440px,calc(100dvh-10rem))] w-[min(21rem,calc(100vw-2.5rem))] overflow-y-auto rounded-xl border border-white/[0.08] bg-[#090909]/98 p-2 shadow-2xl shadow-black/70 backdrop-blur-xl"
         >
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <Label className="text-xs font-semibold text-white/60">
-                  {targetLabel}
-                </Label>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={targetType === "monument"}
-                  aria-label="Toggle note target between Skill and Monument"
-                  onClick={() => {
-                    const nextType = targetType === "skill" ? "monument" : "skill";
-                    setTargetType(nextType);
-                    setFormData({
-                      ...formData,
-                      skillId: nextType === "skill" ? formData.skillId : "",
-                      monumentId:
-                        nextType === "monument" ? formData.monumentId : "",
-                    });
-                    setSelectedParentId(null);
-                  }}
-                  className={`flex h-5 w-9 shrink-0 items-center rounded-full border p-0.5 transition ${
-                    targetType === "monument"
-                      ? "border-zinc-400/35 bg-zinc-500/35"
-                      : "border-white/[0.10] bg-white/[0.055]"
-                  }`}
-                >
-                  <span
-                    className={`h-4 w-4 rounded-full bg-white/85 shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition ${
-                      targetType === "monument" ? "translate-x-4" : "translate-x-0"
-                    }`}
-                  />
-                </button>
+          <div className="space-y-2">
+            <section>
+              <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/32">
+                Areas
+              </p>
+              <div className="space-y-0.5">
+                {AREAS.map((area) =>
+                  renderRelationButton({
+                    id: `area-${area.id}`,
+                    icon: area.emoji,
+                    label: area.label,
+                    isSelected:
+                      relationType === "area" && formData.areaId === area.id,
+                    onClick: () => selectAreaRelation(area),
+                  }),
+                )}
               </div>
-              {targetType === "skill" ? (
-                <Select
-                  value={formData.skillId}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, skillId: value, monumentId: "" })
-                  }
-                  placeholder="Choose skill"
-                  trigger={
-                    selectedSkill ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <TargetIcon
-                          icon={selectedSkill.icon}
-                          fallback={DEFAULT_SKILL_ICON}
-                        />
-                        <span className="truncate">{selectedSkill.name}</span>
-                      </span>
-                    ) : (
-                      <span className="truncate text-white/50">Choose skill</span>
-                    )
-                  }
-                  triggerClassName="h-11 rounded-2xl border-white/[0.07] bg-black/24 text-left text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
-                  contentWrapperClassName="border-white/[0.08] bg-[#090909] shadow-2xl shadow-black/60"
-                >
-                  <SelectContent className="bg-[#090909] text-white">
-                    {groupedSkills.flatMap((group) => [
-                      <SelectItem
-                        key={`header-${group.id}`}
-                        value={`__skill_group_header_${group.id}`}
-                        disabled
-                        className="cursor-default px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42 opacity-100 hover:bg-transparent hover:text-white/42"
-                      >
+            </section>
+
+            <section>
+              <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/32">
+                Monuments
+              </p>
+              <div className="space-y-0.5">
+                {monuments.length > 0 ? (
+                  monuments.map((monument) =>
+                    renderRelationButton({
+                      id: `monument-${monument.id}`,
+                      icon: getMonumentIconOrDefault(monument.emoji),
+                      label: monument.title,
+                      isSelected:
+                        relationType === "monument" &&
+                        formData.monumentId === monument.id,
+                      onClick: () => selectMonumentRelation(monument),
+                    }),
+                  )
+                ) : (
+                  <p className="px-2 py-1.5 text-xs text-white/34">
+                    No monuments available
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/32">
+                Skills
+              </p>
+              <div className="space-y-1">
+                {groupedSkills.length > 0 ? (
+                  groupedSkills.map((group) => (
+                    <div key={group.id}>
+                      <p className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-white/24">
                         {group.label}
-                      </SelectItem>,
-                      ...group.skills.map((skill) => (
-                        <SelectItem
-                          key={skill.id}
-                          value={skill.id}
-                          label={skill.name}
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <TargetIcon
-                              icon={skill.icon}
-                              fallback={DEFAULT_SKILL_ICON}
-                            />
-                            <span className="truncate">{skill.name}</span>
-                          </span>
-                        </SelectItem>
-                      )),
-                    ])}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select
-                  value={formData.monumentId}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, skillId: "", monumentId: value })
-                  }
-                  placeholder="Choose monument"
-                  trigger={
-                    selectedMonument ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <TargetIcon
-                          icon={getMonumentIconOrDefault(selectedMonument.emoji)}
-                          fallback={DEFAULT_MONUMENT_ICON}
-                        />
-                        <span className="truncate">{selectedMonument.title}</span>
-                      </span>
-                    ) : (
-                      <span className="truncate text-white/50">Choose monument</span>
-                    )
-                  }
-                  triggerClassName="h-11 rounded-2xl border-white/[0.07] bg-black/24 text-left text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
-                  contentWrapperClassName="border-white/[0.08] bg-[#090909] shadow-2xl shadow-black/60"
-                >
-                  <SelectContent className="bg-[#090909] text-white">
-                    {monuments.map((monument) => (
-                      <SelectItem
-                        key={monument.id}
-                        value={monument.id}
-                        label={monument.title}
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <TargetIcon
-                            icon={getMonumentIconOrDefault(monument.emoji)}
-                            fallback={DEFAULT_MONUMENT_ICON}
-                          />
-                          <span className="truncate">{monument.title}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            {!forceTopLevel && targetType === "skill" ? (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-white/60">
-                  Parent page (optional)
-                </Label>
+                      </p>
+                      <div className="space-y-0.5">
+                        {group.skills.map((skill) =>
+                          renderRelationButton({
+                            id: `skill-${skill.id}`,
+                            icon: skill.icon,
+                            label: skill.name,
+                            isSelected:
+                              relationType === "skill" &&
+                              formData.skillId === skill.id,
+                            onClick: () => selectSkillRelation(skill),
+                          }),
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="px-2 py-1.5 text-xs text-white/34">
+                    No skills available
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {!forceTopLevel && relationType === "skill" && formData.skillId ? (
+              <section className="border-t border-white/[0.06] px-2 pt-2">
+                <p className="pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/32">
+                  Parent note
+                </p>
                 <Select
                   value={selectedParentId ?? ROOT_PARENT_VALUE}
                   onValueChange={(value) => {
@@ -525,14 +689,22 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
                       setSelectedParentId(value);
                     }
                   }}
-                  placeholder="Add to top level"
+                  placeholder="Top-level page"
                   className="text-white"
-                  triggerClassName="h-11 rounded-2xl border-white/[0.07] bg-black/24 text-left text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
+                  trigger={
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/36" />
+                      <span className="truncate">
+                        {isLoadingParents ? "Loading..." : selectedParentTitle}
+                      </span>
+                    </span>
+                  }
+                  triggerClassName="h-9 rounded-lg border-white/[0.07] bg-black/24 text-left text-xs text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
                   contentWrapperClassName="border-white/[0.08] bg-[#090909] shadow-2xl shadow-black/60"
                 >
                   <SelectContent className="bg-[#090909] text-white">
                     <SelectItem value={ROOT_PARENT_VALUE}>
-                      {isLoadingParents ? "Loading…" : "Top-level page"}
+                      {isLoadingParents ? "Loading..." : "Top-level page"}
                     </SelectItem>
                     {parentOptions.map((note) => {
                       const displayTitle =
@@ -552,38 +724,128 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
                   </SelectContent>
                 </Select>
                 {selectedParentId ? (
-                  <p className="text-xs text-white/60">
+                  <p className="pt-1.5 text-xs text-white/42">
                     Sub-notes can only nest one level deep.
                   </p>
                 ) : null}
-              </div>
+              </section>
             ) : null}
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
 
-          <div className="rounded-[24px] border border-white/[0.07] bg-black/24 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
-            <div className="px-4 py-3 sm:px-5 sm:py-4">
-              <Label className="sr-only">Content</Label>
-              <Textarea
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/76 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-md sm:p-5">
+      <div
+        data-add-note-modal
+        className={`flex max-h-[min(calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),760px)] w-full max-w-[560px] flex-col overflow-hidden rounded-[26px] border border-white/[0.08] ${NOTE_SOFT_OLED_CLASSES.surface} ${NOTE_SOFT_OLED_CLASSES.body} shadow-[0_28px_90px_-36px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,0.055)]`}
+      >
+        <div className="px-4 pb-2 pt-4 sm:px-5 sm:pt-5">
+          {relationControl}
+          <div className="mt-1">
+            <NoteEditorHeader
+              icon={formData.icon}
+              title={formData.title}
+              onIconChange={(icon) => setFormData({ ...formData, icon })}
+              onTitleChange={(title) => setFormData({ ...formData, title })}
+              trailingControl={
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-emerald-300/20"
+                  aria-label="Close Add Note"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              }
+            />
+          </div>
+        </div>
+        <form
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-2 [-webkit-overflow-scrolling:touch] sm:px-5 sm:pb-5"
+        >
+          <div
+            ref={editorSurfaceRef}
+            onFocus={() => setIsEditorActive(true)}
+            onBlur={handleEditorSurfaceBlur}
+            className="flex min-h-[320px] flex-1 flex-col py-3 sm:min-h-[380px]"
+          >
+            <div className="min-h-0 flex-1">
+              <NoteSlashTextarea
+                ref={noteTextareaRef}
                 value={formData.content}
-                onChange={(e) =>
-                  setFormData({ ...formData, content: e.target.value })
+                onValueChange={(content) =>
+                  setFormData((current) => ({ ...current, content }))
                 }
-                placeholder="Start typing your note..."
-                className="min-h-[180px] resize-none border-0 bg-transparent px-0 py-0 text-base leading-7 text-white shadow-none outline-none ring-0 placeholder:text-white/28 focus-visible:ring-0 focus-visible:ring-offset-0 sm:min-h-[220px]"
-                rows={7}
-                aria-label="Note content"
+                databaseDefinitions={getMetadataDatabases(noteMetadata)}
+                onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
+                databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
+                onDatabaseEntriesChange={handleDatabaseEntriesChange}
+                noteTodos={readNoteTodos(noteMetadata)}
+                onNoteTodosChange={
+                  noteTodoOwner ? handleNoteTodosChange : undefined
+                }
+                noteTodoOwner={noteTodoOwner}
+                skills={noteTodoSkills}
+                skillCategories={skillCategories}
+                onCreateSubpage={async () => null}
+                placeholder="Start typing, or press / for commands…"
+                className={`min-h-[320px] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder} sm:min-h-[380px]`}
+                aria-label="Note editor"
               />
             </div>
+
+            <div
+              className={`grid transition-[grid-template-rows,opacity,margin-top] duration-150 ease-out ${
+                isEditorActive
+                  ? "mt-2 grid-rows-[1fr] opacity-100"
+                  : "mt-0 grid-rows-[0fr] opacity-0"
+              }`}
+            >
+              <div className="min-h-0 overflow-hidden">
+                {isEditorActive ? (
+                  <NoteTextActionBar
+                    onFormat={(command) =>
+                      noteTextareaRef.current?.applyTextFormat(command)
+                    }
+                    onBlockFormat={(format) =>
+                      noteTextareaRef.current?.applyBlockFormat(format)
+                    }
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
-          <Button
-            type="submit"
-            className="h-12 w-full rounded-2xl border border-white/[0.12] bg-zinc-950/72 text-sm font-semibold text-white shadow-[0_18px_44px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/[0.18] hover:bg-zinc-900/82 active:bg-zinc-950/88 disabled:border-white/[0.06] disabled:bg-white/[0.05] disabled:text-white/36 disabled:shadow-none disabled:backdrop-blur-none"
-            disabled={!canSubmit}
-            aria-busy={isSaving}
-          >
-            {isSaving ? "Saving…" : "Save Note"}
-          </Button>
+
+          <div className="mt-auto space-y-3 border-t border-white/[0.06] pt-3">
+            <Button
+              type="submit"
+              className="mt-3 h-11 w-full rounded-xl border border-white/[0.12] bg-zinc-950/72 text-sm font-semibold text-white shadow-[0_18px_44px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/[0.18] hover:bg-zinc-900/82 active:bg-zinc-950/88 disabled:border-white/[0.06] disabled:bg-white/[0.05] disabled:text-white/36 disabled:shadow-none disabled:backdrop-blur-none"
+              disabled={!canSubmit}
+              aria-busy={isSaving}
+            >
+              {isSaving ? "Saving…" : "Save Note"}
+            </Button>
+          </div>
         </form>
+        <style jsx global>{`
+          [data-add-note-modal] [data-note-text-action-bar] {
+            position: static !important;
+            bottom: auto !important;
+            padding-left: 0;
+            padding-right: 0;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+          }
+
+          [data-add-note-modal] [data-note-text-action-bar] > div {
+            align-items: flex-start;
+            max-width: none;
+          }
+        `}</style>
       </div>
     </div>,
     document.body
