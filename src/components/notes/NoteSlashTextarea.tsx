@@ -24759,7 +24759,9 @@ function NoteSlashTextarea({
 
             if (segment.type === "checklist") {
               const isActiveChecklist = activeEditableSegmentIndex === index;
-              const canPromoteChecklist = segment.text.trim().length > 0;
+              const canPromoteChecklist =
+                segment.text.trim().length > 0 &&
+                Boolean(noteTodoOwner?.id && onNoteTodosChange);
               return renderSortableSegment(
                 index,
                 segment,

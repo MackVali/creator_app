@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookText,
   BookOpenText,
@@ -330,6 +330,7 @@ type NoteEditorHeaderProps = {
   onTitleChange: (title: string) => void;
   onBack?: () => void;
   autosaveLabel?: string;
+  trailingControl?: ReactNode;
 };
 
 export function NoteEditorHeader({
@@ -339,6 +340,7 @@ export function NoteEditorHeader({
   onTitleChange,
   onBack,
   autosaveLabel,
+  trailingControl,
 }: NoteEditorHeaderProps) {
   return (
     <div className="space-y-2">
@@ -369,6 +371,8 @@ export function NoteEditorHeader({
             {autosaveLabel}
           </p>
         ) : null}
+
+        {trailingControl}
       </div>
 
       <div

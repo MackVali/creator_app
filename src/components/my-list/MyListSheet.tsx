@@ -5987,7 +5987,61 @@ export function MyListSheet({
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            if (shouldExpandOnOpen) setIsExpanded(true);
+
+            // Resolve the live route at the exact moment the user opens
+            // My List. This avoids relying solely on persistent-shell
+            // pathname/effect timing in the iOS Capacitor WebView.
+            const livePathname =
+              typeof window !== "undefined" ? window.location.pathname : "";
+            const liveSegments = livePathname.split("/").filter(Boolean);
+
+            let contextualSystemKey: string | null = null;
+
+            if (
+              liveSegments.length === 2 &&
+              liveSegments[0] === "areas"
+            ) {
+              const areaId = liveSegments[1]?.trim().toLowerCase() ?? "";
+              if (AREAS.some((area) => area.id === areaId)) {
+                contextualSystemKey = getMyListAreaSystemKey(areaId);
+              }
+            } else if (
+              liveSegments.length === 2 &&
+              liveSegments[0] === "monuments"
+            ) {
+              const monumentId = liveSegments[1]?.trim() ?? "";
+              if (monumentId) {
+                contextualSystemKey =
+                  getMyListMonumentSystemKey(monumentId);
+              }
+            }
+
+            if (contextualSystemKey) {
+              const contextualList = customLists.find(
+                (list) =>
+                  list.systemKey?.trim().toLowerCase() ===
+                  contextualSystemKey,
+              );
+
+              if (contextualList) {
+                openSessionListSelectionRef.current = {
+                  initialized: true,
+                  manuallySelected: false,
+                  preferredSystemKey: contextualSystemKey,
+                };
+                setSelectedListId(contextualList.id);
+              }
+
+              // Area and Monument detail-page opens are deterministic:
+              // normal List presentation and full-height immediately.
+              setActiveView("list");
+              setIsDayLensActive(false);
+              setIsMonumentLensActive(false);
+              setIsExpanded(true);
+            } else if (shouldExpandOnOpen) {
+              setIsExpanded(true);
+            }
+
             onOpenChange(true);
           }}
           className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507] pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
