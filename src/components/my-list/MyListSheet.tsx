@@ -1885,6 +1885,38 @@ export function MyListSheet({
     }
   }, [customLists, selectedListId]);
   useEffect(() => {
+    if (open) return;
+
+    const preferredSystemKey =
+      preferredListSystemKeyOnOpen?.trim().toLowerCase() || null;
+
+    if (!preferredSystemKey) return;
+
+    const preferredList = customLists.find(
+      (list) =>
+        list.systemKey?.trim().toLowerCase() === preferredSystemKey,
+    );
+
+    if (!preferredList) return;
+
+    if (selectedListId !== preferredList.id) {
+      setSelectedListId(preferredList.id);
+    }
+
+    // Contextual Area/Monument openings should begin in the normal
+    // list presentation. View-mode changes made after opening remain
+    // user-controlled and do not affect list identity or Notes.
+    setActiveView("list");
+    setIsDayLensActive(false);
+    setIsMonumentLensActive(false);
+  }, [
+    customLists,
+    open,
+    preferredListSystemKeyOnOpen,
+    selectedListId,
+  ]);
+
+  useEffect(() => {
     const wasOpen = previousOpenRef.current;
     previousOpenRef.current = open;
 
@@ -3173,7 +3205,8 @@ export function MyListSheet({
     listContentHeight >= myListSheetHeights.expanded ||
     listContentHeight >=
       myListSheetHeights.expanded * LIST_COMPACT_EXPAND_THRESHOLD_RATIO;
-  const shouldExpandOnOpen = shouldExpandListOnOpen;
+  const shouldExpandOnOpen =
+    Boolean(preferredListSystemKeyOnOpen?.trim()) || shouldExpandListOnOpen;
   const compactSheetHeight =
     activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
   const rawCurrentSheetHeight = isExpanded
@@ -5877,10 +5910,10 @@ export function MyListSheet({
   }, [clearScheduleDragPress, isScheduleDragActive]);
 
   useEffect(() => {
-    if (open && activeView === "list" && shouldExpandListOnOpen) {
+    if (open && activeView === "list" && shouldExpandOnOpen) {
       setIsExpanded(true);
     }
-  }, [activeView, open, shouldExpandListOnOpen]);
+  }, [activeView, open, shouldExpandOnOpen]);
 
   const handleCreateList = useCallback(async () => {
     const name = newListName.trim();

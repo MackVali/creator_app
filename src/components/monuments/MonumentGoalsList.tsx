@@ -4436,6 +4436,61 @@ export function MonumentGoalsList({
     [fetchGoalForDisplay, goals, restoreGoalDrawerId]
   );
 
+  const handleGoalToggleActive = useCallback(
+    async (goal: Goal) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      const currentStatus = normalizeGoalStatus(goal.status, goal.active);
+      if (currentStatus === "COMPLETED") return;
+
+      const nextStatus = currentStatus === "PAUSED" ? "ACTIVE" : "PAUSED";
+      const nextActive = nextStatus === "ACTIVE";
+
+      try {
+        let resolvedUserId = userId;
+        if (!resolvedUserId) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          resolvedUserId = user?.id ?? null;
+        }
+
+        let query = supabase
+          .from("goals")
+          .update({ status: nextStatus, active: nextActive })
+          .eq("id", goal.id);
+
+        if (resolvedUserId) {
+          query = query.eq("user_id", resolvedUserId);
+        }
+
+        const { error } = await query;
+        if (error) {
+          throw error;
+        }
+
+        const applyToggledStatus = (currentGoal: Goal): Goal =>
+          currentGoal.id === goal.id
+            ? {
+                ...currentGoal,
+                status: nextStatus,
+                active: nextActive,
+              }
+            : currentGoal;
+
+        setGoals((prev) => prev.map(applyToggledStatus));
+        setRoadmapOpenGoal((current) =>
+          current?.id === goal.id ? applyToggledStatus(current) : current
+        );
+      } catch (err) {
+        console.error("Failed to toggle monument goal status:", err);
+        toast.error("Goal update failed", "Try again in a moment.");
+      }
+    },
+    [toast, userId]
+  );
+
   const getGoalEditOriginRect = useCallback((goalId: string) => {
     if (typeof document === "undefined") return null;
     const element = document.querySelector<HTMLElement>(
@@ -5701,6 +5756,7 @@ export function MonumentGoalsList({
             suppressReadyToast
             hideGoalEditAction
             onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+            onToggleActive={() => handleGoalToggleActive(roadmapOpenGoal)}
             onGoalLongPressEdit={handleGoalLongPressEdit}
             onProjectUpdated={(projectId, updates) =>
               handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
@@ -5974,6 +6030,9 @@ export function MonumentGoalsList({
                 completionTheme="border"
                 suppressReadyToast
                 onEdit={() => handleGoalEdit(openRoadmapGoalForSection)}
+                onToggleActive={() =>
+                  handleGoalToggleActive(openRoadmapGoalForSection)
+                }
                 onGoalLongPressEdit={handleGoalLongPressEdit}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(
@@ -6037,6 +6096,7 @@ export function MonumentGoalsList({
                 completionTheme="border"
                 suppressReadyToast
                 onEdit={() => handleGoalEdit(goal)}
+                onToggleActive={() => handleGoalToggleActive(goal)}
                 onGoalLongPressEdit={handleGoalLongPressEdit}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(goal.id, projectId, updates)
@@ -6194,6 +6254,7 @@ export function MonumentGoalsList({
     handleManualGoalComplete,
     handleManualGoalUndo,
     handleGoalOpenChange,
+    handleGoalToggleActive,
     handleCampaignAddGoal,
     handleAreaAddGoal,
     handleMonumentAddGoal,
