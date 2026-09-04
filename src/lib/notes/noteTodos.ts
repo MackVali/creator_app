@@ -8,7 +8,7 @@ export const NOTE_TODOS_METADATA_KEY = "noteTodos";
 export const NOTE_TODO_MARKER_PREFIX = "creator-note-todo:";
 export const NOTE_TODO_DEFAULT_PRIORITY: PriorityBucketId = "MEDIUM";
 
-export type NoteTodoOwnerType = "AREA" | "MONUMENT" | "SKILL";
+export type NoteTodoOwnerType = "AREA" | "MONUMENT" | "SKILL" | "GOAL";
 
 export type NoteTodoOwner = {
   type: NoteTodoOwnerType;

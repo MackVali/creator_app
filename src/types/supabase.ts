@@ -1913,6 +1913,55 @@ export type Database = {
           },
         ]
       }
+      goal_workspaces: {
+        Row: {
+          content: string
+          created_at: string
+          goal_id: string
+          metadata: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          goal_id: string
+          metadata?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          goal_id?: string
+          metadata?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goal_workspaces_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: true
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goal_workspaces_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: true
+            referencedRelation: "goals_write"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goal_workspaces_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: true
+            referencedRelation: "skill_goals"
+            referencedColumns: ["goal_id"]
+          },
+        ]
+      }
       habit_completion_days: {
         Row: {
           completed_at: string

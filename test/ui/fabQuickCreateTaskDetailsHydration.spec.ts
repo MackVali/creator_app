@@ -485,6 +485,20 @@ const submitUnifiedGoal = () => {
   });
 };
 
+const submitUnifiedCurrentType = () => {
+  const buttons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("button"),
+  );
+  const saveButton = buttons.find((button) =>
+    /^add (PROJECT|TASK)$/i.test(button.textContent?.trim() ?? ""),
+  );
+  expect(saveButton).toBeTruthy();
+  expect(saveButton?.disabled).toBe(false);
+  flushSync(() => {
+    saveButton?.click();
+  });
+};
+
 const getInsertedPayloadForTable = (tableName: string) => {
   const call = supabaseMutationState.insertCalls.find(
     (entry) => entry.tableName === tableName,
@@ -569,6 +583,7 @@ vi.mock("@/lib/supabase", () => ({
       })),
     },
     from: vi.fn((tableName: string) => createSupabaseBuilder(tableName)),
+    rpc: vi.fn(async () => ({ data: null, error: null })),
   }),
 }));
 
@@ -799,6 +814,74 @@ describe("Fab quick-create task details hydration", () => {
     expect(taskSheet.textContent).toContain("Starts");
     expect(taskSheet.textContent).toContain("Ends");
     expect(taskSheet.textContent).toContain("Recurrence");
+  });
+
+  it("preserves hydrated goal relation when switching a note todo into Project or Task", async () => {
+    const { Fab } = await import("../../components/ui/Fab");
+
+    flushSync(() => {
+      root.render(React.createElement(Fab, { hideLauncher: true }));
+    });
+    await nextTick();
+
+    flushSync(() => {
+      openQuickCreateTaskDetails({
+        energy: "MEDIUM",
+        goalId: CREATED_GOAL_ID,
+        noteOwnerId: CREATED_GOAL_ID,
+        noteOwnerType: "GOAL",
+        noteTodoId: "note-todo-1",
+        origin: "note-todo-upgrade",
+        priority: "HIGH",
+        skillId: "skill-health",
+        title: "Goal workspace todo",
+      });
+    });
+    await nextTick();
+
+    expect(getUnifiedTitleInput().value).toBe("Goal workspace todo");
+
+    selectUnifiedTaskSideType("PROJECT");
+    await nextTick();
+    submitUnifiedCurrentType();
+    await nextTick();
+    await nextTick();
+
+    expect(getInsertedPayloadForTable("projects")).toMatchObject({
+      goal_id: CREATED_GOAL_ID,
+      name: "Goal workspace todo",
+      priority: "HIGH",
+      user_id: "user-1",
+    });
+
+    supabaseMutationState.insertCalls = [];
+    flushSync(() => {
+      openQuickCreateTaskDetails({
+        goalId: CREATED_GOAL_ID,
+        noteOwnerId: CREATED_GOAL_ID,
+        noteOwnerType: "GOAL",
+        noteTodoId: "note-todo-2",
+        origin: "note-todo-upgrade",
+        priority: "LOW",
+        skillId: "skill-health",
+        title: "Goal workspace task",
+      });
+    });
+    await nextTick();
+
+    selectUnifiedTaskSideType("TASK");
+    await nextTick();
+    submitUnifiedCurrentType();
+    await nextTick();
+    await nextTick();
+
+    expect(getInsertedPayloadForTable("tasks")).toMatchObject({
+      goal_id: CREATED_GOAL_ID,
+      name: "Goal workspace task",
+      priority: "LOW",
+      skill_id: "skill-health",
+      user_id: "user-1",
+    });
   });
 
   it("shows Goal relationship controls only in the top relationship strip", async () => {

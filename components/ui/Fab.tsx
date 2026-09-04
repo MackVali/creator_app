@@ -221,10 +221,15 @@ type ScheduleQuickCreateTaskDetailsPayload = {
   endIso?: string | null;
   durationMin?: number | null;
   skillId?: string | null;
+  goalId?: string | null;
   priority?: string | null;
   energy?: string | null;
   origin?: string | null;
   sourceManualMyListItemId?: string | null;
+  noteTodoId?: string | null;
+  noteId?: string | null;
+  noteOwnerType?: string | null;
+  noteOwnerId?: string | null;
 };
 type UnifiedEventManualUpgradeSourceContext = {
   origin: "manual-my-list-upgrade";
@@ -20474,6 +20479,10 @@ export function Fab({
       const normalizedEnergy = normalizeFabEnergy(payload.energy);
       const payloadSkillId =
         typeof payload.skillId === "string" ? payload.skillId : "";
+      const payloadGoalId =
+        typeof payload.goalId === "string" && payload.goalId.trim()
+          ? payload.goalId.trim()
+          : null;
       const normalizedPriority = normalizeFabPriority(payload.priority);
 
       resetFabViewportState();
@@ -20553,6 +20562,9 @@ export function Fab({
         setTaskPriority(normalizedPriority);
         setTaskEnergy(normalizedEnergy);
         setTaskSkillId(payloadSkillId);
+        setTaskGoalId(payloadGoalId);
+        setProjectGoalId(payloadGoalId);
+        if (payloadGoalId) setTaskProjectId("");
         setHabitEnergy(normalizedEnergy);
         setHabitSkillId(payloadSkillId);
         if (hasExactSchedule && startDate && endDate) {

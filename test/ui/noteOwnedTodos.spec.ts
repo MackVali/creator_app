@@ -65,11 +65,13 @@ function Harness({
   initialValue,
   initialTodos,
   ownerType = "AREA",
+  ownerId = "skill-1",
   onTodosChange,
 }: {
   initialValue: string;
   initialTodos: NoteTodo[];
-  ownerType?: "AREA" | "MONUMENT" | "SKILL";
+  ownerType?: "AREA" | "MONUMENT" | "SKILL" | "GOAL";
+  ownerId?: string;
   onTodosChange?: (todos: NoteTodo[]) => void;
 }) {
   const [value, setValue] = useState(initialValue);
@@ -87,7 +89,7 @@ function Harness({
       document.body.dataset.noteTodos = JSON.stringify(nextTodos);
       onTodosChange?.(nextTodos);
     },
-    noteTodoOwner: { type: ownerType, id: "skill-1" },
+    noteTodoOwner: { type: ownerType, id: ownerId },
     skills,
     skillCategories,
     "aria-label": "Note editor",
@@ -406,7 +408,12 @@ describe("note-owned todos UI", () => {
     });
 
     focusTextbox(container, "Todo text");
-    const controlLabels = ["Choose Skill", "Todo priority Medium", "Remove todo structure"];
+    const controlLabels = [
+      "Choose Skill",
+      "Todo priority Medium",
+      "Remove todo structure",
+      "Reorder todo block",
+    ];
     for (const label of controlLabels) {
       const button = container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
       expect(button).toBeTruthy();
@@ -426,6 +433,48 @@ describe("note-owned todos UI", () => {
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "schedule:open-quick-create-task-details",
+      }),
+    );
+
+    await unmount(root);
+  });
+
+  it("includes the owning goal when a goal-owned todo opens details", async () => {
+    const todo: NoteTodo = {
+      id: "todo-1",
+      title: "Call dentist",
+      completed: false,
+      priority: "HIGH",
+      skillId: "skill-2",
+      energy: "MEDIUM",
+    };
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    const { container, root } = await renderHarness({
+      initialValue: buildNoteTodoMarker(todo.id),
+      initialTodos: [todo],
+      ownerType: "GOAL",
+      ownerId: "goal-1",
+    });
+
+    const row = container.querySelector('[aria-label="Todo text"]')?.parentElement;
+    expect(row).toBeTruthy();
+    act(() => {
+      pointerDown(row as HTMLElement, 10);
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "schedule:open-quick-create-task-details",
+        detail: expect.objectContaining({
+          title: "Call dentist",
+          priority: "HIGH",
+          skillId: "skill-2",
+          goalId: "goal-1",
+          noteTodoId: "todo-1",
+          noteOwnerType: "GOAL",
+          noteOwnerId: "goal-1",
+        }),
       }),
     );
 

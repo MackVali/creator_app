@@ -47,6 +47,7 @@ interface ProjectsDropdownProps {
   projectTasksOnly?: boolean;
   onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
+  hideAddProjectControl?: boolean;
   campaignDrawerXpSource?: boolean;
   campaignDrawerRowOverrides?: CampaignDrawerRowLifecycleById;
   newProjectRevealId?: string | null;
@@ -124,6 +125,7 @@ export function ProjectsDropdown({
   projectTasksOnly = false,
   onAddProject,
   addingProject = false,
+  hideAddProjectControl = false,
   campaignDrawerXpSource = false,
   campaignDrawerRowOverrides,
   onTaskToggleCompletion,
@@ -419,6 +421,7 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
+        {!hideAddProjectControl ? (
         <div className="pt-1">
           <button
             type="button"
@@ -447,6 +450,7 @@ export function ProjectsDropdown({
             </span>
           </button>
         </div>
+        ) : null}
       </div>
     </div>
   );

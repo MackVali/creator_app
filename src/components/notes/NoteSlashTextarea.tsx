@@ -23670,6 +23670,8 @@ function NoteSlashTextarea({
         detail: {
           title,
           skillId: todo.skillId,
+          goalId:
+            noteTodoOwner?.type === "GOAL" ? noteTodoOwner.id : null,
           priority: todo.priority,
           energy: todo.energy,
           origin: "note-todo-upgrade",
@@ -24782,10 +24784,10 @@ function NoteSlashTextarea({
             }
 
             if (segment.type === "checklist") {
-              const isActiveChecklist = activeEditableSegmentIndex === index;
-              const canPromoteChecklist =
-                segment.text.trim().length > 0 &&
+              const canShowChecklistPromotion =
                 Boolean(noteTodoOwner?.id && onNoteTodosChange);
+              const canPromoteChecklist =
+                canShowChecklistPromotion && segment.text.trim().length > 0;
               return renderSortableSegment(
                 index,
                 segment,
@@ -24815,18 +24817,20 @@ function NoteSlashTextarea({
                 }`,
                 ariaLabel: "Checklist item text",
               })}
-              {isActiveChecklist && canPromoteChecklist ? (
+              {canShowChecklistPromotion ? (
                 <button
                   type="button"
                   aria-label="Promote checklist item to todo"
                   title="Promote to todo"
+                  disabled={!canPromoteChecklist}
                   onPointerDown={(event) => event.preventDefault()}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (!canPromoteChecklist) return;
                     promoteChecklistSegment(index);
                   }}
-                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.055] bg-white/[0.025] text-white/32 outline-none transition hover:border-emerald-300/20 hover:bg-emerald-300/[0.08] hover:text-emerald-100/78 focus-visible:ring-1 focus-visible:ring-emerald-200/24"
+                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-white/70 outline-none transition hover:border-emerald-300/25 hover:bg-emerald-300/[0.08] hover:text-emerald-100 focus-visible:ring-1 focus-visible:ring-emerald-200/24 disabled:cursor-default disabled:opacity-25"
                 >
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </button>
