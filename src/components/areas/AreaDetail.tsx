@@ -6,7 +6,7 @@ import { Timer } from "lucide-react";
 import { AreaSkillRelations } from "@/components/areas/AreaSkillRelations";
 import { BodyAreaDashboard } from "@/components/areas/BodyAreaDashboard";
 import { MindAreaDashboard } from "@/components/areas/MindAreaDashboard";
-import { MoneyAreaDashboard } from "@/components/areas/MoneyAreaDashboard";
+import { MoneyAreaDashboardV2 } from "@/components/areas/MoneyAreaDashboardV2";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import ActivityPanel from "@/components/monuments/ActivityPanel";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
@@ -204,7 +204,7 @@ export function AreaDetail({
 
         {area.id === "money" ? (
           <section className="min-w-0">
-            <MoneyAreaDashboard />
+            <MoneyAreaDashboardV2 />
           </section>
         ) : null}
 
