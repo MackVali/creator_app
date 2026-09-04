@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  type ChangeEvent as ReactChangeEvent,
   type CSSProperties as ReactCSSProperties,
   useEffect,
   useMemo,
@@ -83,6 +82,11 @@ import {
   type MyListList,
 } from "@/lib/my-list/myListListsStorage";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
+import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
+import {
+  NoteSlashTextarea,
+  type NoteSlashTextareaHandle,
+} from "@/components/notes/NoteSlashTextarea";
 import {
   PRIORITY_LABELS,
   PRIORITY_ORDER,
@@ -1675,6 +1679,9 @@ export function MyListSheet({
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
+  const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
+  const notesEditorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [isNotesEditorActive, setIsNotesEditorActive] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeView, setActiveView] = useState<MyListActiveView>(() =>
     readStoredMyListViewModePreference(userId) === "matrix" ? "matrix" : "list",
@@ -2762,8 +2769,7 @@ export function MyListSheet({
   }, [creatorDayBoundaryNow]);
 
   const handleNoteChange = useCallback(
-    (event: ReactChangeEvent<HTMLTextAreaElement>) => {
-      const nextNote = event.target.value;
+    (nextNote: string) => {
       setNote(nextNote);
 
       if (typeof window === "undefined") return;
@@ -2778,6 +2784,22 @@ export function MyListSheet({
       }
     },
     [selectedListId],
+  );
+
+  const handleNotesEditorSurfaceBlur = useCallback(
+    (event: ReactFocusEvent<HTMLDivElement>) => {
+      const nextFocusedElement = event.relatedTarget;
+      const editorSurface = notesEditorSurfaceRef.current ?? event.currentTarget;
+      if (
+        nextFocusedElement instanceof Node &&
+        editorSurface.contains(nextFocusedElement)
+      ) {
+        return;
+      }
+
+      setIsNotesEditorActive(false);
+    },
+    [],
   );
 
   const resolveTaskPriorityId = useCallback(
@@ -8421,18 +8443,38 @@ export function MyListSheet({
                   </div>
                 </SortableContext>
               </DndContext>
-              <div className="border-t border-white/[0.055] pt-2">
-                <textarea
+              <div
+                ref={notesEditorSurfaceRef}
+                className="border-t border-white/[0.055] pt-2"
+                onFocus={() => setIsNotesEditorActive(true)}
+                onBlur={handleNotesEditorSurfaceBlur}
+                onPointerDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">
+                  Notes
+                </p>
+                <NoteSlashTextarea
+                  ref={noteTextareaRef}
                   value={note}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={handleNoteChange}
+                  onValueChange={handleNoteChange}
                   placeholder="Notes..."
-                  tabIndex={open ? 0 : -1}
-                  className="min-h-24 w-full resize-none rounded-lg bg-transparent px-3 py-2 text-sm leading-relaxed text-white/86 outline-none placeholder:text-white/30 focus:bg-white/[0.025]"
+                  excludedSlashCommandIds={["subpage", "database"]}
+                  className="min-h-24 w-full rounded-lg bg-transparent px-3 py-2 text-sm leading-relaxed text-white/86 outline-none transition focus-within:bg-white/[0.025] [&_[data-note-editable-segment-id]]:text-sm [&_[data-note-editable-segment-id]]:leading-relaxed [&_[data-note-editable-segment-id]]:text-white/86 [&_[data-note-editable-segment-id]]:placeholder:text-white/30"
+                  aria-label="List notes"
                 />
+                {isNotesEditorActive ? (
+                  <NoteTextActionBar
+                    onFormat={(command) =>
+                      noteTextareaRef.current?.applyTextFormat(command)
+                    }
+                    onBlockFormat={(format) =>
+                      noteTextareaRef.current?.applyBlockFormat(format)
+                    }
+                  />
+                ) : null}
               </div>
             </>
           ) : (
