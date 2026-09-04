@@ -48,6 +48,7 @@ interface ProjectsDropdownProps {
   onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
   hideAddProjectControl?: boolean;
+  workspaceEmbedded?: boolean;
   campaignDrawerXpSource?: boolean;
   campaignDrawerRowOverrides?: CampaignDrawerRowLifecycleById;
   newProjectRevealId?: string | null;
@@ -126,6 +127,7 @@ export function ProjectsDropdown({
   onAddProject,
   addingProject = false,
   hideAddProjectControl = false,
+  workspaceEmbedded = false,
   campaignDrawerXpSource = false,
   campaignDrawerRowOverrides,
   onTaskToggleCompletion,
@@ -355,7 +357,11 @@ export function ProjectsDropdown({
       aria-label={
         projectTasksOnly ? `Tasks for ${goalTitle}` : `Projects for ${goalTitle}`
       }
-      className="overflow-hidden px-1.5 pb-2.5 pt-1.5 sm:px-2 sm:pb-3 sm:pt-2"
+      className={
+        workspaceEmbedded
+          ? "overflow-visible px-0 pb-3 pt-0"
+          : "overflow-hidden px-1.5 pb-2.5 pt-1.5 sm:px-2 sm:pb-3 sm:pt-2"
+      }
     >
       <div className="space-y-2.5 text-sm text-white/70">
         {loading ? (

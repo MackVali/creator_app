@@ -2179,6 +2179,7 @@ export type NoteBlockFormat =
 export type NoteSlashTextareaHandle = {
   applyTextFormat: (action: NoteTextFormatAction) => void;
   applyBlockFormat: (format: NoteBlockFormat) => void;
+  insertTodo: () => void;
 };
 
 type NoteTextSegment = {
@@ -23092,6 +23093,7 @@ function NoteSlashTextarea({
     () => ({
       applyTextFormat,
       applyBlockFormat,
+      insertTodo,
     }),
     [applyBlockFormat, applyTextFormat],
   );
@@ -23630,6 +23632,34 @@ function NoteSlashTextarea({
       type: "checklist",
       segmentIndex,
       caretPosition: todo.title.length,
+    });
+  }
+
+  function insertTodo() {
+    if (!noteTodoOwner?.id || !onNoteTodosChange) return;
+
+    const todo: NoteTodo = {
+      id: createNoteTodoId(),
+      title: "",
+      completed: false,
+      priority: NOTE_TODO_DEFAULT_PRIORITY,
+      skillId: noteTodoOwner.type === "SKILL" ? noteTodoOwner.id : null,
+      energy: "MEDIUM",
+    };
+
+    const segmentIndex = segments.length;
+    const nextSegments = [
+      ...segments,
+      { type: "noteTodo" as const, todoId: todo.id },
+    ];
+
+    onNoteTodosChange(upsertNoteTodo(normalizedNoteTodos, todo));
+    onValueChange(serializeNoteSegments(nextSegments));
+
+    setPendingSelection({
+      type: "noteTodo",
+      segmentIndex,
+      caretPosition: 0,
     });
   }
 
@@ -24862,6 +24892,7 @@ function NoteSlashTextarea({
                 segment,
             <div
               key={`${index}-note-todo`}
+              data-note-todo-row
               onPointerDown={(event) => startNoteTodoUpgradePointerPress(event, todo)}
               onPointerMove={handleNoteTodoUpgradePointerMove}
               onPointerUp={handleNoteTodoUpgradePointerEnd}
