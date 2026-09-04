@@ -66,9 +66,12 @@ export function GoalWorkspace({
   const textareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedGoalIdRef = useRef<string | null>(null);
+  const contentRef = useRef("");
+  const noteTodosRef = useRef<NoteTodo[]>([]);
   const [content, setContent] = useState("");
   const [noteTodos, setNoteTodos] = useState<NoteTodo[]>([]);
   const [editorActive, setEditorActive] = useState(false);
+  const [editingTodo, setEditingTodo] = useState(false);
   const [skills, setSkills] = useState<SkillRow[]>([]);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
 
@@ -114,25 +117,70 @@ export function GoalWorkspace({
   }, []);
 
   useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
+  useEffect(() => {
+    noteTodosRef.current = noteTodos;
+  }, [noteTodos]);
+
+  const flushWorkspaceSave = useCallback(() => {
+    if (loadedGoalIdRef.current !== goal.id) return;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    void saveGoalWorkspace({
+      goalId: goal.id,
+      content: contentRef.current,
+      noteTodos: noteTodosRef.current,
+    });
+  }, [goal.id]);
+
+  useEffect(() => {
     if (loadedGoalIdRef.current !== goal.id) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = setTimeout(() => {
-      void saveGoalWorkspace({
-        goalId: goal.id,
-        content,
-        noteTodos,
-      });
+      saveTimerRef.current = null;
+      flushWorkspaceSave();
     }, SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [content, goal.id, noteTodos]);
+  }, [content, flushWorkspaceSave, goal.id, noteTodos]);
 
-  const handleEditorFocusCapture = useCallback(() => {
-    setEditorActive(true);
-  }, []);
+  useEffect(() => {
+    return () => {
+      if (loadedGoalIdRef.current !== goal.id) return;
+
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      void saveGoalWorkspace({
+        goalId: goal.id,
+        content: contentRef.current,
+        noteTodos: noteTodosRef.current,
+      });
+    };
+  }, [goal.id]);
+
+  const handleEditorFocusCapture = useCallback(
+    (event: ReactFocusEvent<HTMLDivElement>) => {
+      setEditorActive(true);
+
+      const target =
+        event.target instanceof HTMLElement ? event.target : null;
+
+      setEditingTodo(Boolean(target?.closest("[data-note-todo-row]")));
+    },
+    [],
+  );
 
   const handleEditorBlurCapture = useCallback(
     (event: ReactFocusEvent<HTMLDivElement>) => {
@@ -140,13 +188,20 @@ export function GoalWorkspace({
         return;
       }
       setEditorActive(false);
+      setEditingTodo(false);
+      flushWorkspaceSave();
     },
     [],
   );
 
   return (
-    <div className="space-y-4">
-      <div className="relative">
+    <div>
+      <div
+        className="relative isolate min-h-48 bg-black px-1 py-2 text-white"
+        onFocusCapture={handleEditorFocusCapture}
+        onBlurCapture={handleEditorBlurCapture}
+        data-goal-workspace-editor
+      >
         <ProjectRowTaskInteractionsProvider
           value={{ goalId: goal.id, onTaskEditOpen, onTaskToggleCompletion }}
         >
@@ -161,19 +216,13 @@ export function GoalWorkspace({
             projectTasksOnly={projectDropdownMode === "tasks-only"}
             onTaskToggleCompletion={onTaskToggleCompletion}
             hideAddProjectControl
+            workspaceEmbedded
           />
         </ProjectRowTaskInteractionsProvider>
-      </div>
 
-      <div
-        className="relative isolate min-h-48 bg-black px-1 py-2 text-white"
-        onFocusCapture={handleEditorFocusCapture}
-        onBlurCapture={handleEditorBlurCapture}
-        data-goal-workspace-editor
-      >
         <div
           className={`pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center px-1 transition-[opacity,transform] duration-150 ${
-            editorActive
+            editorActive && !editingTodo
               ? "translate-y-0 opacity-100"
               : "translate-y-1 opacity-0"
           }`}
@@ -207,6 +256,7 @@ export function GoalWorkspace({
           className={`min-h-40 w-full border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
           aria-label="Goal workspace"
         />
+
       </div>
 
       <style jsx global>{`
