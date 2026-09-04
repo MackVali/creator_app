@@ -44,6 +44,15 @@ type NoteRelationType = "area" | "monument" | "skill";
 const DEFAULT_SKILL_ICON = "🧩";
 const UNCATEGORIZED_SKILL_GROUP_ID = "__uncategorized_skill_group__";
 const UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
+const KEYBOARD_ACCESSORY_THRESHOLD_PX = 100;
+const KEYBOARD_ACCESSORY_SIDE_PADDING_PX = 12;
+const KEYBOARD_ACCESSORY_SCROLL_PADDING_PX = 72;
+
+type KeyboardAccessoryGeometry = {
+  inset: number;
+  left: number;
+  width: number;
+};
 
 type SkillCategoryGroup = {
   id: string;
@@ -97,6 +106,7 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
   const toast = useToastHelpers();
   const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const modalPanelRef = useRef<HTMLDivElement | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [noteTodoUserId, setNoteTodoUserId] = useState<string | null>(null);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
@@ -104,6 +114,12 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
   const [relationType, setRelationType] = useState<NoteRelationType | null>(null);
   const [isRelationPickerOpen, setIsRelationPickerOpen] = useState(false);
   const [isEditorActive, setIsEditorActive] = useState(false);
+  const [keyboardAccessoryGeometry, setKeyboardAccessoryGeometry] =
+    useState<KeyboardAccessoryGeometry>({
+      inset: 0,
+      left: KEYBOARD_ACCESSORY_SIDE_PADDING_PX,
+      width: 0,
+    });
   const [formData, setFormData] = useState({
     areaId: "",
     skillId: "",
@@ -128,6 +144,85 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
       setIsEditorActive(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !mounted || typeof window === "undefined") return;
+
+    let animationFrameId: number | null = null;
+
+    const measureKeyboardAccessoryGeometry = () => {
+      animationFrameId = null;
+
+      const viewport = window.visualViewport;
+      const layoutHeight = window.innerHeight;
+      const visualHeight = viewport?.height ?? layoutHeight;
+      const visualTop = viewport?.offsetTop ?? 0;
+      const visualLeft = viewport?.offsetLeft ?? 0;
+      const visualWidth = viewport?.width ?? window.innerWidth;
+      const visualRight = visualLeft + visualWidth;
+      const keyboardInset = Math.max(
+        0,
+        Math.round(layoutHeight - (visualHeight + visualTop)),
+      );
+      const panelRect = modalPanelRef.current?.getBoundingClientRect();
+      const fallbackWidth = Math.max(
+        0,
+        Math.min(560, visualWidth - KEYBOARD_ACCESSORY_SIDE_PADDING_PX * 2),
+      );
+      const fallbackLeft =
+        visualLeft +
+        Math.max(
+          KEYBOARD_ACCESSORY_SIDE_PADDING_PX,
+          (visualWidth - fallbackWidth) / 2,
+        );
+      const unclampedLeft = panelRect?.left ?? fallbackLeft;
+      const unclampedRight = panelRect?.right ?? fallbackLeft + fallbackWidth;
+      const left = Math.max(
+        visualLeft + KEYBOARD_ACCESSORY_SIDE_PADDING_PX,
+        Math.round(unclampedLeft),
+      );
+      const right = Math.min(
+        visualRight - KEYBOARD_ACCESSORY_SIDE_PADDING_PX,
+        Math.round(unclampedRight),
+      );
+      const width = Math.max(0, right - left);
+
+      setKeyboardAccessoryGeometry((current) => {
+        if (
+          current.inset === keyboardInset &&
+          current.left === left &&
+          current.width === width
+        ) {
+          return current;
+        }
+
+        return { inset: keyboardInset, left, width };
+      });
+    };
+
+    const scheduleMeasure = () => {
+      if (animationFrameId !== null) return;
+      animationFrameId = window.requestAnimationFrame(
+        measureKeyboardAccessoryGeometry,
+      );
+    };
+
+    const observedVisualViewport = window.visualViewport;
+
+    measureKeyboardAccessoryGeometry();
+    window.addEventListener("resize", scheduleMeasure);
+    observedVisualViewport?.addEventListener("resize", scheduleMeasure);
+    observedVisualViewport?.addEventListener("scroll", scheduleMeasure);
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      window.removeEventListener("resize", scheduleMeasure);
+      observedVisualViewport?.removeEventListener("resize", scheduleMeasure);
+      observedVisualViewport?.removeEventListener("scroll", scheduleMeasure);
+    };
+  }, [isOpen, mounted]);
 
   useEffect(() => {
     const loadTargets = async () => {
@@ -367,6 +462,17 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
     hasSelectedRelation &&
     (formData.title.trim().length > 0 || formData.content.trim().length > 0) &&
     !isSaving;
+  const isKeyboardAccessoryActive =
+    isEditorActive &&
+    keyboardAccessoryGeometry.inset >= KEYBOARD_ACCESSORY_THRESHOLD_PX;
+  const formScrollPaddingBottom = isKeyboardAccessoryActive
+    ? KEYBOARD_ACCESSORY_SCROLL_PADDING_PX
+    : undefined;
+  const modalKeyboardAccessoryStyle = {
+    "--note-modal-keyboard-inset": `${keyboardAccessoryGeometry.inset}px`,
+    "--note-modal-toolbar-left": `${keyboardAccessoryGeometry.left}px`,
+    "--note-modal-toolbar-width": `${keyboardAccessoryGeometry.width}px`,
+  } as React.CSSProperties;
   const noteTodoOwner: NoteTodoOwner | null =
     relationType === "area" && formData.areaId
       ? { type: "AREA", id: formData.areaId }
@@ -739,7 +845,12 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
   return createPortal(
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/76 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-md sm:p-5">
       <div
+        ref={modalPanelRef}
         data-add-note-modal
+        data-keyboard-accessory-active={
+          isKeyboardAccessoryActive ? "true" : undefined
+        }
+        style={modalKeyboardAccessoryStyle}
         className={`flex max-h-[min(calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom)),760px)] w-full max-w-[560px] flex-col overflow-hidden rounded-[26px] border border-white/[0.08] ${NOTE_SOFT_OLED_CLASSES.surface} ${NOTE_SOFT_OLED_CLASSES.body} shadow-[0_28px_90px_-36px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,0.055)]`}
       >
         <div className="px-4 pb-2 pt-4 sm:px-5 sm:pt-5">
@@ -766,6 +877,10 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
         <form
           onSubmit={handleSubmit}
           className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-2 [-webkit-overflow-scrolling:touch] sm:px-5 sm:pb-5"
+          style={{
+            paddingBottom: formScrollPaddingBottom,
+            scrollPaddingBottom: formScrollPaddingBottom,
+          }}
         >
           <div
             ref={editorSurfaceRef}
@@ -844,6 +959,24 @@ export function NoteModal({ isOpen, onClose, forceTopLevel = false }: NoteModalP
           [data-add-note-modal] [data-note-text-action-bar] > div {
             align-items: flex-start;
             max-width: none;
+          }
+
+          [data-add-note-modal][data-keyboard-accessory-active="true"]
+            [data-note-text-action-bar] {
+            position: fixed !important;
+            bottom: var(--note-modal-keyboard-inset) !important;
+            left: var(--note-modal-toolbar-left) !important;
+            right: auto !important;
+            width: var(--note-modal-toolbar-width) !important;
+            z-index: 60;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+          }
+
+          [data-add-note-modal][data-keyboard-accessory-active="true"]
+            [data-note-text-action-bar]
+            > div {
+            align-items: center;
           }
         `}</style>
       </div>

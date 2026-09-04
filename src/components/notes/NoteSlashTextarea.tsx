@@ -2128,6 +2128,7 @@ type NoteSlashTextareaProps = {
   onOpenDatabase?: (databaseId: string) => void | Promise<void>;
   placeholder?: string;
   className?: string;
+  excludedSlashCommandIds?: readonly SlashCommandId[];
   "aria-label"?: string;
 };
 
@@ -22455,6 +22456,7 @@ function NoteSlashTextarea({
   onOpenDatabase,
   placeholder,
   className,
+  excludedSlashCommandIds,
   "aria-label": ariaLabel,
 }: NoteSlashTextareaProps, ref) {
   const textareaRefs = useRef(new Map<number, EditableTextControl>());
@@ -22492,6 +22494,14 @@ function NoteSlashTextarea({
   );
 
   const segments = useMemo(() => parseNoteSegments(value), [value]);
+  const enabledSlashCommands = useMemo(() => {
+    if (!excludedSlashCommandIds || excludedSlashCommandIds.length === 0) {
+      return SLASH_COMMANDS;
+    }
+
+    const excludedIds = new Set<SlashCommandId>(excludedSlashCommandIds);
+    return SLASH_COMMANDS.filter((command) => !excludedIds.has(command.id));
+  }, [excludedSlashCommandIds]);
   const normalizedNoteTodos = useMemo(() => noteTodos ?? [], [noteTodos]);
   const noteTodoById = useMemo(() => {
     const map = new Map<string, NoteTodo>();
@@ -22588,6 +22598,13 @@ function NoteSlashTextarea({
     () => normalizeDatabaseDefinitionsForSegments(segments, databaseDefinitions).definitions,
     [databaseDefinitions, segments],
   );
+
+  useEffect(() => {
+    setSelectedCommandIndex((currentIndex) =>
+      currentIndex >= enabledSlashCommands.length ? 0 : currentIndex,
+    );
+  }, [enabledSlashCommands.length]);
+
   const nutritionDatabaseId = useMemo(() => {
     return segments.find((segment): segment is NoteDatabaseSegment => {
       if (segment.type !== "database") return false;
@@ -24390,6 +24407,11 @@ function NoteSlashTextarea({
 
     if (!isMenuOpen) return;
 
+    if (enabledSlashCommands.length === 0) {
+      closeMenu();
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       closeMenu();
@@ -24398,21 +24420,23 @@ function NoteSlashTextarea({
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setSelectedCommandIndex((current) => (current + 1) % SLASH_COMMANDS.length);
+      setSelectedCommandIndex((current) => (current + 1) % enabledSlashCommands.length);
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setSelectedCommandIndex(
-        (current) => (current - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length,
+        (current) =>
+          (current - 1 + enabledSlashCommands.length) % enabledSlashCommands.length,
       );
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      void applyCommand(SLASH_COMMANDS[selectedCommandIndex]);
+      const selectedCommand = enabledSlashCommands[selectedCommandIndex];
+      if (selectedCommand) void applyCommand(selectedCommand);
     }
   }
 
@@ -25236,7 +25260,7 @@ function NoteSlashTextarea({
           aria-label="Slash commands"
           className="note-slash-command-menu fixed inset-x-4 z-[60] overflow-y-auto overscroll-contain rounded-[22px] border border-white/10 bg-[#090909]/95 p-1.5 shadow-[0_24px_70px_-28px_rgba(0,0,0,0.95)] backdrop-blur-xl md:absolute md:left-0 md:right-auto md:w-80 md:overflow-hidden"
         >
-          {SLASH_COMMANDS.map((command, index) => {
+          {enabledSlashCommands.map((command, index) => {
             const Icon = command.icon;
             const isSelected = index === selectedCommandIndex;
 
