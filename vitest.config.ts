@@ -43,6 +43,14 @@ export default defineConfig({
         replacement: path.resolve(projectRoot, "components/ui/button.tsx"),
       },
       {
+        find: "@/components/ui/Progress",
+        replacement: path.resolve(projectRoot, "components/ui/Progress.tsx"),
+      },
+      {
+        find: "@/components/ui/toast",
+        replacement: path.resolve(projectRoot, "components/ui/toast.tsx"),
+      },
+      {
         find: "@/components/ui/input",
         replacement: path.resolve(projectRoot, "components/ui/input.tsx"),
       },

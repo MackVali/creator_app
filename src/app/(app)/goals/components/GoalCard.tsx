@@ -8,37 +8,28 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import dynamic from "next/dynamic";
 import {
   ChevronDown,
   MoreVertical,
   Pause,
   PencilLine,
   Play,
+  Plus,
   Sparkles,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Goal, Project, Task } from "../types";
 import {
-  ProjectRowTaskInteractionsProvider,
   type ProjectCardMorphOrigin,
 } from "./ProjectRow";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { normalizeGoalStatus } from "@/lib/goals/status";
-// Lazy-load dropdown contents to reduce initial bundle and re-render cost
-const ProjectsDropdown = dynamic(
-  () => import("./ProjectsDropdown").then((m) => m.ProjectsDropdown),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-24 w-full animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" />
-    ),
-  }
-);
+import { GoalWorkspace } from "./GoalWorkspace";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -183,6 +174,8 @@ const drawerCompactDropdownCloseTransition = {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
+
+type MotionDivProps = ComponentProps<typeof motion.div>;
 
 const detailRevealVariant = {
   hidden: { opacity: 0, height: 0, y: 6 },
@@ -599,6 +592,8 @@ function GoalCardImpl({
       setAddingProject(false);
     }
   }, [addingProject, fabCreation, goal.id, onAddTask, projectDropdownMode]);
+  const canAddProjectFromHeader =
+    projectDropdownMode === "tasks-only" ? Boolean(onAddTask) : Boolean(fabCreation);
 
   const closeProjectEditor = useCallback(() => {
     setEditingProject(null);
@@ -687,7 +682,7 @@ function GoalCardImpl({
     0.85,
     1.45
   );
-  const drawerCompactMeasuredDetailMotionProps = prefersReducedMotion
+  const drawerCompactMeasuredDetailMotionProps: MotionDivProps = prefersReducedMotion
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
@@ -723,7 +718,7 @@ function GoalCardImpl({
           },
         },
       };
-  const drawerCompactMeasuredContentMotionProps = prefersReducedMotion
+  const drawerCompactMeasuredContentMotionProps: MotionDivProps = prefersReducedMotion
     ? {
         initial: false,
       }
@@ -751,7 +746,7 @@ function GoalCardImpl({
           },
         },
       };
-  const detailMotionProps = prefersReducedMotion
+  const detailMotionProps: MotionDivProps = prefersReducedMotion
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
@@ -858,7 +853,6 @@ function GoalCardImpl({
                     onProjectLongPress={handleProjectLongPress}
                     onProjectUpdated={onProjectUpdated}
                     projectDropdownMode={projectDropdownMode}
-                    goalId={goal.id}
                     onAddProject={handleAddProject}
                     addingProject={addingProject}
                     onEdit={onEdit}
@@ -945,7 +939,6 @@ function GoalCardImpl({
                   onProjectLongPress={handleProjectLongPress}
                   onProjectUpdated={onProjectUpdated}
                   projectDropdownMode={projectDropdownMode}
-                  goalId={goal.id}
                   onAddProject={handleAddProject}
                   addingProject={addingProject}
                   onEdit={onEdit}
@@ -1183,104 +1176,133 @@ function GoalCardImpl({
               )}
             </motion.button>
 
-            <div className="relative">
-              <button
-                type="button"
-                aria-label="Goal actions"
-                className={
-                  isDrawerCompactDefault
-                    ? "rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20"
-                    : "rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/85"
-                }
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  console.log("🎯 Three dots clicked, onEdit:", !!onEdit);
-                  // Simple custom dropdown toggle
-                  const dropdown = document.getElementById(
-                    `dropdown-${goal.id}`
-                  );
-                  if (dropdown) {
-                    dropdown.classList.toggle("hidden");
-                    console.log("🎯 Toggled dropdown visibility");
-                  } else {
-                    console.log("🎯 Dropdown element not found");
-                  }
-                }}
-              >
-                <MoreVertical
+            <div className="flex items-center gap-1">
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Goal actions"
                   className={
                     isDrawerCompactDefault
-                      ? "h-3.5 w-3.5"
-                      : "h-3.5 w-3.5 sm:h-4 sm:w-4"
+                      ? "rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20"
+                      : "rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/85"
                   }
-                />
-              </button>
-              <div
-                id={`dropdown-${goal.id}`}
-                className="absolute right-0 top-full mt-1 hidden z-50 w-48 rounded-md border border-white/10 bg-black shadow-lg"
-              >
-                <div className="py-1">
-                  {canToggleGoalStatus ? (
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    console.log("🎯 Three dots clicked, onEdit:", !!onEdit);
+                    // Simple custom dropdown toggle
+                    const dropdown = document.getElementById(
+                      `dropdown-${goal.id}`
+                    );
+                    if (dropdown) {
+                      dropdown.classList.toggle("hidden");
+                      console.log("🎯 Toggled dropdown visibility");
+                    } else {
+                      console.log("🎯 Dropdown element not found");
+                    }
+                  }}
+                >
+                  <MoreVertical
+                    className={
+                      isDrawerCompactDefault
+                        ? "h-3.5 w-3.5"
+                        : "h-3.5 w-3.5 sm:h-4 sm:w-4"
+                    }
+                  />
+                </button>
+                <div
+                  id={`dropdown-${goal.id}`}
+                  className="absolute right-0 top-full mt-1 hidden z-50 w-48 rounded-md border border-white/10 bg-black shadow-lg"
+                >
+                  <div className="py-1">
+                    {canToggleGoalStatus ? (
+                      <button
+                        className="flex w-full items-center px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          console.log("🎯 Toggle active button clicked");
+                          document
+                            .getElementById(`dropdown-${goal.id}`)
+                            ?.classList.add("hidden");
+                          onToggleActive?.();
+                        }}
+                      >
+                        <GoalStatusActionIcon
+                          aria-hidden="true"
+                          className="mr-2 h-3.5 w-3.5 text-white/65"
+                        />
+                        {goalStatusActionLabel}
+                      </button>
+                    ) : null}
                     <button
                       className="flex w-full items-center px-4 py-2 text-left text-sm text-white hover:bg-white/10"
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        console.log("🎯 Toggle active button clicked");
+                        console.log("🎯 Edit button clicked");
                         document
                           .getElementById(`dropdown-${goal.id}`)
                           ?.classList.add("hidden");
-                        onToggleActive?.();
+                        toggle();
+                        window.requestAnimationFrame(() => {
+                          onEdit?.();
+                        });
                       }}
                     >
-                      <GoalStatusActionIcon
+                      <PencilLine
                         aria-hidden="true"
                         className="mr-2 h-3.5 w-3.5 text-white/65"
                       />
-                      {goalStatusActionLabel}
+                      Edit
                     </button>
-                  ) : null}
-                  <button
-                    className="flex w-full items-center px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      console.log("🎯 Edit button clicked");
-                      document
-                        .getElementById(`dropdown-${goal.id}`)
-                        ?.classList.add("hidden");
-                      onClose();
-                window.requestAnimationFrame(() => {
-                  onClose();
-                window.requestAnimationFrame(() => {
-                  onEdit?.();
-                });
-                });
-                    }}
-                  >
-                    <PencilLine
-                      aria-hidden="true"
-                      className="mr-2 h-3.5 w-3.5 text-white/65"
-                    />
-                    Edit
-                  </button>
-                  <button
-                    className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      console.log("🎯 Delete button clicked");
-                      document
-                        .getElementById(`dropdown-${goal.id}`)
-                        ?.classList.add("hidden");
-                      onDelete?.();
-                    }}
-                  >
-                    Delete
-                  </button>
+                    <button
+                      className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        console.log("🎯 Delete button clicked");
+                        document
+                          .getElementById(`dropdown-${goal.id}`)
+                          ?.classList.add("hidden");
+                        onDelete?.();
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
+              {open && canAddProjectFromHeader ? (
+                <button
+                  type="button"
+                  aria-label="Add project"
+                  disabled={addingProject}
+                  className={
+                    isDrawerCompactDefault
+                      ? "rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20 disabled:pointer-events-none disabled:opacity-35"
+                      : "rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/85 disabled:pointer-events-none disabled:opacity-35"
+                  }
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleAddProject(
+                      event.currentTarget.getBoundingClientRect()
+                    );
+                  }}
+                >
+                  <Plus
+                    className={
+                      isDrawerCompactDefault
+                        ? "h-3.5 w-3.5"
+                        : "h-3.5 w-3.5 sm:h-4 sm:w-4"
+                    }
+                  />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -1331,27 +1353,17 @@ function GoalCardImpl({
                     ? drawerCompactMeasuredContentMotionProps
                     : {})}
                 >
-                  <ProjectRowTaskInteractionsProvider
-                    value={{
-                      goalId: goal.id,
-                      onTaskEditOpen,
-                      onTaskToggleCompletion,
-                    }}
-                  >
-                    <ProjectsDropdown
-                      id={`goal-${goal.id}`}
-                      goalTitle={goal.title}
-                      projects={goal.projects}
-                      loading={loading}
-                      onProjectLongPress={handleProjectLongPress}
-                      onProjectUpdated={onProjectUpdated}
-                      goalId={goal.id}
-                      projectTasksOnly={projectDropdownMode === "tasks-only"}
-                      onAddProject={handleAddProject}
-                      addingProject={addingProject}
-                      onTaskToggleCompletion={onTaskToggleCompletion}
-                    />
-                  </ProjectRowTaskInteractionsProvider>
+                  <GoalWorkspace
+                    goal={goal}
+                    loading={loading}
+                    onProjectLongPress={handleProjectLongPress}
+                    onProjectUpdated={onProjectUpdated}
+                    projectDropdownMode={projectDropdownMode}
+                    onAddProject={handleAddProject}
+                    addingProject={addingProject}
+                    onTaskEditOpen={onTaskEditOpen}
+                    onTaskToggleCompletion={onTaskToggleCompletion}
+                  />
                 </motion.div>
               </motion.div>
             ) : null}
@@ -1384,7 +1396,6 @@ type CompactProjectsOverlayProps = {
   ) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectDropdownMode?: "default" | "tasks-only";
-  goalId: string;
   onAddProject: () => void;
   addingProject: boolean;
   onEdit?: () => void;
@@ -1409,7 +1420,6 @@ function CompactProjectsOverlay({
   onProjectLongPress,
   onProjectUpdated,
   projectDropdownMode = "default",
-  goalId,
   onAddProject,
   addingProject,
   onEdit,
@@ -1555,23 +1565,17 @@ function CompactProjectsOverlay({
 
   const listContent = (
     <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <ProjectRowTaskInteractionsProvider
-        value={{ goalId, onTaskEditOpen, onTaskToggleCompletion }}
-      >
-        <ProjectsDropdown
-          id={regionId}
-          goalTitle={goal.title}
-          projects={goal.projects}
-          loading={loading}
-          onProjectLongPress={onProjectLongPress}
-          onProjectUpdated={onProjectUpdated}
-          projectTasksOnly={projectDropdownMode === "tasks-only"}
-          goalId={goalId}
-          onAddProject={onAddProject}
-          addingProject={addingProject}
-          onTaskToggleCompletion={onTaskToggleCompletion}
-        />
-      </ProjectRowTaskInteractionsProvider>
+      <GoalWorkspace
+        goal={goal}
+        loading={loading}
+        onProjectLongPress={onProjectLongPress}
+        onProjectUpdated={onProjectUpdated}
+        projectDropdownMode={projectDropdownMode}
+        onAddProject={onAddProject}
+        addingProject={addingProject}
+        onTaskEditOpen={onTaskEditOpen}
+        onTaskToggleCompletion={onTaskToggleCompletion}
+      />
     </div>
   );
 
