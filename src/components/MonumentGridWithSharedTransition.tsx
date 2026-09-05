@@ -488,8 +488,10 @@ export function MonumentGridWithSharedTransition({
     body.style.overscrollBehavior = "none";
     documentElement.style.overscrollBehavior = "none";
     document.body.classList.add("monument-detail-open");
+    document.body.dataset.activeMonumentId = activeId;
 
     return () => {
+      delete document.body.dataset.activeMonumentId;
       body.style.overflow = previousBodyOverflow.current ?? "";
       documentElement.style.overflow = previousHtmlOverflow.current ?? "";
       body.style.overscrollBehavior =

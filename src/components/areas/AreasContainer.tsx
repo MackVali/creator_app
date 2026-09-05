@@ -435,8 +435,10 @@ function AreasGrid() {
     body.style.overscrollBehavior = "none";
     documentElement.style.overscrollBehavior = "none";
     body.classList.add("area-detail-open");
+    body.dataset.activeAreaId = activeAreaId;
 
     return () => {
+      delete body.dataset.activeAreaId;
       body.style.overflow = previousBodyOverflow.current ?? "";
       documentElement.style.overflow = previousHtmlOverflow.current ?? "";
       body.style.overscrollBehavior =
