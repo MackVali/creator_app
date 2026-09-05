@@ -13,10 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown } from "lucide-react";
+import { AREAS } from "@/config/areas";
+import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
-import { MAX_MONUMENTS } from "@/lib/monuments/constants";
+import { getMaxMonumentsPerArea } from "@/lib/monuments/constants";
 import {
   getMonumentIconOrDefault,
   normalizeMonumentIconInput,
@@ -32,6 +34,7 @@ type MonumentCreationFormProps = {
   submitLabel?: string;
   submitButtonClassName?: string;
   variant?: "default" | "dialog";
+  defaultAreaId?: string | null;
 };
 
 type SkillGroup = {
@@ -45,11 +48,14 @@ export function MonumentCreationForm({
   submitLabel = "Create monument",
   submitButtonClassName,
   variant = "default",
+  defaultAreaId = null,
 }: MonumentCreationFormProps) {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
+  const { isPlus } = useEntitlement();
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("🏛️");
+  const [areaId, setAreaId] = useState(defaultAreaId ?? "");
   const [skills, setSkills] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +63,12 @@ export function MonumentCreationForm({
   const [categories, setCategories] = useState<CatRow[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (defaultAreaId) {
+      setAreaId(defaultAreaId);
+    }
+  }, [defaultAreaId]);
 
   useEffect(() => {
     if (!supabase) {
@@ -222,26 +234,34 @@ export function MonumentCreationForm({
       return;
     }
 
+    if (!areaId) {
+      setError("Select an Area for this Monument.");
+      setLoading(false);
+      return;
+    }
+
+    const monumentLimit = getMaxMonumentsPerArea(isPlus);
+
     const { count, error: countError } = await supabase
       .from("monuments")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .eq("area_id", areaId);
 
     if (countError) {
-      console.error("Failed to count monuments", countError);
+      console.error("Failed to count Area monuments", countError);
       setError("Unable to verify your monuments right now.");
       setLoading(false);
       return;
     }
 
-    if ((count ?? 0) >= MAX_MONUMENTS) {
-      setError(`You’ve reached the Monument cap of ${MAX_MONUMENTS}.`);
-      setLoading(false);
-      return;
-    }
+    if ((count ?? 0) >= monumentLimit) {
+      const areaLabel =
+        AREAS.find((area) => area.id === areaId)?.label ?? "this Area";
 
-    if (!areaId) {
-      setError("Select an Area for this Monument.");
+      setError(
+        `You’ve reached the ${monumentLimit} Monument limit for ${areaLabel}.`,
+      );
       setLoading(false);
       return;
     }
@@ -332,6 +352,35 @@ export function MonumentCreationForm({
           />
         </div>
       </div>
+
+      {!defaultAreaId ? (
+        <div className={isDialogVariant ? "space-y-2.5" : "space-y-3"}>
+          <Label htmlFor="monument-area" className={labelClassName}>
+            Area
+          </Label>
+          <select
+            id="monument-area"
+            required
+            value={areaId}
+            onChange={(event) => setAreaId(event.target.value)}
+            className={cn(
+              "w-full border text-white outline-none",
+              isDialogVariant
+                ? "h-10 rounded-[14px] border-white/10 bg-[#0a0b0f] px-3 text-sm text-white/80 focus:border-white/25"
+                : "h-11 rounded-xl border-white/10 bg-white/[0.05] px-3 text-sm",
+            )}
+          >
+            <option value="" disabled>
+              Select Area
+            </option>
+            {AREAS.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.emoji} {area.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <div className={isDialogVariant ? "space-y-2.5" : "space-y-3"}>
         <Label className={labelClassName}>

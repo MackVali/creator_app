@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from "react";
 import { Timer } from "lucide-react";
 
 import { AreaSkillRelations } from "@/components/areas/AreaSkillRelations";
+import { AreaMonuments } from "@/components/areas/AreaMonuments";
 import { BodyAreaDashboard } from "@/components/areas/BodyAreaDashboard";
 import { MindAreaDashboard } from "@/components/areas/MindAreaDashboard";
 import { MoneyAreaDashboard } from "@/components/areas/MoneyAreaDashboard";
@@ -207,6 +208,11 @@ export function AreaDetail({
             <MoneyAreaDashboard />
           </section>
         ) : null}
+
+        <AreaMonuments
+          areaId={area.id}
+          areaLabel={area.label}
+        />
 
         <div className="grid w-full grid-cols-1 items-start gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <section

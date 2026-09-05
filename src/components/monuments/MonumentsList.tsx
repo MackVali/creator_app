@@ -37,6 +37,7 @@ type MonumentPriorityOrderRpcClient = {
 
 interface MonumentsListProps {
   limit?: number;
+  areaId?: string;
   createHref?: string;
   renderEmptyChildren?: boolean;
   children: (
@@ -53,6 +54,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
   function MonumentsList(
     {
       limit,
+      areaId,
       createHref = "/monuments/new",
       renderEmptyChildren = false,
       children,
@@ -74,6 +76,11 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
           .select("id,title,emoji,priority_rank")
           .order("priority_rank", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: true });
+
+        if (areaId) {
+          query = query.eq("area_id", areaId);
+        }
+
         if (typeof limit === "number") {
           query = query.range(0, limit - 1);
         }
@@ -129,7 +136,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
           setLoading(false);
         }
       },
-      [limit, supabase],
+      [areaId, limit, supabase],
     );
 
     const saveMonumentOrder = useCallback(
