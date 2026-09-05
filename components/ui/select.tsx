@@ -573,6 +573,7 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
     return (
       <div
         ref={ref}
+        data-selected={resolvedSelectedValue === value ? "true" : "false"}
         className={cn(
           "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white",
           isDisabled && "cursor-not-allowed opacity-50",

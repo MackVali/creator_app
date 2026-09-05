@@ -44,6 +44,7 @@ vi.mock("@/components/xp/CreatorXpSurgeHud", () => ({
 
 import {
   buildAvailablePriorityFilterOptions,
+  filterHabitRoadmapItemsByTimeBlock,
   filterGlobalPriorityItems,
 } from "@/app/(app)/schedule/priorities/PriorityEditorClient";
 
@@ -163,5 +164,41 @@ describe("Priority Editor Area filters", () => {
     );
 
     expect(filtered.map((item) => item.id)).toEqual(["area-goal", "skill-goal"]);
+  });
+
+  it("filters Habit Time Blocks by Skill-derived areaId, not legacy goalAreaId", () => {
+    const filtered = filterHabitRoadmapItemsByTimeBlock(
+      [
+        {
+          id: "habit-canonical",
+          name: "Canonical habit",
+          habitType: "HABIT",
+          areaId: "body",
+          goalAreaId: "work",
+        },
+        {
+          id: "habit-legacy-only",
+          name: "Legacy habit",
+          habitType: "HABIT",
+          areaId: null,
+          goalAreaId: "body",
+        },
+      ],
+      {
+        id: "block-body",
+        name: "Body block",
+        energy: "NO",
+        allowAllHabitTypes: true,
+        allowAllSkills: true,
+        allowAllAreas: false,
+        allowAllMonuments: true,
+        allowedHabitTypes: [],
+        allowedSkillIds: [],
+        allowedAreaIds: ["body"],
+        allowedMonumentIds: [],
+      }
+    );
+
+    expect(filtered.map((item) => item.id)).toEqual(["habit-canonical"]);
   });
 });

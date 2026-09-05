@@ -32,6 +32,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { ENERGY } from "@/lib/scheduler/config";
+import { AREAS, getAreaById } from "@/config/areas";
+import {
+  matchesCanonicalAreaFilter,
+  resolveCanonicalScheduleAreaId,
+} from "@/lib/schedule/canonicalArea";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   Filter as FilterIcon,
@@ -88,6 +93,25 @@ type GoalRow = {
   name?: string | null;
   Title?: string | null;
   monument_id?: string | null;
+  area_id?: string | null;
+};
+
+type TaskRow = {
+  id: string;
+  user_id?: string | null;
+  name?: string | null;
+  Title?: string | null;
+  description?: string | null;
+  energy?: string | null;
+  priority?: string | null;
+  stage?: string | null;
+  goal_id?: string | null;
+  project_id?: string | null;
+  skill_id?: string | null;
+  duration_min?: number | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  inserted_at?: string | null;
 };
 
 type NexusProject = {
@@ -100,6 +124,7 @@ type NexusProject = {
   stage: string | null;
   goalId: string | null;
   goalName: string | null;
+  areaId: string | null;
   monumentId: string | null;
   monumentTitle: string | null;
   monumentEmoji: string | null;
@@ -119,6 +144,7 @@ type NexusHabit = {
   skillId: string | null;
   goalId: string | null;
   goalName: string | null;
+  areaId: string | null;
   monumentId: string | null;
   monumentTitle: string | null;
   monumentEmoji: string | null;
@@ -129,7 +155,28 @@ type NexusHabit = {
   nextScheduledAt: string | null;
 };
 
-type NexusEntry = NexusProject | NexusHabit;
+type NexusTask = {
+  type: "task";
+  id: string;
+  name: string;
+  description: string | null;
+  energy: FlameLevel | null;
+  priority: string | null;
+  stage: string | null;
+  goalId: string | null;
+  projectId: string | null;
+  goalName: string | null;
+  areaId: string | null;
+  monumentId: string | null;
+  monumentTitle: string | null;
+  monumentEmoji: string | null;
+  skillId: string | null;
+  durationMinutes: number | null;
+  updatedAt: string | null;
+  nextScheduledAt: string | null;
+};
+
+type NexusEntry = NexusProject | NexusHabit | NexusTask;
 
 type SkillCategoryOption = {
   id: string;
@@ -140,10 +187,12 @@ type SkillCategoryOption = {
 
 type ProjectEditableField = "name" | "goal" | "skills" | "energy" | "stage";
 type HabitEditableField = "name" | "goal" | "skill" | "energy" | "rhythm";
+type TaskEditableField = "name" | "goal" | "skill" | "energy" | "stage";
 
 type EditTarget =
   | { type: "project"; id: string; field: ProjectEditableField }
-  | { type: "habit"; id: string; field: HabitEditableField };
+  | { type: "habit"; id: string; field: HabitEditableField }
+  | { type: "task"; id: string; field: TaskEditableField };
 
 const PROJECT_STAGE_OPTIONS = [
   { value: "RESEARCH", label: "Research" },
@@ -151,6 +200,12 @@ const PROJECT_STAGE_OPTIONS = [
   { value: "BUILD", label: "Build" },
   { value: "REFINE", label: "Refine" },
   { value: "RELEASE", label: "Release" },
+];
+
+const TASK_STAGE_OPTIONS = [
+  { value: "PREPARE", label: "Prepare" },
+  { value: "PRODUCE", label: "Produce" },
+  { value: "PERFECT", label: "Perfect" },
 ];
 
 const HABIT_RECURRENCE_PRESETS = [
@@ -165,7 +220,7 @@ const HABIT_RECURRENCE_PRESETS = [
   "NONE",
 ];
 
-const FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
+const FLAME_LEVELS = ENERGY.LIST as readonly FlameLevel[];
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const VIRTUAL_RECURRENCE_DAY_OFFSETS: Record<string, number> = {
@@ -208,6 +263,7 @@ type NormalizedGoal = {
   id: string;
   name: string | null;
   monument_id: string | null;
+  area_id: string | null;
 };
 
 type ScheduleInstanceRow = {
@@ -366,7 +422,7 @@ function getVirtualNextTimestamp(entry: NexusEntry): number | null {
 type RangeFetcher<T> = (
   from: number,
   to: number
-) => Promise<{ data: T[] | null; error: PostgrestError | null }>;
+) => PromiseLike<{ data: T[] | null; error: PostgrestError | null }>;
 
 async function fetchAllRows<T>(fetchRange: RangeFetcher<T>, chunkSize = 1000) {
   const rows: T[] = [];
@@ -411,17 +467,22 @@ async function fetchProjectSkillsForProjects(
 export default function NexusPage() {
   const [projects, setProjects] = useState<NexusProject[]>([]);
   const [habits, setHabits] = useState<NexusHabit[]>([]);
+  const [tasks, setTasks] = useState<NexusTask[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [goals, setGoals] = useState<NormalizedGoal[]>([]);
+  const [areaBySkillId, setAreaBySkillId] = useState<Map<string, string | null>>(
+    () => new Map()
+  );
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "project" | "habit">(
+  const [typeFilter, setTypeFilter] = useState<"all" | "project" | "task" | "habit">(
     "all"
   );
+  const [areaFilter, setAreaFilter] = useState("");
   const [monumentFilter, setMonumentFilter] = useState("");
   const [skillFilter, setSkillFilter] = useState("");
   const [energyFilter, setEnergyFilter] = useState("");
@@ -432,6 +493,7 @@ export default function NexusPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState({
     goal: true,
+    area: true,
     monument: true,
     skill: true,
     energy: true,
@@ -466,7 +528,10 @@ export default function NexusPage() {
           console.error("Failed to load skills for Nexus", err);
           return [] as Skill[];
         });
-        const categoriesPromise = getCatsForUser(user.id, supabase).catch((err) => {
+        const categoriesPromise = getCatsForUser(
+          user.id,
+          supabase as unknown as Parameters<typeof getCatsForUser>[1]
+        ).catch((err) => {
           console.error("Failed to load skill categories for Nexus", err);
           return [] as CatRow[];
         });
@@ -476,17 +541,25 @@ export default function NexusPage() {
             .from("schedule_instances")
             .select("source_id, source_type, start_utc, end_utc, status, weight_snapshot")
             .eq("user_id", user.id)
-            .in("source_type", ["PROJECT", "HABIT"])
+            .in("source_type", ["PROJECT", "TASK", "HABIT"])
             .in("status", ["scheduled", "in_progress"])
             .order("start_utc", { ascending: true })
             .range(from, to)
         );
 
-        const [projectRows, habitRowsData, goalRows, monumentRows, skillRows, categoryRows, scheduleRows] =
+        const [projectRows, taskRows, habitRowsData, goalRows, monumentRows, skillRows, categoryRows, scheduleRows] =
           await Promise.all([
             fetchAllRows<ProjectRow>((from, to) =>
               supabase
                 .from("projects")
+                .select("*")
+                .eq("user_id", user.id)
+                .order("created_at", { ascending: false })
+                .range(from, to)
+            ),
+            fetchAllRows<TaskRow>((from, to) =>
+              supabase
+                .from("tasks")
                 .select("*")
                 .eq("user_id", user.id)
                 .order("created_at", { ascending: false })
@@ -519,9 +592,13 @@ export default function NexusPage() {
           id: goal.id,
           name: pickFirstString(goal.name, goal.Title),
           monument_id: goal.monument_id ?? null,
+          area_id: goal.area_id ?? null,
         }));
         const goalMap = new Map<string, NormalizedGoal>(
           normalizedGoals.map((goal) => [goal.id, goal])
+        );
+        const goalAreaMap = new Map<string, string | null>(
+          normalizedGoals.map((goal) => [goal.id, goal.area_id ?? null])
         );
         setGoals(normalizedGoals);
         const monumentLookup = new Map(
@@ -547,6 +624,7 @@ export default function NexusPage() {
 
         const projectScheduleLookup = new Map<string, string>();
         const projectWeightSnapshotLookup = new Map<string, number>();
+        const taskScheduleLookup = new Map<string, string>();
         const habitScheduleLookup = new Map<string, string>();
         for (const instance of scheduleRows) {
           if (!instance?.source_id) continue;
@@ -560,12 +638,15 @@ export default function NexusPage() {
           if (!Number.isFinite(candidateMs)) continue;
           const isHabitSource = instance.source_type === "HABIT";
           const isProjectSource = instance.source_type === "PROJECT";
+          const isTaskSource = instance.source_type === "TASK";
           const targetMap =
             isHabitSource
               ? habitScheduleLookup
               : isProjectSource
                 ? projectScheduleLookup
-                : null;
+                : isTaskSource
+                  ? taskScheduleLookup
+                  : null;
           if (!targetMap) continue;
           const existing = targetMap.get(instance.source_id);
           if (existing && Date.parse(existing) <= candidateMs) continue;
@@ -598,6 +679,39 @@ export default function NexusPage() {
             projectSkillMap.set(row.project_id, [row.skill_id]);
           }
         });
+        const habitSkillIds = Array.from(
+          new Set(
+            habitRowsData
+              .map((habit) => habit.skill_id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          )
+        );
+        const loadedAreaBySkillId = new Map<string, string | null>();
+        if (habitSkillIds.length > 0) {
+          const { data: areaSkillRows, error: areaSkillError } = await supabase
+            .from("area_skills")
+            .select("area_id,skill_id")
+            .in("skill_id", habitSkillIds);
+          if (areaSkillError) {
+            console.error("Failed to load habit Area skills for Nexus", areaSkillError);
+          } else {
+            for (const row of (areaSkillRows ?? []) as Array<{
+              area_id: string | null;
+              skill_id: string | null;
+            }>) {
+              const skillId = pickFirstString(row.skill_id);
+              if (!skillId || loadedAreaBySkillId.has(skillId)) continue;
+              loadedAreaBySkillId.set(skillId, pickFirstString(row.area_id));
+            }
+          }
+        }
+        setAreaBySkillId(loadedAreaBySkillId);
+
+        const projectGoalById = new Map<string, string | null>();
+        projectRows.forEach((project) => {
+          projectGoalById.set(project.id, project.goal_id ?? null);
+        });
+
         const mappedProjects: NexusProject[] = projectRows.map((project) => {
           const goal = project.goal_id ? goalMap.get(project.goal_id) : null;
           const monumentId = goal?.monument_id ?? null;
@@ -620,6 +734,10 @@ export default function NexusPage() {
               ) ?? null,
             goalId: project.goal_id ?? null,
             goalName: goal?.name ?? null,
+            areaId: resolveCanonicalScheduleAreaId(
+              { type: "PROJECT", goalId: project.goal_id ?? null },
+              { goalAreaByGoalId: goalAreaMap, areaBySkillId: loadedAreaBySkillId }
+            ),
             monumentId,
             monumentTitle: monument?.title ?? null,
             monumentEmoji: monument?.emoji ?? null,
@@ -629,6 +747,49 @@ export default function NexusPage() {
             nextScheduledAt,
             weight: normalizeNumber(project.weight),
             weightSnapshot,
+          };
+        });
+
+        const mappedTasks: NexusTask[] = taskRows.map((task) => {
+          const resolvedGoalId =
+            task.goal_id ?? projectGoalById.get(task.project_id ?? "") ?? null;
+          const goal = resolvedGoalId ? goalMap.get(resolvedGoalId) : null;
+          const monumentId = goal?.monument_id ?? null;
+          const monument = monumentId ? monumentLookup.get(monumentId) : null;
+          const taskEnergy = normalizeEnergy(task.energy);
+          const taskPriority = normalizePriority(task.priority, priorityLookup);
+          const nextScheduledAt = taskScheduleLookup.get(task.id) ?? null;
+          return {
+            type: "task",
+            id: task.id,
+            name: pickFirstString(task.name, task.Title) ?? "Untitled task",
+            description: pickFirstString(task.description),
+            energy: taskEnergy,
+            priority: taskPriority,
+            stage: pickFirstString(task.stage) ?? null,
+            goalId: resolvedGoalId,
+            projectId: task.project_id ?? null,
+            goalName: goal?.name ?? null,
+            areaId: resolveCanonicalScheduleAreaId(
+              {
+                type: "TASK",
+                goalId: task.goal_id ?? null,
+                projectId: task.project_id ?? null,
+              },
+              {
+                goalAreaByGoalId: goalAreaMap,
+                areaBySkillId: loadedAreaBySkillId,
+                projectGoalIdByProjectId: projectGoalById,
+              }
+            ),
+            monumentId,
+            monumentTitle: monument?.title ?? null,
+            monumentEmoji: monument?.emoji ?? null,
+            skillId: task.skill_id ?? null,
+            durationMinutes: task.duration_min ?? null,
+            updatedAt:
+              pickFirstString(task.updated_at, task.inserted_at, task.created_at) ?? null,
+            nextScheduledAt,
           };
         });
 
@@ -648,6 +809,10 @@ export default function NexusPage() {
             skillId: habit.skill_id ?? null,
             goalId: habit.goal_id ?? null,
             goalName: goal?.name ?? null,
+            areaId: resolveCanonicalScheduleAreaId(
+              { type: "HABIT", skillId: habit.skill_id ?? null },
+              { goalAreaByGoalId: goalAreaMap, areaBySkillId: loadedAreaBySkillId }
+            ),
             monumentId,
             monumentTitle: monument?.title ?? null,
             monumentEmoji: monument?.emoji ?? null,
@@ -664,6 +829,7 @@ export default function NexusPage() {
         });
 
         setProjects(mappedProjects);
+        setTasks(mappedTasks);
         setHabits(mappedHabits);
       } catch (err) {
         console.error("Failed to load Nexus data", err);
@@ -754,18 +920,21 @@ export default function NexusPage() {
     if (editTarget.type === "project") {
       return projects.find((project) => project.id === editTarget.id) ?? null;
     }
+    if (editTarget.type === "task") {
+      return tasks.find((task) => task.id === editTarget.id) ?? null;
+    }
     return habits.find((habit) => habit.id === editTarget.id) ?? null;
-  }, [editTarget, habits, projects]);
+  }, [editTarget, habits, projects, tasks]);
 
   const combinedEntries = useMemo<NexusEntry[]>(
-    () => [...projects, ...habits],
-    [projects, habits]
+    () => [...projects, ...tasks, ...habits],
+    [projects, habits, tasks]
   );
 
   const priorityOptions = useMemo(() => {
     const set = new Set<string>();
     combinedEntries.forEach((entry) => {
-      if (entry.type === "project" && entry.priority) {
+      if ((entry.type === "project" || entry.type === "task") && entry.priority) {
         set.add(entry.priority);
       }
     });
@@ -782,8 +951,11 @@ export default function NexusPage() {
         if (monumentFilter && entry.monumentId !== monumentFilter) {
           return false;
         }
+        if (!matchesCanonicalAreaFilter(entry, areaFilter)) {
+          return false;
+        }
         if (priorityFilter) {
-          if (entry.type !== "project") return false;
+          if (entry.type !== "project" && entry.type !== "task") return false;
           if ((entry.priority ?? "") !== priorityFilter) return false;
         }
         if (skillFilter) {
@@ -841,6 +1013,7 @@ export default function NexusPage() {
         return getSortTime(a) - getSortTime(b);
       });
   }, [
+    areaFilter,
     combinedEntries,
     energyFilter,
     monumentFilter,
@@ -853,6 +1026,7 @@ export default function NexusPage() {
 
   const resetFilters = () => {
     setTypeFilter("all");
+    setAreaFilter("");
     setMonumentFilter("");
     setSkillFilter("");
     setEnergyFilter("");
@@ -861,11 +1035,13 @@ export default function NexusPage() {
 
   const startEdit = (
     entry: NexusEntry,
-    field: ProjectEditableField | HabitEditableField
+    field: ProjectEditableField | HabitEditableField | TaskEditableField
   ) => {
     setEditError(null);
     if (entry.type === "project") {
       setEditTarget({ type: "project", id: entry.id, field: field as ProjectEditableField });
+    } else if (entry.type === "task") {
+      setEditTarget({ type: "task", id: entry.id, field: field as TaskEditableField });
     } else {
       setEditTarget({ type: "habit", id: entry.id, field: field as HabitEditableField });
     }
@@ -889,6 +1065,7 @@ export default function NexusPage() {
       return {
         goalId: null,
         goalName: null,
+        areaId: null,
         monumentId: null,
         monumentTitle: null,
         monumentEmoji: null,
@@ -901,6 +1078,7 @@ export default function NexusPage() {
     return {
       goalId,
       goalName: goal?.name ?? null,
+      areaId: goal?.area_id ?? null,
       monumentId: goal?.monument_id ?? null,
       monumentTitle: monumentRecord?.title ?? null,
       monumentEmoji: monumentRecord?.emoji ?? null,
@@ -909,7 +1087,7 @@ export default function NexusPage() {
 
   const getCellInteractionProps = (
     entry: NexusEntry,
-    field: ProjectEditableField | HabitEditableField
+    field: ProjectEditableField | HabitEditableField | TaskEditableField
   ) => ({
     role: "button" as const,
     tabIndex: 0,
@@ -937,7 +1115,7 @@ export default function NexusPage() {
         const project = activeEditEntry as NexusProject;
         if (editTarget.field === "name" && typeof value === "string") {
           const trimmed = value.trim();
-          await supabase.from("projects").update({ name: trimmed || null }).eq("id", project.id);
+          await supabase.from("projects").update({ name: trimmed || null } as never).eq("id", project.id);
           setProjects(prev =>
             prev.map(item =>
               item.id === project.id
@@ -950,7 +1128,7 @@ export default function NexusPage() {
           );
         } else if (editTarget.field === "goal" && (typeof value === "string" || value === null)) {
           const nextGoalId = value && value.trim().length > 0 ? value : null;
-          await supabase.from("projects").update({ goal_id: nextGoalId }).eq("id", project.id);
+          await supabase.from("projects").update({ goal_id: nextGoalId } as never).eq("id", project.id);
           const metadata = resolveGoalMetadata(nextGoalId);
           setProjects(prev =>
             prev.map(item =>
@@ -959,6 +1137,7 @@ export default function NexusPage() {
                     ...item,
                     goalId: metadata.goalId,
                     goalName: metadata.goalName,
+                    areaId: metadata.areaId,
                     monumentId: metadata.monumentId,
                     monumentEmoji: metadata.monumentEmoji,
                     monumentTitle: metadata.monumentTitle,
@@ -967,7 +1146,7 @@ export default function NexusPage() {
             )
           );
         } else if (editTarget.field === "energy" && typeof value === "string") {
-          await supabase.from("projects").update({ energy: value }).eq("id", project.id);
+          await supabase.from("projects").update({ energy: value } as never).eq("id", project.id);
           setProjects(prev =>
             prev.map(item =>
               item.id === project.id
@@ -987,10 +1166,9 @@ export default function NexusPage() {
           const stageValue = typeof (value as { stage?: string }).stage === "string"
             ? ((value as { stage?: string }).stage ?? "")
             : "";
+          const priorityCandidate = (value as { priority?: string | null }).priority;
           const priorityValue =
-            typeof (value as { priority?: string | null }).priority === "string"
-              ? (value as { priority?: string | null }).priority
-              : null;
+            typeof priorityCandidate === "string" ? priorityCandidate : null;
           await supabase
             .from("projects")
             .update({
@@ -998,7 +1176,7 @@ export default function NexusPage() {
               priority: priorityValue,
               completed_at:
                 stageValue === "RELEASE" ? new Date().toISOString() : null,
-            })
+            } as never)
             .eq("id", project.id);
           setProjects(prev =>
             prev.map(item =>
@@ -1016,7 +1194,7 @@ export default function NexusPage() {
           if (value.length > 0) {
             await supabase
               .from("project_skills")
-              .insert(value.map((id: string) => ({ project_id: project.id, skill_id: id })));
+              .insert(value.map((id: string) => ({ project_id: project.id, skill_id: id })) as never[]);
           }
           setProjects(prev =>
             prev.map(item =>
@@ -1029,11 +1207,105 @@ export default function NexusPage() {
             )
           );
         }
+      } else if (editTarget.type === "task") {
+        const task = activeEditEntry as NexusTask;
+        if (editTarget.field === "name" && typeof value === "string") {
+          const trimmed = value.trim();
+          await supabase.from("tasks").update({ name: trimmed || null } as never).eq("id", task.id);
+          setTasks(prev =>
+            prev.map(item =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    name: trimmed || "Untitled task",
+                  }
+                : item
+            )
+          );
+        } else if (editTarget.field === "goal" && (typeof value === "string" || value === null)) {
+          const nextGoalId = value && value.trim().length > 0 ? value : null;
+          await supabase.from("tasks").update({ goal_id: nextGoalId } as never).eq("id", task.id);
+          const fallbackProjectGoalId =
+            !nextGoalId && task.projectId
+              ? projects.find((project) => project.id === task.projectId)?.goalId ?? null
+              : null;
+          const metadata = resolveGoalMetadata(nextGoalId ?? fallbackProjectGoalId);
+          setTasks(prev =>
+            prev.map(item =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    goalId: metadata.goalId,
+                    goalName: metadata.goalName,
+                    areaId: metadata.areaId,
+                    monumentId: metadata.monumentId,
+                    monumentEmoji: metadata.monumentEmoji,
+                    monumentTitle: metadata.monumentTitle,
+                  }
+                : item
+            )
+          );
+        } else if (editTarget.field === "energy" && typeof value === "string") {
+          await supabase.from("tasks").update({ energy: value } as never).eq("id", task.id);
+          setTasks(prev =>
+            prev.map(item =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    energy: value as FlameLevel,
+                  }
+                : item
+            )
+          );
+        } else if (editTarget.field === "skill" && (typeof value === "string" || value === null)) {
+          const nextSkillId = value && value.trim().length > 0 ? value : null;
+          await supabase.from("tasks").update({ skill_id: nextSkillId } as never).eq("id", task.id);
+          setTasks(prev =>
+            prev.map(item =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    skillId: nextSkillId,
+                  }
+                : item
+            )
+          );
+        } else if (
+          editTarget.field === "stage" &&
+          typeof value === "object" &&
+          value !== null &&
+          "stage" in value
+        ) {
+          const stageValue = typeof (value as { stage?: string }).stage === "string"
+            ? ((value as { stage?: string }).stage ?? "")
+            : "";
+          const priorityCandidate = (value as { priority?: string | null }).priority;
+          const priorityValue =
+            typeof priorityCandidate === "string" ? priorityCandidate : null;
+          await supabase
+            .from("tasks")
+            .update({
+              stage: stageValue || null,
+              priority: priorityValue,
+            } as never)
+            .eq("id", task.id);
+          setTasks(prev =>
+            prev.map(item =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    stage: stageValue || null,
+                    priority: priorityValue,
+                  }
+                : item
+            )
+          );
+        }
       } else {
         const habit = activeEditEntry as NexusHabit;
         if (editTarget.field === "name" && typeof value === "string") {
           const trimmed = value.trim();
-          await supabase.from("habits").update({ name: trimmed || null }).eq("id", habit.id);
+          await supabase.from("habits").update({ name: trimmed || null } as never).eq("id", habit.id);
           setHabits(prev =>
             prev.map(item =>
               item.id === habit.id
@@ -1046,7 +1318,7 @@ export default function NexusPage() {
           );
         } else if (editTarget.field === "goal" && (typeof value === "string" || value === null)) {
           const nextGoalId = value && value.trim().length > 0 ? value : null;
-          await supabase.from("habits").update({ goal_id: nextGoalId }).eq("id", habit.id);
+          await supabase.from("habits").update({ goal_id: nextGoalId } as never).eq("id", habit.id);
           const metadata = resolveGoalMetadata(nextGoalId);
           setHabits(prev =>
             prev.map(item =>
@@ -1063,7 +1335,7 @@ export default function NexusPage() {
             )
           );
         } else if (editTarget.field === "energy" && typeof value === "string") {
-          await supabase.from("habits").update({ energy: value }).eq("id", habit.id);
+          await supabase.from("habits").update({ energy: value } as never).eq("id", habit.id);
           setHabits(prev =>
             prev.map(item =>
               item.id === habit.id
@@ -1076,13 +1348,14 @@ export default function NexusPage() {
           );
         } else if (editTarget.field === "skill" && (typeof value === "string" || value === null)) {
           const nextSkillId = value && value.trim().length > 0 ? value : null;
-          await supabase.from("habits").update({ skill_id: nextSkillId }).eq("id", habit.id);
+          await supabase.from("habits").update({ skill_id: nextSkillId } as never).eq("id", habit.id);
           setHabits(prev =>
             prev.map(item =>
               item.id === habit.id
                 ? {
                     ...item,
                     skillId: nextSkillId,
+                    areaId: nextSkillId ? areaBySkillId.get(nextSkillId) ?? null : null,
                   }
                 : item
             )
@@ -1104,7 +1377,7 @@ export default function NexusPage() {
               recurrence: payload.recurrence,
               habit_type: payload.habitType,
               duration_minutes: payload.durationMinutes,
-            })
+            } as never)
             .eq("id", habit.id);
           setHabits(prev =>
             prev.map(item =>
@@ -1161,6 +1434,10 @@ export default function NexusPage() {
                   <span className="text-white/50">Projects</span>
                 </div>
                 <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+                  <span className="text-white font-semibold">{tasks.length}</span>
+                  <span className="text-white/50">Tasks</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
                   <span className="text-white font-semibold">{habits.length}</span>
                   <span className="text-white/50">Habits</span>
                 </div>
@@ -1196,6 +1473,7 @@ export default function NexusPage() {
                 <span className="mr-1 text-white/60">Columns:</span>
                 {([
                   { key: "goal", label: "Goal" },
+                  { key: "area", label: "Area" },
                   { key: "monument", label: "Monument" },
                   { key: "skill", label: "Skills" },
                   { key: "energy", label: "Energy" },
@@ -1227,7 +1505,7 @@ export default function NexusPage() {
                     <Select
                       value={typeFilter}
                       onValueChange={(value) =>
-                        setTypeFilter(value as "all" | "project" | "habit")
+                        setTypeFilter(value as "all" | "project" | "task" | "habit")
                       }
                       placeholder="Type"
                       className="w-full"
@@ -1240,6 +1518,9 @@ export default function NexusPage() {
                         </SelectItem>
                         <SelectItem className={FILTER_ITEM_CLASS} value="project">
                           Projects only
+                        </SelectItem>
+                        <SelectItem className={FILTER_ITEM_CLASS} value="task">
+                          Tasks only
                         </SelectItem>
                         <SelectItem className={FILTER_ITEM_CLASS} value="habit">
                           Habits only
@@ -1266,6 +1547,29 @@ export default function NexusPage() {
                           className={FILTER_ITEM_CLASS}
                         >
                           {monument.emoji ?? "🗿"} {monument.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={areaFilter}
+                    onValueChange={(value) => setAreaFilter(value)}
+                    placeholder="Area"
+                    className="w-full"
+                    triggerClassName={FILTER_TRIGGER_CLASS}
+                    contentWrapperClassName={FILTER_CONTENT_CLASS}
+                  >
+                    <SelectContent>
+                      <SelectItem className={FILTER_ITEM_CLASS} value="">
+                        All areas
+                      </SelectItem>
+                      {AREAS.map((area) => (
+                        <SelectItem
+                          key={area.id}
+                          value={area.id}
+                          className={FILTER_ITEM_CLASS}
+                        >
+                          {area.emoji} {area.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1395,6 +1699,9 @@ export default function NexusPage() {
                       {columnVisibility.goal ? (
                         <th className="px-3 py-2 text-left font-semibold">Goal</th>
                       ) : null}
+                      {columnVisibility.area ? (
+                        <th className="px-3 py-2 text-left font-semibold">Area</th>
+                      ) : null}
                       {columnVisibility.monument ? (
                         <th className="px-3 py-2 text-left font-semibold">Monument</th>
                       ) : null}
@@ -1431,24 +1738,25 @@ export default function NexusPage() {
                           resolvedSkills = [{ id: entry.skillId, ...skill }];
                         }
                       }
+                      const area = getAreaById(entry.areaId);
                       const stageLabel =
-                        entry.type === "project"
-                          ? entry.stage ?? "—"
-                          : entry.recurrence ?? entry.habitType ?? "—";
+                        entry.type === "habit"
+                          ? entry.recurrence ?? entry.habitType ?? "—"
+                          : entry.stage ?? "—";
                       const stageDetail =
-                        entry.type === "project"
-                          ? entry.priority ?? null
-                          : entry.durationMinutes
+                        entry.type === "habit"
+                          ? entry.durationMinutes
                             ? `${entry.durationMinutes} min`
-                            : null;
+                            : null
+                          : entry.priority ?? null;
                       const weightDisplay =
                         entry.type === "project"
                           ? formatWeightValue(entry.weightSnapshot ?? entry.weight ?? null)
                           : null;
-                      const skillField: ProjectEditableField | HabitEditableField =
+                      const skillField: ProjectEditableField | HabitEditableField | TaskEditableField =
                         entry.type === "project" ? "skills" : "skill";
-                      const stageField: ProjectEditableField | HabitEditableField =
-                        entry.type === "project" ? "stage" : "rhythm";
+                      const stageField: ProjectEditableField | HabitEditableField | TaskEditableField =
+                        entry.type === "habit" ? "rhythm" : "stage";
 
                       return (
                         <tr
@@ -1462,10 +1770,16 @@ export default function NexusPage() {
                                 "rounded-full px-3 py-1 text-xs font-semibold",
                                 entry.type === "project"
                                   ? "bg-emerald-500/20 text-emerald-200"
+                                  : entry.type === "task"
+                                    ? "bg-amber-500/20 text-amber-200"
                                   : "bg-blue-500/20 text-blue-200"
                               )}
                             >
-                              {entry.type === "project" ? "Project" : "Habit"}
+                              {entry.type === "project"
+                                ? "Project"
+                                : entry.type === "task"
+                                  ? "Task"
+                                  : "Habit"}
                             </Badge>
                           </td>
                           <td
@@ -1484,6 +1798,18 @@ export default function NexusPage() {
                             >
                               {entry.goalName ? (
                                 <span className="text-[12px]">{entry.goalName}</span>
+                              ) : (
+                                <span className="text-[12px] text-white/40">—</span>
+                              )}
+                            </td>
+                          ) : null}
+                          {columnVisibility.area ? (
+                            <td className="px-3 py-3 align-top">
+                              {area ? (
+                                <span className="flex items-center gap-2 text-[12px]">
+                                  <span>{area.emoji}</span>
+                                  {area.label}
+                                </span>
                               ) : (
                                 <span className="text-[12px] text-white/40">—</span>
                               )}
@@ -1632,13 +1958,21 @@ function FieldEditorForm({
 }: FieldEditorFormProps) {
   const [textValue, setTextValue] = useState("");
   const [goalValue, setGoalValue] = useState("");
-  const [energyValue, setEnergyValue] = useState(entry.energy ?? "NO");
-  const [stageValue, setStageValue] = useState(entry.stage ?? PROJECT_STAGE_OPTIONS[0].value);
-  const [priorityValue, setPriorityValue] = useState(entry.type === "project" ? entry.priority ?? "" : "");
+  const [energyValue, setEnergyValue] = useState<string>(entry.energy ?? "NO");
+  const [stageValue, setStageValue] = useState(
+    entry.type === "habit"
+      ? PROJECT_STAGE_OPTIONS[0].value
+      : entry.stage ?? (entry.type === "task" ? TASK_STAGE_OPTIONS[0].value : PROJECT_STAGE_OPTIONS[0].value)
+  );
+  const [priorityValue, setPriorityValue] = useState(
+    entry.type === "project" || entry.type === "task" ? entry.priority ?? "" : ""
+  );
   const [skillSelection, setSkillSelection] = useState<Set<string>>(
     entry.type === "project" ? new Set(entry.skillIds) : new Set()
   );
-  const [singleSkillValue, setSingleSkillValue] = useState(entry.type === "habit" ? entry.skillId ?? "" : "");
+  const [singleSkillValue, setSingleSkillValue] = useState(
+    entry.type === "habit" || entry.type === "task" ? entry.skillId ?? "" : ""
+  );
   const [habitRecurrenceValue, setHabitRecurrenceValue] = useState(
     entry.type === "habit" ? entry.recurrence ?? "" : ""
   );
@@ -1659,6 +1993,10 @@ function FieldEditorForm({
       setStageValue(entry.stage ?? PROJECT_STAGE_OPTIONS[0].value);
       setPriorityValue(entry.priority ?? "");
       setSkillSelection(new Set(entry.skillIds));
+    } else if (entry.type === "task") {
+      setStageValue(entry.stage ?? TASK_STAGE_OPTIONS[0].value);
+      setPriorityValue(entry.priority ?? "");
+      setSingleSkillValue(entry.skillId ?? "");
     } else {
       setSingleSkillValue(entry.skillId ?? "");
       setHabitRecurrenceValue(entry.recurrence ?? "");
@@ -1751,7 +2089,7 @@ function FieldEditorForm({
           value={textValue}
           onChange={(event) => setTextValue(event.target.value)}
           className="border-white/20 bg-white/[0.08] text-white"
-          placeholder={`Enter a ${entry.type === "project" ? "project" : "habit"} name`}
+          placeholder={`Enter a ${entry.type} name`}
         />
       </div>
     );
@@ -1812,7 +2150,8 @@ function FieldEditorForm({
         </Select>
       </div>
     );
-  } else if (target.field === "stage" && entry.type === "project") {
+  } else if (target.field === "stage" && (entry.type === "project" || entry.type === "task")) {
+    const stageOptions = entry.type === "task" ? TASK_STAGE_OPTIONS : PROJECT_STAGE_OPTIONS;
     body = (
       <div className="space-y-4">
         <div className="space-y-2">
@@ -1820,14 +2159,14 @@ function FieldEditorForm({
             Stage
           </label>
           <Select
-            value={stageValue || PROJECT_STAGE_OPTIONS[0].value}
+            value={stageValue || stageOptions[0].value}
             onValueChange={setStageValue}
             className="w-full"
             triggerClassName={SHEET_SELECT_TRIGGER_CLASS}
             contentWrapperClassName={SHEET_SELECT_CONTENT_CLASS}
           >
             <SelectContent>
-              {PROJECT_STAGE_OPTIONS.map((option) => (
+              {stageOptions.map((option) => (
                 <SelectItem key={option.value} className={SHEET_SELECT_ITEM_CLASS} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -1895,7 +2234,7 @@ function FieldEditorForm({
         </ScrollArea>
       </div>
     );
-  } else if (target.field === "skill" && entry.type === "habit") {
+  } else if (target.field === "skill" && (entry.type === "habit" || entry.type === "task")) {
     body = (
       <div className="space-y-2">
         <label className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
@@ -1988,7 +2327,7 @@ function FieldEditorForm({
     );
   }
 
-  const sheetTitle = `${entry.type === "project" ? "Project" : "Habit"} ${fieldLabel}`;
+  const sheetTitle = `${entry.type === "project" ? "Project" : entry.type === "task" ? "Task" : "Habit"} ${fieldLabel}`;
 
   return (
     <form className="flex h-full flex-col" onSubmit={handleSubmit}>

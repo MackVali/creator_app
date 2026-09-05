@@ -2468,8 +2468,8 @@ function getHabitTimeBlockConstraintItem(habit: RoadmapHabitItem): ConstraintIte
     habitType: habit.rawHabitType ?? habit.habitType,
     skillId: habit.skillId ?? null,
     skillIds: habit.skillId ? [habit.skillId] : [],
-    areaId: habit.goalAreaId ?? null,
-    areaIds: habit.goalAreaId ? [habit.goalAreaId] : [],
+    areaId: habit.areaId ?? null,
+    areaIds: habit.areaId ? [habit.areaId] : [],
     monumentId: habit.monumentId ?? habit.goalMonumentId ?? null,
     skillMonumentId: habit.skillMonumentId ?? null,
     monumentIds: uniqueStrings([
@@ -2480,7 +2480,7 @@ function getHabitTimeBlockConstraintItem(habit: RoadmapHabitItem): ConstraintIte
   };
 }
 
-function filterHabitRoadmapItemsByTimeBlock(
+export function filterHabitRoadmapItemsByTimeBlock(
   items: RoadmapHabitItem[],
   timeBlock: PriorityTimeBlockFilterOptionData
 ) {

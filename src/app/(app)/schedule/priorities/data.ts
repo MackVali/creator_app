@@ -111,6 +111,11 @@ type HabitGoalMetadataRow = {
   monument_id?: string | null;
 };
 
+type HabitAreaSkillRow = {
+  area_id?: string | null;
+  skill_id?: string | null;
+};
+
 type HabitRow = {
   id: string;
   name?: string | null;
@@ -658,10 +663,12 @@ function normalizeGoal(
 
 function normalizeHabit(
   row: HabitRow,
-  monumentsById: Map<string, MonumentRow> = new Map()
+  monumentsById: Map<string, MonumentRow> = new Map(),
+  areaIdBySkillId: Map<string, string> = new Map()
 ): RoadmapHabitItem {
   const skill = firstRelatedRow(row.skill);
   const goal = firstRelatedRow(row.goal);
+  const skillId = row.skill_id ?? skill?.id ?? null;
   const skillMonumentId = skill?.monument_id ?? null;
   const goalMonumentId = goal?.monument_id ?? null;
   const monumentId = skillMonumentId ?? goalMonumentId;
@@ -673,10 +680,11 @@ function normalizeHabit(
     habitType: normalizeHabitBucket(row.habit_type),
     rawHabitType: row.habit_type ?? null,
     globalOrder: parseGlobalRank(row.global_order),
-    skillId: row.skill_id ?? skill?.id ?? null,
+    skillId,
     skillName: skill?.name ?? null,
     skillIcon: skill?.icon ?? null,
     skillMonumentId,
+    areaId: skillId ? areaIdBySkillId.get(skillId) ?? null : null,
     goalId: row.goal_id ?? goal?.id ?? null,
     goalAreaId: goal?.area_id ?? null,
     goalMonumentId,
@@ -1263,6 +1271,50 @@ export async function loadPriorityEditorProps(
     }
   }
 
+  const habitSkillIds = Array.from(
+    new Set(
+      habits
+        .map((habit) =>
+          typeof habit.skill_id === "string" && habit.skill_id.trim()
+            ? habit.skill_id.trim()
+            : null
+        )
+        .filter((skillId): skillId is string => Boolean(skillId))
+    )
+  );
+  const areaIdByHabitSkillId = new Map<string, string>();
+  let habitAreaSkillErrorMessage: string | null = null;
+  if (habitSkillIds.length > 0) {
+    const { data: habitAreaSkillData, error: habitAreaSkillError } =
+      await supabase
+        .from("area_skills")
+        .select("area_id,skill_id")
+        .eq("user_id", userId)
+        .in("skill_id", habitSkillIds);
+
+    if (habitAreaSkillError) {
+      console.error(
+        "Failed to load Habit Skill Area metadata for priority editor",
+        habitAreaSkillError
+      );
+      habitAreaSkillErrorMessage =
+        habitAreaSkillError.message || "Unable to load Habit Area metadata.";
+    } else {
+      for (const row of (habitAreaSkillData ?? []) as HabitAreaSkillRow[]) {
+        const skillId =
+          typeof row.skill_id === "string" && row.skill_id.trim()
+            ? row.skill_id.trim()
+            : null;
+        const areaId =
+          typeof row.area_id === "string" && row.area_id.trim()
+            ? row.area_id.trim()
+            : null;
+        if (!skillId || !areaId || areaIdByHabitSkillId.has(skillId)) continue;
+        areaIdByHabitSkillId.set(skillId, areaId);
+      }
+    }
+  }
+
   const monumentIds = Array.from(
     new Set(
       [
@@ -1359,6 +1411,11 @@ export async function loadPriorityEditorProps(
       `Habits select error: ${habitError.message || "Unable to load Habits."}`
     );
   }
+  if (habitAreaSkillErrorMessage) {
+    fetchErrorMessages.push(
+      `Habit Area metadata select error: ${habitAreaSkillErrorMessage}`
+    );
+  }
   if (campaignErrorMessage) {
     fetchErrorMessages.push(`Campaigns select error: ${campaignErrorMessage}`);
   }
@@ -1377,7 +1434,9 @@ export async function loadPriorityEditorProps(
   const habitItems = sortHabitRoadmapItems(
     habits
       .filter((habit) => !habit.circle_id)
-      .map((habit) => normalizeHabit(habit, monumentsById))
+      .map((habit) =>
+        normalizeHabit(habit, monumentsById, areaIdByHabitSkillId)
+      )
   );
   const monumentFilterOptions = allMonuments
     .map(createMonumentFilterOption)

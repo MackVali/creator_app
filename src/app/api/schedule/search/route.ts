@@ -6,6 +6,7 @@ import {
 } from "@/lib/scheduler/habits";
 import { PROJECT_PRIORITY_WEIGHT } from "@/lib/scheduler/config";
 import { DEFAULT_PROJECT_DURATION_MIN } from "@/lib/scheduler/projects";
+import { resolveCanonicalScheduleAreaId } from "@/lib/schedule/canonicalArea";
 
 const PAGE_SIZE = 25;
 const SORT_OPTIONS = [
@@ -20,7 +21,7 @@ type SearchSortMode = (typeof SORT_OPTIONS)[number];
 type SearchResult = {
   id: string;
   name: string;
-  type: "PROJECT" | "HABIT";
+  type: "PROJECT" | "TASK" | "HABIT";
   nextScheduledAt: string | null;
   scheduleInstanceId: string | null;
   durationMinutes: number | null;
@@ -40,6 +41,7 @@ type SearchResult = {
   skillId?: string | null;
   skill_id?: string | null;
   skillIds?: string[];
+  areaId?: string | null;
   monumentId?: string | null;
   monument_id?: string | null;
   goalMonumentId?: string | null;
@@ -69,6 +71,21 @@ type HabitSearchRecord = {
   created_at?: string | null;
 };
 
+type TaskSearchRecord = {
+  id: string;
+  name?: string | null;
+  duration_min?: number | null;
+  completed_at?: string | null;
+  goal_id?: string | null;
+  project_id?: string | null;
+  skill_id?: string | null;
+  energy?: string | null;
+  priority?: string | null;
+  stage?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
 type ProjectSkillRow = {
   project_id: string | null;
   skill_id: string | null;
@@ -79,16 +96,21 @@ type SkillMonumentRecord = {
   monument_id?: string | null;
 };
 
+type AreaSkillRow = {
+  area_id: string | null;
+  skill_id: string | null;
+};
+
 type ScheduleInstanceRow = {
   id: string;
   source_id: string;
-  source_type: "PROJECT" | "HABIT";
+  source_type: "PROJECT" | "TASK" | "HABIT";
   start_utc: string | null;
   duration_min: number | null;
 };
 
 type CursorPayload = {
-  lastType: "PROJECT" | "HABIT";
+  lastType: "PROJECT" | "TASK" | "HABIT";
   lastId: string;
   sortMode: SearchSortMode;
 };
@@ -116,7 +138,9 @@ function parseCursor(
       const parsed = JSON.parse(raw);
       if (
         parsed &&
-        (parsed.lastType === "PROJECT" || parsed.lastType === "HABIT") &&
+        (parsed.lastType === "PROJECT" ||
+          parsed.lastType === "TASK" ||
+          parsed.lastType === "HABIT") &&
         typeof parsed.lastId === "string" &&
         parsed.lastId.length > 0 &&
         parsed.sortMode === sortMode
@@ -134,7 +158,9 @@ function parseCursor(
   const fallbackType = searchParams.get("cursorSourceType");
   const fallbackId = searchParams.get("cursorSourceId");
   if (
-    (fallbackType === "PROJECT" || fallbackType === "HABIT") &&
+    (fallbackType === "PROJECT" ||
+      fallbackType === "TASK" ||
+      fallbackType === "HABIT") &&
     typeof fallbackId === "string" &&
     fallbackId.length > 0
   ) {
@@ -241,8 +267,10 @@ function sortResults(results: SearchResult[], sortMode: SearchSortMode): SearchR
         if (aHas !== bHas) {
           return aHas ? -1 : 1;
         }
-        if (aHas && bHas && a.nextScheduledAt !== b.nextScheduledAt) {
-          return a.nextScheduledAt < b.nextScheduledAt ? -1 : 1;
+        const aScheduled = a.nextScheduledAt;
+        const bScheduled = b.nextScheduledAt;
+        if (aScheduled && bScheduled && aScheduled !== bScheduled) {
+          return aScheduled < bScheduled ? -1 : 1;
         }
         return compareByNameTypeId(a, b);
       }
@@ -294,14 +322,22 @@ export async function GET(request: NextRequest) {
     )
     .eq("user_id", user.id)
     .is("circle_id", null);
+  let taskQuery = supabase
+    .from("tasks")
+    .select(
+      "id,name,duration_min,completed_at,goal_id,project_id,skill_id,energy,priority,stage,updated_at,created_at"
+    )
+    .eq("user_id", user.id);
   if (likeQuery) {
     projectQuery = projectQuery.ilike("name", likeQuery);
     habitQuery = habitQuery.ilike("name", likeQuery);
+    taskQuery = taskQuery.ilike("name", likeQuery);
   }
 
-  const [projectResponse, habitResponse] = await Promise.all([
+  const [projectResponse, habitResponse, taskResponse] = await Promise.all([
     projectQuery,
     habitQuery,
+    taskQuery,
   ]);
 
   if (projectResponse.error) {
@@ -318,11 +354,19 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  if (taskResponse.error) {
+    console.error("FAB search tasks error", taskResponse.error);
+    return NextResponse.json(
+      { error: "Unable to load tasks" },
+      { status: 500 }
+    );
+  }
 
   const projectData = (projectResponse.data ?? []) as ProjectSearchRecord[];
   const habitData = (habitResponse.data ?? []) as HabitSearchRecord[];
+  const taskData = (taskResponse.data ?? []) as TaskSearchRecord[];
 
-  if (projectData.length === 0 && habitData.length === 0) {
+  if (projectData.length === 0 && habitData.length === 0 && taskData.length === 0) {
     return NextResponse.json({ results: [], nextCursor: null });
   }
 
@@ -332,7 +376,10 @@ export async function GET(request: NextRequest) {
   const habitIds = habitData
     .map((habit) => habit?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
-  const allSourceIds = [...new Set([...projectIds, ...habitIds])];
+  const taskIds = taskData
+    .map((task) => task?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const allSourceIds = [...new Set([...projectIds, ...habitIds, ...taskIds])];
 
   const goalIds = new Set<string>();
   for (const project of projectData) {
@@ -342,24 +389,63 @@ export async function GET(request: NextRequest) {
       goalIds.add(goalId);
     }
   }
+  const taskProjectIds = new Set<string>();
+  for (const task of taskData) {
+    if (task.goal_id) {
+      goalIds.add(task.goal_id);
+    }
+    if (task.project_id) {
+      taskProjectIds.add(task.project_id);
+    }
+  }
+
+  const taskProjectGoalLookup = new Map<string, string | null>();
+  if (taskProjectIds.size > 0) {
+    const { data: taskProjectData, error: taskProjectError } = await supabase
+      .from("projects")
+      .select("id,goal_id")
+      .eq("user_id", user.id)
+      .in("id", Array.from(taskProjectIds));
+    if (taskProjectError) {
+      console.error("FAB search task project fallback error", taskProjectError);
+    } else {
+      for (const project of (taskProjectData ?? []) as Array<{
+        id: string;
+        goal_id: string | null;
+      }>) {
+        if (!project?.id) continue;
+        taskProjectGoalLookup.set(project.id, project.goal_id ?? null);
+        if (project.goal_id) {
+          goalIds.add(project.goal_id);
+        }
+      }
+    }
+  }
 
   const goalLookup = new Map<string, string>();
   const goalMonumentLookup = new Map<string, string | null>();
+  const goalAreaLookup = new Map<string, string | null>();
   if (goalIds.size > 0) {
     const { data: goalData, error: goalError } = await supabase
       .from("goals")
-      .select("id,name,monument_id")
+      .select("id,name,monument_id,area_id")
       .eq("user_id", user.id)
       .in("id", Array.from(goalIds));
     if (goalError) {
       console.error("FAB search goals error", goalError);
     } else {
-      for (const goal of goalData ?? []) {
+      for (const goal of (goalData ?? []) as Array<{
+        id: string;
+        name: string | null;
+        monument_id: string | null;
+        area_id: string | null;
+      }>) {
         if (!goal?.id) continue;
         if (typeof goal.name === "string") {
           goalLookup.set(goal.id, goal.name);
         }
         goalMonumentLookup.set(goal.id, goal.monument_id ?? null);
+        goalAreaLookup.set(goal.id, goal.area_id ?? null);
       }
     }
   }
@@ -395,6 +481,11 @@ export async function GET(request: NextRequest) {
       allSkillIds.add(habit.skill_id);
     }
   }
+  for (const task of taskData) {
+    if (task?.skill_id) {
+      allSkillIds.add(task.skill_id);
+    }
+  }
 
   const skillMonumentLookup = new Map<string, string | null>();
   if (allSkillIds.size > 0) {
@@ -412,6 +503,29 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const areaBySkillId = new Map<string, string | null>();
+  const habitSkillIds = Array.from(
+    new Set(
+      habitData
+        .map((habit) => habit.skill_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  );
+  if (habitSkillIds.length > 0) {
+    const { data: areaSkillData, error: areaSkillError } = await supabase
+      .from("area_skills")
+      .select("area_id,skill_id")
+      .in("skill_id", habitSkillIds);
+    if (areaSkillError) {
+      console.error("FAB search habit area skills error", areaSkillError);
+    } else {
+      for (const row of (areaSkillData ?? []) as AreaSkillRow[]) {
+        if (!row.skill_id || areaBySkillId.has(row.skill_id)) continue;
+        areaBySkillId.set(row.skill_id, row.area_id ?? null);
+      }
+    }
+  }
+
   const scheduleMap = new Map<string, ScheduleInstanceRow>();
   if (allSourceIds.length > 0) {
     const scheduleNowDate = new Date();
@@ -423,7 +537,7 @@ export async function GET(request: NextRequest) {
       .from("schedule_instances")
       .select("id,source_id,source_type,start_utc,duration_min")
       .eq("user_id", user.id)
-      .in("source_type", ["PROJECT", "HABIT"])
+      .in("source_type", ["PROJECT", "TASK", "HABIT"])
       .in("source_id", allSourceIds)
       .eq("status", "scheduled")
       .gte("start_utc", scheduleLookback)
@@ -435,7 +549,7 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    for (const row of scheduleRows ?? []) {
+    for (const row of (scheduleRows ?? []) as ScheduleInstanceRow[]) {
       if (!row) continue;
       const { source_id: sourceId, source_type: sourceType } = row;
       if (!sourceId || !sourceType || !row.start_utc) continue;
@@ -480,6 +594,10 @@ export async function GET(request: NextRequest) {
     const projectGoalMonumentId = projectGoalId
       ? goalMonumentLookup.get(projectGoalId) ?? null
       : null;
+    const projectAreaId = resolveCanonicalScheduleAreaId(
+      { type: "PROJECT", goalId: projectGoalId },
+      { goalAreaByGoalId: goalAreaLookup, areaBySkillId }
+    );
     const projectSkills = projectSkillIds.get(project.id) ?? [];
     const projectPrimarySkillId = projectSkills[0] ?? null;
     const normalizedUpdated =
@@ -519,9 +637,73 @@ export async function GET(request: NextRequest) {
       skillId: projectPrimarySkillId,
       skill_id: projectPrimarySkillId,
       skillIds: projectSkills,
+      areaId: projectAreaId,
       goalMonumentId: projectGoalMonumentId,
       monumentId: projectGoalMonumentId,
       monument_id: projectGoalMonumentId,
+    });
+  }
+  for (const task of taskData) {
+    if (!task?.id) continue;
+    const scheduleKey = `TASK:${task.id}`;
+    const schedule = scheduleMap.get(scheduleKey);
+    const completedAt =
+      typeof task.completed_at === "string" && task.completed_at.length > 0
+        ? task.completed_at
+        : null;
+    const taskGoalId = task.goal_id ?? taskProjectGoalLookup.get(task.project_id ?? "") ?? null;
+    const taskGoalName = taskGoalId ? goalLookup.get(taskGoalId) ?? null : null;
+    const taskGoalMonumentId = taskGoalId
+      ? goalMonumentLookup.get(taskGoalId) ?? null
+      : null;
+    const taskSkillId = task.skill_id ?? null;
+    const normalizedUpdated =
+      typeof task.updated_at === "string" && task.updated_at.length > 0
+        ? task.updated_at
+        : typeof task.created_at === "string" && task.created_at.length > 0
+        ? task.created_at
+        : null;
+    const taskDurationMinutes = normalizePositiveDuration(task.duration_min, 60);
+    const taskAreaId = resolveCanonicalScheduleAreaId(
+      {
+        type: "TASK",
+        goalId: task.goal_id ?? null,
+        projectId: task.project_id ?? null,
+      },
+      {
+        goalAreaByGoalId: goalAreaLookup,
+        areaBySkillId,
+        projectGoalIdByProjectId: taskProjectGoalLookup,
+      }
+    );
+    results.push({
+      id: task.id,
+      name: task.name?.trim() || "Untitled task",
+      type: "TASK",
+      nextScheduledAt: schedule?.start_utc ?? null,
+      scheduleInstanceId: schedule?.id ?? null,
+      durationMinutes:
+        typeof schedule?.duration_min === "number" &&
+        Number.isFinite(schedule.duration_min)
+          ? schedule.duration_min
+          : taskDurationMinutes,
+      nextDueAt: null,
+      completedAt,
+      isCompleted: typeof completedAt === "string",
+      goalId: taskGoalId,
+      goalName: taskGoalName,
+      energy: task.energy ?? null,
+      priority: task.priority ?? null,
+      priority_label: task.priority ?? null,
+      updatedAt: normalizedUpdated,
+      updated_at: normalizedUpdated,
+      skillId: taskSkillId,
+      skill_id: taskSkillId,
+      skillIds: taskSkillId ? [taskSkillId] : [],
+      areaId: taskAreaId,
+      goalMonumentId: taskGoalMonumentId,
+      monumentId: taskGoalMonumentId,
+      monument_id: taskGoalMonumentId,
     });
   }
   for (const habit of habitData) {
@@ -543,6 +725,10 @@ export async function GET(request: NextRequest) {
     const habitMonumentId = habitSkillId
       ? skillMonumentLookup.get(habitSkillId) ?? null
       : null;
+    const habitAreaId = resolveCanonicalScheduleAreaId(
+      { type: "HABIT", skillId: habitSkillId },
+      { goalAreaByGoalId: goalAreaLookup, areaBySkillId }
+    );
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
@@ -568,6 +754,7 @@ export async function GET(request: NextRequest) {
       skillId: habitSkillId,
       skill_id: habitSkillId,
       skillIds: habitSkillId ? [habitSkillId] : [],
+      areaId: habitAreaId,
       monumentId: habitMonumentId,
       monument_id: habitMonumentId,
     });

@@ -8,7 +8,7 @@ import {
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 
-export type FocusPomoQueueKind = "chore" | "habit" | "project";
+export type FocusPomoQueueKind = "chore" | "habit" | "project" | "task";
 
 export interface FocusPomoQueueItem {
   id: string;
@@ -48,6 +48,8 @@ export interface FocusPomoQueueItem {
   goalId?: string | null;
   goalTitle?: string | null;
   goalIcon?: string | null;
+  areaId?: string | null;
+  area_id?: string | null;
   goal_emoji?: string | null;
   goalPriorityRank?: number | null;
   goal_priority_rank?: number | null;
@@ -274,6 +276,11 @@ type RoutineRow = {
 
 type ProjectSkillRow = {
   project_id?: string | null;
+  skill_id?: string | null;
+};
+
+type AreaSkillRow = {
+  area_id?: string | null;
   skill_id?: string | null;
 };
 
@@ -1148,6 +1155,7 @@ function mapHabit(
   row: HabitRow,
   options: {
     skillById: Map<string, SkillRow>;
+    areaIdBySkillId: Map<string, string>;
     goalById: Map<string, GoalRow>;
     campaignById: Map<string, CampaignRow>;
     routineById: Map<string, RoutineRow>;
@@ -1164,6 +1172,7 @@ function mapHabit(
   const skillId = readString(row.skill_id);
   const skill = skillId ? options.skillById.get(skillId) : undefined;
   const skillMonumentId = readString(skill?.monument_id);
+  const areaId = skillId ? options.areaIdBySkillId.get(skillId) ?? null : null;
   const goalId = readString(row.goal_id);
   const goal = goalId ? options.goalById.get(goalId) : undefined;
   const campaignId = readString(row.campaign_id);
@@ -1226,6 +1235,8 @@ function mapHabit(
     monument_ids: monumentIds,
     goalId,
     goal_id: goalId,
+    areaId,
+    area_id: areaId,
     goalTitle: goalName,
     goalIcon,
     goal_emoji: goalIcon,
@@ -1407,6 +1418,8 @@ function mapProject(
     monument_ids: monumentIds,
     goalId,
     goal_id: goalId,
+    areaId: goalAreaId,
+    area_id: goalAreaId,
     goalTitle: goalName,
     goalIcon,
     goal_emoji: goalIcon,
@@ -1662,6 +1675,55 @@ async function fetchProjectSkillMetadata(
   return map;
 }
 
+async function fetchAreaIdsBySkillId(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  skillIds: string[]
+): Promise<Map<string, string>> {
+  const ids = Array.from(new Set(skillIds.filter(Boolean)));
+  if (ids.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("area_skills")
+    .select("area_id, skill_id")
+    .eq("user_id", userId)
+    .in("skill_id", ids);
+
+  if (error) throw error;
+
+  const map = new Map<string, string>();
+  for (const row of (data ?? []) as AreaSkillRow[]) {
+    const skillId = readString(row.skill_id);
+    const areaId = readString(row.area_id);
+    if (!skillId || !areaId || map.has(skillId)) continue;
+    map.set(skillId, areaId);
+  }
+
+  return map;
+}
+
+async function fetchSkillIdsForArea(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  areaId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("area_skills")
+    .select("skill_id")
+    .eq("user_id", userId)
+    .eq("area_id", areaId);
+
+  if (error) throw error;
+
+  return Array.from(
+    new Set(
+      (data ?? [])
+        .map((row) => readString((row as AreaSkillRow).skill_id))
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+}
+
 async function fetchSkillIdsForMonument(
   supabase: SupabaseBrowserClient,
   userId: string,
@@ -1864,11 +1926,17 @@ async function fetchHabits(
           fetchCampaignMetadata(supabase, userId, campaignIds),
           fetchRoutineMetadata(supabase, userId, routineIds),
         ]);
+      const areaIdBySkillId = await fetchAreaIdsBySkillId(
+        supabase,
+        userId,
+        skillIds
+      );
 
       return rows
         .map((row) =>
           mapHabit(row, {
             skillById,
+            areaIdBySkillId,
             goalById,
             campaignById,
             routineById,
@@ -2033,10 +2101,14 @@ export async function fetchFocusPomoQueue(params: {
       projectIds: await fetchProjectIdsForSkill(supabase, sourceId),
     };
   } else if (params.sourceType === "area") {
-    skillIds = [];
+    const [areaSkillIds, areaGoalIds] = await Promise.all([
+      fetchSkillIdsForArea(supabase, user.id, sourceId),
+      fetchGoalIdsForArea(supabase, user.id, sourceId),
+    ]);
+    skillIds = areaSkillIds;
     projectScope = {
       sourceType: "area",
-      goalIds: await fetchGoalIdsForArea(supabase, user.id, sourceId),
+      goalIds: areaGoalIds,
     };
   } else {
     skillIds = await fetchSkillIdsForMonument(supabase, user.id, sourceId);

@@ -52,10 +52,13 @@ function durationLabel(minutes: number | null): string {
   return minutes && minutes > 0 ? `${Math.round(minutes)} min` : "No duration";
 }
 
-function kindForSourceType(value: string | null): "chore" | "habit" | "project" {
+function kindForSourceType(
+  value: string | null
+): "chore" | "habit" | "project" | "task" {
   const normalized = value?.trim().toUpperCase();
   if (normalized === "HABIT") return "habit";
   if (normalized === "CHORE") return "chore";
+  if (normalized === "TASK") return "task";
   return "project";
 }
 
