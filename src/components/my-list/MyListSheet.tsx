@@ -2197,9 +2197,18 @@ export function MyListSheet({
   );
   const selectedList = customLists.find((list) => list.id === selectedListId);
   const isDefaultMyList = selectedListId === null;
-  const selectedListName = selectedList
-    ? getListSelectorItem(selectedList).label
-    : "My List";
+  const selectedListSelectorItem = selectedList
+    ? getListSelectorItem(selectedList)
+    : null;
+  const selectedListName = selectedListSelectorItem?.label ?? "My List";
+  const selectedListIdentity = selectedList
+    ? parseMyListSystemKey(selectedList.systemKey)
+    : null;
+  const selectedListHeaderIcon =
+    selectedListIdentity?.kind === "area" ||
+    selectedListIdentity?.kind === "monument"
+      ? selectedListSelectorItem?.icon ?? null
+      : null;
   const isSelectedGroceryList =
     selectedList?.systemKey === MY_LIST_GROCERY_SYSTEM_KEY;
   const listSelectorSections = useMemo<MyListSelectorSection[]>(() => {
@@ -6068,8 +6077,6 @@ export function MyListSheet({
 
               // Preserve the contextual destination even when the
               // persisted list rows have not finished loading yet.
-              // This is especially important in the iOS Capacitor WebView,
-              // where the sheet can be opened before customLists hydrates.
               openSessionListSelectionRef.current = {
                 initialized: Boolean(contextualList),
                 manuallySelected: false,
@@ -6080,14 +6087,29 @@ export function MyListSheet({
                 setSelectedListId(contextualList.id);
               }
 
-              // Area and Monument detail-page opens are deterministic:
-              // normal List presentation and full-height immediately.
+              // Area and Monument detail-page opens are deterministic.
               setActiveView("list");
               setIsDayLensActive(false);
               setIsMonumentLensActive(false);
               setIsExpanded(true);
-            } else if (shouldExpandOnOpen) {
-              setIsExpanded(true);
+            } else {
+              // Outside Area / Monument context, always return to the
+              // regular root My List instead of preserving the last
+              // contextual list selection.
+              openSessionListSelectionRef.current = {
+                initialized: true,
+                manuallySelected: false,
+                preferredSystemKey: null,
+              };
+
+              setSelectedListId(null);
+              setActiveView("list");
+              setIsDayLensActive(false);
+              setIsMonumentLensActive(false);
+
+              if (shouldExpandOnOpen) {
+                setIsExpanded(true);
+              }
             }
 
             onOpenChange(true);
@@ -6265,6 +6287,14 @@ export function MyListSheet({
                 }}
                 className="inline-flex h-7 items-center gap-1 rounded-lg px-2 outline-none hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-white/35"
               >
+                {selectedListHeaderIcon ? (
+                  <span
+                    className="flex shrink-0 items-center justify-center"
+                    aria-hidden="true"
+                  >
+                    {selectedListHeaderIcon}
+                  </span>
+                ) : null}
                 <span className="max-w-[10rem] truncate">
                   {selectedListName}
                 </span>

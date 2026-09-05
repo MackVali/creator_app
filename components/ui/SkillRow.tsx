@@ -23,7 +23,7 @@ export function SkillRow({ skill }: SkillRowProps) {
     if (name.includes('coding') || name.includes('programming')) return '💻';
     if (name.includes('design')) return '🎨';
     if (name.includes('cooking')) return '👨‍🍳';
-    if (name.includes('fitness') || name.includes('exercise')) return '💪';
+    if (name.includes('fitness') || name.includes('exercise')) return '🦾';
     if (name.includes('language')) return '🗣️';
     if (name.includes('art') || name.includes('drawing')) return '🖼️';
     if (name.includes('photography')) return '📸';
