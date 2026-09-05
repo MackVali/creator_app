@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
@@ -9,7 +9,13 @@ import { MonumentCreationForm } from "@/components/monuments/MonumentCreationFor
 
 export const OPEN_MONUMENT_DIALOG_EVENT = "premium-app.open-monument-dialog";
 
-export function AddMonumentDialog() {
+export function AddMonumentDialog({
+  defaultAreaId = null,
+  trigger,
+}: {
+  defaultAreaId?: string | null;
+  trigger?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
@@ -28,6 +34,7 @@ export function AddMonumentDialog() {
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
+      {trigger ? <Dialog.Trigger asChild>{trigger}</Dialog.Trigger> : null}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[210] bg-black/75 backdrop-blur-xl" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-[220] max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[460px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[28px] border border-white/12 bg-[linear-gradient(160deg,rgba(32,33,36,0.96)_0%,rgba(9,10,13,0.98)_46%,rgba(3,4,7,1)_100%)] text-white shadow-[0_34px_90px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.11),inset_0_-28px_70px_rgba(0,0,0,0.46)] backdrop-blur-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35">
@@ -58,7 +65,11 @@ export function AddMonumentDialog() {
 
           <div className="max-h-[calc(100dvh-150px)] overflow-y-auto px-4 py-4 sm:px-5">
             <ProtectedRoute>
-              <MonumentCreationForm onCreate={handleCreate} variant="dialog" />
+              <MonumentCreationForm
+                onCreate={handleCreate}
+                variant="dialog"
+                defaultAreaId={defaultAreaId}
+              />
             </ProtectedRoute>
           </div>
         </Dialog.Content>
