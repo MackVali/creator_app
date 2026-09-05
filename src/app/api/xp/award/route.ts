@@ -31,6 +31,14 @@ type SkillProgressSurgeRow = Pick<
   Database["public"]["Tables"]["skill_progress"]["Row"],
   "level" | "prestige" | "xp_into_level"
 >;
+type AreaSkillAwardRow = Pick<
+  Database["public"]["Tables"]["area_skills"]["Row"],
+  "area_id"
+>;
+type MonumentAreaAwardRow = {
+  id: string;
+  area_id: string | null;
+};
 
 type AwardEvent = Omit<XpEventInsert, "award_key"> & {
   award_key: NonNullable<XpEventInsert["award_key"]>;
@@ -498,6 +506,66 @@ function withResolvedEventContext(
   };
 }
 
+async function resolveAwardAreaIds({
+  client,
+  userId,
+  request,
+}: {
+  client: ServerClient;
+  userId: string;
+  request: ResolvedAwardRequest;
+}) {
+  const areaIds = new Set(
+    (request.areaIds ?? []).filter((id) => typeof id === "string" && id.length > 0)
+  );
+  const skillIds = Array.from(
+    new Set(
+      (request.skillIds ?? []).filter(
+        (id) => typeof id === "string" && id.length > 0
+      )
+    )
+  );
+  const monumentIds = Array.from(
+    new Set(
+      (request.monumentIds ?? []).filter(
+        (id) => typeof id === "string" && id.length > 0
+      )
+    )
+  );
+
+  if (skillIds.length > 0) {
+    const { data, error } = await client
+      .from("area_skills")
+      .select("area_id")
+      .eq("user_id", userId)
+      .in("skill_id", skillIds);
+    if (error) throw error;
+
+    for (const row of (data ?? []) as AreaSkillAwardRow[]) {
+      if (typeof row.area_id === "string" && row.area_id.length > 0) {
+        areaIds.add(row.area_id);
+      }
+    }
+  }
+
+  if (monumentIds.length > 0) {
+    const { data, error } = await client
+      .from("monuments")
+      .select("id, area_id")
+      .eq("user_id", userId)
+      .in("id", monumentIds);
+    if (error) throw error;
+
+    for (const row of (data ?? []) as MonumentAreaAwardRow[]) {
+      if (typeof row.area_id === "string" && row.area_id.length > 0) {
+        areaIds.add(row.area_id);
+      }
+    }
+  }
+
+  return Array.from(areaIds);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
@@ -609,6 +677,16 @@ export async function POST(request: NextRequest) {
       schedule: scheduleAwardContext,
       semantics: scheduleSemantics,
     });
+
+    const resolvedAreaIds = await resolveAwardAreaIds({
+      client: db,
+      userId: user.id,
+      request: awardRequest,
+    });
+    awardRequest = {
+      ...awardRequest,
+      areaIds: resolvedAreaIds,
+    };
 
     let awardKeyBase = buildAwardKeyBase(awardRequest);
 

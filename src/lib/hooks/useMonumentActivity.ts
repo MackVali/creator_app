@@ -29,7 +29,10 @@ type XpEventRow = {
   amount: number | null;
   kind: string | null;
   skill_id?: string | null;
+  monument_id?: string | null;
   area_id?: string | null;
+  award_key?: string | null;
+  completion_event_id?: string | null;
   source: string | null;
   schedule_instance_id: string | null;
 };
@@ -42,6 +45,15 @@ type MonumentSkillRow = {
 };
 
 type CreatorActivitySourceType = "monument" | "area";
+
+const XP_EVENT_SELECT =
+  "id,created_at,amount,kind,source,schedule_instance_id,skill_id,monument_id,area_id,award_key,completion_event_id";
+
+type AreaXpEventSets = {
+  activityEvents: XpEventRow[];
+  historyEvents: XpEventRow[];
+  skillMixEvents: XpEventRow[];
+};
 
 function removeCancellingScheduleXpEvents(events: XpEventRow[]): XpEventRow[] {
   if (events.length === 0) return events;
@@ -201,6 +213,106 @@ function getXpEventAmount(event: Pick<XpEventRow, "amount" | "kind">) {
   if (!kind || !(kind in XP_KIND_WEIGHTS)) return 0;
 
   return XP_KIND_WEIGHTS[kind as keyof typeof XP_KIND_WEIGHTS];
+}
+
+function getCanonicalAwardKeyBase(awardKey: string) {
+  return awardKey
+    .trim()
+    .replace(/:(?:skill|mon|area):[^:]+$/, "");
+}
+
+function getXpLogicalIdentity(event: XpEventRow) {
+  const completionEventId = event.completion_event_id?.trim();
+  if (completionEventId) return `completion:${completionEventId}`;
+
+  const awardKey = event.award_key?.trim();
+  if (awardKey) return `award:${getCanonicalAwardKeyBase(awardKey)}`;
+
+  // Old manual rows without completion IDs or award keys cannot be safely
+  // merged without risking unrelated awards, so keep them distinct.
+  return `event:${event.id}`;
+}
+
+function isDirectAreaXpEvent(event: XpEventRow, areaId: string) {
+  return event.area_id === areaId;
+}
+
+function getAreaSkillMixEvent(
+  events: XpEventRow[],
+  areaSkillIds: Set<string>
+) {
+  return events.find(
+    (event) => event.skill_id != null && areaSkillIds.has(event.skill_id)
+  );
+}
+
+function getAreaCanonicalXpEvent(
+  events: XpEventRow[],
+  areaId: string,
+  areaMonumentIds: Set<string>,
+  areaSkillIds: Set<string>
+) {
+  return (
+    events.find((event) => isDirectAreaXpEvent(event, areaId)) ??
+    events.find(
+      (event) =>
+        event.monument_id != null && areaMonumentIds.has(event.monument_id)
+    ) ??
+    getAreaSkillMixEvent(events, areaSkillIds) ??
+    events[0]
+  );
+}
+
+export function normalizeAreaXpEvents(
+  events: XpEventRow[],
+  areaId: string,
+  areaMonumentIds: Set<string>,
+  areaSkillIds: Set<string>
+): AreaXpEventSets {
+  const groups = new Map<string, XpEventRow[]>();
+
+  for (const event of events) {
+    const identity = getXpLogicalIdentity(event);
+    const group = groups.get(identity);
+    if (group) {
+      group.push(event);
+    } else {
+      groups.set(identity, [event]);
+    }
+  }
+
+  const canonicalEvents: XpEventRow[] = [];
+  const skillMixEvents: XpEventRow[] = [];
+
+  for (const group of groups.values()) {
+    const canonical = getAreaCanonicalXpEvent(
+      group,
+      areaId,
+      areaMonumentIds,
+      areaSkillIds
+    );
+    if (!canonical) continue;
+
+    canonicalEvents.push(canonical);
+
+    const skillMixEvent = getAreaSkillMixEvent(group, areaSkillIds);
+    if (skillMixEvent) {
+      skillMixEvents.push({
+        ...canonical,
+        skill_id: skillMixEvent.skill_id,
+      });
+    }
+  }
+
+  return {
+    activityEvents: [...canonicalEvents].sort((a, b) =>
+      (b.created_at ?? "").localeCompare(a.created_at ?? "")
+    ),
+    historyEvents: [...canonicalEvents].sort((a, b) =>
+      (a.created_at ?? "").localeCompare(b.created_at ?? "")
+    ),
+    skillMixEvents,
+  };
 }
 
 function getChargeSummary(chargeXp: number) {
@@ -386,7 +498,7 @@ export function useCreatorActivity(
 
       const sourceColumn = sourceType === "area" ? "area_id" : "monument_id";
 
-      const [notesRes, xpRes, xpHistoryRes, goalsRes] = await Promise.all([
+      const [notesRes, goalsRes] = await Promise.all([
         supabase
           .from("notes")
           .select("id,title,content,created_at,updated_at", { count: "exact" })
@@ -394,19 +506,6 @@ export function useCreatorActivity(
           .eq(sourceColumn, sourceId)
           .order("created_at", { ascending: false })
           .limit(30),
-        supabase
-          .from("xp_events")
-          .select("id,created_at,amount,kind,source,schedule_instance_id")
-          .eq("user_id", userId)
-          .eq(sourceColumn, sourceId)
-          .order("created_at", { ascending: false })
-          .limit(200),
-        supabase
-          .from("xp_events")
-          .select("id,created_at,amount,kind,source,schedule_instance_id")
-          .eq("user_id", userId)
-          .eq(sourceColumn, sourceId)
-          .order("created_at", { ascending: true }),
         supabase
           .from("goals")
           .select("id,name,status,active,created_at,updated_at", { count: "exact" })
@@ -417,27 +516,42 @@ export function useCreatorActivity(
       ]);
 
       const noteError = notesRes.error;
-      const xpError = xpRes.error;
-      const xpHistoryError = xpHistoryRes.error;
       const goalError = goalsRes.error;
 
-      if (noteError || xpError || xpHistoryError || goalError) {
+      if (noteError || goalError) {
         const firstError =
-          noteError ?? xpError ?? xpHistoryError ?? goalError;
+          noteError ?? goalError;
         throw firstError;
       }
 
       const notes = (notesRes.data ?? []) as NoteRow[];
       let monumentSkills: MonumentSkillRow[] = [];
+      let areaMonumentIds = new Set<string>();
 
       if (sourceType === "area") {
-        const { data: relationRows, error: relationError } = await supabase
-          .from("area_skills")
-          .select("skill_id")
-          .eq("user_id", userId)
-          .eq("area_id", sourceId);
-        if (relationError) throw relationError;
+        const [areaMonumentsRes, relationRes] = await Promise.all([
+          supabase
+            .from("monuments")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("area_id", sourceId),
+          supabase
+            .from("area_skills")
+            .select("skill_id")
+            .eq("user_id", userId)
+            .eq("area_id", sourceId),
+        ]);
 
+        if (areaMonumentsRes.error) throw areaMonumentsRes.error;
+        if (relationRes.error) throw relationRes.error;
+
+        areaMonumentIds = new Set(
+          ((areaMonumentsRes.data ?? []) as Array<{ id: unknown }>)
+            .map((row) => (row && typeof row.id === "string" ? row.id : null))
+            .filter((id): id is string => Boolean(id))
+        );
+
+        const relationRows = relationRes.data;
         const relationSkillIds = ((relationRows ?? []) as Array<{ skill_id: unknown }>)
           .map((row) =>
             row && typeof row.skill_id === "string" ? row.skill_id : null
@@ -493,29 +607,105 @@ export function useCreatorActivity(
       }
 
       const skillIds = monumentSkills.map((skill) => skill.id);
-      const skillXpRes =
-        skillIds.length > 0
-          ? await supabase
+      let xpEvents: XpEventRow[] = [];
+      let xpHistoryEvents: XpEventRow[] = [];
+      let skillXpEvents: XpEventRow[] = [];
+
+      if (sourceType === "area") {
+        const areaSkillIds = new Set(skillIds);
+        const xpRequests = [
+          supabase
+            .from("xp_events")
+            .select(XP_EVENT_SELECT)
+            .eq("user_id", userId)
+            .eq("area_id", sourceId),
+        ];
+
+        if (areaMonumentIds.size > 0) {
+          xpRequests.push(
+            supabase
               .from("xp_events")
-              .select("id,created_at,amount,kind,skill_id,source,schedule_instance_id")
+              .select(XP_EVENT_SELECT)
               .eq("user_id", userId)
-              .in("skill_id", skillIds)
-              .order("created_at", { ascending: false })
-          : null;
+              .in("monument_id", Array.from(areaMonumentIds))
+          );
+        }
 
-      if (skillXpRes?.error) {
-        throw skillXpRes.error;
+        if (areaSkillIds.size > 0) {
+          xpRequests.push(
+            supabase
+              .from("xp_events")
+              .select(XP_EVENT_SELECT)
+              .eq("user_id", userId)
+              .in("skill_id", Array.from(areaSkillIds))
+          );
+        }
+
+        const xpResults = await Promise.all(xpRequests);
+        const xpError = xpResults.find((result) => result.error)?.error;
+        if (xpError) throw xpError;
+
+        const combinedXpEvents = Array.from(
+          new Map(
+            xpResults
+              .flatMap((result) => (result.data ?? []) as XpEventRow[])
+              .map((event) => [event.id, event])
+          ).values()
+        );
+        const normalizedAreaXp = normalizeAreaXpEvents(
+          removeCancellingScheduleXpEvents(combinedXpEvents),
+          sourceId,
+          areaMonumentIds,
+          areaSkillIds
+        );
+        xpEvents = normalizedAreaXp.activityEvents;
+        xpHistoryEvents = normalizedAreaXp.historyEvents;
+        skillXpEvents = normalizedAreaXp.skillMixEvents;
+      } else {
+        const [xpRes, xpHistoryRes] = await Promise.all([
+          supabase
+            .from("xp_events")
+            .select(XP_EVENT_SELECT)
+            .eq("user_id", userId)
+            .eq("monument_id", sourceId)
+            .order("created_at", { ascending: false })
+            .limit(200),
+          supabase
+            .from("xp_events")
+            .select(XP_EVENT_SELECT)
+            .eq("user_id", userId)
+            .eq("monument_id", sourceId)
+            .order("created_at", { ascending: true }),
+        ]);
+
+        if (xpRes.error || xpHistoryRes.error) {
+          throw xpRes.error ?? xpHistoryRes.error;
+        }
+
+        const skillXpRes =
+          skillIds.length > 0
+            ? await supabase
+                .from("xp_events")
+                .select(XP_EVENT_SELECT)
+                .eq("user_id", userId)
+                .in("skill_id", skillIds)
+                .order("created_at", { ascending: false })
+            : null;
+
+        if (skillXpRes?.error) {
+          throw skillXpRes.error;
+        }
+
+        xpEvents = removeCancellingScheduleXpEvents(
+          (xpRes.data ?? []) as XpEventRow[]
+        );
+        xpHistoryEvents = removeCancellingScheduleXpEvents(
+          (xpHistoryRes.data ?? []) as XpEventRow[]
+        );
+        skillXpEvents = removeCancellingScheduleXpEvents(
+          (skillXpRes?.data ?? []) as XpEventRow[]
+        );
       }
-
-      const xpEvents = removeCancellingScheduleXpEvents(
-        (xpRes.data ?? []) as XpEventRow[]
-      );
-      const xpHistoryEvents = removeCancellingScheduleXpEvents(
-        (xpHistoryRes.data ?? []) as XpEventRow[]
-      );
-      const skillXpEvents = removeCancellingScheduleXpEvents(
-        (skillXpRes?.data ?? []) as XpEventRow[]
-      );
       const goals = (goalsRes.data ?? []) as GoalRow[];
       const levelHistory = buildLevelHistory(xpHistoryEvents);
       const xpSkillMix = buildXpSkillMix(monumentSkills, skillXpEvents);

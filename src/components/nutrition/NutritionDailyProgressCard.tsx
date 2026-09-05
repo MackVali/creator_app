@@ -24,7 +24,6 @@ export function NutritionDailyProgressCard({
     refresh,
   } = useNutritionDailyTotals();
   const displayedTotals = totals ?? EMPTY_NUTRITION_TOTALS;
-  const hasLoggedMeals = Object.values(displayedTotals).some((value) => value > 0);
   const hasCompleteTarget =
     Boolean(targets) &&
     ["calories", "carbs", "protein", "fat"].every(
@@ -70,12 +69,6 @@ export function NutritionDailyProgressCard({
             />
           </>
         )}
-
-        {!error && !hasLoggedMeals ? (
-          <p className="rounded-lg border border-white/[0.05] bg-white/[0.025] px-2.5 py-2 text-[11px] font-medium text-white/42">
-            No food logged yet.
-          </p>
-        ) : null}
 
         {targetError ? (
           <p className="text-[11px] font-medium text-red-100/62">

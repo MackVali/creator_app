@@ -52,27 +52,21 @@ export function AreaMonuments({
                 )}
               </div>
 
-              <div className="px-3 pb-3 sm:px-4 sm:pb-4">
-                {monuments.length > 0 ? (
-              <MonumentGridWithSharedTransition
-                monuments={monuments.map<MonumentCard>((monument) => ({
-                  id: monument.id,
-                  emoji: monument.emoji ?? null,
-                  title: monument.title,
-                  stats: `${monument.goalCount} Goal${
-                    monument.goalCount === 1 ? "" : "s"
-                  }`,
-                }))}
-                showNewCard={false}
-              />
-                ) : (
-                  <div className="flex min-h-[58px] items-center rounded-2xl border border-white/[0.055] bg-white/[0.018] px-3.5">
-                    <p className="text-xs text-white/35">
-                      No monuments in {areaLabel} yet.
-                    </p>
-                  </div>
-                )}
-              </div>
+              {monuments.length > 0 ? (
+                <div className="px-3 pb-3 sm:px-4 sm:pb-4">
+                  <MonumentGridWithSharedTransition
+                    monuments={monuments.map<MonumentCard>((monument) => ({
+                      id: monument.id,
+                      emoji: monument.emoji ?? null,
+                      title: monument.title,
+                      stats: `${monument.goalCount} Goal${
+                        monument.goalCount === 1 ? "" : "s"
+                      }`,
+                    }))}
+                    showNewCard={false}
+                  />
+                </div>
+              ) : null}
             </>
           );
         }}
