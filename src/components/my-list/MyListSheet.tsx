@@ -6019,7 +6019,28 @@ export function MyListSheet({
 
             let contextualSystemKey: string | null = null;
 
-            if (
+            // Area and Monument detail screens are portal overlays and do
+            // not necessarily change the current URL. Resolve their actual
+            // open entity first instead of assuming pathname is authoritative.
+            const activeMonumentId =
+              typeof document !== "undefined"
+                ? document.body.dataset.activeMonumentId?.trim() ?? ""
+                : "";
+
+            const activeAreaId =
+              typeof document !== "undefined"
+                ? document.body.dataset.activeAreaId?.trim().toLowerCase() ?? ""
+                : "";
+
+            if (activeMonumentId) {
+              contextualSystemKey =
+                getMyListMonumentSystemKey(activeMonumentId);
+            } else if (
+              activeAreaId &&
+              AREAS.some((area) => area.id === activeAreaId)
+            ) {
+              contextualSystemKey = getMyListAreaSystemKey(activeAreaId);
+            } else if (
               liveSegments.length === 2 &&
               liveSegments[0] === "areas"
             ) {
