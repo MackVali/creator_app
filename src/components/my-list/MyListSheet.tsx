@@ -176,6 +176,7 @@ function getMyListNotesStorageKey(listId: string | null) {
 }
 const MY_LIST_MANUAL_ROWS_STORAGE_KEY = "creator:my-list:manual-rows";
 const MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX = "creator:my-list:view-mode";
+const MY_LIST_VIEW_MODE_STORAGE_KEY = "creator:my-list:view-mode:current";
 const MY_LIST_VIEW_MODE_ANONYMOUS_ID = "anonymous";
 const MY_LIST_VIEW_MODE_PREFERENCES = [
   "priority",
@@ -751,14 +752,43 @@ function readStoredMyListViewModePreference(
   if (typeof window === "undefined") return null;
 
   try {
-    const storedPreference = normalizeMyListViewModePreference(
+    const canonicalPreference = normalizeMyListViewModePreference(
+      window.localStorage.getItem(MY_LIST_VIEW_MODE_STORAGE_KEY),
+    );
+
+    if (canonicalPreference) {
+      return canonicalPreference;
+    }
+
+    // Migration fallback for preferences saved before the canonical
+    // device-local key existed.
+    const scopedPreference = normalizeMyListViewModePreference(
       window.localStorage.getItem(getMyListViewModeStorageKey(userId)),
     );
-    if (storedPreference || !userId?.trim()) return storedPreference;
 
-    return normalizeMyListViewModePreference(
-      window.localStorage.getItem(getMyListViewModeStorageKey(null)),
-    );
+    if (scopedPreference) {
+      window.localStorage.setItem(
+        MY_LIST_VIEW_MODE_STORAGE_KEY,
+        scopedPreference,
+      );
+      return scopedPreference;
+    }
+
+    if (userId?.trim()) {
+      const anonymousPreference = normalizeMyListViewModePreference(
+        window.localStorage.getItem(getMyListViewModeStorageKey(null)),
+      );
+
+      if (anonymousPreference) {
+        window.localStorage.setItem(
+          MY_LIST_VIEW_MODE_STORAGE_KEY,
+          anonymousPreference,
+        );
+        return anonymousPreference;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -771,6 +801,14 @@ function writeStoredMyListViewModePreference(
   if (typeof window === "undefined") return;
 
   try {
+    // This is a device-local UI preference. Keep one canonical value so
+    // auth hydration cannot replace the user's latest selection.
+    window.localStorage.setItem(
+      MY_LIST_VIEW_MODE_STORAGE_KEY,
+      preference,
+    );
+
+    // Continue mirroring to the legacy scoped key for compatibility.
     window.localStorage.setItem(
       getMyListViewModeStorageKey(userId),
       preference,
@@ -7511,7 +7549,12 @@ export function MyListSheet({
                                               : "w-0 overflow-hidden opacity-0 pointer-events-none",
                                           )}
                                         >
-                                          <div className="relative shrink-0">
+                                          <div
+                                            className={clsx(
+                                              "relative shrink-0",
+                                              isDayLensActive && "hidden",
+                                            )}
+                                          >
                                             <button
                                               type="button"
                                               aria-label={`Choose priority: ${priorityOption.label}`}
@@ -7555,6 +7598,7 @@ export function MyListSheet({
                                                 ),
                                             )}
                                           </div>
+                                          {isDayLensActive ? (
                                           <div className="relative shrink-0">
                                             <button
                                               type="button"
@@ -7607,6 +7651,7 @@ export function MyListSheet({
                                                 ),
                                             )}
                                           </div>
+                                          ) : null}
                                           {renderDeleteRowButton(
                                             task.id,
                                             "task",
@@ -7829,7 +7874,12 @@ export function MyListSheet({
                                               : "w-0 overflow-hidden opacity-0 pointer-events-none",
                                           )}
                                         >
-                                          <div className="relative shrink-0">
+                                          <div
+                                            className={clsx(
+                                              "relative shrink-0",
+                                              isDayLensActive && "hidden",
+                                            )}
+                                          >
                                             <button
                                               type="button"
                                               aria-label={`Choose priority: ${priorityOption.label}`}
@@ -7874,7 +7924,7 @@ export function MyListSheet({
                                                 ),
                                             )}
                                           </div>
-                                          {!isGoalRow ? (
+                                          {!isGoalRow && isDayLensActive ? (
                                             <div className="relative shrink-0">
                                               <button
                                                 type="button"
@@ -8283,7 +8333,12 @@ export function MyListSheet({
                                           const DayIcon = dayVisual.Icon;
                                           return (
                                             <>
-                                              <div className="relative shrink-0">
+                                              <div
+                                            className={clsx(
+                                              "relative shrink-0",
+                                              isDayLensActive && "hidden",
+                                            )}
+                                          >
                                                 <button
                                                   type="button"
                                                   aria-label={`Choose priority: ${priorityOption.label}`}
@@ -8329,6 +8384,7 @@ export function MyListSheet({
                                                     ),
                                                 )}
                                               </div>
+                                              {isDayLensActive ? (
                                               <div className="relative shrink-0">
                                                 <button
                                                   type="button"
@@ -8382,6 +8438,7 @@ export function MyListSheet({
                                                     ),
                                                 )}
                                               </div>
+                                              ) : null}
                                               {renderDeleteRowButton(
                                                 row.id,
                                                 "manual",

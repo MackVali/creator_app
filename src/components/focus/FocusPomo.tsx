@@ -299,7 +299,7 @@ type FocusPomoTimeBlockOption = {
   allowedMonumentIds: string[];
 };
 
-type FocusPomoCompletionKind = "habit" | "project";
+type FocusPomoCompletionKind = "habit" | "project" | "task";
 
 type FocusPomoProjectCompletionUpdate = {
   update(values: {
@@ -307,6 +307,14 @@ type FocusPomoProjectCompletionUpdate = {
     updated_at: string;
     stage: string;
   }): {
+    eq(column: string, value: string): {
+      eq(column: string, value: string): Promise<{ error: unknown | null }>;
+    };
+  };
+};
+
+type FocusPomoTaskCompletionUpdate = {
+  update(values: { completed_at: string | null }): {
     eq(column: string, value: string): {
       eq(column: string, value: string): Promise<{ error: unknown | null }>;
     };
@@ -3074,16 +3082,21 @@ function getFocusPomoCompletionKind(
 ): FocusPomoCompletionKind | null {
   if (item.sourceType === "PROJECT") return "project";
   if (item.sourceType === "HABIT") return "habit";
+  if (item.sourceType === "TASK") return "task";
 
   const itemKind = getFocusItemKind(item);
-  if (itemKind === "project" || itemKind === "habit") return itemKind;
+  if (itemKind === "project" || itemKind === "habit" || itemKind === "task") {
+    return itemKind;
+  }
   return null;
 }
 
 function readFocusPomoCompletionSourceType(
   kind: FocusPomoCompletionKind
-): "PROJECT" | "HABIT" {
-  return kind === "project" ? "PROJECT" : "HABIT";
+): "PROJECT" | "HABIT" | "TASK" {
+  if (kind === "project") return "PROJECT";
+  if (kind === "task") return "TASK";
+  return "HABIT";
 }
 
 function normalizeFocusPomoDurationMinutes(value: unknown): number | null {
@@ -3130,20 +3143,34 @@ function getFocusPomoCompletionAreaIds(item: FocusPomoQueueItem): string[] {
   const record = item as unknown as Record<string, unknown>;
   const source = readNestedScopeRecord(record, "source");
   const raw = readNestedScopeRecord(record, "raw");
-
-  return uniqueScopeValues([
+  const itemKind = getFocusItemKind(item);
+  const canonicalAreaIds = [
     readScopeString(record.area_id),
     readScopeString(record.areaId),
-    readScopeString(record.goal_area_id),
-    readScopeString(record.goalAreaId),
-    readScopeString(record.campaign_area_id),
-    readScopeString(record.campaignAreaId),
     readScopeString(source?.area_id),
     readScopeString(source?.areaId),
     readScopeString(raw?.area_id),
     readScopeString(raw?.areaId),
     ...readScopeArrayValues(item, ["areas", "areaIds", "area_ids"], ["id"]),
-  ]);
+  ];
+
+  if (itemKind === "habit") {
+    return uniqueScopeValues(canonicalAreaIds);
+  }
+
+  if (itemKind === "project" || itemKind === "task") {
+    return uniqueScopeValues([
+      ...canonicalAreaIds,
+      readScopeString(record.goal_area_id),
+      readScopeString(record.goalAreaId),
+      readScopeString(source?.goal_area_id),
+      readScopeString(source?.goalAreaId),
+      readScopeString(raw?.goal_area_id),
+      readScopeString(raw?.goalAreaId),
+    ]);
+  }
+
+  return uniqueScopeValues(canonicalAreaIds);
 }
 
 function buildFocusPomoAwardKeyBase({
@@ -3453,6 +3480,39 @@ async function completeFocusPomoItem({
       void hapticErrorPattern();
       return false;
     }
+  } else if (kind === "task") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn("FocusPomo could not complete task: Supabase unavailable");
+      void hapticErrorPattern();
+      return false;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error("FocusPomo could not complete task: user unavailable", userError);
+      void hapticErrorPattern();
+      return false;
+    }
+
+    const tasksTable = supabase.from(
+      "tasks"
+    ) as unknown as FocusPomoTaskCompletionUpdate;
+    const taskId = item.taskId ?? item.task_id ?? item.id;
+    const { error } = await tasksTable
+      .update({ completed_at: completedAt })
+      .eq("id", taskId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("FocusPomo failed to complete task", error);
+      void hapticErrorPattern();
+      return false;
+    }
   } else {
     try {
       const response = await fetch("/api/habits/completion", {
@@ -3596,6 +3656,36 @@ async function undoFocusPomoItem({
 
     if (error) {
       console.error("FocusPomo failed to undo project completion", error);
+      return;
+    }
+  } else if (kind === "task") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn("FocusPomo could not undo task completion: Supabase unavailable");
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error("FocusPomo could not undo task completion: user unavailable", userError);
+      return;
+    }
+
+    const tasksTable = supabase.from(
+      "tasks"
+    ) as unknown as FocusPomoTaskCompletionUpdate;
+    const taskId = item.taskId ?? item.task_id ?? item.id;
+    const { error } = await tasksTable
+      .update({ completed_at: null })
+      .eq("id", taskId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("FocusPomo failed to undo task completion", error);
       return;
     }
   } else {

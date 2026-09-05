@@ -1105,6 +1105,8 @@ type FabSearchResult = {
   skill_name?: string | null;
   primarySkillName?: string | null;
   primary_skill_name?: string | null;
+  areaId?: string | null;
+  area_id?: string | null;
   monumentId?: string | null;
   monument_id?: string | null;
   priority?: string | null;
@@ -10500,6 +10502,7 @@ export function Fab({
   );
   const [overlayFilterMonumentId, setOverlayFilterMonumentId] =
     useState<string>("");
+  const [overlayFilterAreaId, setOverlayFilterAreaId] = useState<string>("");
   const [overlayFilterSkillId, setOverlayFilterSkillId] = useState<string>("");
   const [overlayFilterEventType, setOverlayFilterEventType] =
     useState<OverlayEventTypeFilter>("ALL");
@@ -10534,9 +10537,14 @@ export function Fab({
     [overlaySortMode, searchQuery],
   );
   const overlayPickerResults = useMemo(() => {
+    const matchesArea = overlayFilterAreaId.trim().length > 0;
     const matchesMonument = overlayFilterMonumentId.trim().length > 0;
     const matchesSkill = overlayFilterSkillId.trim().length > 0;
     const matchesEventType = overlayFilterEventType !== "ALL";
+
+    const resolveAreaId = (result: FabSearchResult): string | null => {
+      return result.areaId ?? result.area_id ?? null;
+    };
 
     const resolveMonumentId = (result: FabSearchResult): string | null => {
       const explicit =
@@ -10671,6 +10679,11 @@ export function Fab({
     };
 
     let filtered = searchResults;
+    if (matchesArea) {
+      filtered = filtered.filter(
+        (result) => resolveAreaId(result) === overlayFilterAreaId,
+      );
+    }
     if (matchesMonument) {
       filtered = filtered.filter(
         (result) => resolveMonumentId(result) === overlayFilterMonumentId,
@@ -10700,6 +10713,7 @@ export function Fab({
     return indexed.map(({ result }) => result);
   }, [
     goalsById,
+    overlayFilterAreaId,
     overlayFilterMonumentId,
     overlayFilterSkillId,
     overlayFilterEventType,
@@ -12587,9 +12601,11 @@ export function Fab({
     isSavingLiveOverlay,
     overlayAdjustmentRequest,
     overlayBlockMode,
+    overlayDynamicAllowAllAreas,
     overlayDynamicAllowAllInstanceTypes,
     overlayDynamicAllowAllMonuments,
     overlayDynamicAllowAllSkills,
+    overlayDynamicAllowedAreaIds,
     overlayDynamicAllowedInstanceTypes,
     overlayDynamicAllowedMonumentIds,
     overlayDynamicAllowedSkillIds,
@@ -19610,6 +19626,8 @@ export function Fab({
       onLongPressResult={handleEditNexusResult}
       inputRef={nexusInputRef}
       onManualPlaceResult={handleManualPlacement}
+      filterAreaId={overlayFilterAreaId}
+      onFilterAreaChange={setOverlayFilterAreaId}
       filterMonumentId={overlayFilterMonumentId}
       onFilterMonumentChange={setOverlayFilterMonumentId}
       filterSkillId={overlayFilterSkillId}
@@ -33671,38 +33689,40 @@ export function Fab({
                       })}
 
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
-                            Scope
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextAllowAll =
-                                !(
-                                  overlayDynamicAllowAllAreas &&
+                        {!overlayAdjustmentRequest ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
+                              Scope
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextAllowAll =
+                                  !(
+                                    overlayDynamicAllowAllAreas &&
+                                    overlayDynamicAllowAllMonuments
+                                  );
+
+                                setOverlayDynamicAllowAllAreas(nextAllowAll);
+                                setOverlayDynamicAllowAllMonuments(nextAllowAll);
+
+                                if (nextAllowAll) {
+                                  setOverlayDynamicAllowedAreaIds([]);
+                                  setOverlayDynamicAllowedMonumentIds([]);
+                                }
+                              }}
+                              className={cn(
+                                "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                                overlayDynamicAllowAllAreas &&
                                   overlayDynamicAllowAllMonuments
-                                );
-
-                              setOverlayDynamicAllowAllAreas(nextAllowAll);
-                              setOverlayDynamicAllowAllMonuments(nextAllowAll);
-
-                              if (nextAllowAll) {
-                                setOverlayDynamicAllowedAreaIds([]);
-                                setOverlayDynamicAllowedMonumentIds([]);
-                              }
-                            }}
-                            className={cn(
-                              "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
-                              overlayDynamicAllowAllAreas &&
-                                overlayDynamicAllowAllMonuments
-                                ? "border-white/20 bg-white/10 text-white"
-                                : "border-white/10 bg-black/20 text-white/45",
-                            )}
-                          >
-                            Allow ALL
-                          </button>
-                        </div>
+                                  ? "border-white/20 bg-white/10 text-white"
+                                  : "border-white/10 bg-black/20 text-white/45",
+                              )}
+                            >
+                              Allow ALL
+                            </button>
+                          </div>
+                        ) : null}
 
                         {renderOverlayConstraintChips({
                           group: "monuments",
@@ -33815,6 +33835,8 @@ export function Fab({
                         onLoadMore={handleLoadMoreResults}
                         onSelectResult={handleOverlayPickerResult}
                         inputRef={nexusInputRef}
+                        filterAreaId={overlayFilterAreaId}
+                        onFilterAreaChange={setOverlayFilterAreaId}
                         filterMonumentId={overlayFilterMonumentId}
                         onFilterMonumentChange={setOverlayFilterMonumentId}
                         filterSkillId={overlayFilterSkillId}
@@ -34415,6 +34437,8 @@ type FabNexusProps = {
     result: FabSearchResult,
     originElement: HTMLElement,
   ) => boolean;
+  filterAreaId?: string;
+  onFilterAreaChange?: (value: string) => void;
   filterMonumentId?: string;
   onFilterMonumentChange?: (value: string) => void;
   filterSkillId?: string;
@@ -34461,6 +34485,8 @@ function FabNexus({
   onSelectResult,
   onDoubleTapResult,
   onLongPressResult,
+  filterAreaId,
+  onFilterAreaChange,
   filterMonumentId,
   onFilterMonumentChange,
   filterSkillId,
@@ -34494,11 +34520,13 @@ function FabNexus({
   const [popupAdjustOpen, setPopupAdjustOpen] = useState(false);
   const [popupPriorityAdjustOpen, setPopupPriorityAdjustOpen] = useState(false);
   const [embeddedAdjustOpen, setEmbeddedAdjustOpen] = useState(false);
+  const [popupAreaPillsOpen, setPopupAreaPillsOpen] = useState(false);
   const [popupMonumentPillsOpen, setPopupMonumentPillsOpen] = useState(false);
   const [popupSkillPillsOpen, setPopupSkillPillsOpen] = useState(false);
   const [popupInstanceTypePillsOpen, setPopupInstanceTypePillsOpen] =
     useState(false);
   const embeddedAdjustControlsId = useId();
+  const popupAreaPillsId = useId();
   const popupMonumentPillsId = useId();
   const popupSkillPillsId = useId();
   const popupInstanceTypePillsId = useId();
@@ -34548,6 +34576,7 @@ function FabNexus({
   };
 
   const toolbarMonuments = availableMonuments ?? [];
+  const toolbarAreas = AREAS;
   const toolbarSkills = useMemo(() => availableSkills ?? [], [availableSkills]);
   const popupToolbarSkills = useMemo(
     () =>
@@ -34557,6 +34586,7 @@ function FabNexus({
       ),
     [availableSkillCategories, toolbarSkills],
   );
+  const handleAreaChange = onFilterAreaChange ?? (() => {});
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
   const handleEventTypeChange = onFilterEventTypeChange ?? (() => {});
@@ -34575,6 +34605,7 @@ function FabNexus({
   const shouldShowEmbeddedAdjustments = showToolbar && isEmbedded;
   const hasActiveFilter =
     query.trim().length > 0 ||
+    Boolean(filterAreaId) ||
     Boolean(filterMonumentId) ||
     Boolean(filterSkillId) ||
     eventTypeValue !== "ALL";
@@ -34582,7 +34613,10 @@ function FabNexus({
     shouldUsePopupSizing && popupExpanded && popupMode === "priorityEditor";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
-  const toolbarSortSelectClass = cn(toolbarSelectClass, "rounded-md");
+  const toolbarSortSelectClass = cn(
+    toolbarSelectClass,
+    "min-w-[138px] !h-9 !rounded-[14px] !border-white/[0.09] !bg-white/[0.055] !px-3 !text-[11px] !font-medium !text-white/80 !shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_22px_rgba(0,0,0,0.16)] focus:!ring-1 focus:!ring-white/15 focus:!border-white/15"
+  );
   const toolbarContentClass = "bg-black/90 text-white";
   const toolbarPillBaseClass =
     "inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35";
@@ -34723,6 +34757,7 @@ function FabNexus({
       (!shouldShowPopupAdjustments || !popupAdjustOpen) &&
       (!shouldShowEmbeddedAdjustments || !embeddedAdjustOpen)
     ) {
+      setPopupAreaPillsOpen(false);
       setPopupMonumentPillsOpen(false);
       setPopupSkillPillsOpen(false);
       setPopupInstanceTypePillsOpen(false);
@@ -34852,6 +34887,20 @@ function FabNexus({
             options: NEXUS_INSTANCE_TYPE_FILTER_OPTIONS,
           })}
           {renderFilterPillGroup({
+            label: "AREAS",
+            allLabel: "All",
+            value: filterAreaId ?? "",
+            onChange: handleAreaChange,
+            open: popupAreaPillsOpen,
+            onOpenChange: setPopupAreaPillsOpen,
+            controlsId: popupAreaPillsId,
+            options: toolbarAreas.map((area) => ({
+              id: area.id,
+              label: area.label,
+              icon: area.emoji,
+            })),
+          })}
+          {renderFilterPillGroup({
             label: "MONUMENTS",
             allLabel: "All",
             value: filterMonumentId ?? "",
@@ -34882,6 +34931,45 @@ function FabNexus({
         </>
       ) : (
         <>
+          <Select
+            value={eventTypeValue}
+            onValueChange={(value) =>
+              handleEventTypeChange(value as OverlayEventTypeFilter)
+            }
+          >
+            <SelectTrigger
+              aria-label="Filter by event type"
+              className={toolbarSelectClass}
+            >
+              <SelectValue placeholder="Event type" />
+            </SelectTrigger>
+            <SelectContent className={toolbarContentClass}>
+              <SelectItem value="ALL">All events</SelectItem>
+              {eventTypeFilterOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterAreaId ?? ""} onValueChange={handleAreaChange}>
+            <SelectTrigger
+              aria-label="Filter by area"
+              className={toolbarSelectClass}
+            >
+              <SelectValue placeholder="Area" />
+            </SelectTrigger>
+            <SelectContent className={toolbarContentClass}>
+              <SelectItem value="">All areas</SelectItem>
+              {toolbarAreas.map((area) => (
+                <SelectItem key={area.id} value={area.id}>
+                  <span className="text-sm">
+                    {area.emoji + " " + area.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={filterMonumentId ?? ""}
             onValueChange={handleMonumentChange}
@@ -34933,32 +35021,10 @@ function FabNexus({
             : "contents",
         )}
       >
-        {!showFilterPillControls ? (
-          <Select
-            value={eventTypeValue}
-            onValueChange={(value) =>
-              handleEventTypeChange(value as OverlayEventTypeFilter)
-            }
-          >
-            <SelectTrigger
-              aria-label="Filter by event type"
-              className={toolbarSelectClass}
-            >
-              <SelectValue placeholder="Event type" />
-            </SelectTrigger>
-            <SelectContent className={toolbarContentClass}>
-              <SelectItem value="ALL">All events</SelectItem>
-              {eventTypeFilterOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
         <Select
           value={sortValue}
           onValueChange={(value) => handleSortChange(value as OverlaySortMode)}
+          contentWrapperClassName="!rounded-[16px] !border-white/[0.08] !bg-zinc-950/95 !p-1.5 !shadow-[0_18px_48px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl"
         >
           <SelectTrigger
             aria-label="Sort overlay results"
@@ -34971,7 +35037,7 @@ function FabNexus({
               <SelectItem
                 key={option.value}
                 value={option.value}
-                className="text-[10px] uppercase text-white/60"
+                className="!rounded-[11px] !px-3 !py-2.5 !text-[12px] !font-medium !normal-case !tracking-normal !text-white/65 hover:!bg-white/[0.07] hover:!text-white data-[selected=true]:!bg-white/[0.10] data-[selected=true]:!text-white data-[selected=true]:!shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]"
               >
                 {option.label}
               </SelectItem>

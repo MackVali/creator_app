@@ -1610,7 +1610,7 @@ function CompactProjectsOverlay({
     <div
       className={
         workspaceExpanded
-          ? "max-h-[calc(100dvh-12rem)] overflow-y-auto px-3 pb-4 sm:max-h-[72vh] sm:px-5"
+          ? "min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-5"
           : "overflow-visible px-3 pb-4 sm:px-5"
       }
     >
@@ -1660,48 +1660,30 @@ function CompactProjectsOverlay({
           onClick={(event) => event.stopPropagation()}
           className={`w-full ${
             isMobile ? "max-w-sm" : "max-w-xl"
+          } ${
+            workspaceExpanded
+              ? "flex h-[calc(100dvh-5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] max-h-[calc(100dvh-5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col sm:h-[82vh] sm:max-h-[82vh]"
+              : ""
           } ${basePanelClass}`}
           style={
             computedMaxWidth
               ? { maxWidth: computedMaxWidth }
               : undefined
           }
-          initial={
-            prefersReducedMotion
-              ? { opacity: 0 }
-              : { opacity: 0, y: 6, scale: 0.985 }
-          }
-          animate={
-            prefersReducedMotion
-              ? { opacity: 1 }
-              : { opacity: 1, y: 0, scale: 1 }
-          }
-          exit={
-            prefersReducedMotion
-              ? { opacity: 0 }
-              : { opacity: 0, y: 4, scale: 0.99 }
-          }
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           transition={{
-            duration: prefersReducedMotion ? 0.12 : 0.18,
+            duration: prefersReducedMotion ? 0.1 : 0.14,
             ease: "easeOut",
           }}
         >
           <motion.div
-            variants={
-              prefersReducedMotion
-                ? undefined
-                : detailContentVariant
-            }
-            initial={prefersReducedMotion ? false : "hidden"}
-            animate={
-              prefersReducedMotion
-                ? undefined
-                : "visible"
-            }
-            exit={
-              prefersReducedMotion
-                ? undefined
-                : "exit"
+            initial={false}
+            className={
+              workspaceExpanded
+                ? "flex min-h-0 flex-1 flex-col"
+                : undefined
             }
           >
             {header}

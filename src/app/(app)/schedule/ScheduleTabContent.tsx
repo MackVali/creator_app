@@ -128,7 +128,6 @@ import {
 import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
-import { AREAS } from "@/config/areas";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
   computeTimelineLayoutForSyncHabits,
@@ -2476,8 +2475,10 @@ function WindowLabel({
   );
 }
 
-const DAY_TYPE_DOUBLE_TAP_DELAY_MS = 260;
-const DAY_TYPE_DOUBLE_TAP_MOVE_PX = 30;
+const DAY_TYPE_DOUBLE_TAP_DELAY_MS = 340;
+const DAY_TYPE_DOUBLE_TAP_MOVE_PX = 38;
+const DAY_TYPE_TOUCH_MOVE_PX = 20;
+const DAY_TYPE_LABEL_HIT_TARGET_WIDTH_PX = 40;
 
 type DayTypeBlockLabelProps = {
   label: string;
@@ -2511,6 +2512,7 @@ function DayTypeBlockLabel({
       if (event.touches.length !== 1) {
         touchStartRef.current = null;
         touchMovedRef.current = false;
+        lastTapRef.current = null;
         return;
       }
       const [touch] = event.touches;
@@ -2535,7 +2537,7 @@ function DayTypeBlockLabel({
       if (!match) return;
       const dx = match.clientX - start.x;
       const dy = match.clientY - start.y;
-      if (Math.hypot(dx, dy) > 16) {
+      if (Math.hypot(dx, dy) > DAY_TYPE_TOUCH_MOVE_PX) {
         touchMovedRef.current = true;
       }
     },
@@ -2556,8 +2558,13 @@ function DayTypeBlockLabel({
       }
       const now = performance.now();
       const currentPos = { x: match.clientX, y: match.clientY };
+      if (touchMovedRef.current) {
+        lastTapRef.current = null;
+        touchStartRef.current = null;
+        touchMovedRef.current = false;
+        return;
+      }
       if (
-        !touchMovedRef.current &&
         lastTapRef.current &&
         now - lastTapRef.current.time <= DAY_TYPE_DOUBLE_TAP_DELAY_MS &&
         Math.hypot(
@@ -2581,6 +2588,7 @@ function DayTypeBlockLabel({
   );
 
   const handleTouchCancel = useCallback(() => {
+    lastTapRef.current = null;
     touchStartRef.current = null;
     touchMovedRef.current = false;
   }, []);
@@ -2598,17 +2606,10 @@ function DayTypeBlockLabel({
       type="button"
       title={label}
       aria-label={`Edit constraints for ${label || "time block"}`}
-      className="ml-1 text-[10px] leading-none text-zinc-500 focus-visible:outline focus-visible:outline-white/60"
+      className="relative flex h-full shrink-0 items-start justify-start overflow-hidden focus-visible:outline focus-visible:outline-white/60"
       style={{
-        display: "inline-flex",
-        writingMode: "vertical-rl",
-        textOrientation: "mixed",
-        whiteSpace: "normal",
-        wordBreak: "break-word",
-        overflowWrap: "anywhere",
-        overflow: "hidden",
-        maxInlineSize: inlineSize,
-        inlineSize,
+        width: DAY_TYPE_LABEL_HIT_TARGET_WIDTH_PX,
+        touchAction: "pan-y pinch-zoom",
       }}
       onDoubleClick={handleDoubleClick}
       onKeyDown={(event) => {
@@ -2622,7 +2623,22 @@ function DayTypeBlockLabel({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
     >
-      {label}
+      <span
+        className="ml-1 text-[10px] leading-none text-zinc-500"
+        style={{
+          display: "inline-flex",
+          writingMode: "vertical-rl",
+          textOrientation: "mixed",
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          overflow: "hidden",
+          maxInlineSize: inlineSize,
+          inlineSize,
+        }}
+      >
+        {label}
+      </span>
     </button>
   );
 }
@@ -5113,7 +5129,6 @@ export default function ScheduleTabContent({
     string | null
   >(null);
   const [timeBlockSkillSearch, setTimeBlockSkillSearch] = useState("");
-  const [timeBlockMonumentSearch, setTimeBlockMonumentSearch] = useState("");
   const { options: timeBlockLocationOptions, loading: timeBlockLocationsLoading } =
     useLocationContexts();
   const [overlayWindows, setOverlayWindows] =
@@ -11553,28 +11568,6 @@ export default function ScheduleTabContent({
       })),
     [skills]
   );
-  const timeBlockConstraintMonumentOptions = useMemo(
-    () =>
-      monuments.map((monument) => ({
-        value: monument.id,
-        label: monument.title || "Untitled monument",
-      })),
-    [monuments]
-  );
-  const timeBlockConstraintAreaOptions = useMemo(
-    () => AREAS.map((area) => ({ value: area.id, label: area.label })),
-    []
-  );
-  const selectedTimeBlockAllowAllScope = selectedTimeBlockForConstraints
-    ? selectedTimeBlockForConstraints.allowAllAreas &&
-      selectedTimeBlockForConstraints.allowAllMonuments
-    : true;
-  const selectedTimeBlockAllowedScopeIds = selectedTimeBlockForConstraints
-    ? new Set([
-        ...Array.from(selectedTimeBlockForConstraints.allowedAreaIds),
-        ...Array.from(selectedTimeBlockForConstraints.allowedMonumentIds),
-      ])
-    : new Set<string>();
   const sortedTimeBlockConstraintSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
@@ -11582,25 +11575,12 @@ export default function ScheduleTabContent({
       ),
     [skills]
   );
-  const sortedTimeBlockConstraintMonuments = useMemo(
-    () =>
-      [...monuments].sort((a, b) =>
-        (a.title ?? "").localeCompare(b.title ?? "")
-      ),
-    [monuments]
-  );
   const filteredTimeBlockConstraintSkills = useMemo(() => {
     const term = timeBlockSkillSearch.trim().toLowerCase();
     return sortedTimeBlockConstraintSkills.filter((skill) =>
       (skill.name ?? "").toLowerCase().includes(term)
     );
   }, [sortedTimeBlockConstraintSkills, timeBlockSkillSearch]);
-  const filteredTimeBlockConstraintMonuments = useMemo(() => {
-    const term = timeBlockMonumentSearch.trim().toLowerCase();
-    return sortedTimeBlockConstraintMonuments.filter((monument) =>
-      (monument.title ?? "").toLowerCase().includes(term)
-    );
-  }, [sortedTimeBlockConstraintMonuments, timeBlockMonumentSearch]);
   const selectedTimeBlockLocationOptions = useMemo(() => {
     if (!selectedTimeBlockForConstraints?.locationContextId) {
       return timeBlockLocationOptions ?? [];
@@ -17683,159 +17663,6 @@ export default function ScheduleTabContent({
                     </div>
                   </details>
 
-                  <details className="group grid gap-1">
-                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                        Scope
-                      </span>
-                      <span className={TIME_BLOCK_CONSTRAINT_CONTROL_PILL}>
-                        <span className="truncate group-open:hidden">
-                          {formatTimeBlockConstraintSummary(
-                            selectedTimeBlockAllowedScopeIds,
-                            [
-                              ...timeBlockConstraintAreaOptions,
-                              ...timeBlockConstraintMonumentOptions,
-                            ],
-                            selectedTimeBlockAllowAllScope
-                          )}
-                        </span>
-                        <span className="hidden truncate group-open:inline">Choose</span>
-                      </span>
-                    </summary>
-                    <div className="space-y-2 pt-1">
-                      <Input
-                        value={timeBlockMonumentSearch}
-                        onChange={(event) => setTimeBlockMonumentSearch(event.target.value)}
-                        placeholder="Search monuments..."
-                        className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
-                      />
-                      <div className="max-h-40 overflow-y-auto pr-1">
-                        <div className="space-y-2">
-                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                          <button
-                            type="button"
-                            aria-pressed={selectedTimeBlockAllowAllScope}
-                            onClick={() =>
-                              setSelectedTimeBlockForConstraints((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      allowAllAreas: true,
-                                      allowedAreaIds: new Set<string>(),
-                                      allowAllMonuments: true,
-                                      allowedMonumentIds: new Set<string>(),
-                                    }
-                                  : prev
-                              )
-                            }
-                            className={clsx(
-                              TIME_BLOCK_CONSTRAINT_PILL_BASE,
-                              selectedTimeBlockAllowAllScope
-                                ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
-                                : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
-                            )}
-                          >
-                            Allow ALL
-                          </button>
-                          {AREAS.map((area) => {
-                            const selected =
-                              !selectedTimeBlockAllowAllScope &&
-                              selectedTimeBlockForConstraints.allowedAreaIds.has(area.id);
-                            return (
-                              <button
-                                key={area.id}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() =>
-                                  setSelectedTimeBlockForConstraints((prev) => {
-                                    if (!prev) return prev;
-                                    const next = new Set(prev.allowedAreaIds);
-                                    if (next.has(area.id)) next.delete(area.id);
-                                    else next.add(area.id);
-                                    return {
-                                      ...prev,
-                                      allowAllAreas: false,
-                                      allowAllMonuments: false,
-                                      allowedAreaIds: next,
-                                    };
-                                  })
-                                }
-                                className={clsx(
-                                  TIME_BLOCK_CONSTRAINT_PILL_BASE,
-                                  selected
-                                    ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
-                                    : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
-                                )}
-                              >
-                                <span className={TIME_BLOCK_CONSTRAINT_OPTION_ICON}>
-                                  {area.emoji}
-                                </span>
-                                <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
-                                  {area.label}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                          {filteredTimeBlockConstraintMonuments.length === 0 ? (
-                            <p className="w-full text-[10px] text-white/35">
-                              No monuments found.
-                            </p>
-                          ) : (
-                            filteredTimeBlockConstraintMonuments.map((monument) => {
-                              const selected =
-                                !selectedTimeBlockAllowAllScope &&
-                                selectedTimeBlockForConstraints.allowedMonumentIds.has(
-                                  monument.id
-                                );
-                              return (
-                                <button
-                                  key={monument.id}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  onClick={() =>
-                                    setSelectedTimeBlockForConstraints((prev) => {
-                                      if (!prev) return prev;
-                                      const next = new Set(prev.allowedMonumentIds);
-                                      if (next.has(monument.id)) next.delete(monument.id);
-                                      else next.add(monument.id);
-                                      return {
-                                        ...prev,
-                                        allowAllAreas: false,
-                                        allowAllMonuments: false,
-                                        allowedMonumentIds: next,
-                                      };
-                                    })
-                                  }
-                                  className={clsx(
-                                    TIME_BLOCK_CONSTRAINT_PILL_BASE,
-                                    selected
-                                      ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
-                                      : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
-                                  )}
-                                >
-                                  <span className={TIME_BLOCK_CONSTRAINT_OPTION_ICON}>
-                                    {(monument.emoji ?? "*").trim() || "*"}
-                                  </span>
-                                  <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
-                                    {monument.title}
-                                  </span>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                        </div>
-                      </div>
-                      {!selectedTimeBlockAllowAllScope &&
-                      selectedTimeBlockAllowedScopeIds.size === 0 ? (
-                        <div className="text-[10px] text-white/35">
-                          No scope selected.
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
                 </div>
 
                 {timeBlockConstraintsError ? (

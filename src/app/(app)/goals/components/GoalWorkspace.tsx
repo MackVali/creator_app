@@ -200,14 +200,14 @@ export function GoalWorkspace({
     <div
       className={
         workspaceExpanded
-          ? "flex max-h-[calc(100dvh-8rem)] flex-col overflow-hidden"
+          ? "min-h-full"
           : ""
       }
     >
       <div
         className={`relative isolate bg-black px-1 py-2 text-white ${
           workspaceExpanded
-            ? "min-h-0 overflow-y-auto"
+            ? "min-h-full"
             : "min-h-0"
         }`}
         onFocusCapture={handleEditorFocusCapture}

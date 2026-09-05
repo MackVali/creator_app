@@ -348,8 +348,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     id: "heading1",
-    label: "Heading 1",
-    description: "Primary section title",
+    label: "Heading",
+    description: "Section title",
     icon: Heading1,
     replacement: "# ",
   },
@@ -362,28 +362,28 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     id: "checklist",
-    label: "Checklist",
-    description: "Track a task",
+    label: "Todo",
+    description: "Add something to do",
     icon: ListChecks,
     replacement: "- [ ] ",
   },
   {
     id: "bulletList",
-    label: "Bullet List",
-    description: "Inline bullets",
+    label: "List",
+    description: "Organize a few items",
     icon: List,
     replacement: "• ",
   },
   {
     id: "dashList",
-    label: "Dash List",
+    label: "Dash list",
     description: "Simple dash rows",
     icon: Minus,
     replacement: "- ",
   },
   {
     id: "numberedList",
-    label: "Numbered List",
+    label: "Numbered list",
     description: "Ordered steps",
     icon: ListOrdered,
     replacement: "1. ",
@@ -25292,9 +25292,18 @@ function NoteSlashTextarea({
         <div
           id="note-slash-command-menu"
           role="listbox"
-          aria-label="Slash commands"
-          className="note-slash-command-menu fixed inset-x-4 z-[60] overflow-y-auto overscroll-contain rounded-[22px] border border-white/10 bg-[#090909]/95 p-1.5 shadow-[0_24px_70px_-28px_rgba(0,0,0,0.95)] backdrop-blur-xl md:absolute md:left-0 md:right-auto md:w-80 md:overflow-hidden"
+          aria-label="Insert"
+          className="note-slash-command-menu fixed inset-x-3 z-[60] max-h-[46dvh] overflow-y-auto overscroll-contain rounded-[18px] border border-white/[0.07] bg-[#151618]/[0.97] p-1.5 shadow-[0_18px_46px_-20px_rgba(0,0,0,0.9)] backdrop-blur-2xl md:absolute md:left-0 md:right-auto md:w-[292px] md:max-h-[420px]"
         >
+          <div className="flex items-center justify-between px-2.5 pb-1 pt-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/28">
+              Insert
+            </span>
+            <span className="text-[10px] font-medium text-white/20">
+              /
+            </span>
+          </div>
+
           {enabledSlashCommands.map((command, index) => {
             const Icon = command.icon;
             const isSelected = index === selectedCommandIndex;
@@ -25310,24 +25319,27 @@ function NoteSlashTextarea({
                   void applyCommand(command);
                 }}
                 onMouseEnter={() => setSelectedCommandIndex(index)}
-                className={`flex w-full items-center gap-3 rounded-[16px] px-3 py-2.5 text-left transition ${
+                className={`flex min-h-[44px] w-full items-center gap-2.5 rounded-[12px] px-2.5 text-left transition-colors duration-100 ${
                   isSelected
-                    ? "bg-emerald-400/15 text-emerald-100"
-                    : "text-white/82 hover:bg-white/8"
+                    ? "bg-white/[0.065] text-white"
+                    : "text-white/72 hover:bg-white/[0.04] hover:text-white/88"
                 }`}
               >
                 <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border ${
                     isSelected
-                      ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
-                      : "border-white/10 bg-white/[0.04] text-white/45"
+                      ? "border-white/[0.09] bg-white/[0.07] text-white/78"
+                      : "border-white/[0.055] bg-white/[0.025] text-white/36"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-3.5 w-3.5" />
                 </span>
+
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold leading-5">{command.label}</span>
-                  <span className="block truncate text-xs leading-4 text-white/42">
+                  <span className="block text-[13px] font-medium leading-4">
+                    {command.label}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] leading-3.5 text-white/28">
                     {command.description}
                   </span>
                 </span>

@@ -490,6 +490,8 @@ async function cleanupLocalizedRescheduleScope(
     habitContextById.set(habit.id, {
       habitType: habit.habitType,
       skillId: habit.skillId ?? null,
+      areaId: habit.areaId ?? null,
+      areaIds: habit.areaId ? [habit.areaId] : null,
       monumentId: habit.skillMonumentId ?? null,
       skillMonumentId: habit.skillMonumentId ?? null,
     });

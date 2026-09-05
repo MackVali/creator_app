@@ -26,6 +26,7 @@ export type HabitScheduleItem = {
   anchorStartDate: string | null;
   skillId: string | null;
   skillMonumentId?: string | null;
+  areaId?: string | null;
   goalId: string | null;
   goalAreaId?: string | null;
   goalMonumentId?: string | null;
@@ -111,6 +112,11 @@ type HabitRecord = {
   fixed_timezone?: string | null;
 };
 
+type HabitAreaSkillRecord = {
+  area_id?: string | null;
+  skill_id?: string | null;
+};
+
 type Client = SupabaseClient<Database>;
 
 function ensureClient(client?: Client): Client | null {
@@ -120,7 +126,7 @@ function ensureClient(client?: Client): Client | null {
 
   const supabase = getSupabaseBrowser();
   if (supabase && typeof (supabase as { from?: unknown }).from === "function") {
-    return supabase as Client;
+    return supabase as unknown as Client;
   }
 
   return null;
@@ -140,6 +146,38 @@ function isGoalMetadataMissingError(error: PostgrestError | null): boolean {
   const haystack = `${error.message ?? ""}`.toLowerCase();
   if (!haystack) return false;
   return haystack.includes("goal_id") || haystack.includes("completion_target") || haystack.includes("finished_at");
+}
+
+async function fetchHabitAreaIdsBySkill(
+  supabase: Client,
+  userId: string,
+  skillIds: string[]
+): Promise<Map<string, string>> {
+  const areaBySkillId = new Map<string, string>();
+  if (skillIds.length === 0) return areaBySkillId;
+
+  const { data, error } = await supabase
+    .from("area_skills")
+    .select("area_id,skill_id")
+    .eq("user_id", userId)
+    .in("skill_id", skillIds);
+
+  if (error) throw error;
+
+  for (const row of (data ?? []) as HabitAreaSkillRecord[]) {
+    const skillId =
+      typeof row.skill_id === "string" && row.skill_id.trim()
+        ? row.skill_id.trim()
+        : null;
+    const areaId =
+      typeof row.area_id === "string" && row.area_id.trim()
+        ? row.area_id.trim()
+        : null;
+    if (!skillId || !areaId || areaBySkillId.has(skillId)) continue;
+    areaBySkillId.set(skillId, areaId);
+  }
+
+  return areaBySkillId;
 }
 
 export async function fetchHabitsForSchedule(
@@ -244,12 +282,28 @@ export async function fetchHabitsForSchedule(
     supportsGoalMetadata = false;
   }
 
-  return (data ?? [])
-    .filter(
-      (record: HabitRecord) =>
-        normalizeHabitType(record.habit_type) !== "TEMP" || !record.finished_at
+  const records = (data ?? []).filter(
+    (record: HabitRecord) =>
+      normalizeHabitType(record.habit_type) !== "TEMP" || !record.finished_at
+  );
+  const habitSkillIds = Array.from(
+    new Set(
+      records
+        .map((record) =>
+          typeof record.skill_id === "string" && record.skill_id.trim()
+            ? record.skill_id.trim()
+            : null
+        )
+        .filter((skillId): skillId is string => Boolean(skillId))
     )
-    .map((record: HabitRecord) => ({
+  );
+  const areaBySkillId = await fetchHabitAreaIdsBySkill(
+    supabase,
+    userId,
+    habitSkillIds
+  );
+
+  return records.map((record: HabitRecord) => ({
     id: record.id,
     name: record.name ?? "Untitled habit",
     memoCaptureConfig: record.memo_capture_config ?? null,
@@ -274,6 +328,7 @@ export async function fetchHabitsForSchedule(
     anchorStartDate: record.anchor_start_date ?? null,
     skillId: record.skill_id ?? null,
     skillMonumentId: record.skill?.monument_id ?? null,
+    areaId: record.skill_id ? areaBySkillId.get(record.skill_id) ?? null : null,
     goalId: supportsGoalMetadata ? record.goal_id ?? null : null,
     goalAreaId: supportsGoalMetadata ? record.goal?.area_id ?? null : null,
     goalMonumentId: supportsGoalMetadata ? record.goal?.monument_id ?? null : null,

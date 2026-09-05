@@ -185,6 +185,51 @@ describe("resolveLocalizedRescheduleCleanup", () => {
     expect(result.loserIds).toContain("instance-constraint");
   });
 
+  it("revalidates HABIT Area constraints from source context areaId", () => {
+    const timeZone = "UTC";
+    const localDay = startOfDayInTimeZone(
+      new Date("2024-01-02T08:30:00Z"),
+      timeZone
+    );
+    const dayKey = formatDateKeyInTimeZone(localDay, timeZone);
+
+    const result = resolveLocalizedRescheduleCleanup({
+      instances: [
+        buildInstance({
+          id: "habit-area-instance",
+          source_type: "HABIT",
+          source_id: "habit-area",
+        }),
+      ],
+      windowsByDayKey: new Map([
+        [
+          dayKey,
+          [
+            buildWindow(null, {
+              window_kind: "DEFAULT",
+              allowAllAreas: false,
+              allowedAreaIds: ["body"],
+              allowAllMonuments: true,
+            }),
+          ],
+        ],
+      ]),
+      timeZone,
+      resolveSourceContext(instance) {
+        if (instance.source_id === "habit-area") {
+          return {
+            habitType: "HABIT",
+            skillId: "skill-1",
+            areaId: "body",
+          };
+        }
+        return null;
+      },
+    });
+
+    expect(result.loserIds).not.toContain("habit-area-instance");
+  });
+
   it("invalidates a scheduled instance that matches a BREAK day-type window by reference", () => {
     const timeZone = "UTC";
     const localDay = startOfDayInTimeZone(
