@@ -147,8 +147,10 @@ function getLevelXAxisLabels(points: MonumentLevelHistoryPoint[]) {
 
 function MonumentGrowthTrendChart({
   levelHistory,
+  sourceNoun,
 }: {
   levelHistory: MonumentLevelHistoryPoint[];
+  sourceNoun: string;
 }) {
   const gradientId = useId().replace(/:/g, "");
   const width = 720;
@@ -242,7 +244,7 @@ function MonumentGrowthTrendChart({
         preserveAspectRatio="none"
         className="h-[210px] w-full opacity-95 transition-opacity sm:h-[220px]"
         role="img"
-        aria-label="Monument level and total XP over time"
+        aria-label={`${sourceNoun} level and total XP over time`}
       >
         <defs>
           <linearGradient id={`${gradientId}-area`} x1="0" x2="0" y1="0" y2="1">
@@ -344,7 +346,7 @@ function MonumentGrowthTrendChart({
               fill="rgba(212,212,216,0.86)"
               fontSize="13"
             >
-              No monument XP yet.
+              No {sourceNoun} XP yet.
             </text>
           </g>
         )}
@@ -724,8 +726,10 @@ function clampPercent(value: number) {
 
 function MonumentXpMixDonut({
   xpSkillMix,
+  sourceNoun,
 }: {
   xpSkillMix: MonumentXpSkillMixPoint[];
+  sourceNoun: string;
 }) {
   const shadowId = useId().replace(/:/g, "");
   const glowId = useId().replace(/:/g, "");
@@ -785,7 +789,7 @@ function MonumentXpMixDonut({
             viewBox={`0 0 ${size} 380`}
             className="h-full w-full overflow-visible"
             role="img"
-            aria-label="Monument skill contribution XP mix"
+            aria-label={`${sourceNoun} skill contribution XP mix`}
           >
             <defs>
               <filter
@@ -1061,7 +1065,7 @@ function MonumentXpMixDonut({
         </div>
       ) : (
         <p className="border-b border-white/[0.06] py-5 text-center text-xs font-medium text-white/55">
-          No skill XP for this monument yet.
+          No skill XP for this {sourceNoun.toLowerCase()} yet.
         </p>
       )}
     </div>
@@ -1075,6 +1079,7 @@ export default function ActivityPanel({
   sourceLabel,
 }: ActivityPanelProps) {
   const sourceId = sourceType === "area" ? areaId ?? "" : monumentId ?? "";
+  const sourceNoun = sourceType === "area" ? "Area" : "Monument";
   const { loading, error, notes, levelHistory, xpSkillMix } =
     useCreatorActivity(sourceType, sourceId);
 
@@ -1293,7 +1298,7 @@ export default function ActivityPanel({
                   <div className="min-w-0">
                     <header>
                       <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
-                        {sourceLabel ?? (sourceType === "area" ? "Area" : "Monument")} analytics
+                        {sourceLabel ?? sourceNoun} analytics
                       </p>
 
                       <dl className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
@@ -1354,11 +1359,17 @@ export default function ActivityPanel({
                       </div>
                     </dl>
 
-                    <MonumentGrowthTrendChart levelHistory={levelHistory} />
+                    <MonumentGrowthTrendChart
+                      levelHistory={levelHistory}
+                      sourceNoun={sourceNoun}
+                    />
                   </div>
 
                   <section className="min-w-0 border-t border-white/[0.06] pt-1">
-                    <MonumentXpMixDonut xpSkillMix={xpSkillMix} />
+                    <MonumentXpMixDonut
+                      xpSkillMix={xpSkillMix}
+                      sourceNoun={sourceNoun}
+                    />
                   </section>
                 </div>
               </section>

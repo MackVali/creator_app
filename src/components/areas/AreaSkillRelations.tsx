@@ -378,7 +378,7 @@ export function AreaSkillRelations({
   return (
     <Card className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050608] text-white shadow-[0_18px_48px_-38px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_62%)]" />
-      <CardHeader className="relative z-10 px-3 pb-2 pt-3 sm:px-4">
+      <CardHeader className="relative z-10 px-2 pb-1 pt-2 sm:px-2.5">
         <CardTitle className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/62">
           <span className="flex min-w-0 items-center gap-2">
             <ListChecks className="size-3.5 text-white/48" aria-hidden="true" />
@@ -402,7 +402,7 @@ export function AreaSkillRelations({
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="relative z-10 space-y-2.5 px-3 pb-3 sm:px-4">
+      <CardContent className="relative z-10 space-y-1.5 px-1.5 pb-1.5 sm:px-2">
         {error ? (
           <p className="rounded-lg border border-red-400/20 bg-red-950/20 px-2.5 py-1.5 text-[11px] text-red-100/80">
             {error}
@@ -410,7 +410,7 @@ export function AreaSkillRelations({
         ) : null}
 
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1">
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
@@ -420,14 +420,14 @@ export function AreaSkillRelations({
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {currentAreaSkills.length > 0 ? (
                 currentAreaSkills.map((skill) => (
                   <div
                     key={skill.id}
-                    className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg border border-white/[0.075] bg-white/[0.035] px-2 py-1 text-xs font-semibold text-white/82"
+                    className="flex min-h-7 min-w-0 items-center gap-1.5 rounded-lg border border-white/[0.075] bg-white/[0.035] px-1.5 py-0.5 text-xs font-semibold text-white/82"
                   >
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-black/25 text-[11px] text-white/76">
+                    <span className="flex size-4.5 shrink-0 items-center justify-center rounded-md bg-black/25 text-[10px] text-white/76">
                       {getSkillFallbackIcon(skill)}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{skill.name}</span>
