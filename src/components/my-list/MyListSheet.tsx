@@ -6045,12 +6045,17 @@ export function MyListSheet({
                   contextualSystemKey,
               );
 
+              // Preserve the contextual destination even when the
+              // persisted list rows have not finished loading yet.
+              // This is especially important in the iOS Capacitor WebView,
+              // where the sheet can be opened before customLists hydrates.
+              openSessionListSelectionRef.current = {
+                initialized: Boolean(contextualList),
+                manuallySelected: false,
+                preferredSystemKey: contextualSystemKey,
+              };
+
               if (contextualList) {
-                openSessionListSelectionRef.current = {
-                  initialized: true,
-                  manuallySelected: false,
-                  preferredSystemKey: contextualSystemKey,
-                };
                 setSelectedListId(contextualList.id);
               }
 
