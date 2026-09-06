@@ -87,6 +87,7 @@ interface GoalCardProps {
   drawerCompact?: boolean;
   showEnergyInCompact?: boolean;
   areaLibraryTile?: boolean;
+  areaLibraryLarge?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
   onProjectEditOpen?: (
@@ -256,6 +257,7 @@ function GoalCardImpl({
   drawerCompact = false,
   showEnergyInCompact = false,
   areaLibraryTile = false,
+  areaLibraryLarge = false,
   monumentContext = false,
   onProjectUpdated,
   onProjectDeleted,
@@ -802,9 +804,11 @@ function GoalCardImpl({
       selected ? "goal-card-emerald-outline" : "",
       areaLibraryTile
         ? "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
-        : showEnergyInCompact
-          ? "min-h-[60px]"
-          : "min-h-[92px] sm:min-h-[96px] aspect-[14/23] sm:aspect-[5/6]",
+        : areaLibraryLarge
+          ? "min-h-[96px] aspect-[5/6]"
+          : showEnergyInCompact
+            ? "min-h-[60px]"
+            : "min-h-[92px] sm:min-h-[96px] aspect-[14/23] sm:aspect-[5/6]",
     ]
       .filter(Boolean)
       .join(" ");
@@ -934,7 +938,11 @@ function GoalCardImpl({
               {...shellMotionProps}
             >
               <div
-                className={`flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.32)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-base ${completedIconClass}`}
+                className={
+                  areaLibraryLarge
+                    ? `flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${completedIconClass}`
+                    : `flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.32)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-base ${completedIconClass}`
+                }
               >
                 {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
               </div>
@@ -942,11 +950,13 @@ function GoalCardImpl({
                 id={`goal-${goal.id}-label`}
                 className={
                   areaLibraryTile
-                    ? "max-w-full px-0 text-center text-[8px] font-semibold leading-[1.02] line-clamp-3 break-words min-h-[2.75em] sm:text-[8px]"
-                    : "max-w-full px-0.5 text-center text-[9px] leading-[1.05] font-semibold line-clamp-3 break-words min-h-[2.9em] sm:px-1 sm:text-[8px] sm:leading-snug sm:line-clamp-2 sm:min-h-[2.4em]"
+                    ? "max-w-full px-0 text-center text-[6.75px] font-semibold leading-[0.95] line-clamp-3 break-normal [overflow-wrap:normal] [word-break:normal] min-h-[2.75em] sm:text-[7px]"
+                    : areaLibraryLarge
+                      ? "max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em]"
+                      : "max-w-full px-0.5 text-center text-[9px] leading-[1.05] font-semibold line-clamp-3 break-words min-h-[2.9em] sm:px-1 sm:text-[8px] sm:leading-snug sm:line-clamp-2 sm:min-h-[2.4em]"
                 }
                 title={goal.title}
-                style={{ hyphens: "auto" }}
+                style={{ hyphens: areaLibraryTile ? "none" : "auto" }}
               >
                 {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji)
                   ? `${goal.emoji ?? goal.monumentEmoji} `
@@ -954,7 +964,11 @@ function GoalCardImpl({
                 {goal.title}
               </h3>
               <div
-                className="mt-auto h-1 w-full overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] sm:mt-1 sm:h-[14px] sm:border-2"
+                className={
+                  areaLibraryLarge
+                    ? "mt-1 h-[14px] w-full overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                    : "mt-auto h-1 w-full overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] sm:mt-1 sm:h-[14px] sm:border-2"
+                }
                 style={{
                   boxShadow:
                     "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
@@ -1764,6 +1778,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
     prev.areaLibraryTile === next.areaLibraryTile &&
+    prev.areaLibraryLarge === next.areaLibraryLarge &&
     prev.selected === next.selected &&
     prev.open === next.open &&
     prev.onGoalLongPressEdit === next.onGoalLongPressEdit &&

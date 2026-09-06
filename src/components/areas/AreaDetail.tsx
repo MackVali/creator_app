@@ -304,7 +304,7 @@ export function AreaDetail({
               className={cn(
                 containerShell,
                 sectionBackground,
-                "min-h-[160px] overflow-visible p-2.5 sm:min-h-[220px] sm:p-5"
+                "overflow-visible p-2.5 sm:p-5"
               )}
             >
               <div className="relative z-10">
