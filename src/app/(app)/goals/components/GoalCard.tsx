@@ -86,6 +86,7 @@ interface GoalCardProps {
   selected?: boolean;
   drawerCompact?: boolean;
   showEnergyInCompact?: boolean;
+  areaLibraryTile?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
   onProjectEditOpen?: (
@@ -254,6 +255,7 @@ function GoalCardImpl({
   selected = false,
   drawerCompact = false,
   showEnergyInCompact = false,
+  areaLibraryTile = false,
   monumentContext = false,
   onProjectUpdated,
   onProjectDeleted,
@@ -798,7 +800,11 @@ function GoalCardImpl({
         ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
         : "",
       selected ? "goal-card-emerald-outline" : "",
-      showEnergyInCompact ? "min-h-[60px]" : "min-h-[92px] sm:min-h-[96px] aspect-[14/23] sm:aspect-[5/6]",
+      areaLibraryTile
+        ? "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
+        : showEnergyInCompact
+          ? "min-h-[60px]"
+          : "min-h-[92px] sm:min-h-[96px] aspect-[14/23] sm:aspect-[5/6]",
     ]
       .filter(Boolean)
       .join(" ");
@@ -842,7 +848,11 @@ function GoalCardImpl({
                 {...shellMotionProps}
               >
                 <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+                  <div className={
+                    areaLibraryTile
+                      ? "flex h-[22px] w-[22px] items-center justify-center rounded-[7px] border border-white/[0.08] bg-white/[0.035] text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                      : "flex h-7 w-7 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
+                  }>
                     {displayEmoji}
                   </div>
                   <div className="flex flex-col flex-1 min-w-0">
@@ -930,7 +940,11 @@ function GoalCardImpl({
               </div>
               <h3
                 id={`goal-${goal.id}-label`}
-                className="max-w-full px-0.5 text-center text-[9px] leading-[1.05] font-semibold line-clamp-3 break-words min-h-[2.9em] sm:px-1 sm:text-[8px] sm:leading-snug sm:line-clamp-2 sm:min-h-[2.4em]"
+                className={
+                  areaLibraryTile
+                    ? "max-w-full px-0 text-center text-[8px] font-semibold leading-[1.02] line-clamp-3 break-words min-h-[2.75em] sm:text-[8px]"
+                    : "max-w-full px-0.5 text-center text-[9px] leading-[1.05] font-semibold line-clamp-3 break-words min-h-[2.9em] sm:px-1 sm:text-[8px] sm:leading-snug sm:line-clamp-2 sm:min-h-[2.4em]"
+                }
                 title={goal.title}
                 style={{ hyphens: "auto" }}
               >
@@ -1749,6 +1763,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showEmojiPrefix === next.showEmojiPrefix &&
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
+    prev.areaLibraryTile === next.areaLibraryTile &&
     prev.selected === next.selected &&
     prev.open === next.open &&
     prev.onGoalLongPressEdit === next.onGoalLongPressEdit &&

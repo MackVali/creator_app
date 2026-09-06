@@ -5567,7 +5567,18 @@ export function MonumentGoalsList({
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
                 {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
               </p>
-              {renderGoalCardDensityToggle()}
+              {resolvedSourceType === "area" ? (
+                <button
+                  type="button"
+                  aria-label="Add goal"
+                  onClick={handleAreaAddGoal}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+                </button>
+              ) : (
+                renderGoalCardDensityToggle()
+              )}
             </div>
           </div>
           <div
@@ -6172,15 +6183,18 @@ export function MonumentGoalsList({
           ? roadmapOpenGoal
           : null;
       const shouldShowGoalAddCard =
-        (resolvedSourceType === "monument" || resolvedSourceType === "area") &&
-        section === "active";
+        resolvedSourceType === "monument" && section === "active";
       const goalAddCard = shouldShowGoalAddCard ? (
         <div
           className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
         >
           <button
             type="button"
-            className={GOAL_ADD_CARD_OUTER_CLASS}
+            className={cn(
+              GOAL_ADD_CARD_OUTER_CLASS,
+              resolvedSourceType === "area" &&
+                "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
+            )}
             data-variant="compact"
             onClick={
               resolvedSourceType === "area"
@@ -6385,6 +6399,7 @@ export function MonumentGoalsList({
             >
               <GoalCard
                 goal={goal}
+                areaLibraryTile={resolvedSourceType === "area"}
                 showWeight={false}
                 showCreatedAt={false}
                 showEmojiPrefix={false}
@@ -6454,7 +6469,18 @@ export function MonumentGoalsList({
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
               {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
             </p>
-            {renderGoalCardDensityToggle()}
+            {resolvedSourceType === "area" ? (
+                <button
+                  type="button"
+                  aria-label="Add goal"
+                  onClick={handleAreaAddGoal}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+                </button>
+              ) : (
+                renderGoalCardDensityToggle()
+              )}
           </div>
         </div>
         <div

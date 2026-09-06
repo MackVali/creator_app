@@ -66,6 +66,7 @@ type RelatedRoutineCardProps = {
   routine: RelatedRoutineCardRoutine;
   density: "large" | "small";
   fallbackIcon?: string;
+  areaHubCompact?: boolean;
   onHabitCompletionToggle?: (
     habitId: string
   ) => boolean | void | Promise<boolean | void>;
@@ -588,6 +589,7 @@ export function RelatedRoutineCard({
   routine,
   density,
   fallbackIcon = "💡",
+  areaHubCompact = false,
   onHabitCompletionToggle,
   onAddHabit,
   restoreOpen = false,
@@ -1780,17 +1782,27 @@ export function RelatedRoutineCard({
     <>
       <div
         className={clsx(
-          "goal-card shimmer-border group relative flex aspect-[5/6] w-full transform-gpu flex-col overflow-hidden border-2 border-yellow-400 text-white shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-0.5",
-          isSmall
-            ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-            : "min-h-[96px] rounded-2xl p-3 sm:p-4"
+          "goal-card group relative flex w-full transform-gpu overflow-hidden text-white transition duration-200 select-none",
+          areaHubCompact
+            ? "h-[46px] min-h-[46px] flex-row rounded-[10px] border border-yellow-400/50 bg-[linear-gradient(135deg,rgba(61,45,8,0.78)_0%,rgba(31,27,17,0.96)_46%,rgba(14,15,17,0.98)_100%)] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_16px_-14px_rgba(0,0,0,0.9)]"
+            : "shimmer-border aspect-[5/6] flex-col border-2 border-yellow-400 shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)] hover:-translate-y-0.5",
+          areaHubCompact
+            ? null
+            : isSmall
+              ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+              : "min-h-[96px] rounded-2xl p-3 sm:p-4"
         )}
         title={`${displayRoutineName} routine`}
       >
         <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)] [mask-image:linear-gradient(to_bottom,black,transparent_70%)]" />
         <button
           type="button"
-          className="relative z-[2] flex h-full min-w-0 flex-1 flex-col items-center gap-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/50"
+          className={clsx(
+            "relative z-[2] flex h-full min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/50",
+            areaHubCompact
+              ? "flex-row items-center gap-2 text-left"
+              : "flex-col items-center gap-1 text-center"
+          )}
           aria-expanded={open}
           aria-label={`${displayRoutineName}. Routine with ${habitCount} ${
             habitCount === 1 ? "habit" : "habits"
@@ -1803,26 +1815,41 @@ export function RelatedRoutineCard({
         >
           <div
             className={clsx(
-              "flex items-center justify-center rounded-xl border border-white/10 bg-white/5 font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-              isSmall ? "h-7 w-7 text-[11px]" : "h-9 w-9 text-base"
+              "flex shrink-0 items-center justify-center border border-white/10 bg-white/5 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
+              areaHubCompact
+                ? "h-6 w-6 rounded-md text-[13px]"
+                : isSmall
+                  ? "h-7 w-7 rounded-xl text-[11px]"
+                  : "h-9 w-9 rounded-xl text-base"
             )}
           >
             {labelIcon}
           </div>
           <h3
             className={clsx(
-              "max-w-full break-words px-1 text-center font-semibold leading-snug",
-              isSmall ? "line-clamp-2 text-[8px]" : "line-clamp-2 text-[9px]"
+              "font-semibold",
+              areaHubCompact
+                ? "min-w-0 flex-1 truncate px-0 text-left text-[11px] leading-[13px]"
+                : clsx(
+                    "max-w-full break-words px-1 text-center leading-snug",
+                    isSmall
+                      ? "line-clamp-2 text-[8px]"
+                      : "line-clamp-2 text-[9px]"
+                  )
             )}
             title={displayRoutineName}
-            style={{ hyphens: "auto" }}
+            style={{ hyphens: areaHubCompact ? "none" : "auto" }}
           >
             {displayRoutineName}
           </h3>
           <div
             className={clsx(
-              "text-white/60",
-              isSmall ? "text-[7px]" : "text-[8px]"
+              areaHubCompact
+                ? "shrink-0 whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.06em] text-yellow-100/60"
+                : clsx(
+                    "text-white/60",
+                    isSmall ? "text-[7px]" : "text-[8px]"
+                  )
             )}
           >
             {habitCountLabel}
