@@ -7,6 +7,11 @@ import {
 
 export { findMissingMonumentRoadmapGoalIds } from "./roadmap-reconciliation";
 
+type TrueRoadmapOwnerColumn = "monument_id" | "area_id";
+type TrueRoadmapFallbackOptions = {
+  createAreaRoadmapIfMissing?: boolean;
+};
+
 export interface RoadmapGoal {
   id: string;
   name: string;
@@ -1101,9 +1106,11 @@ function normalizeMonumentRoadmapReconciliationResult(
   };
 }
 
-async function ensureMonumentGoalsInTrueRoadmapFallback(
+async function ensureGoalsInTrueRoadmapFallback(
   userId: string,
-  monumentId: string
+  ownerColumn: TrueRoadmapOwnerColumn,
+  ownerId: string,
+  options: TrueRoadmapFallbackOptions = {}
 ): Promise<MonumentRoadmapReconciliationResult> {
   const supabase = getSupabaseBrowser();
   if (!supabase) {
@@ -1114,8 +1121,9 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
     .from("roadmaps")
     .select("id")
     .eq("user_id", userId)
-    .eq("monument_id", monumentId)
+    .eq(ownerColumn, ownerId)
     .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
 
@@ -1127,7 +1135,47 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
     typeof roadmapRow?.id === "string" && roadmapRow.id.length > 0
       ? roadmapRow.id
       : null;
-  if (!roadmapId) {
+  let resolvedRoadmapId = roadmapId;
+  if (!resolvedRoadmapId && options.createAreaRoadmapIfMissing) {
+    const { data: areaRow, error: areaError } = await supabase
+      .from("areas")
+      .select("label")
+      .eq("id", ownerId)
+      .maybeSingle();
+
+    if (areaError) {
+      throw areaError;
+    }
+
+    const areaLabel =
+      typeof areaRow?.label === "string" && areaRow.label.trim().length > 0
+        ? areaRow.label.trim()
+        : "Area";
+
+    const { data: createdRoadmapRow, error: createRoadmapError } =
+      await supabase
+        .from("roadmaps")
+        .insert({
+          user_id: userId,
+          title: `${areaLabel} Roadmap`,
+          emoji: null,
+          area_id: ownerId,
+        })
+        .select("id")
+        .single();
+
+    if (createRoadmapError) {
+      throw createRoadmapError;
+    }
+
+    resolvedRoadmapId =
+      typeof createdRoadmapRow?.id === "string" &&
+      createdRoadmapRow.id.length > 0
+        ? createdRoadmapRow.id
+        : null;
+  }
+
+  if (!resolvedRoadmapId) {
     return { roadmapId: null, insertedCount: 0 };
   }
 
@@ -1139,14 +1187,14 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
       .from("goals")
       .select("id, created_at")
       .eq("user_id", userId)
-      .eq("monument_id", monumentId)
+      .eq(ownerColumn, ownerId)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true }),
     supabase
       .from("roadmap_items")
       .select("id, item_type, campaign_id, goal_id, position")
       .eq("user_id", userId)
-      .eq("roadmap_id", roadmapId)
+      .eq("roadmap_id", resolvedRoadmapId)
       .order("position", { ascending: true }),
   ]);
 
@@ -1201,7 +1249,7 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
   });
 
   if (missingGoalIds.length === 0) {
-    return { roadmapId, insertedCount: 0 };
+    return { roadmapId: resolvedRoadmapId, insertedCount: 0 };
   }
 
   const maxPosition = roadmapItems.reduce((max, item) => {
@@ -1215,7 +1263,7 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
   const { error: insertError } = await supabase.from("roadmap_items").insert(
     missingGoalIds.map((goalId, index) => ({
       user_id: userId,
-      roadmap_id: roadmapId,
+      roadmap_id: resolvedRoadmapId,
       item_type: "GOAL",
       campaign_id: null,
       goal_id: goalId,
@@ -1237,7 +1285,14 @@ async function ensureMonumentGoalsInTrueRoadmapFallback(
     );
   }
 
-  return { roadmapId, insertedCount: missingGoalIds.length };
+  return { roadmapId: resolvedRoadmapId, insertedCount: missingGoalIds.length };
+}
+
+async function ensureMonumentGoalsInTrueRoadmapFallback(
+  userId: string,
+  monumentId: string
+): Promise<MonumentRoadmapReconciliationResult> {
+  return ensureGoalsInTrueRoadmapFallback(userId, "monument_id", monumentId);
 }
 
 export async function ensureMonumentGoalsInTrueRoadmap(
@@ -1265,6 +1320,15 @@ export async function ensureMonumentGoalsInTrueRoadmap(
     error
   );
   return ensureMonumentGoalsInTrueRoadmapFallback(userId, monumentId);
+}
+
+export async function ensureAreaGoalsInTrueRoadmap(
+  userId: string,
+  areaId: string
+): Promise<MonumentRoadmapReconciliationResult> {
+  return ensureGoalsInTrueRoadmapFallback(userId, "area_id", areaId, {
+    createAreaRoadmapIfMissing: true,
+  });
 }
 
 export async function addGoalToCampaign(

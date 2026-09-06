@@ -3928,8 +3928,8 @@ export function MoneyAreaDashboard() {
   return (
     <div
       className={cn(
-        "space-y-3",
-        dashboardExpanded ? "py-3" : "-mb-1 py-0"
+        "space-y-2 sm:space-y-3",
+        dashboardExpanded ? "py-2 sm:py-3" : "-mb-1 py-0"
       )}
     >
       <button
@@ -3976,7 +3976,7 @@ export function MoneyAreaDashboard() {
         />
       </button>
 
-      <div id={dashboardBodyId} hidden={!dashboardExpanded} className="space-y-3">
+      <div id={dashboardBodyId} hidden={!dashboardExpanded} className="space-y-2 sm:space-y-3">
         <section
           className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0a0a0b_60%,#101113_100%)]"
           aria-label="Money overview"

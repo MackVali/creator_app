@@ -7,7 +7,14 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { AlertCircle, ArrowLeft, LoaderCircle, Plus, X } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ChevronDown,
+  LoaderCircle,
+  Plus,
+  X,
+} from "lucide-react";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 
 type Course = {
@@ -91,6 +98,7 @@ export function MindAreaDashboard() {
   const [curriculumLoading, setCurriculumLoading] = useState(false);
   const [curriculumError, setCurriculumError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -469,38 +477,76 @@ export function MindAreaDashboard() {
     );
   }
 
+  const courseSummary = isLoading
+    ? "Loading courses"
+    : loadError
+      ? "Course status unavailable"
+      : courses.length === 0
+        ? "No courses yet"
+        : `${courses.length} ${courses.length === 1 ? "course" : "courses"}`;
+
   return (
     <section
       className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
       aria-label="Courses"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2.5">
-        <h2 className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/46">
-          COURSES
-        </h2>
-        <button
-          type="button"
-          onClick={() => {
-            setCreateOpen((open) => !open);
-            setCreateError(null);
-          }}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.095] bg-white/[0.045] px-2.5 text-[11px] font-semibold text-white/72 transition hover:bg-white/[0.075] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 active:scale-95"
-          aria-expanded={createOpen}
-        >
-          {createOpen ? (
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
-          {createOpen ? "Close" : "Add"}
-        </button>
-      </div>
+      <button
+        type="button"
+        aria-expanded={dashboardExpanded}
+        onClick={() => setDashboardExpanded((expanded) => !expanded)}
+        className="grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-1.5 text-left transition hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:hidden"
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/44">
+            Mind
+          </span>
+          {isLoading ? (
+            <LoaderCircle
+              className="h-3.5 w-3.5 shrink-0 animate-spin text-white/34"
+              aria-hidden="true"
+            />
+          ) : null}
+          <span className="min-w-0 truncate text-sm font-semibold text-white/82">
+            {courseSummary}
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-white/32 transition-transform ${
+            dashboardExpanded ? "rotate-180" : ""
+          }`}
+          aria-hidden="true"
+        />
+      </button>
 
-      {createOpen ? (
-        <form
-          onSubmit={createCourse}
-          className="space-y-3 border-b border-white/[0.055] bg-white/[0.025] px-3 py-3"
-        >
+      <div className={`${dashboardExpanded ? "" : "hidden"} sm:block`}>
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] px-3 py-2 sm:py-2.5">
+          <h2 className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/46">
+            COURSES
+          </h2>
+          <button
+            type="button"
+            onClick={() => {
+              setDashboardExpanded(true);
+              setCreateOpen((open) => !open);
+              setCreateError(null);
+            }}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.095] bg-white/[0.045] px-2.5 text-[11px] font-semibold text-white/72 transition hover:bg-white/[0.075] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 active:scale-95"
+            aria-expanded={createOpen}
+          >
+            {createOpen ? (
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {createOpen ? "Close" : "Add"}
+          </button>
+        </div>
+
+        {createOpen ? (
+          <form
+            onSubmit={createCourse}
+            className="space-y-3 border-b border-white/[0.055] bg-white/[0.025] px-3 py-3"
+          >
           <div className="space-y-1.5">
             <label
               htmlFor="mind-course-title"
@@ -561,10 +607,10 @@ export function MindAreaDashboard() {
               Create
             </button>
           </div>
-        </form>
-      ) : null}
+          </form>
+        ) : null}
 
-      <div className="p-3">
+        <div className="p-2.5 sm:p-3">
         {isLoading ? (
           <div className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-white/[0.055] bg-black/20 text-xs font-semibold text-white/42">
             <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -623,6 +669,7 @@ export function MindAreaDashboard() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </section>
   );

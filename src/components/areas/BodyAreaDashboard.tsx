@@ -181,8 +181,8 @@ export function BodyAreaDashboard() {
   return (
     <div
       className={cn(
-        "space-y-3",
-        dashboardExpanded ? "py-3" : "-mb-1 py-0"
+        "space-y-2 sm:space-y-3",
+        dashboardExpanded ? "py-2 sm:py-3" : "-mb-1 py-0"
       )}
     >
       <button
@@ -192,7 +192,7 @@ export function BodyAreaDashboard() {
         onClick={() => setDashboardExpanded((expanded) => !expanded)}
         className={cn(
           "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/[0.075] bg-[#090909] px-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] transition hover:border-white/[0.12] hover:bg-[#101011] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24 active:scale-[0.995]",
-          dashboardExpanded ? "min-h-14 py-2.5" : "min-h-12 py-2",
+          dashboardExpanded ? "min-h-12 py-2 sm:min-h-14 sm:py-2.5" : "min-h-11 py-1.5 sm:min-h-12 sm:py-2",
         )}
       >
         <span className="min-w-0">
@@ -207,11 +207,11 @@ export function BodyAreaDashboard() {
               />
             ) : null}
           </span>
-          <span className="mt-1 block truncate text-sm font-semibold text-white/82">
+          <span className="mt-0.5 block truncate text-sm font-semibold leading-tight text-white/82 sm:mt-1">
             {bodySummaryPrimary}
           </span>
           {bodySummarySecondary ? (
-            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/42">
+            <span className="mt-0.5 block truncate text-[10px] font-medium leading-tight text-white/42 sm:text-[11px]">
               {bodySummarySecondary}
             </span>
           ) : null}

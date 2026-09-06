@@ -31,6 +31,7 @@ import {
 } from "@/components/xp/CreatorXpSurgeHud";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
 import type { Goal, Project, Task } from "@/app/(app)/goals/types";
+import type { AreaFeaturedGoalControls } from "@/components/goals/AreaFeaturedGoal";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
@@ -46,6 +47,7 @@ import {
 } from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import {
+  ensureAreaGoalsInTrueRoadmap,
   ensureMonumentGoalsInTrueRoadmap,
   listGoalCampaignCards,
   listRoadmapsWithItems,
@@ -631,15 +633,15 @@ const NORMALIZED_ENERGY_VALUES = new Set([
   "EXTREME",
 ]);
 const GOAL_SMALL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid grid w-full max-w-full grid-flow-col auto-cols-[56px] grid-rows-1 gap-1 overflow-x-auto px-0 py-0.5 [scrollbar-width:none] sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3 sm:gap-1 sm:px-2 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
-const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
-const GOAL_PANEL_CONTENT_CLASS = "px-1 py-1 sm:px-1.5 sm:py-1.5";
+const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[112px] sm:min-h-[260px]";
+const GOAL_PANEL_CONTENT_CLASS = "px-0 py-0.5 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
 const RECENTLY_COMPLETED_GOAL_HOLD_MS = 1100;
 const GOAL_ADD_CARD_OUTER_CLASS =
-  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+  "goal-card group relative flex aspect-[14/23] min-h-[92px] w-full flex-col rounded-[13px] border border-zinc-300/15 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.10),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-1.5 text-white shadow-[0_12px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/25 sm:aspect-[5/6] sm:min-h-[96px] sm:rounded-2xl sm:p-4";
 const GOAL_ADD_CARD_INNER_CLASS =
   "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
@@ -921,6 +923,27 @@ async function fetchTrueRoadmapsForMonument(
   return allRoadmapsWithItems.filter(
     (roadmap) => roadmap.monument_id === monumentId
   );
+}
+
+async function fetchTrueRoadmapsForArea(
+  userId: string,
+  areaId: string,
+  options: { reconcile?: boolean } = {}
+): Promise<RoadmapWithItems[]> {
+  if (options.reconcile) {
+    await ensureAreaGoalsInTrueRoadmap(userId, areaId).catch((err) => {
+      console.error("Error reconciling true area roadmap:", err);
+    });
+  }
+
+  const allRoadmapsWithItems = await listRoadmapsWithItems(userId).catch(
+    (err) => {
+      console.error("Error fetching true area roadmaps:", err);
+      return [];
+    }
+  );
+
+  return allRoadmapsWithItems.filter((roadmap) => roadmap.area_id === areaId);
 }
 
 type MonumentPriorityGoalRow = {
@@ -2536,6 +2559,9 @@ export function MonumentGoalsList({
   monumentView = "goals",
   goalSection = "active",
   onGoalSectionChange,
+  featuredGoalId,
+  onFeaturedGoalChange,
+  onFeaturedGoalResolved,
   roadmapEmptyState,
 }: {
   monumentId?: string;
@@ -2547,6 +2573,12 @@ export function MonumentGoalsList({
   monumentView?: "goals" | "roadmap";
   goalSection?: GoalPanel;
   onGoalSectionChange?: (section: GoalPanel) => void;
+  featuredGoalId?: string | null;
+  onFeaturedGoalChange?: (goalId: string | null) => void;
+  onFeaturedGoalResolved?: (
+    goal: Goal | null,
+    controls?: AreaFeaturedGoalControls
+  ) => void;
   roadmapEmptyState?: ReactNode;
 }) {
   const resolvedSourceType: GoalsSourceType = sourceType;
@@ -2602,11 +2634,69 @@ export function MonumentGoalsList({
         : resolvedSourceType === "circle"
           ? sortGlobalPriorityItems(enrichedItems)
           : resolvedSourceType === "area"
-            ? sortGlobalPriorityItems(enrichedItems)
-          : [];
+            ? sortGlobalPriorityItems(
+                enrichedItems.map((item) =>
+                  item.type === "campaign"
+                    ? {
+                        ...item,
+                        emoji: item.emoji ?? monumentEmoji ?? null,
+                        goals: (item.goals ?? []).map((goal) => ({
+                          ...goal,
+                          emoji: goal.emoji ?? monumentEmoji ?? null,
+                        })),
+                      }
+                    : {
+                        ...item,
+                        emoji: item.emoji ?? monumentEmoji ?? null,
+                      }
+                )
+              )
+            : [];
     },
-    [goals, monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
+    [
+      goals,
+      monumentEmoji,
+      monumentPriorityRoadmapItems,
+      resolvedSourceId,
+      resolvedSourceType,
+    ]
   );
+  const areaFeaturedGoals = useMemo(() => {
+    if (resolvedSourceType !== "area") return [];
+
+    const eligibleGoals = goals.filter((goal) => {
+      const monumentId =
+        goal.monumentId ??
+        (goal as Goal & { monument_id?: string | null }).monument_id ??
+        null;
+
+      return (
+        isGoalLinkedToSource("area", resolvedSourceId, goal) &&
+        monumentId === null &&
+        normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+      );
+    });
+    if (eligibleGoals.length === 0) return [];
+
+    const goalsById = new Map(eligibleGoals.map((goal) => [goal.id, goal]));
+    const priorityOrderedGoals = visibleMonumentPriorityRoadmapItems
+      .filter((item): item is GlobalPriorityRoadmapItem & { type: "goal" } =>
+        item.type === "goal"
+      )
+      .map((item) => goalsById.get(item.id))
+      .filter((goal): goal is Goal => Boolean(goal));
+    const priorityGoalIds = new Set(priorityOrderedGoals.map((goal) => goal.id));
+
+    return [
+      ...priorityOrderedGoals,
+      ...eligibleGoals.filter((goal) => !priorityGoalIds.has(goal.id)),
+    ];
+  }, [
+    goals,
+    resolvedSourceId,
+    resolvedSourceType,
+    visibleMonumentPriorityRoadmapItems,
+  ]);
   const [monumentPriorityRoadmapError, setMonumentPriorityRoadmapError] =
     useState<string | null>(null);
   const [isSavingMonumentPriorityOrder, setIsSavingMonumentPriorityOrder] =
@@ -3585,7 +3675,9 @@ export function MonumentGoalsList({
       resolvedSourceType === "circle"
         ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
         : resolvedSourceType === "area"
-          ? Promise.resolve([] as RoadmapWithItems[])
+          ? fetchTrueRoadmapsForArea(user.id, resolvedSourceId, {
+              reconcile: true,
+            })
           : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
               reconcile: true,
             }),
@@ -3671,7 +3763,9 @@ export function MonumentGoalsList({
         resolvedSourceType === "circle"
           ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
           : resolvedSourceType === "area"
-            ? Promise.resolve([] as RoadmapWithItems[])
+            ? fetchTrueRoadmapsForArea(user.id, resolvedSourceId, {
+                reconcile: true,
+              })
             : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
                 reconcile: true,
               }),
@@ -4119,7 +4213,9 @@ export function MonumentGoalsList({
             resolvedSourceType === "circle"
               ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
               : resolvedSourceType === "area"
-                ? Promise.resolve([] as RoadmapWithItems[])
+                ? fetchTrueRoadmapsForArea(user.id, resolvedSourceId, {
+                    reconcile: true,
+                  })
               : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
                   reconcile: true,
                 })
@@ -5268,6 +5364,114 @@ export function MonumentGoalsList({
   }, [goals, openGoalId, restoreGoalDrawerId, roadmapOpenGoal]);
 
   useEffect(() => {
+    if (resolvedSourceType !== "area" || !onFeaturedGoalChange) return;
+
+    if (areaFeaturedGoals.length === 0) {
+      if (featuredGoalId !== null) {
+        onFeaturedGoalChange(null);
+      }
+      return;
+    }
+
+    if (
+      featuredGoalId &&
+      areaFeaturedGoals.some((goal) => goal.id === featuredGoalId)
+    ) {
+      return;
+    }
+
+    onFeaturedGoalChange(areaFeaturedGoals[0].id);
+  }, [
+    areaFeaturedGoals,
+    featuredGoalId,
+    onFeaturedGoalChange,
+    resolvedSourceType,
+  ]);
+
+  const buildAreaFeaturedGoalControls = useCallback(
+    (goal: Goal): AreaFeaturedGoalControls => ({
+      onProjectLongPress: (project, origin) => {
+        const projectWithCompletion = project as Project & {
+          completed_at?: string | null;
+        };
+
+        handleProjectEditOpen(
+          {
+            entityType: "PROJECT",
+            entityId: project.id,
+            title: project.name,
+            status: project.status,
+            stage: project.stage ?? null,
+            progress: project.progress,
+            completedAt:
+              project.completedAt ?? projectWithCompletion.completed_at ?? null,
+            originRect: origin
+              ? {
+                  top: origin.y,
+                  left: origin.x,
+                  width: origin.width,
+                  height: origin.height,
+                }
+              : null,
+          },
+          project.id,
+          goal.id,
+          origin
+        );
+      },
+      onProjectUpdated: (projectId, updates) =>
+        handleProjectUpdated(goal.id, projectId, updates),
+      onTaskEditOpen: handleTaskEditOpen,
+      onTaskToggleCompletion: handleTaskToggleCompletion,
+    }),
+    [
+      handleProjectEditOpen,
+      handleProjectUpdated,
+      handleTaskEditOpen,
+      handleTaskToggleCompletion,
+    ]
+  );
+
+  const handleAreaFeaturedGoalSelect = useCallback(
+    (goal: Goal) => {
+      if (resolvedSourceType !== "area") return;
+      onFeaturedGoalChange?.(goal.id);
+      onFeaturedGoalResolved?.(goal, buildAreaFeaturedGoalControls(goal));
+    },
+    [
+      buildAreaFeaturedGoalControls,
+      onFeaturedGoalChange,
+      onFeaturedGoalResolved,
+      resolvedSourceType,
+    ]
+  );
+
+  useEffect(() => {
+    if (resolvedSourceType !== "area" || !onFeaturedGoalResolved) return;
+
+    const resolvedGoal =
+      areaFeaturedGoals.find((goal) => goal.id === featuredGoalId) ??
+      areaFeaturedGoals[0] ??
+      null;
+
+    if (!resolvedGoal) {
+      onFeaturedGoalResolved(null);
+      return;
+    }
+
+    onFeaturedGoalResolved(
+      resolvedGoal,
+      buildAreaFeaturedGoalControls(resolvedGoal)
+    );
+  }, [
+    areaFeaturedGoals,
+    buildAreaFeaturedGoalControls,
+    featuredGoalId,
+    onFeaturedGoalResolved,
+    resolvedSourceType,
+  ]);
+
+  useEffect(() => {
     if (
       goalsGridLoading ||
       (!restoreGoalDrawerId &&
@@ -5796,7 +6000,9 @@ export function MonumentGoalsList({
         </div>
       ) : null;
     const roadmapContent =
-      resolvedSourceType === "monument" || resolvedSourceType === "circle" ? (
+      resolvedSourceType === "monument" ||
+      resolvedSourceType === "circle" ||
+      resolvedSourceType === "area" ? (
         visibleMonumentPriorityRoadmapItems.length === 0 ? (
           resolvedSourceType === "circle" && circleHabitRoadmapItems.length > 0 ? (
             <div
@@ -5819,13 +6025,18 @@ export function MonumentGoalsList({
               title={
                 resolvedSourceType === "circle"
                   ? "Circle Goal Roadmap"
-                  : "Monument Roadmap"
+                  : resolvedSourceType === "area"
+                    ? "Area Roadmap"
+                    : "Monument Roadmap"
               }
               items={visibleMonumentPriorityRoadmapItems}
               error={monumentPriorityRoadmapError}
               isSaving={isSavingMonumentPriorityOrder}
               sensors={monumentPriorityRoadmapSensors}
               isFiltered={true}
+              appearance={
+                resolvedSourceType === "area" ? "priorityEditor" : "default"
+              }
               hideNestedChildCountLabels={resolvedSourceType === "monument"}
               onGoalOpen={handleRoadmapGoalOpen}
               onGoalLongPressEdit={handleMonumentPriorityGoalLongPressEdit}
@@ -6083,7 +6294,12 @@ export function MonumentGoalsList({
             <div
               key={goal.id}
               data-monument-goal-card-id={goal.id}
-              className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+              className={cn(
+                "goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80",
+                resolvedSourceType === "area" && featuredGoalId === goal.id
+                  ? "opacity-100"
+                  : ""
+              )}
             >
               <GoalCard
                 goal={goal}
@@ -6091,6 +6307,9 @@ export function MonumentGoalsList({
                 showCreatedAt={false}
                 showEmojiPrefix={false}
                 variant="compact"
+                selected={
+                  resolvedSourceType === "area" && featuredGoalId === goal.id
+                }
                 monumentContext
                 completeWhenProjectsDone
                 completionTheme="border"
@@ -6110,7 +6329,14 @@ export function MonumentGoalsList({
                 onTaskEditOpen={handleTaskEditOpen}
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 onManualComplete={handleManualGoalComplete}
-                open={openGoalId === goal.id}
+                onCardClick={
+                  resolvedSourceType === "area"
+                    ? () => handleAreaFeaturedGoalSelect(goal)
+                    : undefined
+                }
+                open={
+                  resolvedSourceType === "area" ? false : openGoalId === goal.id
+                }
                 newProjectRevealId={
                   newProjectReveal?.goalId === goal.id &&
                   !newProjectReveal.campaignId
@@ -6121,7 +6347,11 @@ export function MonumentGoalsList({
                   handleNewProjectRevealComplete(goal.id, projectId)
                 }
                 suppressDrawerOpenAnimation={restoreGoalDrawerId === goal.id}
-                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+                onOpenChange={
+                  resolvedSourceType === "area"
+                    ? undefined
+                    : (isOpen) => handleGoalOpenChange(goal.id, isOpen)
+                }
               />
             </div>
           ))}
@@ -6229,6 +6459,7 @@ export function MonumentGoalsList({
     goalsRoadmapViewportWidth,
     goalsRoadmapTrackTransform,
     goalsRoadmapViewIndex,
+    featuredGoalId,
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     visibleMonumentPriorityRoadmapItems,
@@ -6249,6 +6480,7 @@ export function MonumentGoalsList({
     isSmallGoalCardDensity,
     openGoalId,
     renderGoalCardDensityToggle,
+    handleAreaFeaturedGoalSelect,
     handleGoalEdit,
     handleGoalLongPressEdit,
     handleManualGoalComplete,
@@ -6329,34 +6561,42 @@ export function MonumentGoalsList({
         }
         @media (max-width: 520px) {
           .monument-goals-list .goal-grid {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.4rem;
+            grid-template-columns: none;
+            grid-auto-columns: 56px;
+            grid-auto-flow: column;
+            grid-template-rows: 1fr;
+            gap: 0.25rem;
             padding-left: 0;
             padding-right: 0;
+            overflow-x: auto;
+            scrollbar-width: none;
+          }
+          .monument-goals-list .goal-grid::-webkit-scrollbar {
+            display: none;
           }
           .monument-goals-list [data-variant="compact"] {
-            padding: 0.65rem 0.45rem;
-            border-radius: 1rem;
-            min-height: 108px;
+            padding: 0.375rem;
+            border-radius: 0.8125rem;
+            min-height: 92px;
             aspect-ratio: auto;
           }
           .monument-goals-list [data-variant="compact"] button {
-            gap: 0.45rem;
+            gap: 0.25rem;
           }
           .monument-goals-list
             [data-variant="compact"]
             button
             > div:first-of-type {
-            height: 1.85rem;
-            width: 1.85rem;
-            border-radius: 0.85rem;
-            font-size: 0.7rem;
+            height: 1.75rem;
+            width: 1.75rem;
+            border-radius: 0.625rem;
+            font-size: 0.875rem;
           }
           .monument-goals-list [data-variant="compact"] h3 {
-            font-size: 0.5rem;
-            line-height: 1.15;
+            font-size: 0.5625rem;
+            line-height: 1.05;
             min-height: 0;
-            max-height: 3.45em;
+            max-height: 3.15em;
             display: -webkit-box;
             -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;

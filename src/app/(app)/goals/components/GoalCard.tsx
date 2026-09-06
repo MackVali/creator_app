@@ -83,6 +83,7 @@ interface GoalCardProps {
   hideEnergyPill?: boolean;
   monumentContext?: boolean;
   variant?: "default" | "compact";
+  selected?: boolean;
   drawerCompact?: boolean;
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
@@ -114,6 +115,15 @@ interface GoalCardProps {
   ) => void;
   completeWhenProjectsDone?: boolean;
   completionTheme?: "auto" | "emerald" | "monument" | "border";
+  suppressReadyToast?: boolean;
+  hideGoalEditAction?: boolean;
+  onManualComplete?: (
+    goal: Goal,
+    sourceRect?: DOMRect | null
+  ) => void | boolean | Promise<void | boolean>;
+  newProjectRevealId?: string | null;
+  onNewProjectRevealComplete?: (projectId: string) => void;
+  suppressDrawerOpenAnimation?: boolean;
 }
 
 function isProjectComplete(project: Project) {
@@ -241,6 +251,7 @@ function GoalCardImpl({
   showEmojiPrefix = false,
   hideEnergyPill = false,
   variant = "default",
+  selected = false,
   drawerCompact = false,
   showEnergyInCompact = false,
   monumentContext = false,
@@ -634,7 +645,7 @@ function GoalCardImpl({
     variant === "compact";
   const completedClass = isCompleted
     ? resolvedCompletionTheme === "border"
-      ? "shimmer-border-complete completion-border-only"
+      ? "goal-card-emerald-outline completion-border-only"
       : resolvedCompletionTheme === "monument"
       ? variant === "compact"
         ? "border border-white/10 bg-white/[0.04] text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),_0_4px_10px_rgba(0,0,0,0.45)] opacity-85"
@@ -769,11 +780,14 @@ function GoalCardImpl({
         animate: "visible" as const,
         exit: "exit" as const,
       };
+  const defaultLongPressEditClass = onGoalLongPressEdit
+    ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+    : "";
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {
     const containerBase =
-      "group relative h-full rounded-2xl p-3 sm:p-4 text-white goal-card";
+      "group relative h-full rounded-[13px] p-1.5 text-white goal-card sm:rounded-2xl sm:p-4";
     const longPressEditClass = onGoalLongPressEdit
       ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
       : "";
@@ -783,7 +797,8 @@ function GoalCardImpl({
       isTasksOnlyCompactShell
         ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
         : "",
-      showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]",
+      selected ? "goal-card-emerald-outline" : "",
+      showEnergyInCompact ? "min-h-[60px]" : "min-h-[92px] sm:min-h-[96px] aspect-[14/23] sm:aspect-[5/6]",
     ]
       .filter(Boolean)
       .join(" ");
@@ -909,13 +924,13 @@ function GoalCardImpl({
               {...shellMotionProps}
             >
               <div
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${completedIconClass}`}
+                className={`flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.32)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-base ${completedIconClass}`}
               >
                 {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
               </div>
               <h3
                 id={`goal-${goal.id}-label`}
-                className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em]"
+                className="max-w-full px-0.5 text-center text-[9px] leading-[1.05] font-semibold line-clamp-3 break-words min-h-[2.9em] sm:px-1 sm:text-[8px] sm:leading-snug sm:line-clamp-2 sm:min-h-[2.4em]"
                 title={goal.title}
                 style={{ hyphens: "auto" }}
               >
@@ -925,7 +940,7 @@ function GoalCardImpl({
                 {goal.title}
               </h3>
               <div
-                className="mt-1 h-[14px] w-full overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                className="mt-auto h-1 w-full overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] sm:mt-1 sm:h-[14px] sm:border-2"
                 style={{
                   boxShadow:
                     "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
@@ -982,9 +997,6 @@ function GoalCardImpl({
   ]
     .filter(Boolean)
     .join(" ");
-  const defaultLongPressEditClass = onGoalLongPressEdit
-    ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
-    : "";
   const shellStateClass = open
     ? isCompleted && !isBorderOnlyCompleted
       ? isDrawerCompactDefault
@@ -1737,6 +1749,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showEmojiPrefix === next.showEmojiPrefix &&
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
+    prev.selected === next.selected &&
     prev.open === next.open &&
     prev.onGoalLongPressEdit === next.onGoalLongPressEdit &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
