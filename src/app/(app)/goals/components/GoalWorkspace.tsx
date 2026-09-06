@@ -273,7 +273,7 @@ export function GoalWorkspace({
           skillCategories={skillCategories}
           noteId={`goal-workspace:${goal.id}`}
           placeholder="Write inside this goal..."
-          className={`min-h-40 w-full border-0 bg-transparent p-0 text-base leading-7 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
+          className={`min-h-40 w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
           aria-label="Goal workspace"
         />
 
@@ -294,6 +294,21 @@ export function GoalWorkspace({
 
         [data-goal-workspace-editor] [data-note-text-action-bar] > div {
           max-width: none;
+        }
+
+        [data-goal-workspace-editor]
+          [data-note-editable-segment-id^="text-"],
+        [data-goal-workspace-editor]
+          [data-note-editable-segment-id^="checklist-"],
+        [data-goal-workspace-editor]
+          [data-note-editable-segment-id^="noteTodo-"],
+        [data-goal-workspace-editor]
+          [data-note-editable-segment-id^="list-"],
+        [data-goal-workspace-editor]
+          [data-note-editable-segment-id^="quote-"] {
+          min-height: 24px !important;
+          font-size: 14px !important;
+          line-height: 20px !important;
         }
       `}</style>
     </div>
