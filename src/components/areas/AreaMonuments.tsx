@@ -64,7 +64,6 @@ export function AreaMonuments({
                       }`,
                     }))}
                     showNewCard={false}
-                    density="compact"
                   />
                 </div>
               ) : null}

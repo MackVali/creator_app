@@ -726,9 +726,7 @@ export function AreasContainer() {
             <AreasGrid />
           </div>
 
-          <div className="w-full shrink-0 snap-start">
-            <MonumentContainer embedded />
-          </div>
+          <MonumentContainer embedded paginated pageSize={8} />
         </div>
       </div>
     </section>

@@ -194,7 +194,7 @@ function renderRelatedHabitAddCard({
                 "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
                 isSmall ? "line-clamp-2 text-[8px] sm:text-[9px]" : ""
               )}
-              style={{ hyphens: "auto" }}
+              style={{ hyphens: sourceType === "area" ? "none" : "auto" }}
             >
               Add habit
             </span>
@@ -2225,7 +2225,17 @@ export function MonumentRelatedHabits({
             <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
               {standaloneDecoratedHabits.length + relatedRoutines.length}
             </span>
-            <button
+            {sourceType === "area" ? (
+              <button
+                type="button"
+                aria-label="Add habit"
+                onClick={handleRelatedHabitAdd}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95 sm:h-7 sm:w-7"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </button>
+            ) : (
+              <button
               type="button"
               aria-label={
                 isSmallRelatedHabitDensity ? "Use large cards" : "Use small cards"
@@ -2244,6 +2254,7 @@ export function MonumentRelatedHabits({
                 <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
               )}
             </button>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -2266,10 +2277,12 @@ export function MonumentRelatedHabits({
           <p className="text-xs text-white/60">{habitsError}</p>
         ) : relatedHabits.length === 0 ? (
           <div className={relatedHabitGridClass}>
-            {renderRelatedHabitAddCard({
-              isSmall: isSmallRelatedHabitDensity,
-              onClick: handleRelatedHabitAdd,
-            })}
+            {sourceType === "area"
+              ? null
+              : renderRelatedHabitAddCard({
+                  isSmall: isSmallRelatedHabitDensity,
+                  onClick: handleRelatedHabitAdd,
+                })}
           </div>
         ) : (
           <div className="space-y-2">
@@ -2328,6 +2341,7 @@ export function MonumentRelatedHabits({
                                 key={`${page.id}-routine-${item.routine.id}`}
                                 routine={item.routine}
                                 density={relatedHabitCardDensity}
+                                areaHubCompact={sourceType === "area"}
                                 onHabitCompletionToggle={
                                   handleRoutineHabitCompletionToggle
                                 }
@@ -2386,19 +2400,33 @@ export function MonumentRelatedHabits({
                               key={`${page.id}-habit-${habit.id}`}
                               className={clsx(
                                 "goal-card group relative flex w-full transform-gpu flex-col text-white transition duration-200 select-none",
-                                isSmallRelatedHabitDensity
-                                  ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
-                                  : "aspect-[5/6] min-h-[96px] rounded-2xl p-3 sm:p-4",
-                                isHabitCompletedToday
-                                  ? RELATED_HABIT_COMPLETED_CARD_CLASS
-                                  : [
+                                sourceType === "area"
+                                  ? "min-h-[46px] rounded-[10px] px-2 py-1.5"
+                                  : isSmallRelatedHabitDensity
+                                    ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
+                                    : "aspect-[5/6] min-h-[96px] rounded-2xl p-3 sm:p-4",
+                                sourceType === "area"
+                                  ? [
                                       getHabitCardTypeClass(
                                         habit.normalizedHabitType
                                       ),
                                       getHabitCardBorderClass(
                                         habit.normalizedHabitType
                                       ),
-                                    ],
+                                      isHabitCompletedToday
+                                        ? "ring-1 ring-inset ring-emerald-300/35"
+                                        : null,
+                                    ]
+                                  : isHabitCompletedToday
+                                    ? RELATED_HABIT_COMPLETED_CARD_CLASS
+                                    : [
+                                        getHabitCardTypeClass(
+                                          habit.normalizedHabitType
+                                        ),
+                                        getHabitCardBorderClass(
+                                          habit.normalizedHabitType
+                                        ),
+                                      ],
                                 isHabitPending
                                   ? "pointer-events-none cursor-default opacity-75"
                                   : "cursor-pointer",
@@ -2442,7 +2470,7 @@ export function MonumentRelatedHabits({
                               onContextMenu={(event) => event.preventDefault()}
                               onDragStart={(event) => event.preventDefault()}
                             >
-                              {isHabitCompletedToday ? (
+                              {isHabitCompletedToday && sourceType !== "area" ? (
                                 <>
                                   <span
                                     className={RELATED_HABIT_COMPLETED_SHIMMER_CLASS}
@@ -2478,17 +2506,21 @@ export function MonumentRelatedHabits({
                               <div
                                 className={clsx(
                                   "relative z-[2] flex min-h-0 flex-1 text-center",
-                                  isSmallRelatedHabitDensity
-                                    ? "flex-row items-center justify-start gap-1.5 sm:flex-col sm:justify-between sm:gap-1"
-                                    : "flex-col items-center justify-between gap-1"
+                                  sourceType === "area"
+                                    ? "justify-start"
+                                    : isSmallRelatedHabitDensity
+                                      ? "flex-row items-center justify-start gap-1.5 sm:flex-col sm:justify-between sm:gap-1"
+                                      : "flex-col items-center justify-between gap-1"
                                 )}
                               >
                               <span
                                 className={clsx(
                                   "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-                                  isSmallRelatedHabitDensity
-                                    ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
-                                    : "h-7 w-7 text-xs sm:h-8 sm:w-8",
+                                  sourceType === "area"
+                                    ? "mt-0 h-6 w-6 shrink-0 rounded-md text-[13px]"
+                                    : isSmallRelatedHabitDensity
+                                      ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
+                                      : "h-7 w-7 text-xs sm:h-8 sm:w-8",
                                   isHabitCompletedToday
                                     ? "grayscale"
                                     : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
@@ -2500,19 +2532,23 @@ export function MonumentRelatedHabits({
                               <div
                                 className={clsx(
                                   "flex min-h-0 w-full min-w-0 flex-1 items-center",
-                                  isSmallRelatedHabitDensity
-                                    ? "justify-start sm:justify-center"
-                                    : "justify-center"
+                                  sourceType === "area"
+                                    ? "justify-start"
+                                    : isSmallRelatedHabitDensity
+                                      ? "justify-start sm:justify-center"
+                                      : "justify-center"
                                 )}
                               >
                                 <span
                                   className={clsx(
                                     "line-clamp-3 w-full min-w-0 break-words px-0.5 font-semibold leading-tight text-white whitespace-normal",
-                                    isSmallRelatedHabitDensity
-                                      ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
-                                      : "text-[9px] sm:text-[10px]"
+                                    sourceType === "area"
+                                      ? "line-clamp-2 text-left text-[12px] font-semibold leading-[14px]"
+                                      : isSmallRelatedHabitDensity
+                                        ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
+                                        : "text-[9px] sm:text-[10px]"
                                   )}
-                                  style={{ hyphens: "auto" }}
+                                  style={{ hyphens: sourceType === "area" ? "none" : "auto" }}
                                 >
                                   {habit.name}
                                 </span>
@@ -2561,10 +2597,12 @@ export function MonumentRelatedHabits({
                             </div>
                           );
                         })}
-                        {renderRelatedHabitAddCard({
-                          isSmall: isSmallRelatedHabitDensity,
-                          onClick: handleRelatedHabitAdd,
-                        })}
+                        {sourceType === "area"
+              ? null
+              : renderRelatedHabitAddCard({
+                  isSmall: isSmallRelatedHabitDensity,
+                  onClick: handleRelatedHabitAdd,
+                })}
                       </div>
                     </div>
                   ))}
