@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bookmark, ChevronRight, FileText, Plus } from "lucide-react";
+import { Bookmark, ChevronRight, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
@@ -125,6 +125,11 @@ export function MonumentNotesGrid({
       <NotesHeaderControls
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        addHref={
+          sourceType === "area"
+            ? `/areas/${areaId}/notes/new`
+            : `/monuments/${monumentId}/notes/new`
+        }
       />
       {hasAnyNotes && !hasVisibleNotes && !isLoading ? (
         <div className="w-full rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-3 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
@@ -137,8 +142,9 @@ export function MonumentNotesGrid({
         </div>
       ) : null}
 
-      <div className={monumentNoteListSurfaceClass}>
-        {visibleNotes.map((note) => (
+      {hasVisibleNotes ? (
+        <div className={monumentNoteListSurfaceClass}>
+          {visibleNotes.map((note) => (
           <Link
             key={note.id}
             href={
@@ -187,25 +193,9 @@ export function MonumentNotesGrid({
           </Link>
         ))}
 
-        <Link
-          href={
-            sourceType === "area"
-              ? `/areas/${areaId}/notes/new`
-              : `/monuments/${monumentId}/notes/new`
-          }
-          className="flex min-h-[54px] items-center gap-2.5 border-t border-white/[0.06] px-3 py-2 text-white/68 transition hover:bg-white/[0.045] hover:text-white active:bg-white/[0.065]"
-          aria-label={hasAnyNotes ? "Add note" : "Create note"}
-        >
-          <Plus
-            className="h-3.5 w-3.5 shrink-0 text-white/45"
-            strokeWidth={1.8}
-            aria-hidden="true"
-          />
-          <span className="truncate text-sm font-medium">
-            {hasAnyNotes ? "Add note" : "Create note"}
-          </span>
-        </Link>
-      </div>
+
+        </div>
+      ) : null}
 
       {!showAllNotes && hasMoreNotes ? (
         <div className="flex justify-center">

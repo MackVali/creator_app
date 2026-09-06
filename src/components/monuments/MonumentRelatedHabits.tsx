@@ -194,7 +194,7 @@ function renderRelatedHabitAddCard({
                 "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
                 isSmall ? "line-clamp-2 text-[8px] sm:text-[9px]" : ""
               )}
-              style={{ hyphens: sourceType === "area" ? "none" : "auto" }}
+              style={{ hyphens: "auto" }}
             >
               Add habit
             </span>

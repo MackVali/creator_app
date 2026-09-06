@@ -1,15 +1,18 @@
 "use client";
 
-import { Filter, Search } from "lucide-react";
+import Link from "next/link";
+import { Filter, Plus, Search } from "lucide-react";
 
 interface NotesHeaderControlsProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
+  addHref?: string;
 }
 
 export function NotesHeaderControls({
   searchQuery,
   onSearchChange,
+  addHref,
 }: NotesHeaderControlsProps) {
   return (
     <header className="flex min-w-0 items-center justify-between gap-2.5">
@@ -36,6 +39,16 @@ export function NotesHeaderControls({
         >
           <Filter className="h-3 w-3 text-slate-400" />
         </button>
+
+        {addHref ? (
+          <Link
+            href={addHref}
+            aria-label="Add note"
+            className="inline-flex h-[1.875rem] w-[1.875rem] shrink-0 items-center justify-center text-white/55 transition hover:text-white active:scale-95"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+          </Link>
+        ) : null}
       </div>
     </header>
   );

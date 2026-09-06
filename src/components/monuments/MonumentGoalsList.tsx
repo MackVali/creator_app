@@ -633,7 +633,7 @@ const NORMALIZED_ENERGY_VALUES = new Set([
   "EXTREME",
 ]);
 const GOAL_SMALL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full grid-flow-col auto-cols-[56px] grid-rows-1 gap-1 overflow-x-auto px-0 py-0.5 [scrollbar-width:none] sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3 sm:gap-1 sm:px-2 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid goal-grid--small grid w-full max-w-full grid-flow-col auto-cols-[56px] grid-rows-1 gap-1 overflow-x-auto px-0 py-0.5 [scrollbar-width:none] sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3 sm:gap-1 sm:px-2 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[112px] sm:min-h-[260px]";
@@ -2734,7 +2734,9 @@ export function MonumentGoalsList({
   );
   const [activeGoalPanel, setActiveGoalPanel] = useState<GoalPanel>("active");
   const [goalCardDensity, setGoalCardDensity] =
-    useState<GoalCardDensity>("small");
+    useState<GoalCardDensity>(() =>
+      resolvedSourceType === "area" ? "large" : "small"
+    );
   const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
   const [goalPanelDragOffset, setGoalPanelDragOffset] = useState(0);
   const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
@@ -2796,8 +2798,21 @@ export function MonumentGoalsList({
     Math.min(0, goalPanelBaseTransform + goalPanelDragOffset)
   );
   const goalGridClass =
-    goalCardDensity === "small" ? GOAL_SMALL_GRID_CLASS : GOAL_GRID_CLASS;
+    resolvedSourceType === "area"
+      ? goalCardDensity === "small"
+        ? GOAL_SMALL_GRID_CLASS
+        : "goal-grid area-goal-grid--large grid w-full min-w-0 grid-cols-4 gap-[0.4rem] px-0 py-0.5"
+      : goalCardDensity === "small"
+        ? GOAL_SMALL_GRID_CLASS
+        : GOAL_GRID_CLASS;
   const isSmallGoalCardDensity = goalCardDensity === "small";
+
+  useEffect(() => {
+    if (resolvedSourceType === "area") {
+      setGoalCardDensity("large");
+    }
+  }, [goalsSourceKey, resolvedSourceType]);
+
   const readyGoalIds = useMemo(
     () =>
       goals
@@ -5564,9 +5579,13 @@ export function MonumentGoalsList({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-                {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
-              </p>
+              {resolvedSourceType === "area" ? (
+                renderGoalCardDensityToggle()
+              ) : (
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+                  {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+                </p>
+              )}
               {resolvedSourceType === "area" ? (
                 <button
                   type="button"
@@ -6192,8 +6211,12 @@ export function MonumentGoalsList({
             type="button"
             className={cn(
               GOAL_ADD_CARD_OUTER_CLASS,
-              resolvedSourceType === "area" &&
-                "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
+              resolvedSourceType === "area" && isSmallGoalCardDensity
+                ? "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
+                : "",
+              resolvedSourceType === "area" && !isSmallGoalCardDensity
+                ? "!min-h-[96px] !aspect-[5/6] !rounded-2xl !p-3 sm:!p-4"
+                : ""
             )}
             data-variant="compact"
             onClick={
@@ -6215,7 +6238,9 @@ export function MonumentGoalsList({
                     "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
                     isSmallGoalCardDensity
                       ? "h-6 w-6 sm:h-7 sm:w-7"
-                      : ""
+                      : resolvedSourceType === "area"
+                        ? "!h-9 !w-9 rounded-xl sm:!h-9 sm:!w-9"
+                        : ""
                   )}
                 >
                   <Plus
@@ -6234,7 +6259,9 @@ export function MonumentGoalsList({
                       "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
                       isSmallGoalCardDensity
                         ? "line-clamp-2 text-[8px] sm:text-[9px]"
-                        : ""
+                        : resolvedSourceType === "area"
+                          ? "line-clamp-2 text-[8px] leading-snug sm:text-[8px]"
+                          : ""
                     )}
                     style={{ hyphens: "auto" }}
                   >
@@ -6390,16 +6417,16 @@ export function MonumentGoalsList({
             <div
               key={goal.id}
               data-monument-goal-card-id={goal.id}
-              className={cn(
-                "goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80",
-                resolvedSourceType === "area" && featuredGoalId === goal.id
-                  ? "opacity-100"
-                  : ""
-              )}
+              className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
             >
               <GoalCard
                 goal={goal}
-                areaLibraryTile={resolvedSourceType === "area"}
+                areaLibraryTile={
+                  resolvedSourceType === "area" && isSmallGoalCardDensity
+                }
+                areaLibraryLarge={
+                  resolvedSourceType === "area" && !isSmallGoalCardDensity
+                }
                 showWeight={false}
                 showCreatedAt={false}
                 showEmojiPrefix={false}
@@ -6426,14 +6453,7 @@ export function MonumentGoalsList({
                 onTaskEditOpen={handleTaskEditOpen}
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 onManualComplete={handleManualGoalComplete}
-                onCardClick={
-                  resolvedSourceType === "area"
-                    ? () => handleAreaFeaturedGoalSelect(goal)
-                    : undefined
-                }
-                open={
-                  resolvedSourceType === "area" ? false : openGoalId === goal.id
-                }
+                open={openGoalId === goal.id}
                 newProjectRevealId={
                   newProjectReveal?.goalId === goal.id &&
                   !newProjectReveal.campaignId
@@ -6444,10 +6464,8 @@ export function MonumentGoalsList({
                   handleNewProjectRevealComplete(goal.id, projectId)
                 }
                 suppressDrawerOpenAnimation={restoreGoalDrawerId === goal.id}
-                onOpenChange={
-                  resolvedSourceType === "area"
-                    ? undefined
-                    : (isOpen) => handleGoalOpenChange(goal.id, isOpen)
+                onOpenChange={(isOpen) =>
+                  handleGoalOpenChange(goal.id, isOpen)
                 }
               />
             </div>
@@ -6466,9 +6484,13 @@ export function MonumentGoalsList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-              {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
-            </p>
+            {resolvedSourceType === "area" ? (
+              renderGoalCardDensityToggle()
+            ) : (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+                {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+              </p>
+            )}
             {resolvedSourceType === "area" ? (
                 <button
                   type="button"
@@ -6588,7 +6610,6 @@ export function MonumentGoalsList({
     isSmallGoalCardDensity,
     openGoalId,
     renderGoalCardDensityToggle,
-    handleAreaFeaturedGoalSelect,
     handleGoalEdit,
     handleGoalLongPressEdit,
     handleManualGoalComplete,
@@ -6668,7 +6689,59 @@ export function MonumentGoalsList({
           transform: none !important;
         }
         @media (max-width: 520px) {
-          .monument-goals-list .goal-grid {
+          .monument-goals-list .area-goal-grid--large {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-auto-flow: row;
+            grid-auto-columns: auto;
+            gap: 0.4rem;
+            padding-left: 0;
+            padding-right: 0;
+            overflow-x: visible;
+          }
+
+          .monument-goals-list
+            .area-goal-grid--large
+            [data-variant="compact"] {
+            padding: 0.65rem 0.45rem;
+            border-radius: 1rem;
+            min-height: 108px;
+            aspect-ratio: auto;
+          }
+
+          .monument-goals-list
+            .area-goal-grid--large
+            [data-variant="compact"]
+            button {
+            gap: 0.45rem;
+          }
+
+          .monument-goals-list
+            .area-goal-grid--large
+            [data-variant="compact"]
+            button
+            > div:first-of-type {
+            height: 1.85rem;
+            width: 1.85rem;
+            border-radius: 0.85rem;
+            font-size: 0.7rem;
+          }
+
+          .monument-goals-list
+            .area-goal-grid--large
+            [data-variant="compact"]
+            h3 {
+            font-size: 0.5rem;
+            line-height: 1.15;
+            min-height: 0;
+            max-height: 3.45em;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .monument-goals-list .goal-grid--small {
             grid-template-columns: none;
             grid-auto-columns: 56px;
             grid-auto-flow: column;
@@ -6679,19 +6752,29 @@ export function MonumentGoalsList({
             overflow-x: auto;
             scrollbar-width: none;
           }
-          .monument-goals-list .goal-grid::-webkit-scrollbar {
+
+          .monument-goals-list .goal-grid--small::-webkit-scrollbar {
             display: none;
           }
-          .monument-goals-list [data-variant="compact"] {
+
+          .monument-goals-list
+            .goal-grid--small
+            [data-variant="compact"] {
             padding: 0.375rem;
             border-radius: 0.8125rem;
             min-height: 92px;
             aspect-ratio: auto;
           }
-          .monument-goals-list [data-variant="compact"] button {
+
+          .monument-goals-list
+            .goal-grid--small
+            [data-variant="compact"]
+            button {
             gap: 0.25rem;
           }
+
           .monument-goals-list
+            .goal-grid--small
             [data-variant="compact"]
             button
             > div:first-of-type {
@@ -6700,11 +6783,15 @@ export function MonumentGoalsList({
             border-radius: 0.625rem;
             font-size: 0.875rem;
           }
-          .monument-goals-list [data-variant="compact"] h3 {
-            font-size: 0.5625rem;
-            line-height: 1.05;
+
+          .monument-goals-list
+            .goal-grid--small
+            [data-variant="compact"]
+            h3 {
+            font-size: 0.421875rem;
+            line-height: 0.95;
             min-height: 0;
-            max-height: 3.15em;
+            max-height: 2.85em;
             display: -webkit-box;
             -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
@@ -6712,6 +6799,7 @@ export function MonumentGoalsList({
             text-overflow: ellipsis;
           }
         }
+
         /* Avoid Safari/iOS clipping issues on small screens */
         @media (min-width: 640px) {
           .monument-goals-list .goal-card-wrapper {

@@ -915,7 +915,6 @@ export function MonumentDetail({
                 containerShell,
                 sectionBackground,
                 "p-4 sm:p-5",
-                "min-h-[220px]",
                 "z-[1] overflow-visible"
               )}
             >
