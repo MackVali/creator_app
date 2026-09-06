@@ -69,7 +69,7 @@ export function AreaFeaturedGoal({
         </div>
       </div>
 
-      <div className="mt-1.5 max-h-[8.35rem] overflow-hidden border-t border-white/[0.07] pt-1.5 sm:max-h-none sm:overflow-visible sm:pt-2">
+      <div className="mt-1.5 overflow-visible border-t border-white/[0.07] pt-1.5 sm:pt-2">
         <GoalWorkspace
           goal={goal}
           loading={false}

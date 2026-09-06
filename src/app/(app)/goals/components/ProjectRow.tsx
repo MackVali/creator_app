@@ -867,7 +867,7 @@ export function ProjectRow({
       ? "rounded-lg border-emerald-50/24 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
       : "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
     : isCompactNested
-      ? "rounded-lg border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
+      ? "rounded-md border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
       : "rounded-md border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] sm:rounded-lg";
   const {
     tertiaryTextClass,
@@ -888,7 +888,7 @@ export function ProjectRow({
         data-creator-xp-kind={campaignDrawerXpSource ? "project" : undefined}
         className={`relative border transition-transform select-none ${
           isCompactNested
-            ? "rounded-lg px-2 py-1.5 sm:rounded-xl sm:px-2.5 sm:py-2"
+            ? "min-h-7 rounded-lg px-1.5 py-0.5 sm:min-h-8 sm:px-2 sm:py-1"
             : "rounded-lg px-1.5 py-1.5 sm:px-2.5 sm:py-2"
         } ${cardSurfaceClass} ${primaryTextClass} ${
           completionPending ? "opacity-70" : ""
@@ -906,7 +906,7 @@ export function ProjectRow({
         )}
         <div
           className={`relative z-0 flex w-full items-center text-sm select-none ${
-            isCompactNested ? "gap-2 sm:gap-2.5" : "gap-1 sm:gap-2"
+            isCompactNested ? "gap-1.5 sm:gap-2" : "gap-1 sm:gap-2"
           } ${primaryTextClass}`}
         >
           <button
@@ -914,7 +914,7 @@ export function ProjectRow({
             type="button"
             className={`flex min-w-0 flex-1 text-left select-none ${
               isCompactNested
-                ? "items-center gap-2"
+                ? "items-center gap-1.5"
                 : "flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
             } ${primaryTextClass}`}
             aria-disabled={completionPending}
@@ -923,12 +923,16 @@ export function ProjectRow({
             onPointerCancel={handlePointerEnd}
           >
             <div
-              className={`flex min-w-0 items-center gap-2 ${primaryTextClass} ${
+              className={`flex min-w-0 items-center ${isCompactNested ? "gap-1.5" : "gap-2"} ${primaryTextClass} ${
                 isCompactNested ? "flex-1" : ""
               }`}
             >
               <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none sm:h-8 sm:w-8 sm:text-[11px] ${identityClass}`}
+                className={`flex shrink-0 items-center justify-center border font-semibold leading-none ${
+                  isCompactNested
+                    ? "h-[18px] w-[18px] text-[9px] sm:h-5 sm:w-5 sm:text-[9px]"
+                    : "h-7 w-7 text-[10px] sm:h-8 sm:w-8 sm:text-[11px]"
+                } ${identityClass}`}
               >
                 {displayEmoji}
               </div>
@@ -938,7 +942,11 @@ export function ProjectRow({
                 }`}
               >
                 <span
-                  className={`text-[12px] font-medium sm:text-[13px] ${
+                  className={`${
+                    isCompactNested
+                      ? "text-[11px] font-semibold sm:text-[12px]"
+                      : "text-[12px] font-medium sm:text-[13px]"
+                  } ${
                     isCompactNested ? "min-w-0 flex-1 truncate" : "line-clamp-2 sm:truncate"
                   } ${isCompactNested ? `leading-tight ${primaryTextClass}` : "leading-snug"}`}
                 >
@@ -968,7 +976,7 @@ export function ProjectRow({
               type="button"
               className={`flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${
                 isCompactNested
-                  ? "h-5 w-5 sm:h-6 sm:w-6"
+                  ? "h-[18px] w-[18px] sm:h-5 sm:w-5"
                   : "h-7 w-7 sm:h-8 sm:w-8 sm:rounded-lg"
               } ${chevronColorClass}`}
               aria-expanded={open}
@@ -978,14 +986,16 @@ export function ProjectRow({
               onClick={handleChevronClick}
             >
               <ChevronDown
-                className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+                className={`transition-transform ${
+                  isCompactNested ? "h-3.5 w-3.5" : "h-4 w-4"
+                } ${open ? "rotate-180" : ""}`}
                 aria-hidden="true"
               />
             </button>
           )}
           {isCompactNested && typeof projectOrder === "number" && (
             <span
-              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${metaPillClass}`}
+              className={`shrink-0 rounded-md border px-1 py-0 text-[8px] font-semibold leading-[14px] text-white/42 sm:text-[8px] ${metaPillClass}`}
             >
               {projectOrder}
             </span>
@@ -996,7 +1006,7 @@ export function ProjectRow({
             {open ? (
               <motion.div
                 id={`project-${project.id}`}
-                className={`relative mt-1.5 overflow-hidden rounded-lg border p-2 ring-1 sm:mt-2 ${tasksPanelClass}`}
+                className={`relative mt-1 overflow-hidden rounded-lg border p-1.5 ring-1 sm:mt-1.5 sm:p-2 ${tasksPanelClass}`}
                 variants={
                   prefersReducedMotion ? undefined : compactNestedTaskPanelMotion
                 }
@@ -1026,6 +1036,7 @@ export function ProjectRow({
                   onTaskPointerCancel={handleTaskPointerCancel}
                   onTaskClick={handleTaskClick}
                   campaignDrawerXpSource={campaignDrawerXpSource}
+                  compact
                 />
               </motion.div>
             ) : null}
@@ -1108,6 +1119,7 @@ export interface ProjectTasksListProps {
     task: Task
   ) => void;
   campaignDrawerXpSource?: boolean;
+  compact?: boolean;
 }
 
 export function ProjectTasksList({
@@ -1125,13 +1137,21 @@ export function ProjectTasksList({
   onTaskPointerLeave,
   onTaskClick,
   campaignDrawerXpSource = false,
+  compact = false,
 }: ProjectTasksListProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
     <>
-      <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
-      <div className="relative space-y-1.5" role="list">
+      <div
+        className={`pointer-events-none absolute left-2 w-px bg-white/10 ${
+          compact ? "inset-y-1" : "inset-y-3"
+        }`}
+      />
+      <div
+        className={compact ? "relative space-y-0.5" : "relative space-y-1.5"}
+        role="list"
+      >
         {visibleTasks.map((task) => {
           const taskCompleted = isTaskCompleted
             ? isTaskCompleted(task)
@@ -1172,7 +1192,11 @@ export function ProjectTasksList({
                 data-creator-xp-kind={
                   campaignDrawerXpSource ? "task" : undefined
                 }
-                className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-1.5 py-1.5 text-left leading-4 transition sm:gap-2 sm:px-2.5 sm:py-2 ${
+                className={`flex w-full min-w-0 items-center border text-left transition ${
+                  compact
+                    ? "min-h-[22px] gap-1 rounded-md px-1 py-[2px] leading-none"
+                    : "gap-1.5 rounded-lg px-1.5 py-1.5 leading-4 sm:gap-2 sm:px-2.5 sm:py-2"
+                } ${
                   taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
                 }`}
                 onPointerDown={onTaskPointerDown}
@@ -1182,7 +1206,11 @@ export function ProjectTasksList({
                 onClick={(event) => onTaskClick(event, task)}
               >
                 <span
-                  className={`flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-md border text-[9px] font-semibold leading-none transition sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px] ${
+                  className={`flex shrink-0 items-center justify-center border font-semibold leading-none transition ${
+                    compact
+                      ? "h-4 w-4 rounded text-[8px]"
+                      : "h-[1.625rem] w-[1.625rem] rounded-md text-[9px] sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px]"
+                  } ${
                     taskCompleted
                       ? completedTaskMarkerClass
                       : incompleteTaskMarkerClass
@@ -1190,19 +1218,27 @@ export function ProjectTasksList({
                   aria-hidden="true"
                 >
                   {taskSkillIcon ?? (
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    <span
+                      className={`rounded-full bg-current ${
+                        compact ? "h-1 w-1" : "h-1.5 w-1.5"
+                      }`}
+                    />
                   )}
                 </span>
                 <span
                   className={`min-w-0 flex-1 truncate font-medium ${
                     taskCompleted ? "text-emerald-50/92" : "text-white/82"
-                  } text-[11px] sm:text-[12px]`}
+                  } ${
+                    compact
+                      ? "text-[10px] leading-[11px]"
+                      : "text-[11px] sm:text-[12px]"
+                  }`}
                 >
                   {task.name}
                 </span>
                 <FlameEmber
                   level={energyCodeToFlameLevel(task.energyCode)}
-                  size="sm"
+                  size={compact ? "xs" : "sm"}
                   className="shrink-0 self-center"
                 />
               </button>
@@ -1211,7 +1247,11 @@ export function ProjectTasksList({
         })}
         {hiddenCount > 0 && (
           <div
-            className={`rounded-lg border border-white/8 bg-black/20 px-2 py-1.5 text-[11px] ${tertiaryTextClass}`}
+            className={`border border-white/8 bg-black/20 ${tertiaryTextClass} ${
+              compact
+                ? "rounded-md px-1 py-0.5 text-[9px] leading-[11px]"
+                : "rounded-lg px-2 py-1.5 text-[11px]"
+            }`}
             role="listitem"
           >
             +{hiddenCount} more tasks

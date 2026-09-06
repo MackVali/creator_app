@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { Timer } from "lucide-react";
 
 import { AreaSkillRelations } from "@/components/areas/AreaSkillRelations";
@@ -108,6 +108,12 @@ export function AreaDetail({
     },
     []
   );
+
+  useEffect(() => {
+    setFeaturedGoalId(null);
+    setFeaturedGoal(null);
+    setFeaturedGoalControls(null);
+  }, [area.id]);
 
   return (
     <div className="flex min-h-full flex-col bg-black px-2 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 text-white sm:px-6 sm:pb-10 sm:pt-4 lg:px-8">

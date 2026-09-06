@@ -5364,26 +5364,24 @@ export function MonumentGoalsList({
   }, [goals, openGoalId, restoreGoalDrawerId, roadmapOpenGoal]);
 
   useEffect(() => {
-    if (resolvedSourceType !== "area" || !onFeaturedGoalChange) return;
-
-    if (areaFeaturedGoals.length === 0) {
-      if (featuredGoalId !== null) {
-        onFeaturedGoalChange(null);
-      }
-      return;
-    }
-
     if (
-      featuredGoalId &&
-      areaFeaturedGoals.some((goal) => goal.id === featuredGoalId)
+      resolvedSourceType !== "area" ||
+      !onFeaturedGoalChange ||
+      goalsGridLoading ||
+      !featuredGoalId
     ) {
       return;
     }
 
-    onFeaturedGoalChange(areaFeaturedGoals[0].id);
+    if (areaFeaturedGoals.some((goal) => goal.id === featuredGoalId)) {
+      return;
+    }
+
+    onFeaturedGoalChange(null);
   }, [
     areaFeaturedGoals,
     featuredGoalId,
+    goalsGridLoading,
     onFeaturedGoalChange,
     resolvedSourceType,
   ]);
@@ -5435,11 +5433,19 @@ export function MonumentGoalsList({
   const handleAreaFeaturedGoalSelect = useCallback(
     (goal: Goal) => {
       if (resolvedSourceType !== "area") return;
+
+      if (featuredGoalId === goal.id) {
+        onFeaturedGoalChange?.(null);
+        onFeaturedGoalResolved?.(null);
+        return;
+      }
+
       onFeaturedGoalChange?.(goal.id);
       onFeaturedGoalResolved?.(goal, buildAreaFeaturedGoalControls(goal));
     },
     [
       buildAreaFeaturedGoalControls,
+      featuredGoalId,
       onFeaturedGoalChange,
       onFeaturedGoalResolved,
       resolvedSourceType,
@@ -5447,12 +5453,17 @@ export function MonumentGoalsList({
   );
 
   useEffect(() => {
-    if (resolvedSourceType !== "area" || !onFeaturedGoalResolved) return;
+    if (
+      resolvedSourceType !== "area" ||
+      !onFeaturedGoalResolved ||
+      goalsGridLoading
+    ) {
+      return;
+    }
 
-    const resolvedGoal =
-      areaFeaturedGoals.find((goal) => goal.id === featuredGoalId) ??
-      areaFeaturedGoals[0] ??
-      null;
+    const resolvedGoal = featuredGoalId
+      ? areaFeaturedGoals.find((goal) => goal.id === featuredGoalId) ?? null
+      : null;
 
     if (!resolvedGoal) {
       onFeaturedGoalResolved(null);
@@ -5467,6 +5478,7 @@ export function MonumentGoalsList({
     areaFeaturedGoals,
     buildAreaFeaturedGoalControls,
     featuredGoalId,
+    goalsGridLoading,
     onFeaturedGoalResolved,
     resolvedSourceType,
   ]);
@@ -5668,7 +5680,77 @@ export function MonumentGoalsList({
           return positionDiff === 0 ? a.index - b.index : positionDiff;
         })
         .map(({ goal }) => goal);
-    const goalsForCurrentSource = goals.filter(isGoalLinkedToCurrentSource);
+    const roadmapGoalOrderById = new Map<string, number>();
+    let roadmapGoalSequence = 0;
+
+    monumentRoadmapsWithItems.forEach((roadmap) => {
+      [...roadmap.items]
+        .sort((a, b) => a.position - b.position)
+        .forEach((item) => {
+          if (item.item_type === "GOAL" && item.goal) {
+            if (
+              isRoadmapGoalLinkedToCurrentSource(item.goal) &&
+              !roadmapGoalOrderById.has(item.goal.id)
+            ) {
+              roadmapGoalOrderById.set(item.goal.id, roadmapGoalSequence++);
+            }
+            return;
+          }
+
+          if (item.item_type !== "CAMPAIGN" || !item.campaign) {
+            return;
+          }
+
+          [...item.campaign.goals]
+            .filter(isRoadmapGoalLinkedToCurrentSource)
+            .sort((a, b) => a.position - b.position)
+            .forEach((goal) => {
+              if (!roadmapGoalOrderById.has(goal.id)) {
+                roadmapGoalOrderById.set(goal.id, roadmapGoalSequence++);
+              }
+            });
+        });
+    });
+
+    const goalsForCurrentSource = goals
+      .filter(isGoalLinkedToCurrentSource)
+      .map((goal, index) => ({ goal, index }))
+      .sort((a, b) => {
+        const aRoadmapOrder = roadmapGoalOrderById.get(a.goal.id);
+        const bRoadmapOrder = roadmapGoalOrderById.get(b.goal.id);
+
+        if (aRoadmapOrder !== undefined && bRoadmapOrder !== undefined) {
+          return aRoadmapOrder - bRoadmapOrder;
+        }
+        if (aRoadmapOrder !== undefined) return -1;
+        if (bRoadmapOrder !== undefined) return 1;
+
+        const aLegacyRank =
+          a.goal.priorityRank ?? Number.POSITIVE_INFINITY;
+        const bLegacyRank =
+          b.goal.priorityRank ?? Number.POSITIVE_INFINITY;
+
+        if (aLegacyRank !== bLegacyRank) {
+          return aLegacyRank - bLegacyRank;
+        }
+
+        const aCreatedAt = Date.parse(a.goal.createdAt);
+        const bCreatedAt = Date.parse(b.goal.createdAt);
+
+        if (
+          Number.isFinite(aCreatedAt) &&
+          Number.isFinite(bCreatedAt) &&
+          aCreatedAt !== bCreatedAt
+        ) {
+          return aCreatedAt - bCreatedAt;
+        }
+
+        const titleOrder = a.goal.title.localeCompare(b.goal.title);
+        if (titleOrder !== 0) return titleOrder;
+
+        return a.index - b.index;
+      })
+      .map(({ goal }) => goal);
     const campaignGoalIds = new Set<string>(
       monumentRoadmapsWithItems.flatMap((roadmap) =>
         roadmap.items.flatMap((item) =>
