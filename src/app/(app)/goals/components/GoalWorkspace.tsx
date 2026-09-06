@@ -32,6 +32,7 @@ type GoalWorkspaceProps = {
   goal: Goal;
   loading: boolean;
   workspaceExpanded?: boolean;
+  presentation?: "default" | "area-featured";
   projectDropdownMode?: "default" | "tasks-only";
   onProjectLongPress?: (
     project: Project,
@@ -59,6 +60,7 @@ export function GoalWorkspace({
   goal,
   loading,
   workspaceExpanded = false,
+  presentation = "default",
   projectDropdownMode = "default",
   onProjectLongPress,
   onProjectUpdated,
@@ -193,7 +195,7 @@ export function GoalWorkspace({
       setEditingTodo(false);
       flushWorkspaceSave();
     },
-    [],
+    [flushWorkspaceSave],
   );
 
   return (
@@ -205,7 +207,11 @@ export function GoalWorkspace({
       }
     >
       <div
-        className={`relative isolate bg-black px-1 py-2 text-white ${
+        className={`relative isolate text-white ${
+          presentation === "area-featured"
+            ? "bg-transparent px-0 py-0.5 sm:py-1"
+            : "bg-black px-1 py-2"
+        } ${
           workspaceExpanded
             ? "min-h-full"
             : "min-h-0"

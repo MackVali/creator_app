@@ -127,17 +127,17 @@ const RELATED_HABIT_COMPLETED_MOVE_DELAY_MS = 850;
 const RELATED_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_GRID_CLASS =
-  "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+  "-mx-1 grid grid-cols-2 gap-1.5 px-1 sm:-mx-2 sm:grid-cols-4 sm:gap-2 sm:px-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const RELATED_HABIT_PAGE_GRID_CLASS =
   "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
-  "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+  "grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const RELATED_HABIT_COMPLETED_CARD_CLASS =
   "border-emerald-800/80 !bg-[#070b0d] !bg-[radial-gradient(circle_at_16%_0%,rgba(45,212,191,0.12),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(16,185,129,0.10),transparent_36%),linear-gradient(135deg,rgba(6,78,59,0.22),rgba(3,12,14,0)_42%),linear-gradient(180deg,#11161a_0%,#090d10_55%,#050708_100%)] bg-clip-padding outline outline-1 -outline-offset-4 outline-emerald-400/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(45,212,191,0.22),inset_0_-10px_18px_rgba(0,0,0,0.34),0_0_0_1px_rgba(2,44,34,0.72),0_0_18px_-11px_rgba(16,185,129,0.58),0_10px_24px_-20px_rgba(0,0,0,0.85)]";
 const RELATED_HABIT_COMPLETED_SHIMMER_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
 const RELATED_HABIT_ADD_CARD_OUTER_CLASS =
-  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+  "goal-card group relative flex min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 const RELATED_HABIT_ADD_CARD_INNER_CLASS =
   "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 const RELATED_HABIT_COMPLETED_FACET_CLASS =
@@ -156,8 +156,8 @@ function renderRelatedHabitAddCard({
       className={clsx(
         RELATED_HABIT_ADD_CARD_OUTER_CLASS,
         isSmall
-          ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-          : ""
+          ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
+          : "aspect-[5/6]"
       )}
       onClick={onClick}
       aria-label="Add habit"
@@ -654,7 +654,7 @@ export function MonumentRelatedHabits({
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [relatedHabitCardDensity, setRelatedHabitCardDensity] =
-    useState<RelatedHabitCardDensity>("large");
+    useState<RelatedHabitCardDensity>("small");
   const sourceId = sourceType === "area" ? areaId : monumentId;
   const sourceNoun = sourceType === "area" ? "area" : "monument";
   const relationLabel =
@@ -2212,9 +2212,9 @@ export function MonumentRelatedHabits({
 
   return (
     <>
-    <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+    <Card className="relative gap-0 overflow-hidden rounded-2xl border-white/[0.08] bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_18px_46px_-38px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur sm:rounded-3xl">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
-      <CardHeader className="relative px-6 pt-3 pb-1">
+      <CardHeader className="relative px-3 pt-2 pb-1 sm:px-6 sm:pt-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
@@ -2232,7 +2232,7 @@ export function MonumentRelatedHabits({
               }
               onClick={handleRelatedHabitDensityToggle}
               className={clsx(
-                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 sm:h-7 sm:w-7",
                 isSmallRelatedHabitDensity
                   ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
                   : null
@@ -2247,17 +2247,17 @@ export function MonumentRelatedHabits({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="relative pt-0 pb-4">
+      <CardContent className="relative px-3 pt-0 pb-2.5 sm:px-6 sm:pb-4">
         {habitsLoading || (completionLoading && relatedHabits.length === 0) ? (
           <div className={relatedHabitGridClass}>
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton
                 key={index}
                 className={clsx(
-                  "aspect-[5/6] bg-white/[0.06]",
+                  "bg-white/[0.06]",
                   isSmallRelatedHabitDensity
-                    ? "min-h-[70px] rounded-xl"
-                    : "min-h-[96px] rounded-2xl"
+                    ? "h-11 rounded-xl sm:aspect-[5/6] sm:h-auto sm:min-h-[82px]"
+                    : "aspect-[5/6] min-h-[96px] rounded-2xl"
                 )}
               />
             ))}
@@ -2385,10 +2385,10 @@ export function MonumentRelatedHabits({
                             <div
                               key={`${page.id}-habit-${habit.id}`}
                               className={clsx(
-                                "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                                "goal-card group relative flex w-full transform-gpu flex-col text-white transition duration-200 select-none",
                                 isSmallRelatedHabitDensity
-                                  ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-                                  : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                                  ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
+                                  : "aspect-[5/6] min-h-[96px] rounded-2xl p-3 sm:p-4",
                                 isHabitCompletedToday
                                   ? RELATED_HABIT_COMPLETED_CARD_CLASS
                                   : [
@@ -2475,12 +2475,19 @@ export function MonumentRelatedHabits({
                                   </span>
                                 </span>
                               ) : null}
-                              <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                              <div
+                                className={clsx(
+                                  "relative z-[2] flex min-h-0 flex-1 text-center",
+                                  isSmallRelatedHabitDensity
+                                    ? "flex-row items-center justify-start gap-1.5 sm:flex-col sm:justify-between sm:gap-1"
+                                    : "flex-col items-center justify-between gap-1"
+                                )}
+                              >
                               <span
                                 className={clsx(
                                   "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
                                   isSmallRelatedHabitDensity
-                                    ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
+                                    ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
                                     : "h-7 w-7 text-xs sm:h-8 sm:w-8",
                                   isHabitCompletedToday
                                     ? "grayscale"
@@ -2490,12 +2497,19 @@ export function MonumentRelatedHabits({
                               >
                                 {habitSkillIcon}
                               </span>
-                              <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                              <div
+                                className={clsx(
+                                  "flex min-h-0 w-full min-w-0 flex-1 items-center",
+                                  isSmallRelatedHabitDensity
+                                    ? "justify-start sm:justify-center"
+                                    : "justify-center"
+                                )}
+                              >
                                 <span
                                   className={clsx(
-                                    "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                                    "line-clamp-3 w-full min-w-0 break-words px-0.5 font-semibold leading-tight text-white whitespace-normal",
                                     isSmallRelatedHabitDensity
-                                      ? "text-[8px] sm:text-[9px]"
+                                      ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
                                       : "text-[9px] sm:text-[10px]"
                                   )}
                                   style={{ hyphens: "auto" }}
@@ -2503,12 +2517,12 @@ export function MonumentRelatedHabits({
                                   {habit.name}
                                 </span>
                               </div>
-                              <div className="flex w-full min-w-0 flex-col items-center gap-1">
+                              <div className="flex w-auto min-w-0 shrink-0 flex-col items-center gap-1 sm:w-full">
                                 <span
                                   className={clsx(
                                     "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
                                     isSmallRelatedHabitDensity
-                                      ? "px-1.5 py-[2px] text-[7px]"
+                                      ? "px-1 py-[2px] text-[7px]"
                                       : "px-2 py-[3px] text-[8px]",
                                     habitPillClass
                                   )}

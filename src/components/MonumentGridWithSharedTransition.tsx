@@ -54,6 +54,7 @@ interface MonumentGridProps {
   monuments: Monument[];
   showNewCard?: boolean;
   onReorder?: (monumentIds: string[]) => void | Promise<void>;
+  density?: "default" | "compact";
 }
 
 type MeasuredMonumentRect = {
@@ -84,6 +85,7 @@ type SortableMonumentCardProps = {
   isHidden: boolean;
   isActiveDrag: boolean;
   enableSharedLayout: boolean;
+  density: "default" | "compact";
   shouldSuppressClick: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onSuppressClickHandled: () => void;
@@ -93,6 +95,7 @@ type SortableMonumentCardProps = {
 type MonumentCardContentProps = {
   monument: Monument;
   enableSharedLayout: boolean;
+  density: "default" | "compact";
 };
 
 const monumentCardNoSelectStyle = {
@@ -105,7 +108,40 @@ const monumentCardNoSelectStyle = {
 function MonumentCardContent({
   monument,
   enableSharedLayout,
+  density,
 }: MonumentCardContentProps) {
+  if (density === "compact") {
+    return (
+      <div className="flex w-full min-w-0 items-center gap-2.5 text-left">
+        <motion.div
+          layoutId={enableSharedLayout ? `emoji-${monument.id}` : undefined}
+          className="flex h-9 w-9 shrink-0 select-none items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.035] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+          style={monumentCardNoSelectStyle}
+        >
+          {monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
+        </motion.div>
+        <div className="min-w-0 flex-1">
+          <motion.h3
+            layoutId={enableSharedLayout ? `title-${monument.id}` : undefined}
+            className="select-none truncate text-[13px] font-semibold leading-tight text-white"
+            style={monumentCardNoSelectStyle}
+          >
+            {monument.title}
+          </motion.h3>
+          <p
+            className="mt-0.5 select-none text-[10px] font-medium text-zinc-500"
+            style={monumentCardNoSelectStyle}
+          >
+            {monument.stats}
+          </p>
+        </div>
+        <span className="text-lg leading-none text-white/24" aria-hidden="true">
+          ›
+        </span>
+      </div>
+    );
+  }
+
   return (
     <>
       <motion.div
@@ -137,6 +173,7 @@ function SortableMonumentCard({
   isHidden,
   isActiveDrag,
   enableSharedLayout,
+  density,
   shouldSuppressClick,
   onClick,
   onSuppressClickHandled,
@@ -193,7 +230,9 @@ function SortableMonumentCard({
       onClickCapture={handleClickCapture}
       onContextMenu={(event) => event.preventDefault()}
       className={cn(
-        "card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]",
+        density === "compact"
+          ? "card app-dashboard-monument-card flex min-h-[46px] w-full select-none items-center justify-center rounded-2xl px-2.5 py-1.5 transition-colors hover:bg-[var(--subtle-surface)]"
+          : "card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]",
         (isDragging || isActiveDrag) && "pointer-events-none opacity-0",
         isHidden && "pointer-events-none opacity-0"
       )}
@@ -204,6 +243,7 @@ function SortableMonumentCard({
       <MonumentCardContent
         monument={monument}
         enableSharedLayout={enableSharedLayout}
+        density={density}
       />
     </motion.button>
   );
@@ -340,6 +380,7 @@ export function MonumentGridWithSharedTransition({
   monuments,
   showNewCard = true,
   onReorder,
+  density = "default",
 }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -828,7 +869,7 @@ export function MonumentGridWithSharedTransition({
 
   if (!allowNewMonumentCard && isEmpty) {
     return (
-      <div className="grid grid-cols-4 gap-1">
+      <div className={density === "compact" ? "grid gap-1" : "grid grid-cols-4 gap-1"}>
         <div className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1">
           <p className="text-xs text-[var(--muted)]">
             Monument cap of {MAX_MONUMENTS} reached.
@@ -840,7 +881,7 @@ export function MonumentGridWithSharedTransition({
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-1">
+      <div className={density === "compact" ? "grid gap-1" : "grid grid-cols-4 gap-1"}>
         {isEmpty
           ? Array.from({ length: 3 }, (_, index) => (
               <button
@@ -874,6 +915,7 @@ export function MonumentGridWithSharedTransition({
                       }
                       isActiveDrag={activeDragId === m.id}
                       enableSharedLayout={!activeDragId}
+                      density={density}
                       shouldSuppressClick={suppressNextCardClick}
                       onClick={(event) => openMonumentDetail(m.id, event)}
                       onSuppressClickHandled={() => setSuppressNextCardClick(false)}
@@ -894,6 +936,7 @@ export function MonumentGridWithSharedTransition({
                       <MonumentCardContent
                         monument={activeDragMonument}
                         enableSharedLayout={false}
+                        density={density}
                       />
                     </div>
                   ) : null}

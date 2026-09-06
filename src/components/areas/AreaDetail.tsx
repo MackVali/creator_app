@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import { Timer } from "lucide-react";
 
 import { AreaSkillRelations } from "@/components/areas/AreaSkillRelations";
@@ -9,6 +9,10 @@ import { BodyAreaDashboard } from "@/components/areas/BodyAreaDashboard";
 import { MindAreaDashboard } from "@/components/areas/MindAreaDashboard";
 import { MoneyAreaDashboard } from "@/components/areas/MoneyAreaDashboard";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
+import {
+  AreaFeaturedGoal,
+  type AreaFeaturedGoalControls,
+} from "@/components/goals/AreaFeaturedGoal";
 import ActivityPanel from "@/components/monuments/ActivityPanel";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { MonumentRelatedHabits } from "@/components/monuments/MonumentRelatedHabits";
@@ -20,6 +24,7 @@ import {
   segmentedToggleInactiveClassName,
 } from "@/components/ui/segmented-toggle-styles";
 import type { AreaConfig } from "@/config/areas";
+import type { Goal } from "@/app/(app)/goals/types";
 import { useAreaActivity } from "@/lib/hooks/useMonumentActivity";
 import { cn } from "@/lib/utils";
 
@@ -52,9 +57,13 @@ export function AreaDetail({
   const { summary } = useAreaActivity(area.id);
   const [areaView, setAreaView] = useState<AreaView>("goals");
   const [goalSection, setGoalSection] = useState<GoalPanel>("active");
+  const [featuredGoalId, setFeaturedGoalId] = useState<string | null>(null);
+  const [featuredGoal, setFeaturedGoal] = useState<Goal | null>(null);
+  const [featuredGoalControls, setFeaturedGoalControls] =
+    useState<AreaFeaturedGoalControls | null>(null);
   const [focusPomoSource, setFocusPomoSource] =
     useState<FocusPomoSource | null>(null);
-  const containerShell = "relative w-full rounded-3xl border border-white/[0.08]";
+  const containerShell = "relative w-full rounded-2xl border border-white/[0.08] sm:rounded-3xl";
   const overviewBackground =
     "bg-[#111216] shadow-[0_34px_110px_-50px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(255,255,255,0.018)]";
   const sectionBackground =
@@ -92,25 +101,33 @@ export function AreaDetail({
     });
   }
 
+  const handleFeaturedGoalResolved = useCallback(
+    (goal: Goal | null, controls?: AreaFeaturedGoalControls) => {
+      setFeaturedGoal(goal);
+      setFeaturedGoalControls(controls ?? null);
+    },
+    []
+  );
+
   return (
-    <div className="flex min-h-full flex-col bg-black px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 text-white sm:px-6 sm:pb-10 sm:pt-4 lg:px-8">
+    <div className="flex min-h-full flex-col bg-black px-2 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 text-white sm:px-6 sm:pb-10 sm:pt-4 lg:px-8">
       <FocusPomo
         open={Boolean(focusPomoSource)}
         source={focusPomoSource}
         onClose={() => setFocusPomoSource(null)}
       />
 
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-5">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-2 overflow-x-hidden sm:gap-5">
         <section
           className={cn(
             containerShell,
             overviewBackground,
-            "overflow-hidden px-3 py-3 text-white sm:p-6"
+            "overflow-hidden px-3 py-2 text-white sm:p-6"
           )}
         >
-          <div className="relative z-10 flex items-start gap-4">
+          <div className="relative z-10 flex items-center gap-2.5 sm:items-start sm:gap-4">
             <span
-              className="relative flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-[#09090b] text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#09090b] text-[1.35rem] text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:rounded-2xl sm:text-4xl"
               style={areaEmojiStyle}
               role="img"
               aria-label={`Area: ${area.label}`}
@@ -119,14 +136,14 @@ export function AreaDetail({
                 {area.emoji}
               </span>
             </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:gap-3">
+              <div className="flex items-center justify-between gap-2.5 sm:items-start sm:gap-3">
                 <div className="min-w-0 flex-1">
-                  <h1 className="min-w-0 truncate text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                  <h1 className="min-w-0 truncate text-[1.35rem] font-semibold leading-tight tracking-tight text-white sm:text-4xl">
                     {area.label.toUpperCase()}
                   </h1>
                   <div
-                    className="relative mt-2 grid h-[11px] max-w-[220px] grid-cols-5 gap-1.5 overflow-hidden sm:max-w-[260px]"
+                    className="relative mt-1 grid h-2 max-w-[196px] grid-cols-5 gap-1 overflow-hidden sm:mt-2 sm:h-[11px] sm:max-w-[260px] sm:gap-1.5"
                     aria-label={`EVO charge stage ${summary.evoLabel}`}
                   >
                     {CHARGE_MILESTONES.map((milestone, index) => {
@@ -182,7 +199,7 @@ export function AreaDetail({
                   type="button"
                   aria-label={`Start focus pomo for ${area.label}`}
                   onClick={openAreaFocusPomo}
-                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.045] text-white/70 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 active:scale-95"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.045] text-white/70 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 active:scale-95 sm:size-9"
                 >
                   <Timer className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -209,20 +226,27 @@ export function AreaDetail({
           </section>
         ) : null}
 
+        <AreaFeaturedGoal
+          goal={featuredGoal}
+          areaLabel={area.label}
+          areaEmoji={area.emoji}
+          {...(featuredGoalControls ?? {})}
+        />
+
         <AreaMonuments
           areaId={area.id}
           areaLabel={area.label}
         />
 
-        <div className="grid w-full grid-cols-1 items-start gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="grid w-full grid-cols-1 items-start gap-2 sm:gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <section
             className={cn(
               containerShell,
               sectionBackground,
-              "min-h-[260px] overflow-visible px-3 py-4 sm:p-7"
+              "min-h-[150px] overflow-visible px-2.5 py-2.5 sm:min-h-[260px] sm:p-7"
             )}
           >
-            <header className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <header className="relative z-10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className={segmentedToggleContainerClassName} aria-label="Area view">
                 {(
                   [
@@ -247,7 +271,7 @@ export function AreaDetail({
                 ))}
               </div>
             </header>
-            <div className="relative z-10 mt-3 overflow-visible sm:mt-4">
+            <div className="relative z-10 mt-2 overflow-visible sm:mt-4">
               <MonumentGoalsList
                 sourceType="area"
                 sourceId={area.id}
@@ -256,11 +280,14 @@ export function AreaDetail({
                 monumentView={areaView}
                 goalSection={goalSection}
                 onGoalSectionChange={setGoalSection}
+                featuredGoalId={featuredGoalId}
+                onFeaturedGoalChange={setFeaturedGoalId}
+                onFeaturedGoalResolved={handleFeaturedGoalResolved}
               />
             </div>
           </section>
 
-          <div className="relative z-[1] flex min-w-0 flex-col gap-5 lg:gap-6">
+          <div className="relative z-[1] flex min-w-0 flex-col gap-2 sm:gap-5 lg:gap-6">
             <MonumentRelatedHabits
               sourceType="area"
               areaId={area.id}
@@ -271,7 +298,7 @@ export function AreaDetail({
               className={cn(
                 containerShell,
                 sectionBackground,
-                "min-h-[220px] overflow-visible p-4 sm:p-5"
+                "min-h-[160px] overflow-visible p-2.5 sm:min-h-[220px] sm:p-5"
               )}
             >
               <div className="relative z-10">

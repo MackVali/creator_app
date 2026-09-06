@@ -20,14 +20,14 @@ export function AreaMonuments({
   const monumentLimit = getMaxMonumentsPerArea(isPlus);
 
   return (
-    <section className="w-full overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0D0E11] shadow-[0_24px_70px_-52px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.48)]">
+    <section className="w-full">
       <MonumentsList areaId={areaId} renderEmptyChildren>
         {(monuments) => {
           const canAddMonument = monuments.length < monumentLimit;
 
           return (
             <>
-              <div className="flex items-center justify-between px-4 pb-2 pt-3.5 sm:px-5 sm:pt-4">
+              <div className="mb-1.5 flex items-center justify-between px-2.5 sm:mb-3 sm:px-4">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
                   Monuments
                 </p>
@@ -39,7 +39,7 @@ export function AreaMonuments({
                       <button
                         type="button"
                         aria-label={`Add Monument to ${areaLabel}`}
-                        className="inline-flex h-7 w-7 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
+                        className="inline-flex h-6 w-6 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95 sm:h-7 sm:w-7"
                       >
                         <Plus className="h-3.5 w-3.5" strokeWidth={2} />
                       </button>
@@ -53,7 +53,7 @@ export function AreaMonuments({
               </div>
 
               {monuments.length > 0 ? (
-                <div className="px-3 pb-3 sm:px-4 sm:pb-4">
+                <div className="app-dashboard-areas-panel px-2.5 sm:px-4">
                   <MonumentGridWithSharedTransition
                     monuments={monuments.map<MonumentCard>((monument) => ({
                       id: monument.id,
@@ -64,6 +64,7 @@ export function AreaMonuments({
                       }`,
                     }))}
                     showNewCard={false}
+                    density="compact"
                   />
                 </div>
               ) : null}
