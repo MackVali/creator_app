@@ -144,6 +144,8 @@ export function ProjectsDropdown({
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
   );
+  const collapseEmbeddedEmptyProjects =
+    workspaceEmbedded && !loading && !projectTasksOnly && projects.length === 0;
   const [activeProjects, completedProjects] = useMemo(() => {
     const active: Project[] = [];
     const completed: Project[] = [];
@@ -350,6 +352,16 @@ export function ProjectsDropdown({
     </motion.div>
   );
 
+  if (
+    workspaceEmbedded &&
+    !loading &&
+    !projectTasksOnly &&
+    projects.length === 0 &&
+    hideAddProjectControl
+  ) {
+    return null;
+  }
+
   return (
     <div
       id={id}
@@ -358,7 +370,9 @@ export function ProjectsDropdown({
         projectTasksOnly ? `Tasks for ${goalTitle}` : `Projects for ${goalTitle}`
       }
       className={
-        workspaceEmbedded
+        collapseEmbeddedEmptyProjects
+          ? "overflow-visible px-0 pb-0 pt-0"
+          : workspaceEmbedded
           ? "overflow-visible px-0 pb-3 pt-0"
           : "overflow-hidden px-1.5 pb-2.5 pt-1.5 sm:px-2 sm:pb-3 sm:pt-2"
       }
@@ -422,7 +436,7 @@ export function ProjectsDropdown({
               </AnimatePresence>
             </div>
           </LayoutGroup>
-        ) : (
+        ) : workspaceEmbedded ? null : (
           <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
             No projects linked yet. Head to Projects to tether the first track.
           </div>

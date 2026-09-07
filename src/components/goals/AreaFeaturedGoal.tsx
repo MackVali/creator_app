@@ -1,12 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-
 import { GoalWorkspace } from "@/app/(app)/goals/components/GoalWorkspace";
 import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
-import { cn } from "@/lib/utils";
 
 export type AreaFeaturedGoalControls = {
   onProjectLongPress?: (
@@ -25,6 +21,8 @@ export type AreaFeaturedGoalControls = {
     taskId: string,
     currentCompletedAt: string | null
   ) => void;
+  onAddProject?: (originRect?: DOMRect) => void;
+  addingProject?: boolean;
 };
 
 type AreaFeaturedGoalProps = AreaFeaturedGoalControls & {
@@ -40,9 +38,9 @@ export function AreaFeaturedGoal({
   onProjectUpdated,
   onTaskEditOpen,
   onTaskToggleCompletion,
+  onAddProject,
+  addingProject = false,
 }: AreaFeaturedGoalProps) {
-  const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
-
   if (!goal) return null;
 
   const icon =
@@ -73,32 +71,15 @@ export function AreaFeaturedGoal({
         <GoalWorkspace
           goal={goal}
           loading={false}
-          workspaceExpanded={workspaceExpanded}
+          alwaysShowNotes
           presentation="area-featured"
           onProjectLongPress={onProjectLongPress}
           onProjectUpdated={onProjectUpdated}
+          onAddProject={onAddProject}
+          addingProject={addingProject}
           onTaskEditOpen={onTaskEditOpen}
           onTaskToggleCompletion={onTaskToggleCompletion}
         />
-      </div>
-
-      <div className="relative z-[2] -mb-1 -mt-0.5 flex h-4 w-full items-start justify-center sm:-mt-0.5">
-        <button
-          type="button"
-          aria-label={workspaceExpanded ? "Hide goal notes" : "Show goal notes"}
-          aria-expanded={workspaceExpanded}
-          onClick={() => setWorkspaceExpanded((current) => !current)}
-          className={cn(
-            "flex h-5 w-10 items-start justify-center rounded-t-[9px] border border-b-0 border-white/[0.12] bg-[#08090C] pt-[1px] text-white/64 shadow-[0_-3px_10px_rgba(0,0,0,0.42)] transition hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25",
-            workspaceExpanded ? "text-white/82" : ""
-          )}
-        >
-          {workspaceExpanded ? (
-            <ChevronUp className="h-3.5 w-3.5 shrink-0 stroke-[2]" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 stroke-[2]" />
-          )}
-        </button>
       </div>
     </section>
   );
