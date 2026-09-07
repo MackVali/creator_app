@@ -44,7 +44,7 @@ export function NotesHeaderControls({
           <Link
             href={addHref}
             aria-label="Add note"
-            className="inline-flex h-[1.875rem] w-[1.875rem] shrink-0 items-center justify-center text-white/55 transition hover:text-white active:scale-95"
+            className="inline-flex h-7 w-7 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={2} />
           </Link>

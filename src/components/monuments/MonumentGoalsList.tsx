@@ -633,17 +633,15 @@ const NORMALIZED_ENERGY_VALUES = new Set([
   "EXTREME",
 ]);
 const GOAL_SMALL_GRID_CLASS =
-  "goal-grid goal-grid--small grid w-full max-w-full grid-flow-col auto-cols-[56px] grid-rows-1 gap-1 overflow-x-auto px-0 py-0.5 [scrollbar-width:none] sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3 sm:gap-1 sm:px-2 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid goal-grid--small grid w-full max-w-full grid-cols-5 gap-1 overflow-visible px-0 py-0.5";
 const GOAL_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[112px] sm:min-h-[260px]";
 const GOAL_PANEL_CONTENT_CLASS = "px-0 py-0.5 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
 const RECENTLY_COMPLETED_GOAL_HOLD_MS = 1100;
-const GOAL_ADD_CARD_OUTER_CLASS =
-  "goal-card group relative flex aspect-[14/23] min-h-[92px] w-full flex-col rounded-[13px] border border-zinc-300/15 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.10),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-1.5 text-white shadow-[0_12px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/25 sm:aspect-[5/6] sm:min-h-[96px] sm:rounded-2xl sm:p-4";
-const GOAL_ADD_CARD_INNER_CLASS =
-  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
+
+
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -2797,8 +2795,12 @@ export function MonumentGoalsList({
     -goalPanelViewportWidth,
     Math.min(0, goalPanelBaseTransform + goalPanelDragOffset)
   );
+  const isAreaOrMonumentGoalLibrary =
+    resolvedSourceType === "area" ||
+    resolvedSourceType === "monument";
+
   const goalGridClass =
-    resolvedSourceType === "area"
+    isAreaOrMonumentGoalLibrary
       ? goalCardDensity === "small"
         ? GOAL_SMALL_GRID_CLASS
         : "goal-grid area-goal-grid--large grid w-full min-w-0 grid-cols-4 gap-[0.4rem] px-0 py-0.5"
@@ -2808,10 +2810,13 @@ export function MonumentGoalsList({
   const isSmallGoalCardDensity = goalCardDensity === "small";
 
   useEffect(() => {
-    if (resolvedSourceType === "area") {
+    if (isAreaOrMonumentGoalLibrary) {
       setGoalCardDensity("large");
     }
-  }, [goalsSourceKey, resolvedSourceType]);
+  }, [
+    goalsSourceKey,
+    isAreaOrMonumentGoalLibrary,
+  ]);
 
   const readyGoalIds = useMemo(
     () =>
@@ -5434,10 +5439,14 @@ export function MonumentGoalsList({
       },
       onProjectUpdated: (projectId, updates) =>
         handleProjectUpdated(goal.id, projectId, updates),
+      onAddProject: (originRect) => {
+        creationContext?.requestProjectCreation(goal.id, originRect ?? null);
+      },
       onTaskEditOpen: handleTaskEditOpen,
       onTaskToggleCompletion: handleTaskToggleCompletion,
     }),
     [
+      creationContext,
       handleProjectEditOpen,
       handleProjectUpdated,
       handleTaskEditOpen,
@@ -5579,18 +5588,28 @@ export function MonumentGoalsList({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {resolvedSourceType === "area" ? (
+              {(
+              resolvedSourceType === "area" ||
+              resolvedSourceType === "monument"
+            ) ? (
                 renderGoalCardDensityToggle()
               ) : (
                 <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
                   {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
                 </p>
               )}
-              {resolvedSourceType === "area" ? (
+              {(
+              resolvedSourceType === "area" ||
+              resolvedSourceType === "monument"
+            ) ? (
                 <button
                   type="button"
                   aria-label="Add goal"
-                  onClick={handleAreaAddGoal}
+                  onClick={
+                    resolvedSourceType === "area"
+                      ? handleAreaAddGoal
+                      : handleMonumentAddGoal
+                  }
                   className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
                 >
                   <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -6201,78 +6220,7 @@ export function MonumentGoalsList({
         filterGoalBySection(roadmapOpenGoal, section)
           ? roadmapOpenGoal
           : null;
-      const shouldShowGoalAddCard =
-        resolvedSourceType === "monument" && section === "active";
-      const goalAddCard = shouldShowGoalAddCard ? (
-        <div
-          className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
-        >
-          <button
-            type="button"
-            className={cn(
-              GOAL_ADD_CARD_OUTER_CLASS,
-              resolvedSourceType === "area" && isSmallGoalCardDensity
-                ? "!h-[74px] !min-h-[74px] !aspect-auto !rounded-[11px] !border-white/[0.10] !bg-none !bg-[#0B0D10] !p-1 !ring-0 !shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_18px_-16px_rgba(0,0,0,0.95)]"
-                : "",
-              resolvedSourceType === "area" && !isSmallGoalCardDensity
-                ? "!min-h-[96px] !aspect-[5/6] !rounded-2xl !p-3 sm:!p-4"
-                : ""
-            )}
-            data-variant="compact"
-            onClick={
-              resolvedSourceType === "area"
-                ? handleAreaAddGoal
-                : handleMonumentAddGoal
-            }
-            aria-label="Add goal"
-          >
-            <div className={cn(GOAL_ADD_CARD_INNER_CLASS, "w-full min-w-0")}>
-              <div
-                className={cn(
-                  "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
-                  isSmallGoalCardDensity ? "gap-1" : ""
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
-                    isSmallGoalCardDensity
-                      ? "h-6 w-6 sm:h-7 sm:w-7"
-                      : resolvedSourceType === "area"
-                        ? "!h-9 !w-9 rounded-xl sm:!h-9 sm:!w-9"
-                        : ""
-                  )}
-                >
-                  <Plus
-                    className={cn(
-                      "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
-                      isSmallGoalCardDensity
-                        ? "h-3 w-3 sm:h-3.5 sm:w-3.5"
-                        : ""
-                    )}
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="flex w-full min-w-0 items-center justify-center">
-                  <span
-                    className={cn(
-                      "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
-                      isSmallGoalCardDensity
-                        ? "line-clamp-2 text-[8px] sm:text-[9px]"
-                        : resolvedSourceType === "area"
-                          ? "line-clamp-2 text-[8px] leading-snug sm:text-[8px]"
-                          : ""
-                    )}
-                    style={{ hyphens: "auto" }}
-                  >
-                    Add goal
-                  </span>
-                </div>
-              </div>
-            </div>
-          </button>
-        </div>
-      ) : null;
+      const goalAddCard = null;
 
       if (
         campaignGroupsForGoalGrid.length === 0 &&
@@ -6422,10 +6370,10 @@ export function MonumentGoalsList({
               <GoalCard
                 goal={goal}
                 areaLibraryTile={
-                  resolvedSourceType === "area" && isSmallGoalCardDensity
+                  isAreaOrMonumentGoalLibrary && isSmallGoalCardDensity
                 }
                 areaLibraryLarge={
-                  resolvedSourceType === "area" && !isSmallGoalCardDensity
+                  isAreaOrMonumentGoalLibrary && !isSmallGoalCardDensity
                 }
                 showWeight={false}
                 showCreatedAt={false}
@@ -6484,18 +6432,28 @@ export function MonumentGoalsList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {resolvedSourceType === "area" ? (
+            {(
+              resolvedSourceType === "area" ||
+              resolvedSourceType === "monument"
+            ) ? (
               renderGoalCardDensityToggle()
             ) : (
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
                 {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
               </p>
             )}
-            {resolvedSourceType === "area" ? (
+            {(
+              resolvedSourceType === "area" ||
+              resolvedSourceType === "monument"
+            ) ? (
                 <button
                   type="button"
                   aria-label="Add goal"
-                  onClick={handleAreaAddGoal}
+                  onClick={
+                    resolvedSourceType === "area"
+                      ? handleAreaAddGoal
+                      : handleMonumentAddGoal
+                  }
                   className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95"
                 >
                   <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -6742,10 +6700,10 @@ export function MonumentGoalsList({
           }
 
           .monument-goals-list .goal-grid--small {
-            grid-template-columns: none;
-            grid-auto-columns: 56px;
-            grid-auto-flow: column;
-            grid-template-rows: 1fr;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-auto-columns: auto;
+            grid-auto-flow: row;
+            grid-template-rows: none;
             gap: 0.25rem;
             padding-left: 0;
             padding-right: 0;

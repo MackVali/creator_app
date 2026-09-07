@@ -23093,9 +23093,46 @@ function NoteSlashTextarea({
     () => ({
       applyTextFormat,
       applyBlockFormat,
-      insertTodo,
+      insertTodo: () => {
+        if (!noteTodoOwner?.id || !onNoteTodosChange) return;
+
+        const todo: NoteTodo = {
+          id: createNoteTodoId(),
+          title: "",
+          completed: false,
+          priority: NOTE_TODO_DEFAULT_PRIORITY,
+          skillId: noteTodoOwner.type === "SKILL" ? noteTodoOwner.id : null,
+          energy: "MEDIUM",
+        };
+
+        const isOnlyEmptyTextSegment =
+          segments.length === 1 &&
+          segments[0]?.type === "text" &&
+          segments[0].text.length === 0;
+        const segmentIndex = isOnlyEmptyTextSegment ? 0 : segments.length;
+        const nextSegments = isOnlyEmptyTextSegment
+          ? [{ type: "noteTodo" as const, todoId: todo.id }]
+          : [...segments, { type: "noteTodo" as const, todoId: todo.id }];
+
+        onNoteTodosChange(upsertNoteTodo(normalizedNoteTodos, todo));
+        onValueChange(serializeNoteSegments(nextSegments));
+
+        setPendingSelection({
+          type: "noteTodo",
+          segmentIndex,
+          caretPosition: 0,
+        });
+      },
     }),
-    [applyBlockFormat, applyTextFormat],
+    [
+      applyBlockFormat,
+      applyTextFormat,
+      normalizedNoteTodos,
+      noteTodoOwner,
+      onNoteTodosChange,
+      onValueChange,
+      segments,
+    ],
   );
 
   useEffect(() => {
@@ -23632,34 +23669,6 @@ function NoteSlashTextarea({
       type: "checklist",
       segmentIndex,
       caretPosition: todo.title.length,
-    });
-  }
-
-  function insertTodo() {
-    if (!noteTodoOwner?.id || !onNoteTodosChange) return;
-
-    const todo: NoteTodo = {
-      id: createNoteTodoId(),
-      title: "",
-      completed: false,
-      priority: NOTE_TODO_DEFAULT_PRIORITY,
-      skillId: noteTodoOwner.type === "SKILL" ? noteTodoOwner.id : null,
-      energy: "MEDIUM",
-    };
-
-    const segmentIndex = segments.length;
-    const nextSegments = [
-      ...segments,
-      { type: "noteTodo" as const, todoId: todo.id },
-    ];
-
-    onNoteTodosChange(upsertNoteTodo(normalizedNoteTodos, todo));
-    onValueChange(serializeNoteSegments(nextSegments));
-
-    setPendingSelection({
-      type: "noteTodo",
-      segmentIndex,
-      caretPosition: 0,
     });
   }
 
@@ -24860,7 +24869,7 @@ function NoteSlashTextarea({
                     if (!canPromoteChecklist) return;
                     promoteChecklistSegment(index);
                   }}
-                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-white/70 outline-none transition hover:border-emerald-300/25 hover:bg-emerald-300/[0.08] hover:text-emerald-100 focus-visible:ring-1 focus-visible:ring-emerald-200/24 disabled:cursor-default disabled:opacity-25"
+                  className="pointer-events-none ml-auto flex h-7 w-0 shrink-0 items-center justify-center overflow-hidden text-white/48 opacity-0 outline-none transition-[width,opacity,color] duration-150 group-hover:pointer-events-auto group-hover:w-7 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:w-7 group-focus-within:opacity-100 hover:text-white/82 focus-visible:w-7 focus-visible:opacity-100 focus-visible:text-white disabled:cursor-default disabled:opacity-20"
                 >
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </button>

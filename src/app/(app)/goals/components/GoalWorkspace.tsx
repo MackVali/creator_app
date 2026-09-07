@@ -7,6 +7,7 @@ import {
   useState,
   type FocusEvent as ReactFocusEvent,
 } from "react";
+import { Plus } from "lucide-react";
 import {
   NoteSlashTextarea,
   type NoteSlashTextareaHandle,
@@ -18,7 +19,11 @@ import {
   saveGoalWorkspace,
 } from "@/lib/goals/goalWorkspace";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import type { NoteTodo } from "@/lib/notes/noteTodos";
+import {
+  buildNoteTodoMarker,
+  parseStandaloneNoteTodoMarker,
+  type NoteTodo,
+} from "@/lib/notes/noteTodos";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { Goal, Project, Task } from "../types";
@@ -32,6 +37,7 @@ type GoalWorkspaceProps = {
   goal: Goal;
   loading: boolean;
   workspaceExpanded?: boolean;
+  alwaysShowNotes?: boolean;
   presentation?: "default" | "area-featured";
   projectDropdownMode?: "default" | "tasks-only";
   onProjectLongPress?: (
@@ -39,7 +45,7 @@ type GoalWorkspaceProps = {
     origin: ProjectCardMorphOrigin | null,
   ) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
-  onAddProject?: () => void;
+  onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
   onTaskEditOpen?: (
     task: Task,
@@ -56,10 +62,54 @@ type GoalWorkspaceProps = {
 
 const SAVE_DEBOUNCE_MS = 650;
 
+function splitGoalWorkspaceContent(value: string, noteTodos: NoteTodo[]) {
+  const lines = value.split("\n");
+  const knownTodoIds = new Set(noteTodos.map((todo) => todo.id));
+  const orderedTodoIds: string[] = [];
+  const seenTodoIds = new Set<string>();
+  const freeformLines: string[] = [];
+
+  for (const line of lines) {
+    const marker = parseStandaloneNoteTodoMarker(line);
+    if (marker) {
+      if (knownTodoIds.has(marker.todoId) && !seenTodoIds.has(marker.todoId)) {
+        orderedTodoIds.push(marker.todoId);
+        seenTodoIds.add(marker.todoId);
+      }
+      continue;
+    }
+
+    freeformLines.push(line);
+  }
+
+  for (const todo of noteTodos) {
+    if (!seenTodoIds.has(todo.id)) {
+      orderedTodoIds.push(todo.id);
+      seenTodoIds.add(todo.id);
+    }
+  }
+
+  return {
+    todoValue: orderedTodoIds.map(buildNoteTodoMarker).join("\n"),
+    freeformValue: freeformLines.join("\n").replace(/^\n+/, ""),
+  };
+}
+
+function mergeGoalWorkspaceContent(todoValue: string, freeformValue: string) {
+  const normalizedTodoValue = todoValue.trim();
+  const normalizedFreeformValue = freeformValue.replace(/^\n+/, "");
+
+  if (!normalizedTodoValue) return normalizedFreeformValue;
+  if (!normalizedFreeformValue.trim()) return normalizedTodoValue;
+
+  return `${normalizedTodoValue}\n\n${normalizedFreeformValue}`;
+}
+
 export function GoalWorkspace({
   goal,
   loading,
   workspaceExpanded = false,
+  alwaysShowNotes = false,
   presentation = "default",
   projectDropdownMode = "default",
   onProjectLongPress,
@@ -67,7 +117,8 @@ export function GoalWorkspace({
   onTaskEditOpen,
   onTaskToggleCompletion,
 }: GoalWorkspaceProps) {
-  const textareaRef = useRef<NoteSlashTextareaHandle | null>(null);
+  const todoTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
+  const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedGoalIdRef = useRef<string | null>(null);
   const contentRef = useRef("");
@@ -198,21 +249,37 @@ export function GoalWorkspace({
     [flushWorkspaceSave],
   );
 
+  const showNotes = alwaysShowNotes || workspaceExpanded;
+  const usesExpandedLayout = workspaceExpanded && !alwaysShowNotes;
+  const { todoValue, freeformValue } = splitGoalWorkspaceContent(
+    content,
+    noteTodos,
+  );
+  const handleTodoValueChange = useCallback(
+    (nextTodoValue: string) => {
+      setContent(mergeGoalWorkspaceContent(nextTodoValue, freeformValue));
+    },
+    [freeformValue],
+  );
+  const handleFreeformValueChange = useCallback(
+    (nextFreeformValue: string) => {
+      setContent(mergeGoalWorkspaceContent(todoValue, nextFreeformValue));
+    },
+    [todoValue],
+  );
+  const handleAddTodo = useCallback(() => {
+    todoTextareaRef.current?.insertTodo();
+  }, []);
+
   return (
-    <div
-      className={
-        workspaceExpanded
-          ? "min-h-full"
-          : ""
-      }
-    >
+    <div className={usesExpandedLayout ? "min-h-full" : ""}>
       <div
         className={`relative isolate text-white ${
           presentation === "area-featured"
             ? "bg-transparent px-0 py-0.5 sm:py-1"
-            : "bg-black px-1 py-2"
+            : "bg-transparent px-0 py-0"
         } ${
-          workspaceExpanded
+          usesExpandedLayout
             ? "min-h-full"
             : "min-h-0"
         }`}
@@ -220,6 +287,23 @@ export function GoalWorkspace({
         onBlurCapture={handleEditorBlurCapture}
         data-goal-workspace-editor
       >
+        {showNotes && projectDropdownMode !== "tasks-only" ? (
+          <button
+            type="button"
+            aria-label="Add goal todo"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleAddTodo();
+            }}
+            className="absolute -bottom-3 right-2 z-20 flex h-7 w-7 items-center justify-center text-white/46 outline-none transition hover:text-white/80 focus-visible:text-white focus-visible:ring-1 focus-visible:ring-white/18"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4 stroke-[2.1]" />
+          </button>
+        ) : null}
         <ProjectRowTaskInteractionsProvider
           value={{ goalId: goal.id, onTaskEditOpen, onTaskToggleCompletion }}
         >
@@ -238,48 +322,61 @@ export function GoalWorkspace({
           />
         </ProjectRowTaskInteractionsProvider>
 
-        {workspaceExpanded ? (
+        {showNotes ? (
           <>
-        <div
-          className={`pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center px-1 transition-[opacity,transform] duration-150 ${
-            editorActive && !editingTodo
-              ? "translate-y-0 opacity-100"
-              : "translate-y-1 opacity-0"
-          }`}
-        >
-          <div
-            className="pointer-events-auto max-w-full rounded-xl bg-black/90 px-1 py-1 shadow-[0_12px_34px_rgba(0,0,0,0.5)] backdrop-blur-xl"
-            onPointerDown={(event) => event.preventDefault()}
-          >
-            <NoteTextActionBar
-              onFormat={(command) =>
-                textareaRef.current?.applyTextFormat(command)
-              }
-              onBlockFormat={(format) =>
-                textareaRef.current?.applyBlockFormat(format)
-              }
+            <NoteSlashTextarea
+              ref={todoTextareaRef}
+              value={todoValue}
+              onValueChange={handleTodoValueChange}
+              noteTodos={noteTodos}
+              onNoteTodosChange={setNoteTodos}
+              noteTodoOwner={{ type: "GOAL", id: goal.id }}
+              skills={skills}
+              skillCategories={skillCategories}
+              noteId={`goal-workspace:${goal.id}`}
+              className={`goal-workspace-todos ${todoValue ? "" : "goal-workspace-todos-empty"} w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
+              aria-label="Goal todos"
             />
-          </div>
-        </div>
 
-        <NoteSlashTextarea
-          ref={textareaRef}
-          value={content}
-          onValueChange={setContent}
-          noteTodos={noteTodos}
-          onNoteTodosChange={setNoteTodos}
-          noteTodoOwner={{ type: "GOAL", id: goal.id }}
-          skills={skills}
-          skillCategories={skillCategories}
-          noteId={`goal-workspace:${goal.id}`}
-          placeholder="Write inside this goal..."
-          className={`min-h-40 w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
-          aria-label="Goal workspace"
-        />
 
+            <div
+              className={`pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-2 transition-[opacity,transform] duration-150 ${
+                editorActive && !editingTodo
+                  ? "translate-y-0 opacity-100"
+                  : "translate-y-1 opacity-0"
+              }`}
+            >
+              <div
+                className="pointer-events-auto max-w-full rounded-xl bg-black/90 px-1 py-1 shadow-[0_12px_34px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                onPointerDown={(event) => event.preventDefault()}
+              >
+                <NoteTextActionBar
+                  onFormat={(command) =>
+                    noteTextareaRef.current?.applyTextFormat(command)
+                  }
+                  onBlockFormat={(format) =>
+                    noteTextareaRef.current?.applyBlockFormat(format)
+                  }
+                />
+              </div>
+            </div>
+
+            <NoteSlashTextarea
+              ref={noteTextareaRef}
+              value={freeformValue}
+              onValueChange={handleFreeformValueChange}
+              noteTodos={noteTodos}
+              onNoteTodosChange={setNoteTodos}
+              noteTodoOwner={{ type: "GOAL", id: goal.id }}
+              skills={skills}
+              skillCategories={skillCategories}
+              noteId={`goal-workspace:${goal.id}`}
+              placeholder="Write inside this goal..."
+              className={`min-h-[64px] w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
+              aria-label="Goal workspace"
+            />
           </>
         ) : null}
-
       </div>
 
       <style jsx global>{`
@@ -294,6 +391,11 @@ export function GoalWorkspace({
 
         [data-goal-workspace-editor] [data-note-text-action-bar] > div {
           max-width: none;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-todos-empty {
+          display: none !important;
         }
 
         [data-goal-workspace-editor]
