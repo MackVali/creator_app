@@ -27,7 +27,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { Check, ChevronDown, ChevronUp, Lock, Play, Coffee, Crosshair, Dumbbell, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Lock, Play, Dumbbell, X } from "lucide-react";
 import { Icon } from "@iconify/react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -3357,6 +3357,36 @@ function resolveWindowBoundsForRenderDay(
   }
 
   return { start, end };
+}
+
+function readFiniteUtcMs(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function resolveVisibleWindowBounds(
+  window: RepoWindow,
+  date: Date,
+  timeZone: string
+): { start: Date; end: Date } {
+  const visibleStartMs = readFiniteUtcMs(window.visibleStartUtcMs);
+  const visibleEndMs = readFiniteUtcMs(window.visibleEndUtcMs);
+  if (visibleStartMs !== null && visibleEndMs !== null) {
+    return { start: new Date(visibleStartMs), end: new Date(visibleEndMs) };
+  }
+  return resolveWindowBoundsForDateLib(window, date, timeZone);
+}
+
+function resolveCanonicalWindowBounds(
+  window: RepoWindow,
+  date: Date,
+  timeZone: string
+): { start: Date; end: Date } {
+  const startMs = readFiniteUtcMs(window.dayTypeStartUtcMs);
+  const endMs = readFiniteUtcMs(window.dayTypeEndUtcMs);
+  if (startMs !== null && endMs !== null) {
+    return { start: new Date(startMs), end: new Date(endMs) };
+  }
+  return resolveWindowBoundsForDateLib(window, date, timeZone);
 }
 
 type OccupiedSegment = { start: Date; end: Date };
@@ -7032,7 +7062,13 @@ export default function ScheduleTabContent({
       }
       const payload = await response.json();
       if (payload?.windows) {
-        setWindows(payload.windows);
+        const creatorDebug = payload?.creatorDebug ?? null;
+        setWindows(
+          payload.windows.map((window: any) => ({
+            ...window,
+            __creatorDebug: creatorDebug,
+          }))
+        );
       }
     } catch (error) {
       console.error("Failed to fetch day-type-aware windows", error);
@@ -13919,6 +13955,9 @@ export default function ScheduleTabContent({
           (range): range is MinuteRange => range !== null
         )
         .sort((a, b) => a.start - b.start);
+      const timeBlockPresentationOverlayRanges =
+        isSimpleSchedulingMode ? [] : overlayRanges;
+
       const overlayLayerZIndex = Math.max(
         0,
         TIMELINE_STACK_BASE_Z_INDEX - 5
@@ -13980,343 +14019,220 @@ export default function ScheduleTabContent({
             touchAction: timelineTouchAction,
           };
 
-      if (isSimpleSchedulingMode) {
-        const simpleTimeBlocks = modelWindows
-          .map((timeBlock) => {
-            const bounds = resolveWindowBoundsForDateLib(
-              timeBlock,
-              date,
-              viewTimeZone
-            );
-            const clipped = clipSegmentToDay(
-              bounds.start,
-              bounds.end,
-              renderDayStart,
-              renderDayEnd
-            );
-            if (!clipped) return null;
+      const simpleTimeBlocks = isSimpleSchedulingMode
+        ? modelWindows
+            .map((timeBlock) => {
+              const displayBounds = resolveVisibleWindowBounds(
+                timeBlock,
+                date,
+                viewTimeZone
+              );
+              const launchBounds = resolveCanonicalWindowBounds(
+                timeBlock,
+                date,
+                viewTimeZone
+              );
+              if (
+                !isValidDate(launchBounds.start) ||
+                !isValidDate(launchBounds.end) ||
+                launchBounds.end.getTime() <= launchBounds.start.getTime()
+              ) {
+                return null;
+              }
+              const clipped = clipSegmentToDay(
+                displayBounds.start,
+                displayBounds.end,
+                renderDayStart,
+                renderDayEnd
+              );
+              if (!clipped) return null;
 
-            const startMinute = getDayMinuteOffset(
-              clipped.segStart,
-              renderDayStart
-            );
-            const durationMinutes =
-              (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60_000;
-            if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-              return null;
-            }
+              const startMinute = getDayMinuteOffset(
+                clipped.segStart,
+                renderDayStart
+              );
+              const durationMinutes =
+                (clipped.segEnd.getTime() - clipped.segStart.getTime()) /
+                60_000;
+              if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                return null;
+              }
 
-            const compatibleTimeBlock = timeBlock as RepoWindow & {
-              day_type_time_block_id?: string | null;
-              time_block_id?: string | null;
-              timeBlockId?: string | null;
-              window_id?: string | null;
-            };
-            const dayTypeTimeBlockId =
-              timeBlock.dayTypeTimeBlockId ??
-              compatibleTimeBlock.day_type_time_block_id ??
-              null;
-            const timeBlockId =
-              compatibleTimeBlock.timeBlockId ??
-              compatibleTimeBlock.time_block_id ??
-              (dayTypeTimeBlockId ? timeBlock.id : null);
-            const windowId =
-              compatibleTimeBlock.window_id ??
-              (dayTypeTimeBlockId ? null : timeBlock.id);
-            const anchorInstance = instances.find((instance) =>
-              matchesTimeBlockAdjustmentIdentity(instance, {
+              const compatibleTimeBlock = timeBlock as RepoWindow & {
+                day_type_time_block_id?: string | null;
+                time_block_id?: string | null;
+                timeBlockId?: string | null;
+                window_id?: string | null;
+              };
+              const dayTypeTimeBlockId =
+                timeBlock.dayTypeTimeBlockId ??
+                compatibleTimeBlock.day_type_time_block_id ??
+                null;
+              const timeBlockId =
+                compatibleTimeBlock.timeBlockId ??
+                compatibleTimeBlock.time_block_id ??
+                (dayTypeTimeBlockId ? timeBlock.id : null);
+              const windowId =
+                compatibleTimeBlock.window_id ??
+                (dayTypeTimeBlockId ? null : timeBlock.id);
+              const anchorInstance = instances.find((instance) =>
+                matchesTimeBlockAdjustmentIdentity(instance, {
+                  timeBlockId,
+                  windowId,
+                  dayTypeTimeBlockId,
+                })
+              );
+
+              return {
+                timeBlock,
+                launchStart: launchBounds.start,
+                launchEnd: launchBounds.end,
+                displayStart: clipped.segStart,
+                displayEnd: clipped.segEnd,
+                startOffsetMinutes: Math.max(
+                  0,
+                  startMinute - modelStartHour * 60
+                ),
+                durationMinutes,
                 timeBlockId,
-                windowId,
                 dayTypeTimeBlockId,
-              })
-            );
+                windowId,
+                anchorInstanceId: anchorInstance?.id ?? null,
+              };
+            })
+            .filter((timeBlock): timeBlock is NonNullable<typeof timeBlock> =>
+              timeBlock !== null
+            )
+        : [];
 
-            return {
-              timeBlock,
-              start: clipped.segStart,
-              end: clipped.segEnd,
-              launchStart: bounds.start,
-              launchEnd: bounds.end,
-              startOffsetMinutes: Math.max(
-                0,
-                startMinute - modelStartHour * 60
-              ),
-              durationMinutes,
-              timeBlockId,
-              dayTypeTimeBlockId,
-              windowId,
-              anchorInstanceId: anchorInstance?.id ?? null,
-            };
-          })
-          .filter((timeBlock): timeBlock is NonNullable<typeof timeBlock> =>
-            timeBlock !== null
-          );
+      const launchTimeBlock = (timeBlock: (typeof simpleTimeBlocks)[number]) => {
+        const params = new URLSearchParams();
+        params.set("launch", "time_block_start");
+        params.set("blockKey", timeBlock.timeBlock.id);
+        params.set("blockLabel", timeBlock.timeBlock.label || "Time Block");
+        params.set("start", timeBlock.launchStart.toISOString());
+        params.set("end", timeBlock.launchEnd.toISOString());
+        params.set("localDayKey", dayViewDateKey);
+        if (timeBlock.timeBlockId) {
+          params.set("timeBlockId", timeBlock.timeBlockId);
+        }
+        if (timeBlock.dayTypeTimeBlockId) {
+          params.set("dayTypeTimeBlockId", timeBlock.dayTypeTimeBlockId);
+        }
+        if (timeBlock.windowId) params.set("windowId", timeBlock.windowId);
+        if (timeBlock.anchorInstanceId) {
+          params.set("anchorInstanceId", timeBlock.anchorInstanceId);
+        }
+        router.push(`/focus-pomo?${params.toString()}`);
+      };
 
-        const launchTimeBlock = (
-          timeBlock: (typeof simpleTimeBlocks)[number]
+      const renderTimeBlockSurfaceContent = ({
+        energyLabel,
+        rangeLabel,
+        timeBlock,
+        windowLabel,
+        onStart,
+      }: {
+        energyLabel: FlameLevel;
+        rangeLabel: string;
+        timeBlock: RepoWindow;
+        windowLabel: string;
+        onStart?: (() => void) | null;
+      }) => {
+        const timeBlockKind = normalizeTimeBlockConstraintKind(
+          timeBlock.window_kind
+        );
+        const isFocusTimeBlock = timeBlockKind === "FOCUS";
+        const isMealTimeBlock = timeBlockKind === "MEAL";
+        const stopActionGesture = (
+          event:
+            | ReactPointerEvent<HTMLButtonElement>
+            | ReactTouchEvent<HTMLButtonElement>
+            | ReactMouseEvent<HTMLButtonElement>
         ) => {
-          const params = new URLSearchParams();
-          params.set("launch", "time_block_start");
-          params.set("blockKey", timeBlock.timeBlock.id);
-          params.set("blockLabel", timeBlock.timeBlock.label || "Time Block");
-          params.set("start", timeBlock.launchStart.toISOString());
-          params.set("end", timeBlock.launchEnd.toISOString());
-          params.set("localDayKey", dayViewDateKey);
-          if (timeBlock.timeBlockId) {
-            params.set("timeBlockId", timeBlock.timeBlockId);
-          }
-          if (timeBlock.dayTypeTimeBlockId) {
-            params.set("dayTypeTimeBlockId", timeBlock.dayTypeTimeBlockId);
-          }
-          if (timeBlock.windowId) params.set("windowId", timeBlock.windowId);
-          if (timeBlock.anchorInstanceId) {
-            params.set("anchorInstanceId", timeBlock.anchorInstanceId);
-          }
-          router.push(`/focus-pomo?${params.toString()}`);
+          event.stopPropagation();
+        };
+        const openNutritionMealLog = (
+          event: ReactMouseEvent<HTMLButtonElement>
+        ) => {
+          event.preventDefault();
+          event.stopPropagation();
+          dispatchOpenNutritionLogEvent();
+        };
+        const handleStartClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStart?.();
         };
 
         return (
-          <div
-            className={containerClass}
-            ref={options?.containerRef ?? undefined}
-            style={containerStyle}
-          >
-            <DayTimeline
-              date={date}
-              startHour={modelStartHour}
-              pxPerMin={modelPxPerMin}
-              zoomPxPerMin={animatedPxPerMin}
-            >
-              {simpleTimeBlocks.map((block) => {
-                const timeBlockKind = normalizeTimeBlockConstraintKind(
-                  block.timeBlock.window_kind
-                );
-                const isBreak = timeBlockKind === "BREAK";
-                const isMeal = timeBlockKind === "MEAL";
-                const isFocus = timeBlockKind === "FOCUS";
-                const usesHabitCardVisuals = isBreak || isMeal;
-                const associatedSkillIds = new Set<string>();
-                const associatedMonumentIds = new Set(
-                  block.timeBlock.allowedMonumentIds ?? []
-                );
-                const addSkillId = (skillId: string | null | undefined) => {
-                  const normalizedId = skillId?.trim();
-                  if (normalizedId) associatedSkillIds.add(normalizedId);
-                };
-                for (const skillId of block.timeBlock.allowedSkillIds ?? []) {
-                  addSkillId(skillId);
-                }
-                for (const instance of instances.filter((candidate) =>
-                  matchesTimeBlockAdjustmentIdentity(candidate, block)
-                )) {
-                  resolveScheduleEventSkillContext(
-                    instance.metadata
-                  ).skillIds.forEach(addSkillId);
-                  const practiceMonumentId =
-                    instance.practice_context_monument_id?.trim();
-                  if (practiceMonumentId) {
-                    associatedMonumentIds.add(practiceMonumentId);
-                  }
-                  if (instance.source_type === "TASK") {
-                    addSkillId(taskMap[instance.source_id ?? ""]?.skill_id);
-                  } else if (instance.source_type === "HABIT") {
-                    addSkillId(habitMap[instance.source_id ?? ""]?.skillId);
-                  } else if (instance.source_type === "PROJECT") {
-                    (
-                      projectSkillIds[instance.source_id ?? ""] ?? []
-                    ).forEach(addSkillId);
-                  }
-                }
-                const focusPreviewItems: Array<{
-                  id: string;
-                  icon: string;
-                  kind: "skill" | "monument";
-                }> = [];
-                for (const skillId of associatedSkillIds) {
-                  const icon = skillMap[skillId]?.icon?.trim();
-                  if (icon) {
-                    focusPreviewItems.push({ id: skillId, icon, kind: "skill" });
-                  }
-                }
-                if (focusPreviewItems.length === 0) {
-                  for (const skillId of associatedSkillIds) {
-                    const monumentId = skillMap[skillId]?.monument_id?.trim();
-                    if (monumentId) associatedMonumentIds.add(monumentId);
-                  }
-                  for (const monumentId of associatedMonumentIds) {
-                    const icon = monuments
-                      .find((item) => item.id === monumentId)
-                      ?.emoji?.trim();
-                    if (icon) {
-                      focusPreviewItems.push({
-                        id: monumentId,
-                        icon,
-                        kind: "monument",
-                      });
-                    }
-                  }
-                }
-                const visibleFocusPreviewItems = focusPreviewItems.slice(0, 3);
-                const rangeLabel = `${formatTimeForWindow(
-                  block.launchStart,
-                  viewTimeZone
-                )} – ${formatTimeForWindow(block.launchEnd, viewTimeZone)}`;
-                const heightPx = Math.max(
-                  1,
-                  block.durationMinutes * modelPxPerMin
-                );
-                const compact = heightPx < 52;
-                const activate = () => {
-                  if (!options?.disableInteractions) launchTimeBlock(block);
-                };
-
-                return (
-                  <motion.div
-                    key={`simple-time-block-${block.timeBlock.id}-${block.start.toISOString()}`}
-                    className="absolute"
-                    style={{
-                      ...TIMELINE_CARD_BOUNDS,
-                      top: toTimelinePosition(block.startOffsetMinutes),
-                      height: toTimelinePosition(block.durationMinutes),
-                      zIndex: computeTimelineStackingIndex(
-                        block.startOffsetMinutes
-                      ),
-                    }}
-                    initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                    animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-                  >
-                    <div
-                      role={isFocus ? "button" : undefined}
-                      tabIndex={
-                        isFocus && !options?.disableInteractions ? 0 : undefined
-                      }
-                      aria-label={
-                        isFocus
-                          ? `Start Focus Pomo for ${block.timeBlock.label || "Time Block"}, ${rangeLabel}`
-                          : undefined
-                      }
-                      className={clsx(
-                        "relative flex h-full w-full select-none items-center gap-3 overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur transition",
-                        options?.disableInteractions
-                          ? "pointer-events-none"
-                          : isFocus
-                            ? "cursor-pointer active:scale-[0.995]"
-                            : null,
-                        usesHabitCardVisuals
-                          ? "border-white/45 bg-zinc-200/90 text-zinc-900 shadow-[0_14px_30px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.8)]"
-                          : clsx(
-                              PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
-                              getProjectScheduleInstanceVisuals({
-                                heightPx,
-                                completed: false,
-                              }).borderClass
-                            )
-                      )}
-                      style={
-                        usesHabitCardVisuals
-                          ? SCHEDULE_INSTANCE_NO_SELECT_STYLE
-                          : {
-                              ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
-                              background: getProjectScheduleInstanceVisuals({
-                                heightPx,
-                                completed: false,
-                              }).background,
-                              boxShadow: getProjectScheduleInstanceVisuals({
-                                heightPx,
-                                completed: false,
-                              }).boxShadow,
-                              outline: getProjectScheduleInstanceVisuals({
-                                heightPx,
-                                completed: false,
-                              }).outline,
-                            }
-                      }
-                      onClick={isFocus ? activate : undefined}
-                      onKeyDown={(event) => {
-                        if (!isFocus) return;
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        activate();
-                      }}
-                    >
-                      {isFocus ? (
-                        <button
-                          type="button"
-                          aria-label={`Start ${block.timeBlock.label || "Time Block"} in Focus Pomo`}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition active:scale-95"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            activate();
-                          }}
-                        >
-                          <Play className="h-3.5 w-3.5 fill-current" />
-                        </button>
-                      ) : (
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-400/60 bg-white/60 text-zinc-700">
-                          {isMeal ? (
-                            <Icon
-                              icon="game-icons:stomach"
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <Coffee className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold leading-tight">
-                          {block.timeBlock.label || "Time Block"}
-                        </span>
-                        {!compact ? (
-                          <span
-                            className={clsx(
-                              "mt-0.5 block truncate text-[11px] font-medium",
-                              usesHabitCardVisuals
-                                ? "text-zinc-600"
-                                : "text-white/70"
-                            )}
-                          >
-                            {rangeLabel}
-                          </span>
-                        ) : null}
-                      </span>
-                      {isFocus ? (
-                        <span
-                          className="flex shrink-0 items-center -space-x-1.5"
-                          aria-hidden="true"
-                        >
-                          {visibleFocusPreviewItems.length > 0 ? (
-                            visibleFocusPreviewItems.map((item) => (
-                              <span
-                                key={`${item.kind}-${item.id}`}
-                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-zinc-800 text-sm leading-none shadow-sm"
-                              >
-                                {item.icon}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
-                              <Crosshair className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                          {focusPreviewItems.length > 3 ? (
-                            <span className="pl-2 text-xs font-semibold tracking-widest text-white/65">
-                              …
-                            </span>
-                          ) : null}
-                        </span>
-                      ) : null}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </DayTimeline>
+          <div className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
+            <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
+              <FlameEmber
+                level={energyLabel}
+                size="xs"
+                className="shrink-0"
+              />
+              <span className="min-w-0 truncate text-white/75">
+                {windowLabel}
+              </span>
+              <span className="shrink-0 text-white/50">{rangeLabel}</span>
+              <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-white/45">
+                {timeBlockKind}
+              </span>
+            </div>
+            {isMealTimeBlock ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <button
+                  type="button"
+                  aria-label={`Log nutrition for ${
+                    timeBlock.label || windowLabel || "meal"
+                  }`}
+                  title="Log nutrition"
+                  className="pointer-events-auto inline-flex min-h-9 min-w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1 text-zinc-700 transition hover:text-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500/70"
+                  onPointerDown={stopActionGesture}
+                  onPointerUp={stopActionGesture}
+                  onTouchStart={stopActionGesture}
+                  onTouchEnd={stopActionGesture}
+                  onClick={openNutritionMealLog}
+                >
+                  <Icon
+                    icon="game-icons:stomach"
+                    className="h-4 w-4 text-zinc-500"
+                    aria-hidden="true"
+                  />
+                  <span className="text-[7px] font-semibold uppercase tracking-wide text-zinc-700">
+                    NUTRITION
+                  </span>
+                </button>
+              </div>
+            ) : null}
+            {isFocusTimeBlock && onStart ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <button
+                  type="button"
+                  aria-label={`Start ${timeBlock.label || "Time Block"} in Focus Pomo`}
+                  title="Start Focus Pomo"
+                  className="pointer-events-auto inline-flex min-h-9 min-w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1 text-zinc-700 transition hover:text-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500/70"
+                  onPointerDown={stopActionGesture}
+                  onPointerUp={stopActionGesture}
+                  onTouchStart={stopActionGesture}
+                  onTouchEnd={stopActionGesture}
+                  onClick={handleStartClick}
+                >
+                  <Play
+                    className="h-4 w-4 fill-current text-zinc-500"
+                    aria-hidden="true"
+                  />
+                  <span className="text-[7px] font-semibold uppercase tracking-wide text-zinc-700">
+                    START
+                  </span>
+                </button>
+              </div>
+            ) : null}
           </div>
         );
-      }
+      };
 
       const { habitLayouts, projectLayouts, taskLayouts, syncHabitLaneLayouts } =
         computeTimelineLayoutForSyncHabits({
@@ -14325,6 +14241,15 @@ export default function ScheduleTabContent({
           taskInstances: modelStandaloneTaskInstances,
           syncPairingsByInstanceId: syncPairings,
         });
+      const foregroundHabitPlacements = isSimpleSchedulingMode
+        ? []
+        : dayHabitPlacements;
+      const foregroundProjectInstances = isSimpleSchedulingMode
+        ? []
+        : dayProjectInstances;
+      const foregroundStandaloneTaskInstances = isSimpleSchedulingMode
+        ? []
+        : modelStandaloneTaskInstances;
 
       const projectInstanceIndexById = new Map<string, number>();
       dayProjectInstances.forEach((projectInstance, projectIndex) => {
@@ -14507,15 +14432,17 @@ export default function ScheduleTabContent({
       if (optimisticMyListEventId) {
         suppressedSavedEventIds.add(optimisticMyListEventId);
       }
-      const renderedSavedEventCards = buildRenderedSavedScheduleEventCards({
-        savedEvents: modelSavedEvents,
-        instances,
-        instancesReadyForEventDedupe:
-          instancesStatus === "loaded" || instances.length > 0,
-        suppressedEventIds: suppressedSavedEventIds,
-        renderDayStart,
-        renderDayEnd,
-      });
+      const renderedSavedEventCards = isSimpleSchedulingMode
+        ? []
+        : buildRenderedSavedScheduleEventCards({
+            savedEvents: modelSavedEvents,
+            instances,
+            instancesReadyForEventDedupe:
+              instancesStatus === "loaded" || instances.length > 0,
+            suppressedEventIds: suppressedSavedEventIds,
+            renderDayStart,
+            renderDayEnd,
+          });
 
       return (
         <div
@@ -14523,42 +14450,42 @@ export default function ScheduleTabContent({
           ref={options?.containerRef ?? undefined}
           style={containerStyle}
           onPointerDownCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerDown
           }
           onPointerMoveCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerMove
           }
           onPointerUpCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerEnd
           }
           onPointerCancelCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerEnd
           }
           onTouchStartCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchStart
           }
           onTouchMoveCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchMove
           }
           onTouchEndCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchEnd
           }
           onTouchCancelCapture={
-            options?.disableInteractions
+            options?.disableInteractions || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchEnd
           }
@@ -14570,6 +14497,7 @@ export default function ScheduleTabContent({
             zoomPxPerMin={animatedPxPerMin}
             style={TIMELINE_CSS_VARIABLES}
           >
+
             {modelWindows.map((w) => {
               const { topMinutes, heightMinutes } = windowRectMinutes(
                 w,
@@ -14580,7 +14508,7 @@ export default function ScheduleTabContent({
               }
               const windowSegments = subtractOverlayRangesFromWindow(
                 { start: topMinutes, end: topMinutes + heightMinutes },
-                overlayRanges
+                timeBlockPresentationOverlayRanges
               );
               if (windowSegments.length === 0) {
                 return null;
@@ -14626,7 +14554,7 @@ export default function ScheduleTabContent({
                 );
               });
             })}
-            {modelWindowReports.map((report) => {
+            {!isSimpleSchedulingMode ? modelWindowReports.map((report) => {
               const { rangeStart, rangeEnd } = report;
               if (!isValidDate(rangeStart) || !isValidDate(rangeEnd)) {
                 return null;
@@ -14641,7 +14569,7 @@ export default function ScheduleTabContent({
               const baseRange = { start: startMin, end: endMin };
               const visibleSegments = subtractOverlayRangesFromWindow(
                 baseRange,
-                overlayRanges
+                timeBlockPresentationOverlayRanges
               ).filter(
                 (segment) =>
                   Number.isFinite(segment.start) &&
@@ -14650,76 +14578,18 @@ export default function ScheduleTabContent({
               );
               if (visibleSegments.length === 0) return null;
 
-              const isMealTimeBlockReport = report.window.window_kind === "MEAL";
-              const stopNutritionReportShortcutGesture = (
-                event:
-                  | ReactPointerEvent<HTMLButtonElement>
-                  | ReactTouchEvent<HTMLButtonElement>
-                  | ReactMouseEvent<HTMLButtonElement>
-              ) => {
-                event.stopPropagation();
-              };
-              const openNutritionReportMealLog = (
-                event: ReactMouseEvent<HTMLButtonElement>
-              ) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dispatchOpenNutritionLogEvent();
-              };
-
-              const reportContent = (
-                <div className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
-                  <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
-                    <FlameEmber
-                      level={report.energyLabel}
-                      size="xs"
-                      className="shrink-0"
-                    />
-                    <span className="min-w-0 truncate text-white/75">{report.windowLabel}</span>
-                    <span className="shrink-0 text-white/50">
-                      {report.rangeLabel}
-                    </span>
-                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-white/45">
-                      {report.window.window_kind === "DEFAULT"
-                        ? "FOCUS"
-                        : report.window.window_kind}
-                    </span>
-                  </div>
-                  {isMealTimeBlockReport ? (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                      <button
-                        type="button"
-                        aria-label={`Log nutrition for ${
-                          report.window.label || report.windowLabel || "meal"
-                        }`}
-                        title="Log nutrition"
-                        className="pointer-events-auto inline-flex min-h-9 min-w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1 text-zinc-700 transition hover:text-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500/70"
-                        onPointerDown={stopNutritionReportShortcutGesture}
-                        onPointerUp={stopNutritionReportShortcutGesture}
-                        onTouchStart={stopNutritionReportShortcutGesture}
-                        onTouchEnd={stopNutritionReportShortcutGesture}
-                        onClick={openNutritionReportMealLog}
-                      >
-                        <Icon
-                          icon="game-icons:stomach"
-                          className="h-4 w-4 text-zinc-500"
-                          aria-hidden="true"
-                        />
-                        <span className="text-[7px] font-semibold uppercase tracking-wide text-zinc-700">
-                          NUTRITION
-                        </span>
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              );
+              const reportContent = renderTimeBlockSurfaceContent({
+                energyLabel: report.energyLabel,
+                rangeLabel: report.rangeLabel,
+                timeBlock: report.window,
+                windowLabel: report.windowLabel,
+              });
 
               return visibleSegments.map((segment, index) => {
                 const heightMinutes = segment.end - segment.start;
                 if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
                   return null;
                 }
-                const segmentHeightPx = Math.max(0, heightMinutes * modelPxPerMin);
                 return (
                   <div
                     key={`${report.key}-${index}`}
@@ -14731,19 +14601,43 @@ export default function ScheduleTabContent({
                       zIndex: 10,
                     }}
                   >
-                    {index === 0 ? (
-                      reportContent
-                    ) : (
-                      <div
-                        className="h-full w-full rounded-[var(--radius-lg)] border border-slate-700/80 bg-transparent"
-                        style={{
-                          minHeight: segmentHeightPx,
-                        }}
-                      />
-                    )}
+                    {reportContent}
                   </div>
                 );
               });
+            }) : null}
+            {simpleTimeBlocks.map((block) => {
+              const activate = () => {
+                if (!options?.disableInteractions) launchTimeBlock(block);
+              };
+              const windowLabel =
+                block.timeBlock.label?.trim() || "Untitled window";
+              const rangeLabel = `${formatTimeForWindow(
+                block.displayStart,
+                viewTimeZone
+              )} - ${formatTimeForWindow(block.displayEnd, viewTimeZone)}`;
+              const surfaceContent = renderTimeBlockSurfaceContent({
+                energyLabel: normalizeEnergyLabel(block.timeBlock.energy),
+                rangeLabel,
+                timeBlock: block.timeBlock,
+                windowLabel,
+                onStart: activate,
+              });
+
+              return (
+                <div
+                  key={`simple-time-block-${block.timeBlock.id}-${block.startOffsetMinutes}`}
+                  className="absolute"
+                  style={{
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(block.startOffsetMinutes),
+                    height: toTimelinePosition(block.durationMinutes),
+                    zIndex: 10,
+                  }}
+                >
+                  {surfaceContent}
+                </div>
+              );
             })}
             <div
               className="pointer-events-none absolute inset-0"
@@ -15061,7 +14955,7 @@ export default function ScheduleTabContent({
                 </div>
               );
             })}
-            {dayHabitPlacements.map((placement, index) => {
+            {foregroundHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
               const normalizedHabitType = normalizeTimelineHabitType(
@@ -15631,7 +15525,7 @@ export default function ScheduleTabContent({
                 </motion.div>
               );
             })}
-            {manualPlacementSession && manualTimelineGhost ? (
+            {!isSimpleSchedulingMode && manualPlacementSession && manualTimelineGhost ? (
               <div
                 className="pointer-events-none absolute"
                 style={{
@@ -15649,7 +15543,7 @@ export default function ScheduleTabContent({
                 />
               </div>
             ) : null}
-            {myListPendingPlacement && myListPendingTimelineCard ? (
+            {!isSimpleSchedulingMode && myListPendingPlacement && myListPendingTimelineCard ? (
               <div
                 className="pointer-events-none absolute select-none"
                 style={{
@@ -15689,7 +15583,7 @@ export default function ScheduleTabContent({
                 ) : null}
               </div>
             ) : null}
-            {myListOptimisticPlacement && myListOptimisticTimelineCard ? (
+            {!isSimpleSchedulingMode && myListOptimisticPlacement && myListOptimisticTimelineCard ? (
               <div
                 className="pointer-events-none absolute select-none"
                 style={{
@@ -15716,7 +15610,7 @@ export default function ScheduleTabContent({
                 ) : null}
               </div>
             ) : null}
-            {quickCreateDraftEvent && quickCreateTimelineDraft
+            {!isSimpleSchedulingMode && quickCreateDraftEvent && quickCreateTimelineDraft
               ? (() => {
                   const quickCreateDraftVisuals =
                     getProjectScheduleInstanceVisuals({
@@ -15911,7 +15805,7 @@ export default function ScheduleTabContent({
                 );
               })()
               : null}
-            {dayProjectInstances.map(
+            {foregroundProjectInstances.map(
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
                 const displacedPreview = manualPlacementSession?.pushPreview?.displaced.find(
@@ -16882,7 +16776,7 @@ export default function ScheduleTabContent({
               }
             )}
             <AnimatePresence initial={false}>
-              {modelStandaloneTaskInstances.map(
+              {foregroundStandaloneTaskInstances.map(
                 ({ instance, task, start, end }, index) => {
                   if (!isValidDate(start) || !isValidDate(end)) return null;
                   const startMin = getDayMinuteOffset(start, renderDayStart);
@@ -17224,10 +17118,6 @@ export default function ScheduleTabContent({
       editingProjectId,
       editingHabitId,
       habitMap,
-      taskMap,
-      skillMap,
-      projectSkillIds,
-      monuments,
       handleOpenTimelineTimeBlockAdjustment,
       instances,
       instancesStatus,

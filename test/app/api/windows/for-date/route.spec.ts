@@ -65,6 +65,8 @@ describe("visibleCalendarWindowsForDay", () => {
         end_local: "03:59",
         dayTypeStartUtcMs: Date.parse("2024-01-08T00:00:00Z"),
         dayTypeEndUtcMs: Date.parse("2024-01-08T03:59:00Z"),
+        visibleStartUtcMs: Date.parse("2024-01-08T00:00:00Z"),
+        visibleEndUtcMs: Date.parse("2024-01-08T03:59:00Z"),
         fromPrevDay: false,
         fromPrevSchedulerDay: true,
       })
@@ -91,13 +93,15 @@ describe("visibleCalendarWindowsForDay", () => {
     expect(windows.map((window) => window.id)).toEqual(["monday-daytime"]);
   });
 
-  it("clips a 10 PM to 12:30 AM block across Monday and Tuesday visible days", () => {
+  it("clips a 9 PM to 12:30 AM block across Monday and Tuesday visible days while preserving canonical occurrence bounds", () => {
     const overnight = windowLite({
       id: "monday-overnight",
       dayTypeTimeBlockId: "dttb-overnight",
-      start_local: "22:00",
+      timeBlockId: "time-block-overnight",
+      window_id: "window-overnight",
+      start_local: "21:00",
       end_local: "00:30",
-      dayTypeStartUtcMs: Date.parse("2024-01-08T22:00:00Z"),
+      dayTypeStartUtcMs: Date.parse("2024-01-08T21:00:00Z"),
       dayTypeEndUtcMs: Date.parse("2024-01-09T00:30:00Z"),
     });
 
@@ -116,10 +120,14 @@ describe("visibleCalendarWindowsForDay", () => {
         id: expect.stringContaining("monday-overnight::visible-2024-01-08"),
         sourceWindowId: "monday-overnight",
         dayTypeTimeBlockId: "dttb-overnight",
-        start_local: "22:00",
+        timeBlockId: "time-block-overnight",
+        window_id: "window-overnight",
+        start_local: "21:00",
         end_local: "00:00",
-        dayTypeStartUtcMs: Date.parse("2024-01-08T22:00:00Z"),
-        dayTypeEndUtcMs: Date.parse("2024-01-09T00:00:00Z"),
+        dayTypeStartUtcMs: Date.parse("2024-01-08T21:00:00Z"),
+        dayTypeEndUtcMs: Date.parse("2024-01-09T00:30:00Z"),
+        visibleStartUtcMs: Date.parse("2024-01-08T21:00:00Z"),
+        visibleEndUtcMs: Date.parse("2024-01-09T00:00:00Z"),
         fromPrevDay: false,
         fromPrevSchedulerDay: false,
       })
@@ -131,10 +139,14 @@ describe("visibleCalendarWindowsForDay", () => {
         id: expect.stringContaining("monday-overnight::visible-2024-01-09"),
         sourceWindowId: "monday-overnight",
         dayTypeTimeBlockId: "dttb-overnight",
+        timeBlockId: "time-block-overnight",
+        window_id: "window-overnight",
         start_local: "00:00",
         end_local: "00:30",
-        dayTypeStartUtcMs: Date.parse("2024-01-09T00:00:00Z"),
+        dayTypeStartUtcMs: Date.parse("2024-01-08T21:00:00Z"),
         dayTypeEndUtcMs: Date.parse("2024-01-09T00:30:00Z"),
+        visibleStartUtcMs: Date.parse("2024-01-09T00:00:00Z"),
+        visibleEndUtcMs: Date.parse("2024-01-09T00:30:00Z"),
         fromPrevDay: false,
         fromPrevSchedulerDay: true,
       })

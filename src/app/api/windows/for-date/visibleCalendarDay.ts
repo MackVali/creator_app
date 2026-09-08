@@ -4,6 +4,8 @@ import { getDateTimeParts } from "@/lib/scheduler/timezone";
 export type VisibleCalendarWindow = WindowLite & {
   fromPrevSchedulerDay?: boolean;
   sourceWindowId?: string;
+  visibleStartUtcMs?: number;
+  visibleEndUtcMs?: number;
 };
 
 function formatLocalTime(date: Date, timeZone: string): string {
@@ -96,8 +98,10 @@ export function visibleCalendarWindowsForDay(params: {
         sourceWindowId: id === window.id ? undefined : window.id,
         start_local: formatLocalTime(clippedStart, timeZone),
         end_local: normalizeVisibleEndLocal(clippedEnd, visibleEnd, timeZone),
-        dayTypeStartUtcMs: clippedStartMs,
-        dayTypeEndUtcMs: clippedEndMs,
+        dayTypeStartUtcMs: startMs,
+        dayTypeEndUtcMs: endMs,
+        visibleStartUtcMs: clippedStartMs,
+        visibleEndUtcMs: clippedEndMs,
         fromPrevDay: false,
         fromPrevSchedulerDay,
       } satisfies VisibleCalendarWindow;
@@ -115,8 +119,8 @@ export function visibleCalendarWindowsForDay(params: {
         id: makeDisplayId(
           window,
           dayKey,
-          window.dayTypeStartUtcMs ?? 0,
-          window.dayTypeEndUtcMs ?? 0,
+          window.visibleStartUtcMs ?? window.dayTypeStartUtcMs ?? 0,
+          window.visibleEndUtcMs ?? window.dayTypeEndUtcMs ?? 0,
           index
         ),
         sourceWindowId: window.sourceWindowId ?? window.id,
