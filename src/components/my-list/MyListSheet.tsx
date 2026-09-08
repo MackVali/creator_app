@@ -1730,7 +1730,7 @@ export function MyListSheet({
   const [matrixSettingsTriggerTarget, setMatrixSettingsTriggerTarget] =
     useState<HTMLDivElement | null>(null);
   const [isDayLensActive, setIsDayLensActive] = useState(
-    () => readStoredMyListViewModePreference(userId) === "day",
+    () => (readStoredMyListViewModePreference(userId) ?? "day") === "day",
   );
   const [isMonumentLensActive, setIsMonumentLensActive] = useState(
     () => readStoredMyListViewModePreference(userId) === "monuments",
