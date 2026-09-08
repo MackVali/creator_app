@@ -300,55 +300,11 @@ body,
     0 3px 9px rgba(24, 24, 27, 0.12);
 }
 
-.app-dashboard-area-card[data-area-status="red"] {
-  border-color: rgba(239, 68, 68, 0.42);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.025) inset,
-    0 0 7px rgba(239, 68, 68, 0.08);
-  animation: area-card-red-breathe 4.2s ease-in-out infinite;
-}
+:root[data-theme="light"] 
 
-.app-dashboard-area-card[data-area-status="orange"] {
-  border-color: rgba(249, 115, 22, 0.38);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.025) inset,
-    0 0 6px rgba(249, 115, 22, 0.065);
-  animation: area-card-orange-breathe 4.6s ease-in-out infinite;
-}
+:root[data-theme="light"] 
 
-.app-dashboard-area-card[data-area-status="green"] {
-  border-color: rgba(34, 197, 94, 0.34);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.025) inset,
-    0 0 4px rgba(34, 197, 94, 0.045);
-}
-
-:root[data-theme="light"] .app-dashboard-area-card[data-area-status="red"] {
-  border-color: rgba(220, 38, 38, 0.78);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
-    0 12px 26px rgba(24, 24, 27, 0.18),
-    0 0 0 1px rgba(220, 38, 38, 0.24);
-}
-
-:root[data-theme="light"] .app-dashboard-area-card[data-area-status="orange"] {
-  border-color: rgba(234, 88, 12, 0.78);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
-    0 12px 26px rgba(24, 24, 27, 0.18),
-    0 0 0 1px rgba(234, 88, 12, 0.24);
-}
-
-:root[data-theme="light"] .app-dashboard-area-card[data-area-status="green"] {
-  border-color: rgba(5, 150, 105, 0.78);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
-    0 12px 26px rgba(24, 24, 27, 0.18),
-    0 0 0 1px rgba(5, 150, 105, 0.22);
-}
+:root[data-theme="light"] 
 
 :root[data-theme="light"] .app-dashboard-monument-skeleton {
   background:
@@ -1269,33 +1225,89 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   opacity: 1;
 }
 
-
-@keyframes area-card-red-breathe {
-  0%, 100% {
-    border-color: rgba(239, 68, 68, 0.38);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.025) inset,
-      0 0 5px rgba(239, 68, 68, 0.055);
+@keyframes creator-workout-target-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.22));
   }
+
   50% {
-    border-color: rgba(239, 68, 68, 0.52);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.025) inset,
-      0 0 9px rgba(239, 68, 68, 0.11);
+    filter:
+      drop-shadow(0 0 5px rgba(239, 68, 68, 0.52))
+      drop-shadow(0 0 9px rgba(239, 68, 68, 0.2));
   }
 }
 
-@keyframes area-card-orange-breathe {
-  0%, 100% {
-    border-color: rgba(249, 115, 22, 0.34);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.025) inset,
-      0 0 4px rgba(249, 115, 22, 0.045);
-  }
-  50% {
-    border-color: rgba(249, 115, 22, 0.46);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.025) inset,
-      0 0 8px rgba(249, 115, 22, 0.085);
-  }
+/* Needs attention */
+
+
+/* Partial completion */
+
+
+/* Complete */
+
+/* COMMAND Area completion state.
+   Tight outer rings modeled after the cleaner Goal-card completion language. */
+.app-dashboard-area-card[data-area-status="red"],
+.app-dashboard-area-card[data-area-status="orange"],
+.app-dashboard-area-card[data-area-status="green"] {
+  border-color: rgba(5, 150, 105, 0.84);
+  box-shadow:
+    0 0 0 1px rgba(16, 185, 129, 0.18),
+    0 0 5px rgba(5, 150, 105, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
+
+.app-dashboard-area-card[data-area-status="red"] {
+  border-color: rgba(220, 38, 38, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(239, 68, 68, 0.22),
+    0 0 5px rgba(220, 38, 38, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.app-dashboard-area-card[data-area-status="orange"] {
+  border-color: rgba(234, 88, 12, 0.76);
+  box-shadow:
+    0 0 0 1px rgba(249, 115, 22, 0.18),
+    0 0 5px rgba(234, 88, 12, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.app-dashboard-area-card[data-area-status="green"] {
+  box-shadow:
+    0 0 0 2px rgba(52, 211, 153, 0.56),
+    0 0 7px rgba(16, 185, 129, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+/* FINAL COMMAND Area status treatment */
+
+/*
+ * Keep all status color INSIDE the card bounds.
+ * The normal border + 1px inset ring produces a stronger ~2px visual stroke
+ * without any top/side clipping.
+ */
+.app-dashboard-area-card[data-area-status="red"] {
+  border-color: rgb(220, 38, 38);
+  box-shadow:
+    inset 0 0 0 1px rgba(248, 113, 113, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.app-dashboard-area-card[data-area-status="orange"] {
+  border-color: rgb(194, 65, 12);
+  box-shadow:
+    inset 0 0 0 1px rgba(251, 146, 60, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.app-dashboard-area-card[data-area-status="green"] {
+  border-color: rgb(5, 150, 105);
+  box-shadow:
+    inset 0 0 0 1px rgba(52, 211, 153, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+/* END FINAL COMMAND Area status treatment */
+

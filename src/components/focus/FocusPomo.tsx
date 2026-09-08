@@ -74,6 +74,7 @@ import {
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { AREAS } from "@/config/areas";
 import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -267,6 +268,8 @@ type ScopeQueueSource = {
   title: string;
   icon?: string | null;
 };
+
+type ScopeOptionKind = "monument" | "area" | "skill";
 
 type FocusExecutionItemType = "project" | "task" | "habit";
 
@@ -1445,6 +1448,16 @@ function getItemSkillNames(
   return uniqueScopeValues([...itemNames, ...sourceNames]);
 }
 
+function getItemAreaNames(
+  item: FocusPomoQueueItem,
+  source?: FocusPomoSource | null
+): string[] {
+  const itemNames = getItemAreaOptions(item).map((option) => option.name);
+  const sourceNames = source?.sourceType === "area" ? [source.title] : [];
+
+  return uniqueScopeValues([...itemNames, ...sourceNames]);
+}
+
 function getItemMonumentOptions(item: FocusPomoQueueItem): ScopeOption[] {
   const record = item as unknown as Record<string, unknown>;
   const monument = readScopeRecord(record.monument);
@@ -1556,6 +1569,64 @@ function getItemSkillOptions(item: FocusPomoQueueItem): ScopeOption[] {
   )) {
     mergeScopeOption(options, option);
   }
+
+  return Array.from(options.values());
+}
+
+function getItemAreaOptions(item: FocusPomoQueueItem): ScopeOption[] {
+  const record = item as unknown as Record<string, unknown>;
+  const areaById = new Map(AREAS.map((area) => [area.id, area]));
+  const options = new Map<string, ScopeOption>();
+
+  getFocusPomoCompletionAreaIds(item).forEach((id) => {
+    const area = areaById.get(id as (typeof AREAS)[number]["id"]);
+    mergeScopeOption(
+      options,
+      makeScopeOption(id, area?.label ?? null, area?.emoji ?? null)
+    );
+  });
+
+  for (const option of readScopeArrayOptions(
+    item,
+    ["areas"],
+    ["id", "area_id", "areaId"],
+    ["name", "label", "title", "area_name", "areaName"],
+    ["icon_emoji", "emoji", "icon", "symbol", "area_icon", "areaIcon"]
+  )) {
+    const area = areaById.get(option.id as (typeof AREAS)[number]["id"]);
+    mergeScopeOption(
+      options,
+      area
+        ? {
+            ...option,
+            name: area.label,
+            icon: option.icon ?? area.emoji,
+          }
+        : option
+    );
+  }
+
+  const directNames = [
+    readScopeString(record.area_name),
+    readScopeString(record.areaName),
+    readScopeString(record.area_title),
+    readScopeString(record.areaTitle),
+    readScopeString(record.goal_area_name),
+    readScopeString(record.goalAreaName),
+  ];
+  const directIcon =
+    readScopeString(record.area_icon_emoji) ??
+    readScopeString(record.areaEmoji) ??
+    readScopeString(record.area_icon) ??
+    readScopeString(record.areaIcon) ??
+    readScopeString(record.goal_area_icon_emoji) ??
+    readScopeString(record.goalAreaEmoji) ??
+    readScopeString(record.goal_area_icon) ??
+    readScopeString(record.goalAreaIcon);
+
+  directNames.forEach((name) => {
+    mergeScopeOption(options, makeScopeOption(null, name, directIcon));
+  });
 
   return Array.from(options.values());
 }
@@ -1838,7 +1909,7 @@ function getItemRoutineOptions(item: FocusPomoQueueItem): ConstraintOption[] {
 
 function getSourceScopeOption(
   source: FocusPomoSource | null | undefined,
-  kind: "monument" | "skill"
+  kind: ScopeOptionKind
 ): ScopeOption | null {
   if (!source || source.sourceType !== kind) return null;
   return makeScopeOption(source.sourceId, source.title, source.icon);
@@ -1920,7 +1991,7 @@ function sortSkillScopeOptions(
 function buildScopeOptions(
   items: FocusPomoQueueItem[],
   source: FocusPomoSource | null | undefined,
-  kind: "monument" | "skill"
+  kind: ScopeOptionKind
 ): ScopeOption[] {
   const options = new Map<string, ScopeOption>();
   mergeScopeOption(options, getSourceScopeOption(source, kind));
@@ -1929,7 +2000,9 @@ function buildScopeOptions(
     const itemOptions =
       kind === "monument"
         ? getItemMonumentOptions(item)
-        : getItemSkillOptions(item);
+        : kind === "area"
+          ? getItemAreaOptions(item)
+          : getItemSkillOptions(item);
     itemOptions.forEach((option) => mergeScopeOption(options, option));
   }
 
@@ -1939,9 +2012,10 @@ function buildScopeOptions(
 function deriveScopeOptions(
   baseQueue: FocusPomoQueueItem[],
   source: FocusPomoSource | null | undefined
-): { monuments: ScopeOption[]; skills: ScopeOption[] } {
+): { monuments: ScopeOption[]; areas: ScopeOption[]; skills: ScopeOption[] } {
   return {
     monuments: buildScopeOptions(baseQueue, source, "monument"),
+    areas: buildScopeOptions(baseQueue, source, "area"),
     skills: buildScopeOptions(baseQueue, source, "skill"),
   };
 }
@@ -1949,7 +2023,7 @@ function deriveScopeOptions(
 function withSourceScopeOption(
   options: ScopeOption[],
   source: FocusPomoSource | null | undefined,
-  kind: "monument" | "skill"
+  kind: ScopeOptionKind
 ): ScopeOption[] {
   const sourceOption = getSourceScopeOption(source, kind);
   if (!sourceOption) return options;
@@ -2125,12 +2199,20 @@ async function fetchFocusPomoProjectOrderMap(
 
 function buildSelectedScopeSources(
   selectedMonumentIds: string[],
+  selectedAreaIds: string[],
   selectedSkillIds: string[],
-  availableScopeOptions: { monuments: ScopeOption[]; skills: ScopeOption[] },
+  availableScopeOptions: {
+    monuments: ScopeOption[];
+    areas: ScopeOption[];
+    skills: ScopeOption[];
+  },
   source: FocusPomoSource | null | undefined
 ): ScopeQueueSource[] {
   const monumentOptionsById = new Map(
     availableScopeOptions.monuments.map((option) => [option.id, option])
+  );
+  const areaOptionsById = new Map(
+    availableScopeOptions.areas.map((option) => [option.id, option])
   );
   const skillOptionsById = new Map(
     availableScopeOptions.skills.map((option) => [option.id, option])
@@ -2138,6 +2220,7 @@ function buildSelectedScopeSources(
 
   const sourceFallback =
     source && (selectedMonumentIds.includes(source.sourceId) ||
+      selectedAreaIds.includes(source.sourceId) ||
       selectedSkillIds.includes(source.sourceId))
       ? makeScopeOption(source.sourceId, source.title, source.icon)
       : null;
@@ -2152,6 +2235,20 @@ function buildSelectedScopeSources(
 
       return {
         sourceType: "monument" as const,
+        sourceId: id,
+        title: option?.name ?? normalizeSelectedScopeIdName(id),
+        icon: option?.icon ?? null,
+      };
+    }),
+    ...selectedAreaIds.map((id) => {
+      const option =
+        areaOptionsById.get(id) ??
+        (source?.sourceType === "area" && sourceFallback?.id === id
+          ? sourceFallback
+          : null);
+
+      return {
+        sourceType: "area" as const,
         sourceId: id,
         title: option?.name ?? normalizeSelectedScopeIdName(id),
         icon: option?.icon ?? null,
@@ -2250,24 +2347,30 @@ function itemMatchesScope(
   options: {
     source: FocusPomoSource | null | undefined;
     selectedMonumentIds: string[];
+    selectedAreaIds: string[];
     selectedSkillIds: string[];
     selectedMonumentNames: string[];
+    selectedAreaNames: string[];
     selectedSkillNames: string[];
   }
 ): boolean {
   const {
     source,
     selectedMonumentIds,
+    selectedAreaIds,
     selectedSkillIds,
     selectedMonumentNames,
+    selectedAreaNames,
     selectedSkillNames,
   } = options;
   const hasMonumentScope = selectedMonumentIds.length > 0;
+  const hasAreaScope = selectedAreaIds.length > 0;
   const hasSkillScope = selectedSkillIds.length > 0;
 
-  if (!hasMonumentScope && !hasSkillScope) return true;
+  if (!hasMonumentScope && !hasAreaScope && !hasSkillScope) return true;
 
   let matchesMonumentScope = false;
+  let matchesAreaScope = false;
   let matchesSkillScope = false;
 
   if (hasMonumentScope) {
@@ -2283,6 +2386,17 @@ function itemMatchesScope(
       ) || selectedMonumentNames.some((name) => monumentNames.includes(name));
   }
 
+  if (hasAreaScope) {
+    const areaIds = getFocusPomoCompletionAreaIds(item);
+    const areaNames = getItemAreaNames(item, source).map(normalizeScopeName);
+    matchesAreaScope =
+      selectedAreaIds.some(
+        (id) =>
+          areaIds.includes(id) ||
+          areaNames.includes(normalizeSelectedScopeIdName(id))
+      ) || selectedAreaNames.some((name) => areaNames.includes(name));
+  }
+
   if (hasSkillScope) {
     const skillIds = getItemSkillIds(item, source);
     const skillNames = getItemSkillNames(item, source).map(normalizeScopeName);
@@ -2294,7 +2408,7 @@ function itemMatchesScope(
       ) || selectedSkillNames.some((name) => skillNames.includes(name));
   }
 
-  return matchesMonumentScope || matchesSkillScope;
+  return matchesMonumentScope || matchesAreaScope || matchesSkillScope;
 }
 
 function optionMatchKeys(option: ScopeOption | ConstraintOption): string[] {
@@ -2423,8 +2537,10 @@ function getItemCampaignMatchKeys(
 type SelectedExecutionScopeOptions = {
   source: FocusPomoSource | null | undefined;
   selectedMonumentIds: string[];
+  selectedAreaIds: string[];
   selectedSkillIds: string[];
   selectedMonumentNames: string[];
+  selectedAreaNames: string[];
   selectedSkillNames: string[];
   selectedTagKeys: string[];
   selectedGoalKeys: string[];
@@ -2436,11 +2552,12 @@ function itemMatchesSelectedExecutionScope(
   item: FocusPomoQueueItem,
   options: SelectedExecutionScopeOptions
 ): boolean {
-  const hasMonumentOrSkillScope =
+  const hasPrimaryScope =
     options.selectedMonumentIds.length > 0 ||
+    options.selectedAreaIds.length > 0 ||
     options.selectedSkillIds.length > 0;
   const hasSelectedScopeSource =
-    hasMonumentOrSkillScope ||
+    hasPrimaryScope ||
     options.selectedTagKeys.length > 0 ||
     options.selectedGoalKeys.length > 0 ||
     options.selectedCampaignKeys.length > 0 ||
@@ -2449,12 +2566,14 @@ function itemMatchesSelectedExecutionScope(
   if (!hasSelectedScopeSource) return true;
 
   if (
-    hasMonumentOrSkillScope &&
+    hasPrimaryScope &&
     itemMatchesScope(item, {
       source: options.source,
       selectedMonumentIds: options.selectedMonumentIds,
+      selectedAreaIds: options.selectedAreaIds,
       selectedSkillIds: options.selectedSkillIds,
       selectedMonumentNames: options.selectedMonumentNames,
+      selectedAreaNames: options.selectedAreaNames,
       selectedSkillNames: options.selectedSkillNames,
     })
   ) {
@@ -2505,8 +2624,10 @@ function itemMatchesExecutionConstraints(
     !itemMatchesSelectedExecutionScope(item, {
       source: options.source,
       selectedMonumentIds: options.selectedMonumentIds,
+      selectedAreaIds: options.selectedAreaIds,
       selectedSkillIds: options.selectedSkillIds,
       selectedMonumentNames: options.selectedMonumentNames,
+      selectedAreaNames: options.selectedAreaNames,
       selectedSkillNames: options.selectedSkillNames,
       selectedTagKeys: options.selectedTagKeys,
       selectedGoalKeys: options.selectedGoalKeys,
@@ -2763,8 +2884,9 @@ function getItemRoutineDisplay(
   };
 }
 
-function scopeOptionFallback(kind: "monument" | "skill", name: string): string {
+function scopeOptionFallback(kind: ScopeOptionKind, name: string): string {
   if (kind === "skill") return "•";
+  if (kind === "area") return initialsFallback(name, "A");
 
   return initialsFallback(name, "M");
 }
@@ -4666,8 +4788,9 @@ export default function FocusPomo({
   const [scopeQueueError, setScopeQueueError] = useState<string | null>(null);
   const [availableScopeOptions, setAvailableScopeOptions] = useState<{
     monuments: ScopeOption[];
+    areas: ScopeOption[];
     skills: ScopeOption[];
-  }>({ monuments: [], skills: [] });
+  }>({ monuments: [], areas: [], skills: [] });
   const [availableSkillCategories, setAvailableSkillCategories] = useState<
     CatRow[]
   >([]);
@@ -4732,10 +4855,14 @@ export default function FocusPomo({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
   const [selectedMonumentIds, setSelectedMonumentIds] = useState<string[]>([]);
+  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [draftSelectedMonumentIds, setDraftSelectedMonumentIds] = useState<
     string[]
   >([]);
+  const [draftSelectedAreaIds, setDraftSelectedAreaIds] = useState<string[]>(
+    []
+  );
   const [draftSelectedSkillIds, setDraftSelectedSkillIds] = useState<string[]>(
     []
   );
@@ -4812,6 +4939,7 @@ export default function FocusPomo({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setDraftSelectedMonumentIds(selectedMonumentIds);
+        setDraftSelectedAreaIds(selectedAreaIds);
         setDraftSelectedSkillIds(selectedSkillIds);
         setScopeOpen(false);
       }
@@ -4819,11 +4947,11 @@ export default function FocusPomo({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [scopeOpen, selectedMonumentIds, selectedSkillIds]);
+  }, [scopeOpen, selectedAreaIds, selectedMonumentIds, selectedSkillIds]);
 
   useEffect(() => {
     if (!open) {
-      setAvailableScopeOptions({ monuments: [], skills: [] });
+      setAvailableScopeOptions({ monuments: [], areas: [], skills: [] });
       setAvailableSkillCategories([]);
       setAvailableConstraintOptions({
         tags: [],
@@ -4843,7 +4971,7 @@ export default function FocusPomo({
     async function loadAvailableScopeOptions() {
       const supabase = getSupabaseBrowser();
       if (!supabase) {
-        setAvailableScopeOptions({ monuments: [], skills: [] });
+        setAvailableScopeOptions({ monuments: [], areas: [], skills: [] });
         setAvailableSkillCategories([]);
         setAvailableConstraintOptions({
           tags: [],
@@ -4869,7 +4997,7 @@ export default function FocusPomo({
         if (userError) {
           console.error("Failed to load FocusPomo scope user", userError);
         }
-        setAvailableScopeOptions({ monuments: [], skills: [] });
+        setAvailableScopeOptions({ monuments: [], areas: [], skills: [] });
         setAvailableSkillCategories([]);
         setAvailableConstraintOptions({
           tags: [],
@@ -4990,6 +5118,17 @@ export default function FocusPomo({
                   .filter((option): option is ScopeOption => Boolean(option))
               )
             : [],
+        areas: AREAS.map((area) =>
+          makeScopeOption(
+            area.id,
+            area.label,
+            area.emoji,
+            null,
+            null,
+            null,
+            area.sortOrder
+          )
+        ).filter((option): option is ScopeOption => Boolean(option)),
         skills:
           skillsResult.status === "fulfilled"
             ? skillsResult.value
@@ -5080,8 +5219,10 @@ export default function FocusPomo({
       setCustomQueueOrder(null);
       setDismissedQueueItemKeys(new Set());
       setSelectedMonumentIds([]);
+      setSelectedAreaIds([]);
       setSelectedSkillIds([]);
       setDraftSelectedMonumentIds([]);
+      setDraftSelectedAreaIds([]);
       setDraftSelectedSkillIds([]);
       setSelectedTagIds([]);
       setSelectedGoalIds([]);
@@ -5106,8 +5247,10 @@ export default function FocusPomo({
     setCustomQueueOrder(null);
     setDismissedQueueItemKeys(new Set());
     setSelectedMonumentIds([]);
+    setSelectedAreaIds([]);
     setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
+    setDraftSelectedAreaIds([]);
     setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
     setSelectedGoalIds([]);
@@ -5213,8 +5356,20 @@ export default function FocusPomo({
 
     if (source.sourceType === "monument") {
       setSelectedMonumentIds([source.sourceId]);
+      setSelectedAreaIds([]);
       setSelectedSkillIds([]);
       setDraftSelectedMonumentIds([source.sourceId]);
+      setDraftSelectedAreaIds([]);
+      setDraftSelectedSkillIds([]);
+      return;
+    }
+
+    if (source.sourceType === "area") {
+      setSelectedAreaIds([source.sourceId]);
+      setSelectedMonumentIds([]);
+      setSelectedSkillIds([]);
+      setDraftSelectedAreaIds([source.sourceId]);
+      setDraftSelectedMonumentIds([]);
       setDraftSelectedSkillIds([]);
       return;
     }
@@ -5222,14 +5377,18 @@ export default function FocusPomo({
     if (source.sourceType === "skill") {
       setSelectedSkillIds([source.sourceId]);
       setSelectedMonumentIds([]);
+      setSelectedAreaIds([]);
       setDraftSelectedSkillIds([source.sourceId]);
       setDraftSelectedMonumentIds([]);
+      setDraftSelectedAreaIds([]);
       return;
     }
 
     setSelectedMonumentIds([]);
+    setSelectedAreaIds([]);
     setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
+    setDraftSelectedAreaIds([]);
     setDraftSelectedSkillIds([]);
   }, [open, source?.sourceId, source?.sourceType]);
 
@@ -5283,7 +5442,9 @@ export default function FocusPomo({
 
   useEffect(() => {
     const hasManualScope =
-      selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
+      selectedMonumentIds.length > 0 ||
+      selectedAreaIds.length > 0 ||
+      selectedSkillIds.length > 0;
 
     if (!open || !hasManualScope) {
       setScopeQueue([]);
@@ -5294,6 +5455,7 @@ export default function FocusPomo({
 
     const scopeSources = buildSelectedScopeSources(
       selectedMonumentIds,
+      selectedAreaIds,
       selectedSkillIds,
       availableScopeOptions,
       source
@@ -5385,6 +5547,7 @@ export default function FocusPomo({
     queueError,
     queueLoading,
     selectedMonumentIds,
+    selectedAreaIds,
     selectedSkillIds,
     availableScopeOptions,
   ]);
@@ -5393,9 +5556,13 @@ export default function FocusPomo({
   const displaySource = shouldShow ? source : lastSource;
   const isTimeBlockStartLaunchMode = Boolean(timeBlockStartLaunch);
   const hasSelectedScope =
-    selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
+    selectedMonumentIds.length > 0 ||
+    selectedAreaIds.length > 0 ||
+    selectedSkillIds.length > 0;
   const hasDraftSelectedScope =
-    draftSelectedMonumentIds.length > 0 || draftSelectedSkillIds.length > 0;
+    draftSelectedMonumentIds.length > 0 ||
+    draftSelectedAreaIds.length > 0 ||
+    draftSelectedSkillIds.length > 0;
   const effectiveQueue = hasSelectedScope
     ? mergeScopeQueueItems([...queue, ...scopeQueue])
     : queue;
@@ -5415,6 +5582,10 @@ export default function FocusPomo({
           "monument"
         )
       : queueDerivedScopeOptions.monuments;
+  const areaOptions =
+    availableScopeOptions.areas.length > 0
+      ? withSourceScopeOption(availableScopeOptions.areas, displaySource, "area")
+      : queueDerivedScopeOptions.areas;
   const skillOptions =
     availableScopeOptions.skills.length > 0
       ? withSourceScopeOption(availableScopeOptions.skills, displaySource, "skill")
@@ -5456,6 +5627,9 @@ export default function FocusPomo({
   const selectedMonumentOptions = monumentOptions.filter((option) =>
     selectedMonumentIds.includes(option.id)
   );
+  const selectedAreaOptions = areaOptions.filter((option) =>
+    selectedAreaIds.includes(option.id)
+  );
   const selectedSkillOptions = skillOptions.filter((option) =>
     selectedSkillIds.includes(option.id)
   );
@@ -5496,6 +5670,13 @@ export default function FocusPomo({
       ? displaySource.title
       : null,
   ]).map(normalizeScopeName);
+  const selectedAreaNames = uniqueScopeValues([
+    ...selectedAreaOptions.map((option) => option.name),
+    displaySource?.sourceType === "area" &&
+    selectedAreaIds.includes(displaySource.sourceId)
+      ? displaySource.title
+      : null,
+  ]).map(normalizeScopeName);
   const selectedTagKeys = selectedOptionKeys(
     effectiveSelectedTagIds,
     selectedTagOptions
@@ -5523,8 +5704,10 @@ export default function FocusPomo({
         itemMatchesSelectedExecutionScope(item, {
           source: displaySource,
           selectedMonumentIds,
+          selectedAreaIds,
           selectedSkillIds,
           selectedMonumentNames,
+          selectedAreaNames,
           selectedSkillNames,
           selectedTagKeys,
           selectedGoalKeys,
@@ -5550,8 +5733,10 @@ export default function FocusPomo({
         itemMatchesExecutionConstraints(item, {
           source: displaySource,
           selectedMonumentIds,
+          selectedAreaIds,
           selectedSkillIds,
           selectedMonumentNames,
+          selectedAreaNames,
           selectedSkillNames,
           selectedTagKeys,
           selectedGoalKeys,
@@ -6423,6 +6608,11 @@ export default function FocusPomo({
         option: selectedMonumentOptions[0],
       },
       {
+        count: selectedAreaOptions.length,
+        singular: "Area",
+        option: selectedAreaOptions[0],
+      },
+      {
         count: selectedSkillOptions.length,
         singular: "Skill",
         option: selectedSkillOptions[0],
@@ -7151,8 +7341,10 @@ export default function FocusPomo({
     }
 
     setSelectedMonumentIds([]);
+    setSelectedAreaIds([]);
     setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
+    setDraftSelectedAreaIds([]);
     setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
     setSelectedGoalIds([]);
@@ -7175,6 +7367,7 @@ export default function FocusPomo({
     }
 
     setDraftSelectedMonumentIds([]);
+    setDraftSelectedAreaIds([]);
     setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
     setSelectedGoalIds([]);
@@ -7200,6 +7393,7 @@ export default function FocusPomo({
 
   const openScopeEditor = () => {
     setDraftSelectedMonumentIds(selectedMonumentIds);
+    setDraftSelectedAreaIds(selectedAreaIds);
     setDraftSelectedSkillIds(selectedSkillIds);
     setScopeOpen(true);
   };
@@ -7208,6 +7402,7 @@ export default function FocusPomo({
     void hapticSnap();
     if (scopeOpen) {
       setDraftSelectedMonumentIds(selectedMonumentIds);
+      setDraftSelectedAreaIds(selectedAreaIds);
       setDraftSelectedSkillIds(selectedSkillIds);
       setScopeOpen(false);
       return;
@@ -7219,10 +7414,12 @@ export default function FocusPomo({
   const commitScopeEditor = () => {
     const scopeChanged =
       !sameSelectedIds(selectedMonumentIds, draftSelectedMonumentIds) ||
+      !sameSelectedIds(selectedAreaIds, draftSelectedAreaIds) ||
       !sameSelectedIds(selectedSkillIds, draftSelectedSkillIds);
 
     void hapticSnap();
     setSelectedMonumentIds(draftSelectedMonumentIds);
+    setSelectedAreaIds(draftSelectedAreaIds);
     setSelectedSkillIds(draftSelectedSkillIds);
     setScopeOpen(false);
 
@@ -7260,6 +7457,10 @@ export default function FocusPomo({
 
   const clearDraftMonumentScope = () => {
     setDraftSelectedMonumentIds([]);
+  };
+
+  const clearDraftAreaScope = () => {
+    setDraftSelectedAreaIds([]);
   };
 
   const clearDraftSkillScope = () => {
@@ -7364,6 +7565,15 @@ export default function FocusPomo({
     setDraftSelectedSkillIds(nextSkillIds);
     setDraftSelectedMonumentIds((current) =>
       reconcileMonumentScopesForSkills(current, nextSkillIds)
+    );
+  };
+
+  const toggleAreaScope = (id: string) => {
+    void hapticSoftTick();
+    setDraftSelectedAreaIds((current) =>
+      current.includes(id)
+        ? current.filter((selectedId) => selectedId !== id)
+        : [...current, id]
     );
   };
 
@@ -7780,6 +7990,48 @@ export default function FocusPomo({
     ) : (
       <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
         No monuments available.
+      </p>
+    )}
+                              </FocusPomoFilterSection>
+
+                              <FocusPomoFilterSection
+    label="Areas"
+    hasSelectedFilters={draftSelectedAreaIds.length > 0}
+    onClear={clearDraftAreaScope}
+                              >
+    {areaOptions.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        {areaOptions.map((option) => {
+          const selected =
+            draftSelectedAreaIds.includes(option.id);
+
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => toggleAreaScope(option.id)}
+              className={
+                selected
+                  ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+              }
+            >
+              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                {option.icon ??
+                  scopeOptionFallback(
+                    "area",
+                    option.name
+                  )}
+              </span>
+              <span>{option.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    ) : (
+      <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+        No areas available.
       </p>
     )}
                               </FocusPomoFilterSection>

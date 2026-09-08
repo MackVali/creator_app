@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Dumbbell, Play } from "lucide-react";
+import { ChevronRight, Dumbbell } from "lucide-react";
 import Body, { type ExtendedBodyPart } from "react-muscle-highlighter";
 
 import {
@@ -53,18 +53,36 @@ type ActivityLevel =
   | "active"
   | "very_active";
 
+type FormulaInput = "male" | "female" | "manual";
+type PregnancyStatus = "none" | "pregnant" | "breastfeeding";
+type EditableProfileMetric = "weight" | "height";
+
 type NutritionProfile = {
   current_weight_kg?: number | null;
   height_cm?: number | null;
-  formula_sex?: string | null;
+  formula_sex?: FormulaInput | string | null;
   preferred_units?: PreferredUnits | null;
   age_years?: number | null;
   body_fat_pct?: number | null;
   activity_level?: ActivityLevel | null;
+  pregnancy_status?: PregnancyStatus | string | null;
+  adjustments_enabled?: boolean | null;
 };
 
 type NutritionProfileResponse = {
   profile?: NutritionProfile | null;
+};
+
+type NutritionProfilePayload = {
+  ageYears: number;
+  formulaInput: FormulaInput;
+  heightCm: number;
+  weightKg: number;
+  preferredUnits: PreferredUnits;
+  activityLevel: ActivityLevel;
+  bodyFatPct?: number;
+  pregnancyStatus: PregnancyStatus;
+  adjustmentsEnabled: boolean;
 };
 
 const FITNESS_ANATOMY_MUSCLE_IDS = new Set<FitnessAnatomyMuscleId>(
@@ -90,6 +108,24 @@ const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
   active: "Active",
   very_active: "Very active",
 };
+
+function isFormulaInput(value: unknown): value is FormulaInput {
+  return value === "male" || value === "female" || value === "manual";
+}
+
+function isActivityLevel(value: unknown): value is ActivityLevel {
+  return (
+    value === "sedentary" ||
+    value === "light" ||
+    value === "moderate" ||
+    value === "active" ||
+    value === "very_active"
+  );
+}
+
+function isPregnancyStatus(value: unknown): value is PregnancyStatus {
+  return value === "none" || value === "pregnant" || value === "breastfeeding";
+}
 
 function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -144,6 +180,75 @@ function calculateBmi(weightKg: number | null | undefined, heightCm: number | nu
 
   const bmi = weightKg / (heightM * heightM);
   return Number.isFinite(bmi) ? bmi : null;
+}
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getUsHeightParts(valueCm: number | null | undefined) {
+  if (!valueCm || !Number.isFinite(valueCm) || valueCm <= 0) {
+    return { feet: "", inches: "" };
+  }
+
+  const totalInches = Math.round(valueCm * CM_TO_IN);
+  return {
+    feet: String(Math.floor(totalInches / 12)),
+    inches: String(totalInches % 12),
+  };
+}
+
+function profilePayloadFromRow(
+  profile: NutritionProfile | null,
+  overrides: Partial<Pick<NutritionProfilePayload, "heightCm" | "weightKg">>,
+) {
+  if (!profile) return { error: "Nutrition profile is not loaded." };
+
+  const ageYears = finiteNumber(profile.age_years);
+  const heightCm = overrides.heightCm ?? finiteNumber(profile.height_cm);
+  const weightKg = overrides.weightKg ?? finiteNumber(profile.current_weight_kg);
+  const bodyFatPct = finiteNumber(profile.body_fat_pct);
+
+  if (ageYears === null || !Number.isInteger(ageYears)) {
+    return { error: "Nutrition profile is missing age." };
+  }
+
+  if (!isFormulaInput(profile.formula_sex)) {
+    return { error: "Nutrition profile is missing formula input." };
+  }
+
+  if (heightCm === null) {
+    return { error: "Nutrition profile is missing height." };
+  }
+
+  if (weightKg === null) {
+    return { error: "Nutrition profile is missing weight." };
+  }
+
+  if (!isActivityLevel(profile.activity_level)) {
+    return { error: "Nutrition profile is missing activity level." };
+  }
+
+  const payload: NutritionProfilePayload = {
+    ageYears,
+    formulaInput: profile.formula_sex,
+    heightCm,
+    weightKg,
+    preferredUnits: profile.preferred_units === "metric" ? "metric" : "us",
+    activityLevel: profile.activity_level,
+    pregnancyStatus: isPregnancyStatus(profile.pregnancy_status)
+      ? profile.pregnancy_status
+      : "none",
+    adjustmentsEnabled:
+      typeof profile.adjustments_enabled === "boolean"
+        ? profile.adjustments_enabled
+        : true,
+  };
+
+  if (bodyFatPct !== null) payload.bodyFatPct = bodyFatPct;
+
+  return { payload };
 }
 
 function formatWorkoutDuration(minutes: number | null | undefined) {
@@ -234,6 +339,16 @@ export function BodyMuscleMapPrototype() {
   const [expandedExerciseKey, setExpandedExerciseKey] = useState<string | null>(
     null,
   );
+  const [editingProfileMetric, setEditingProfileMetric] =
+    useState<EditableProfileMetric | null>(null);
+  const [weightEditValue, setWeightEditValue] = useState("");
+  const [heightCmEditValue, setHeightCmEditValue] = useState("");
+  const [heightFeetEditValue, setHeightFeetEditValue] = useState("");
+  const [heightInchesEditValue, setHeightInchesEditValue] = useState("");
+  const [savingProfileMetric, setSavingProfileMetric] = useState(false);
+  const [profileMetricSaveError, setProfileMetricSaveError] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -430,18 +545,22 @@ export function BodyMuscleMapPrototype() {
 
     return [
       {
+        key: "weight" as const,
         label: "Weight",
         value: formatWeight(weightKg, preferredUnits),
       },
       {
+        key: "height" as const,
         label: "Height",
         value: formatHeight(heightCm, preferredUnits),
       },
       {
+        key: "bmi" as const,
         label: "BMI",
         value: bmi ? formatDecimal(bmi) : "—",
       },
       {
+        key: "activity" as const,
         label: "Activity",
         value: activityLevel ? ACTIVITY_LABELS[activityLevel] : "—",
       },
@@ -492,6 +611,134 @@ export function BodyMuscleMapPrototype() {
         .join(" · ")
     : null;
 
+  function beginProfileMetricEdit(metric: EditableProfileMetric) {
+    const weightKg = finiteNumber(nutritionProfile?.current_weight_kg);
+    const heightCm = finiteNumber(nutritionProfile?.height_cm);
+
+    setProfileMetricSaveError(null);
+    setEditingProfileMetric(metric);
+
+    if (metric === "weight") {
+      setWeightEditValue(
+        weightKg
+          ? preferredUnits === "metric"
+            ? formatDecimal(weightKg)
+            : String(Math.round(weightKg * KG_TO_LB))
+          : "",
+      );
+      return;
+    }
+
+    if (preferredUnits === "metric") {
+      setHeightCmEditValue(heightCm ? formatDecimal(heightCm) : "");
+      return;
+    }
+
+    const parts = getUsHeightParts(heightCm);
+    setHeightFeetEditValue(parts.feet);
+    setHeightInchesEditValue(parts.inches);
+  }
+
+  function cancelProfileMetricEdit() {
+    setEditingProfileMetric(null);
+    setProfileMetricSaveError(null);
+  }
+
+  async function saveProfileMetric(metric: EditableProfileMetric) {
+    if (savingProfileMetric) return;
+
+    let nextWeightKg: number | undefined;
+    let nextHeightCm: number | undefined;
+
+    if (metric === "weight") {
+      const parsedWeight = parsePositiveNumber(weightEditValue);
+      if (parsedWeight === null) {
+        setProfileMetricSaveError("Enter a valid weight.");
+        return;
+      }
+
+      nextWeightKg =
+        preferredUnits === "metric" ? parsedWeight : parsedWeight / KG_TO_LB;
+
+      if (nextWeightKg < 25 || nextWeightKg > 500) {
+        setProfileMetricSaveError("Weight must be 25-500 kg.");
+        return;
+      }
+    } else if (preferredUnits === "metric") {
+      const parsedHeight = parsePositiveNumber(heightCmEditValue);
+      if (parsedHeight === null) {
+        setProfileMetricSaveError("Enter a valid height.");
+        return;
+      }
+
+      nextHeightCm = parsedHeight;
+
+      if (nextHeightCm < 100 || nextHeightCm > 260) {
+        setProfileMetricSaveError("Height must be 100-260 cm.");
+        return;
+      }
+    } else {
+      const parsedFeet = Number(heightFeetEditValue.trim());
+      const parsedInches = Number(heightInchesEditValue.trim());
+
+      if (
+        !Number.isInteger(parsedFeet) ||
+        !Number.isFinite(parsedInches) ||
+        parsedFeet < 0 ||
+        parsedInches < 0 ||
+        parsedInches >= 12
+      ) {
+        setProfileMetricSaveError("Enter feet and inches.");
+        return;
+      }
+
+      nextHeightCm = (parsedFeet * 12 + parsedInches) / CM_TO_IN;
+
+      if (nextHeightCm < 100 || nextHeightCm > 260) {
+        setProfileMetricSaveError("Height must be 3'3\"-8'6\".");
+        return;
+      }
+    }
+
+    const result = profilePayloadFromRow(nutritionProfile, {
+      ...(nextWeightKg !== undefined ? { weightKg: nextWeightKg } : {}),
+      ...(nextHeightCm !== undefined ? { heightCm: nextHeightCm } : {}),
+    });
+
+    if ("error" in result) {
+      setProfileMetricSaveError(result.error);
+      return;
+    }
+
+    try {
+      setSavingProfileMetric(true);
+      setProfileMetricSaveError(null);
+
+      const response = await fetch("/api/nutrition/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result.payload),
+      });
+
+      const body = (await response.json().catch(() => ({}))) as
+        NutritionProfileResponse & { error?: string };
+
+      if (!response.ok) {
+        setProfileMetricSaveError(body.error ?? "Unable to save.");
+        return;
+      }
+
+      setNutritionProfile((previous) => body.profile ?? previous);
+      if (metric === "weight") setBodyweightKg(result.payload.weightKg);
+      setEditingProfileMetric(null);
+    } catch (error) {
+      console.error("Failed to save Body profile metric", { error });
+      setProfileMetricSaveError("Unable to save.");
+    } finally {
+      setSavingProfileMetric(false);
+    }
+  }
+
   function openFitnessWorkout(plan?: FitnessActivePlan | null) {
     void hapticPress();
 
@@ -511,22 +758,101 @@ export function BodyMuscleMapPrototype() {
     });
   }
 
+  const nextWorkoutMuscleTargets = useMemo(() => {
+    const targets = new Map<
+      FitnessAnatomyMuscleId,
+      "primary" | "secondary"
+    >();
+
+    for (const exercise of nextWorkout?.routine.exercises ?? []) {
+      const activations = resolveFitnessAnatomyMuscleActivations(
+        exercise.exerciseId ?? "",
+        exercise.name,
+      );
+
+      for (const activation of activations) {
+        const current = targets.get(activation.muscleId);
+
+        if (activation.role === "primary") {
+          targets.set(activation.muscleId, "primary");
+        } else if (!current) {
+          targets.set(activation.muscleId, "secondary");
+        }
+      }
+    }
+
+    return targets;
+  }, [nextWorkout]);
+
+  const workoutTargetCss = useMemo(() => {
+    return Array.from(nextWorkoutMuscleTargets.entries())
+      .filter(([muscleId]) => muscleId !== selected?.slug)
+      .map(([muscleId, role]) => {
+        const primary = role === "primary";
+
+        return `
+          .body-muscle-map path[id="${muscleId}"] {
+            stroke: ${
+              primary
+                ? "rgba(248, 113, 113, 0.9)"
+                : "rgba(248, 113, 113, 0.58)"
+            };
+            stroke-width: ${primary ? "1.3" : "0.9"};
+            filter:
+              drop-shadow(0 0 ${primary ? "4px" : "2px"} rgba(239, 68, 68, ${
+                primary ? "0.48" : "0.28"
+              }))
+              drop-shadow(0 0 ${primary ? "9px" : "5px"} rgba(239, 68, 68, ${
+                primary ? "0.18" : "0.1"
+              }));
+            animation:
+              creator-workout-target-pulse ${
+                primary ? "2.8s" : "3.4s"
+              } ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+          }
+        `;
+      })
+      .join("\n");
+  }, [nextWorkoutMuscleTargets, selected]);
+
   const data = useMemo<readonly ExtendedBodyPart[]>(() => {
     const parts: ExtendedBodyPart[] = [];
 
     for (const stat of strengthStats) {
       const isSelected = selected?.slug === stat.id;
+      const workoutTarget = nextWorkoutMuscleTargets.get(stat.id);
+      const isPrimaryWorkoutTarget = workoutTarget === "primary";
+      const isWorkoutTarget = Boolean(workoutTarget);
+
       const fill = isSelected
         ? "#ffffff"
         : STRENGTH_COLORS[stat.strengthLevel];
+
+      const workoutStroke = isPrimaryWorkoutTarget
+        ? "rgba(248, 113, 113, 0.72)"
+        : "rgba(248, 113, 113, 0.42)";
+
 
       parts.push({
         slug: stat.id as ExtendedBodyPart["slug"],
         color: fill,
         styles: {
           fill,
-          stroke: isSelected ? "#ffffff" : "#18181b",
-          strokeWidth: isSelected ? 1.5 : 0.45,
+          stroke: isSelected
+            ? "#ffffff"
+            : isWorkoutTarget
+              ? workoutStroke
+              : "#18181b",
+          strokeWidth: isSelected
+            ? 1.5
+            : isPrimaryWorkoutTarget
+              ? 1.15
+              : isWorkoutTarget
+                ? 0.8
+                : 0.45,
+
         },
       });
     }
@@ -548,21 +874,22 @@ export function BodyMuscleMapPrototype() {
     }
 
     return parts;
-  }, [selected, strengthStats]);
+  }, [nextWorkoutMuscleTargets, selected, strengthStats]);
 
   return (
     <section
-      className="relative overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+      className="body-muscle-map relative overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
       aria-label="Muscle strength map"
     >
-      <div className="grid min-h-[390px] grid-cols-[minmax(168px,52fr)_minmax(0,48fr)] max-[360px]:grid-cols-[minmax(160px,52fr)_minmax(0,48fr)] sm:min-h-[430px] sm:grid-cols-[minmax(200px,52fr)_minmax(0,48fr)]">
-        <div className="relative flex min-h-[390px] items-center justify-center overflow-hidden border-r border-white/[0.055] px-1 py-4 sm:min-h-[430px] sm:px-3">
-          <div className="origin-center scale-[0.86] min-[375px]:scale-[0.94] sm:scale-100">
+      {workoutTargetCss ? <style>{workoutTargetCss}</style> : null}
+      <div className="grid h-[344px] min-h-[344px] grid-cols-[minmax(168px,52fr)_minmax(0,48fr)] max-[360px]:grid-cols-[minmax(160px,52fr)_minmax(0,48fr)] sm:h-[352px] sm:min-h-[352px] sm:grid-cols-[minmax(200px,52fr)_minmax(0,48fr)]">
+        <div className="relative flex h-[344px] min-h-[344px] items-start justify-center overflow-hidden border-r border-white/[0.055] px-1 pb-0 pt-1 sm:h-[352px] sm:min-h-[352px] sm:px-3">
+          <div className="mt-3 origin-center">
             <Body
               data={data}
               side={view}
               gender={sex}
-              scale={1}
+              scale={0.85}
               border="#3f3f46"
               defaultFill="#201d2c"
               defaultStroke="#18181b"
@@ -604,7 +931,7 @@ export function BodyMuscleMapPrototype() {
           </div>
         </div>
 
-        <div className="min-w-0 px-3 py-4 max-[360px]:px-2.5 sm:px-4 sm:py-5">
+        <div className="min-w-0 px-3 pb-2 pt-3 max-[360px]:px-2.5 sm:px-4 sm:pb-3 sm:pt-4">
           {selected ? (
             selectedStat ? (
               <div className="flex h-full min-w-0 flex-col">
@@ -891,20 +1218,30 @@ export function BodyMuscleMapPrototype() {
               <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
                 Body profile
               </p>
-              <h3 className="mt-1.5 text-[15px] font-semibold leading-tight text-white sm:text-lg">
-                Current frame
-              </h3>
-              <div className="mt-4 grid grid-cols-2 gap-1.5">
+
+              <div className="mt-3 border-y border-white/[0.055]">
                 {[0, 1, 2, 3].map((item) => (
                   <div
                     key={item}
-                    className="h-12 animate-pulse rounded-xl border border-white/[0.055] bg-white/[0.035]"
-                  />
+                    className={`flex items-center justify-between gap-3 py-2.5 ${
+                      item < 3 ? "border-b border-white/[0.045]" : ""
+                    }`}
+                  >
+                    <div className="h-2 w-10 animate-pulse rounded-full bg-white/[0.05]" />
+                    <div className="h-3 w-12 animate-pulse rounded-full bg-white/[0.07]" />
+                  </div>
                 ))}
               </div>
-              <div className="mt-auto pt-4">
-                <div className="h-20 animate-pulse rounded-xl border border-white/[0.055] bg-white/[0.035]" />
-                <div className="mt-2 h-10 animate-pulse rounded-xl bg-white/[0.06]" />
+
+              <div className="mt-auto border-t border-white/[0.065] pt-3">
+                <div className="h-2 w-14 animate-pulse rounded-full bg-white/[0.05]" />
+                <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.055] bg-white/[0.025] px-2.5 py-2.5">
+                  <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-white/[0.05]" />
+                  <div className="min-w-0 flex-1">
+                    <div className="h-3 w-16 animate-pulse rounded-full bg-white/[0.07]" />
+                    <div className="mt-1.5 h-2 w-20 animate-pulse rounded-full bg-white/[0.045]" />
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -915,17 +1252,155 @@ export function BodyMuscleMapPrototype() {
                 </p>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.055] py-3">
-                {profileMetrics.map((metric) => (
-                  <div key={metric.label} className="min-w-0">
-                    <p className="whitespace-nowrap font-mono text-[13px] font-semibold leading-none text-white/90">
-                      {metric.value}
-                    </p>
-                    <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.1em] text-white/32">
-                      {metric.label}
-                    </p>
-                  </div>
-                ))}
+              <div className="mt-3 border-y border-white/[0.055]">
+                {profileMetrics.map((metric, index) => {
+                  const editable =
+                    metric.key === "weight" || metric.key === "height";
+                  const isEditing = editingProfileMetric === metric.key;
+                  const rowBorder =
+                    index < profileMetrics.length - 1
+                      ? "border-b border-white/[0.045]"
+                      : "";
+
+                  if (editable && isEditing) {
+                    return (
+                      <div key={metric.label} className={`py-2 ${rowBorder}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/38">
+                            {metric.label}
+                          </p>
+
+                          <div className="flex min-w-0 items-center justify-end gap-1.5">
+                            {metric.key === "weight" ? (
+                              <>
+                                <input
+                                  aria-label="Weight"
+                                  value={weightEditValue}
+                                  onChange={(event) =>
+                                    setWeightEditValue(event.target.value)
+                                  }
+                                  inputMode="decimal"
+                                  disabled={savingProfileMetric}
+                                  className="h-7 w-16 rounded-md border border-white/[0.12] bg-black/35 px-2 text-right font-mono text-[12px] font-semibold text-white outline-none transition placeholder:text-white/20 focus:border-white/28 disabled:opacity-55"
+                                />
+                                <span className="w-5 text-[10px] font-medium text-white/34">
+                                  {preferredUnits === "metric" ? "kg" : "lb"}
+                                </span>
+                              </>
+                            ) : preferredUnits === "metric" ? (
+                              <>
+                                <input
+                                  aria-label="Height in centimeters"
+                                  value={heightCmEditValue}
+                                  onChange={(event) =>
+                                    setHeightCmEditValue(event.target.value)
+                                  }
+                                  inputMode="decimal"
+                                  disabled={savingProfileMetric}
+                                  className="h-7 w-16 rounded-md border border-white/[0.12] bg-black/35 px-2 text-right font-mono text-[12px] font-semibold text-white outline-none transition placeholder:text-white/20 focus:border-white/28 disabled:opacity-55"
+                                />
+                                <span className="w-5 text-[10px] font-medium text-white/34">
+                                  cm
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <input
+                                  aria-label="Height feet"
+                                  value={heightFeetEditValue}
+                                  onChange={(event) =>
+                                    setHeightFeetEditValue(event.target.value)
+                                  }
+                                  inputMode="numeric"
+                                  disabled={savingProfileMetric}
+                                  className="h-7 w-9 rounded-md border border-white/[0.12] bg-black/35 px-1.5 text-right font-mono text-[12px] font-semibold text-white outline-none transition placeholder:text-white/20 focus:border-white/28 disabled:opacity-55"
+                                />
+                                <span className="text-[10px] font-medium text-white/34">
+                                  ft
+                                </span>
+                                <input
+                                  aria-label="Height inches"
+                                  value={heightInchesEditValue}
+                                  onChange={(event) =>
+                                    setHeightInchesEditValue(event.target.value)
+                                  }
+                                  inputMode="decimal"
+                                  disabled={savingProfileMetric}
+                                  className="h-7 w-10 rounded-md border border-white/[0.12] bg-black/35 px-1.5 text-right font-mono text-[12px] font-semibold text-white outline-none transition placeholder:text-white/20 focus:border-white/28 disabled:opacity-55"
+                                />
+                                <span className="text-[10px] font-medium text-white/34">
+                                  in
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-1.5 flex items-center justify-end gap-2">
+                          {profileMetricSaveError ? (
+                            <p className="mr-auto text-[9px] font-medium leading-tight text-red-300/70">
+                              {profileMetricSaveError}
+                            </p>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => void saveProfileMetric(metric.key)}
+                            disabled={savingProfileMetric}
+                            className="text-[10px] font-semibold text-white/70 transition hover:text-white disabled:text-white/30"
+                          >
+                            {savingProfileMetric ? "Saving" : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelProfileMetricEdit}
+                            disabled={savingProfileMetric}
+                            className="text-[10px] font-semibold text-white/36 transition hover:text-white/62 disabled:text-white/20"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (editable) {
+                    return (
+                      <button
+                        key={metric.label}
+                        type="button"
+                        onClick={() => beginProfileMetricEdit(metric.key)}
+                        className={`flex w-full items-center justify-between gap-3 py-2.5 text-left transition hover:bg-white/[0.025] active:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/24 ${rowBorder}`}
+                      >
+                        <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/36">
+                          {metric.label}
+                        </p>
+                        <span className="flex items-center gap-1.5">
+                          <span className="whitespace-nowrap font-mono text-[13px] font-semibold text-white/90">
+                            {metric.value}
+                          </span>
+                          <ChevronRight
+                            aria-hidden="true"
+                            className="h-3 w-3 text-white/20"
+                          />
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={metric.label}
+                      className={`flex items-center justify-between gap-3 py-2.5 ${rowBorder}`}
+                    >
+                      <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/32">
+                        {metric.label}
+                      </p>
+                      <p className="whitespace-nowrap font-mono text-[13px] font-semibold text-white/90">
+                        {metric.value}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="mt-auto pt-4">
@@ -974,19 +1449,6 @@ export function BodyMuscleMapPrototype() {
                   </div>
                 ) : null}
 
-                <button
-                  type="button"
-                  onClick={() => openFitnessWorkout(actionableActivePlan)}
-                  className="mt-2.5 flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-300/20 bg-violet-500/90 px-2.5 text-[11px] font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.22)] transition hover:bg-violet-400 active:scale-[0.99]"
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-violet-600">
-                    <Play
-                      className="ml-0.5 h-3.5 w-3.5 fill-current"
-                      aria-hidden="true"
-                    />
-                  </span>
-                  <span className="whitespace-nowrap">Start Workout</span>
-                </button>
               </div>
             </div>
           )}

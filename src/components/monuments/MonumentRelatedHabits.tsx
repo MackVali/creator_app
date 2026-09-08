@@ -2167,7 +2167,7 @@ export function MonumentRelatedHabits({
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-              RELATED HABITS
+              HABITS
             </CardTitle>
           </div>
           <div className="flex items-center gap-2">
@@ -2465,61 +2465,51 @@ export function MonumentRelatedHabits({
                                       : "flex-col items-center justify-between gap-1"
                                 )}
                               >
-                              <span
-                                className={clsx(
-                                  "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-                                  sourceType === "area"
-                                    ? "mt-0 h-6 w-6 shrink-0 rounded-md text-[13px]"
-                                    : isSmallRelatedHabitDensity
-                                      ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
-                                      : "h-7 w-7 text-xs sm:h-8 sm:w-8",
-                                  isHabitCompletedToday
-                                    ? "grayscale"
-                                    : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
-                                )}
-                                aria-hidden="true"
-                              >
-                                {habitSkillIcon}
-                              </span>
-                              <div
-                                className={clsx(
-                                  "flex min-h-0 w-full min-w-0 flex-1 items-center",
-                                  sourceType === "area"
-                                    ? "justify-start"
-                                    : isSmallRelatedHabitDensity
-                                      ? "justify-start sm:justify-center"
-                                      : "justify-center"
-                                )}
-                              >
                                 <span
                                   className={clsx(
-                                    "line-clamp-3 w-full min-w-0 break-words px-0.5 font-semibold leading-tight text-white whitespace-normal",
+                                    "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
                                     sourceType === "area"
-                                      ? "line-clamp-2 text-left text-[12px] font-semibold leading-[14px]"
+                                      ? "mt-0 h-6 w-6 shrink-0 rounded-md text-[13px]"
                                       : isSmallRelatedHabitDensity
-                                        ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
-                                        : "text-[9px] sm:text-[10px]"
+                                        ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
+                                        : "h-7 w-7 text-xs sm:h-8 sm:w-8",
+                                    isHabitCompletedToday
+                                      ? "grayscale"
+                                      : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
                                   )}
-                                  style={{ hyphens: sourceType === "area" ? "none" : "auto" }}
+                                  aria-hidden="true"
                                 >
-                                  {habit.name}
+                                  {habitSkillIcon}
                                 </span>
-                              </div>
-                              <div className="flex w-auto min-w-0 shrink-0 flex-col items-center gap-1 sm:w-full">
-                                <span
+
+                                <div
                                   className={clsx(
-                                    "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                                    isSmallRelatedHabitDensity
-                                      ? "px-1 py-[2px] text-[7px]"
-                                      : "px-2 py-[3px] text-[8px]",
-                                    habitPillClass
+                                    "flex min-h-0 w-full min-w-0 flex-1 items-center",
+                                    sourceType === "area"
+                                      ? "justify-start"
+                                      : isSmallRelatedHabitDensity
+                                        ? "justify-start sm:justify-center"
+                                        : "justify-center"
                                   )}
                                 >
-                                  {habitPillLabel}
-                                </span>
+                                  <span
+                                    className={clsx(
+                                      "line-clamp-3 w-full min-w-0 break-words px-0.5 font-semibold leading-tight text-white whitespace-normal",
+                                      sourceType === "area"
+                                        ? "line-clamp-2 text-left text-[12px] font-semibold leading-[14px]"
+                                        : isSmallRelatedHabitDensity
+                                          ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
+                                          : "text-[9px] sm:text-[10px]"
+                                    )}
+                                    style={{
+                                      hyphens: sourceType === "area" ? "none" : "auto",
+                                    }}
+                                  >
+                                    {habit.name}
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
                           );
 
                           if (!isPendingCompletedMove) {
