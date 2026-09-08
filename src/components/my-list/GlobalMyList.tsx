@@ -17,6 +17,7 @@ import {
   hapticPress,
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
+import { dispatchAreaCardStatusRefresh } from "@/lib/areas/areaCardStatusEvents";
 import { getCatsForUser } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -1697,6 +1698,7 @@ export function GlobalMyList({
               item.id === taskId ? { ...item, stage: nextStage } : item
             )
           );
+          dispatchAreaCardStatusRefresh();
           return true;
         }
 
@@ -1766,6 +1768,7 @@ export function GlobalMyList({
         }
 
         void hapticComplete();
+        dispatchAreaCardStatusRefresh();
         return true;
       } catch (error) {
         console.error("My List task completion failed", error);

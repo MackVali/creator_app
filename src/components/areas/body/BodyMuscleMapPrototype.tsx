@@ -1,8 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, Dumbbell, Play } from "lucide-react";
 import Body, { type ExtendedBodyPart } from "react-muscle-highlighter";
 
+import {
+  getFitnessActivePlanFromEntries,
+  type FitnessActivePlan,
+} from "@/lib/fitness/activePlan";
+import { getFitnessActivePlanNextRoutine } from "@/lib/fitness/activePlanNextRoutine";
+import {
+  customFitnessPlanToTemplate,
+  customFitnessRoutineToTemplate,
+  getFitnessCustomLibraryFromEntries,
+} from "@/lib/fitness/customLibrary";
 import { getFitnessExerciseHistories } from "@/lib/fitness/exerciseHistory";
 import {
   FITNESS_ANATOMY_MUSCLES,
@@ -19,7 +30,11 @@ import {
   extractFitnessLoggedSetPerformances,
   normalizeFitnessExerciseName,
 } from "@/lib/fitness/progressiveOverload";
+import { FITNESS_PLAN_TEMPLATES } from "@/lib/fitness/planTemplates";
+import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
+import { FITNESS_ROUTINE_TEMPLATES } from "@/lib/fitness/routineTemplates";
 import { getCurrentUserFitnessWorkoutEntries } from "@/lib/fitness/workoutEntries";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 
 type BodySide = "front" | "back";
 type MuscleSide = "left" | "right";
@@ -131,9 +146,13 @@ function calculateBmi(weightKg: number | null | undefined, heightCm: number | nu
   return Number.isFinite(bmi) ? bmi : null;
 }
 
-function formatPercent(value: number | null | undefined) {
-  if (!value || !Number.isFinite(value) || value <= 0) return "—";
-  return `${formatDecimal(value)}%`;
+function formatWorkoutDuration(minutes: number | null | undefined) {
+  if (!minutes || !Number.isFinite(minutes) || minutes <= 0) return null;
+  return `~${Math.round(minutes)} min`;
+}
+
+function formatExerciseCount(count: number) {
+  return `${count} ${count === 1 ? "exercise" : "exercises"}`;
 }
 
 function formatEstimatedMax(valueKg: number, units: PreferredUnits) {
@@ -203,6 +222,7 @@ export function BodyMuscleMapPrototype() {
   const [entries, setEntries] = useState<
     Awaited<ReturnType<typeof getCurrentUserFitnessWorkoutEntries>>
   >([]);
+  const [activePlan, setActivePlan] = useState<FitnessActivePlan | null>(null);
   const [nutritionProfile, setNutritionProfile] =
     useState<NutritionProfile | null>(null);
   const [bodyweightKg, setBodyweightKg] = useState<number | null>(null);
@@ -233,6 +253,7 @@ export function BodyMuscleMapPrototype() {
         if (cancelled) return;
 
         setEntries(fitnessEntries);
+        setActivePlan(getFitnessActivePlanFromEntries(fitnessEntries));
 
         if (profileResponse.ok) {
           const payload = (await profileResponse.json()) as NutritionProfileResponse;
@@ -256,6 +277,7 @@ export function BodyMuscleMapPrototype() {
 
         console.error("Failed to load Body strength data", { error });
         setEntries([]);
+        setActivePlan(null);
         setNutritionProfile(null);
         setBodyweightKg(null);
         setLoadError("Unable to load strength data.");
@@ -404,8 +426,6 @@ export function BodyMuscleMapPrototype() {
     const weightKg = finiteNumber(nutritionProfile?.current_weight_kg);
     const heightCm = finiteNumber(nutritionProfile?.height_cm);
     const bmi = calculateBmi(weightKg, heightCm);
-    const bodyFatPct = finiteNumber(nutritionProfile?.body_fat_pct);
-    const ageYears = finiteNumber(nutritionProfile?.age_years);
     const activityLevel = nutritionProfile?.activity_level;
 
     return [
@@ -421,32 +441,75 @@ export function BodyMuscleMapPrototype() {
         label: "BMI",
         value: bmi ? formatDecimal(bmi) : "—",
       },
-      ...(bodyFatPct
-        ? [
-            {
-              label: "Body fat",
-              value: formatPercent(bodyFatPct),
-            },
-          ]
-        : []),
-      ...(ageYears
-        ? [
-            {
-              label: "Age",
-              value: `${Math.round(ageYears)}`,
-            },
-          ]
-        : []),
-      ...(activityLevel
-        ? [
-            {
-              label: "Activity",
-              value: ACTIVITY_LABELS[activityLevel],
-            },
-          ]
-        : []),
+      {
+        label: "Activity",
+        value: activityLevel ? ACTIVITY_LABELS[activityLevel] : "—",
+      },
     ];
   }, [nutritionProfile, preferredUnits]);
+
+  const actionableActivePlan =
+    activePlan?.status === "active" ? activePlan : null;
+  const customFitnessLibrary = useMemo(
+    () => getFitnessCustomLibraryFromEntries(entries),
+    [entries],
+  );
+  const allFitnessPlanTemplates = useMemo(
+    () => [
+      ...FITNESS_PLAN_TEMPLATES,
+      ...(customFitnessLibrary?.plans.map(customFitnessPlanToTemplate) ?? []),
+    ],
+    [customFitnessLibrary],
+  );
+  const allFitnessRoutineTemplates = useMemo(
+    () => [
+      ...FITNESS_ROUTINE_TEMPLATES,
+      ...(customFitnessLibrary?.routines.map((routine) =>
+        customFitnessRoutineToTemplate(routine),
+      ) ?? []),
+    ],
+    [customFitnessLibrary],
+  );
+  const nextWorkout = useMemo(
+    () =>
+      actionableActivePlan
+        ? getFitnessActivePlanNextRoutine({
+            activePlan: actionableActivePlan,
+            planTemplates: allFitnessPlanTemplates,
+            routineTemplates: allFitnessRoutineTemplates,
+          })
+        : null,
+    [actionableActivePlan, allFitnessPlanTemplates, allFitnessRoutineTemplates],
+  );
+  const nextWorkoutMetadata = nextWorkout
+    ? [
+        nextWorkout.routine.exercises.length > 0
+          ? formatExerciseCount(nextWorkout.routine.exercises.length)
+          : null,
+        formatWorkoutDuration(actionableActivePlan?.sessionDurationMinutes),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  function openFitnessWorkout(plan?: FitnessActivePlan | null) {
+    void hapticPress();
+
+    const routine = plan ? nextWorkout : null;
+    dispatchOpenFitnessWorkoutEvent({
+      source: "body",
+      requestId: `fitness-workout:body:${Date.now()}`,
+      ...(plan && routine
+        ? {
+            fitnessPlanTemplateId: plan.planTemplateId,
+            fitnessRoutineTemplateId: routine.routine.id,
+            fitnessRoutineTitle: routine.routine.title,
+            fitnessRoutineIndex: routine.routineIndex,
+            linkedFitnessHabitId: plan.linkedFitnessHabitId ?? null,
+          }
+        : {}),
+    });
+  }
 
   const data = useMemo<readonly ExtendedBodyPart[]>(() => {
     const parts: ExtendedBodyPart[] = [];
@@ -492,7 +555,7 @@ export function BodyMuscleMapPrototype() {
       className="relative overflow-hidden rounded-2xl border border-white/[0.075] bg-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
       aria-label="Muscle strength map"
     >
-      <div className="grid min-h-[390px] grid-cols-[minmax(172px,58fr)_minmax(0,42fr)] max-[360px]:grid-cols-[minmax(166px,58fr)_minmax(0,42fr)] sm:min-h-[430px] sm:grid-cols-[minmax(210px,54fr)_minmax(0,46fr)]">
+      <div className="grid min-h-[390px] grid-cols-[minmax(168px,52fr)_minmax(0,48fr)] max-[360px]:grid-cols-[minmax(160px,52fr)_minmax(0,48fr)] sm:min-h-[430px] sm:grid-cols-[minmax(200px,52fr)_minmax(0,48fr)]">
         <div className="relative flex min-h-[390px] items-center justify-center overflow-hidden border-r border-white/[0.055] px-1 py-4 sm:min-h-[430px] sm:px-3">
           <div className="origin-center scale-[0.86] min-[375px]:scale-[0.94] sm:scale-100">
             <Body
@@ -507,13 +570,14 @@ export function BodyMuscleMapPrototype() {
               colors={Object.values(STRENGTH_COLORS)}
               onBodyPartPress={(part, side) => {
                 if (!part.slug) return;
+                const slug = String(part.slug);
 
                 setSelected((current) =>
-                  current?.slug === part.slug && current.side === side
+                  current?.slug === slug && current?.side === side
                     ? null
                     : {
-                        slug: part.slug,
-                        side,
+                        slug,
+                        ...(side ? { side } : {}),
                       },
                 );
               }}
@@ -823,42 +887,106 @@ export function BodyMuscleMapPrototype() {
               </p>
             </div>
           ) : isLoading ? (
-            <div className="min-w-0">
+            <div className="flex h-full min-w-0 flex-col">
               <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
                 Body profile
               </p>
-              <p className="mt-3 text-[11px] font-medium leading-snug text-white/34">
-                Loading strength profile…
-              </p>
+              <h3 className="mt-1.5 text-[15px] font-semibold leading-tight text-white sm:text-lg">
+                Current frame
+              </h3>
+              <div className="mt-4 grid grid-cols-2 gap-1.5">
+                {[0, 1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="h-12 animate-pulse rounded-xl border border-white/[0.055] bg-white/[0.035]"
+                  />
+                ))}
+              </div>
+              <div className="mt-auto pt-4">
+                <div className="h-20 animate-pulse rounded-xl border border-white/[0.055] bg-white/[0.035]" />
+                <div className="mt-2 h-10 animate-pulse rounded-xl bg-white/[0.06]" />
+              </div>
             </div>
           ) : (
             <div className="flex h-full min-w-0 flex-col">
-              <div className="border-b border-white/[0.06] pb-3">
+              <div>
                 <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/28">
                   Body profile
                 </p>
-                <h3 className="mt-1.5 text-[15px] font-semibold leading-tight text-white sm:text-lg">
-                  Current frame
-                </h3>
-                <p className="mt-2 text-[10px] leading-snug text-white/32">
-                  Tap the anatomy to shift this panel into muscle context.
-                </p>
               </div>
 
-              <div className="pt-2">
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-white/[0.055] py-3">
                 {profileMetrics.map((metric) => (
-                  <div
-                    key={metric.label}
-                    className="flex items-baseline justify-between gap-2 border-b border-white/[0.045] py-2 last:border-b-0"
-                  >
-                    <p className="min-w-0 truncate text-[10px] font-medium text-white/34">
-                      {metric.label}
-                    </p>
-                    <p className="shrink-0 whitespace-nowrap text-right font-mono text-[11px] text-white/78 sm:text-xs">
+                  <div key={metric.label} className="min-w-0">
+                    <p className="whitespace-nowrap font-mono text-[13px] font-semibold leading-none text-white/90">
                       {metric.value}
+                    </p>
+                    <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.1em] text-white/32">
+                      {metric.label}
                     </p>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-auto pt-4">
+                {actionableActivePlan && nextWorkout ? (
+                  <div className="border-t border-white/[0.065] pt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.16em] text-white/30">
+                        Next workout
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => openFitnessWorkout(actionableActivePlan)}
+                        className="shrink-0 whitespace-nowrap text-[9px] font-semibold text-violet-300/70 transition hover:text-violet-200"
+                      >
+                        View Plan
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openFitnessWorkout(actionableActivePlan)}
+                      className="mt-2 flex w-full items-center gap-2 rounded-xl border border-white/[0.075] bg-white/[0.04] px-2.5 py-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition hover:bg-white/[0.06] active:scale-[0.99]"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.055] text-white/60">
+                        <Dumbbell className="h-4 w-4" aria-hidden="true" />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] font-semibold leading-tight text-white/92">
+                          {nextWorkout.routine.title}
+                        </span>
+
+                        {nextWorkoutMetadata ? (
+                          <span className="mt-1 block text-[9px] font-medium leading-tight text-white/40">
+                            {nextWorkoutMetadata}
+                          </span>
+                        ) : null}
+                      </span>
+
+                      <ChevronRight
+                        className="h-4 w-4 shrink-0 text-white/28"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => openFitnessWorkout(actionableActivePlan)}
+                  className="mt-2.5 flex h-11 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-violet-300/20 bg-violet-500/90 px-2.5 text-[11px] font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.22)] transition hover:bg-violet-400 active:scale-[0.99]"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-violet-600">
+                    <Play
+                      className="ml-0.5 h-3.5 w-3.5 fill-current"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="whitespace-nowrap">Start Workout</span>
+                </button>
               </div>
             </div>
           )}

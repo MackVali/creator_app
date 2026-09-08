@@ -398,6 +398,86 @@ export function GoalWorkspace({
           display: none !important;
         }
 
+        /*
+         * Goal todos live in their own NoteSlashTextarea. NoteSlashTextarea
+         * intentionally appends a trailing empty text segment, but that segment
+         * is not meaningful inside this todo-only surface and otherwise appears
+         * as a blank draggable row beneath the final todo.
+         */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          .group\\/note-sortable:has(
+            [data-note-editable-segment-id^="text-"]
+          ) {
+          display: none !important;
+        }
+
+        /*
+         * Incomplete Goal todos should be neutral. Green is reserved for the
+         * completed state.
+         */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row]
+          [role="checkbox"][aria-checked="false"] {
+          border-color: rgba(255, 255, 255, 0.24) !important;
+          background: rgba(255, 255, 255, 0.035) !important;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row]
+          [role="checkbox"][aria-checked="false"]:hover {
+          border-color: rgba(255, 255, 255, 0.38) !important;
+          background: rgba(255, 255, 255, 0.055) !important;
+        }
+
+        /*
+         * Mobile sortable handles are 32px tall while the todo row is 28px.
+         * Pull the handle up 2px so their visual centers line up. At the sm
+         * breakpoint the handle becomes 24px tall, where the existing +2px
+         * offset correctly centers it.
+         */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          .group\\/note-sortable:has([data-note-todo-row])
+          > button:first-child {
+          margin-top: -2px !important;
+        }
+
+        @media (min-width: 640px) {
+          [data-goal-workspace-editor]
+            .goal-workspace-todos
+            .group\\/note-sortable:has([data-note-todo-row])
+            > button:first-child {
+            margin-top: 2px !important;
+          }
+        }
+
+        /*
+         * The Goal todo editor contains only promoted todos. NoteSlashTextarea
+         * appends one empty text segment for editing continuity; hide that
+         * synthetic row on this todo-only surface.
+         */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-sortable-segment][data-note-segment-type="text"] {
+          display: none !important;
+        }
+
+        /*
+         * Match the drag target to the actual 28px Goal todo row instead of
+         * using the shared 32px mobile handle geometry.
+         */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-sortable-segment][data-note-segment-type="noteTodo"]
+          > [data-note-sortable-handle] {
+          height: 28px !important;
+          margin-top: 0 !important;
+          align-self: center;
+        }
+
         [data-goal-workspace-editor]
           [data-note-editable-segment-id^="text-"],
         [data-goal-workspace-editor]

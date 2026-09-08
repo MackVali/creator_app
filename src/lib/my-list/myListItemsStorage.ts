@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { dispatchAreaCardStatusRefresh } from "@/lib/areas/areaCardStatusEvents";
 
 export const MY_LIST_ITEMS_MIGRATION_STORAGE_PREFIX =
   "creator:my-list:items-migrated-to-supabase";
@@ -831,6 +832,7 @@ export async function updatePinnedSourceMyListItemCompletion({
     .eq("source_id", sourceId);
 
   if (error) throw error;
+  dispatchAreaCardStatusRefresh();
 }
 
 export async function updatePinnedSourceMyListItemMetadata({

@@ -19,6 +19,11 @@ import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { CLOSE_ACTIVE_AREA_DETAIL_EVENT } from "@/components/areas/events";
 import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import {
+  useAreaCardStatuses,
+  type AreaCardStatus,
+} from "@/lib/hooks/useAreaCardStatuses";
+import { useProfile } from "@/lib/hooks/useProfile";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -193,12 +198,14 @@ function scrollAreaDashboardPageToTop() {
 function AreaCard({
   area,
   goalCount,
+  status,
   isHidden,
   onClick,
   setCardRef,
 }: {
   area: AreaConfig;
   goalCount: number;
+  status: AreaCardStatus;
   isHidden: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   setCardRef: (areaId: string, node: HTMLButtonElement | null) => void;
@@ -215,9 +222,10 @@ function AreaCard({
       ref={setCombinedRef}
       type="button"
       aria-label={`${area.label} area`}
+      data-area-status={status}
       onClick={onClick}
       className={cn(
-        "card app-dashboard-area-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)] active:scale-[0.98]",
+        "card app-dashboard-area-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-[background-color,border-color,box-shadow] hover:bg-[var(--subtle-surface)] active:scale-[0.98]",
         isHidden && "pointer-events-none opacity-0"
       )}
     >
@@ -243,7 +251,14 @@ function AreasGrid() {
     () => [...AREAS].sort((a, b) => a.sortOrder - b.sortOrder),
     []
   );
+  const areaIds = useMemo(() => sortedAreas.map((area) => area.id), [sortedAreas]);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const { userId, localTimeZone } = useProfile();
+  const areaStatuses = useAreaCardStatuses({
+    areaIds,
+    userId,
+    profileTimezone: localTimeZone,
+  });
   const [goalCounts, setGoalCounts] = useState<Record<string, number>>({});
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [areaTransition, setAreaTransition] =
@@ -700,6 +715,7 @@ function AreasGrid() {
               key={area.id}
               area={area}
               goalCount={goalCounts[area.id] ?? 0}
+              status={areaStatuses[area.id] ?? "neutral"}
               isHidden={isAreaSourceCardHidden && areaTransition?.areaId === area.id}
               onClick={(event) => openAreaDetail(area.id, event)}
               setCardRef={setAreaCardRef}
