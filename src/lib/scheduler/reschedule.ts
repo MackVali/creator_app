@@ -8857,6 +8857,8 @@ async function reserveMandatoryHabitsForDay(params: {
           duration_min: durationMin,
           habitType: habit.habitType,
           skillId: habit.skillId ?? null,
+          areaId: habit.areaId ?? null,
+          areaIds: habit.areaId ? [habit.areaId] : null,
           skillMonumentId: habit.skillMonumentId ?? null,
         },
         zone,

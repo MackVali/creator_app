@@ -223,9 +223,15 @@ export type WindowLite = {
   location_context_name: string | null;
   fromPrevDay?: boolean;
   window_kind: WindowKind;
+  timeBlockId?: string | null;
+  time_block_id?: string | null;
+  window_id?: string | null;
+  day_type_time_block_id?: string | null;
   dayTypeTimeBlockId?: string | null;
   dayTypeStartUtcMs?: number | null;
   dayTypeEndUtcMs?: number | null;
+  visibleStartUtcMs?: number | null;
+  visibleEndUtcMs?: number | null;
   isOverlayCandidate?: boolean;
   overlayWindowId?: string | null;
   allowAllInstanceTypes?: boolean;

@@ -133,7 +133,7 @@ const RELATED_HABIT_PAGE_GRID_CLASS =
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
   "grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const RELATED_HABIT_COMPLETED_CARD_CLASS =
-  "border-emerald-800/80 !bg-[#070b0d] !bg-[radial-gradient(circle_at_16%_0%,rgba(45,212,191,0.12),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(16,185,129,0.10),transparent_36%),linear-gradient(135deg,rgba(6,78,59,0.22),rgba(3,12,14,0)_42%),linear-gradient(180deg,#11161a_0%,#090d10_55%,#050708_100%)] bg-clip-padding outline outline-1 -outline-offset-4 outline-emerald-400/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(45,212,191,0.22),inset_0_-10px_18px_rgba(0,0,0,0.34),0_0_0_1px_rgba(2,44,34,0.72),0_0_18px_-11px_rgba(16,185,129,0.58),0_10px_24px_-20px_rgba(0,0,0,0.85)]";
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]";
 const RELATED_HABIT_COMPLETED_SHIMMER_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
 
@@ -379,7 +379,12 @@ function wasRelatedHabitCompletedOnDate(
   const lastCompletedAt = parseOptionalDate(habit.lastCompletedAt);
   if (!lastCompletedAt) return false;
 
-  return formatDateKeyInTimeZone(lastCompletedAt, timeZone) === dateKey;
+  return (
+    formatDateKeyInTimeZone(
+      startOfDayInTimeZone(lastCompletedAt, timeZone),
+      timeZone
+    ) === dateKey
+  );
 }
 
 function getHabitTypePriority(habitType: string | null | undefined): number {
@@ -633,7 +638,10 @@ export function MonumentRelatedHabits({
     }
   }, []);
   const [currentDateKey, setCurrentDateKey] = useState(() =>
-    formatDateKeyInTimeZone(new Date(), timeZone)
+    formatDateKeyInTimeZone(
+      startOfDayInTimeZone(new Date(), timeZone),
+      timeZone
+    )
   );
   const relatedHabitIdsKey = useMemo(
     () => relatedHabits.map((habit) => habit.id).join(","),
@@ -1438,7 +1446,10 @@ export function MonumentRelatedHabits({
 
   useEffect(() => {
     const syncCurrentDateKey = () => {
-      const nextDateKey = formatDateKeyInTimeZone(new Date(), timeZone);
+      const nextDateKey = formatDateKeyInTimeZone(
+        startOfDayInTimeZone(new Date(), timeZone),
+        timeZone
+      );
       setCurrentDateKey((previousDateKey) =>
         previousDateKey === nextDateKey ? previousDateKey : nextDateKey
       );
@@ -2351,34 +2362,24 @@ export function MonumentRelatedHabits({
                             <div
                               key={`${page.id}-habit-${habit.id}`}
                               className={clsx(
-                                "goal-card group relative flex w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                                isHabitCompletedToday
+                                  ? "group relative flex w-full transform-gpu flex-col border-[3px] border-[#1c1f25] text-white transition duration-200 select-none"
+                                  : "goal-card group relative flex w-full transform-gpu flex-col text-white transition duration-200 select-none",
                                 sourceType === "area"
                                   ? "min-h-[46px] rounded-[10px] px-2 py-1.5"
                                   : isSmallRelatedHabitDensity
                                     ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
                                     : "aspect-[5/6] min-h-[96px] rounded-2xl p-3 sm:p-4",
-                                sourceType === "area"
-                                  ? [
+                                isHabitCompletedToday
+                                  ? RELATED_HABIT_COMPLETED_CARD_CLASS
+                                  : [
                                       getHabitCardTypeClass(
                                         habit.normalizedHabitType
                                       ),
                                       getHabitCardBorderClass(
                                         habit.normalizedHabitType
                                       ),
-                                      isHabitCompletedToday
-                                        ? "ring-1 ring-inset ring-emerald-300/35"
-                                        : null,
-                                    ]
-                                  : isHabitCompletedToday
-                                    ? RELATED_HABIT_COMPLETED_CARD_CLASS
-                                    : [
-                                        getHabitCardTypeClass(
-                                          habit.normalizedHabitType
-                                        ),
-                                        getHabitCardBorderClass(
-                                          habit.normalizedHabitType
-                                        ),
-                                      ],
+                                    ],
                                 isHabitPending
                                   ? "pointer-events-none cursor-default opacity-75"
                                   : "cursor-pointer",
@@ -2422,21 +2423,15 @@ export function MonumentRelatedHabits({
                               onContextMenu={(event) => event.preventDefault()}
                               onDragStart={(event) => event.preventDefault()}
                             >
-                              {isHabitCompletedToday && sourceType !== "area" ? (
-                                <>
-                                  <span
-                                    className={RELATED_HABIT_COMPLETED_SHIMMER_CLASS}
-                                    aria-hidden="true"
-                                  />
-                                  <span
-                                    className={RELATED_HABIT_COMPLETED_FACET_CLASS}
-                                    aria-hidden="true"
-                                  />
-                                </>
+                              {isHabitCompletedToday ? (
+                                <span
+                                  className="pointer-events-none !absolute inset-[3px] !z-[3] rounded-[calc(inherit-4px)] border-2 border-black/35"
+                                  aria-hidden="true"
+                                />
                               ) : null}
                               {showStreakBadge ? (
                                 <span
-                                  className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
+                                  className="pointer-events-none !absolute -right-0.5 -top-0.5 !z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
                                   aria-label={`${streakDays} habit streak`}
                                 >
                                   <FlameEmber
