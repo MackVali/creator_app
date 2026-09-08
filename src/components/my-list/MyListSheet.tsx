@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 
 import { AREAS } from "@/config/areas";
+import { dispatchAreaCardStatusRefresh } from "@/lib/areas/areaCardStatusEvents";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
@@ -4818,6 +4819,7 @@ export function MyListSheet({
         done: checked,
         completedAt: checked ? new Date().toISOString() : null,
       });
+      dispatchAreaCardStatusRefresh();
     },
     [updateManualRow],
   );

@@ -208,7 +208,6 @@ import {
 } from "@/lib/fitness/routineTemplates";
 import {
   FITNESS_PLAN_TEMPLATES,
-  resolveFitnessPlanRoutineAtIndex,
   resolveFitnessPlanRoutineSequence,
   type FitnessPlanTemplate,
 } from "@/lib/fitness/planTemplates";
@@ -259,6 +258,7 @@ import {
   type FitnessActivePlan,
   type FitnessActivePlanWeekday,
 } from "@/lib/fitness/activePlan";
+import { getFitnessActivePlanNextRoutine } from "@/lib/fitness/activePlanNextRoutine";
 import { ensureFitnessActivePlanHabit } from "@/lib/fitness/planHabit";
 import {
   DEFAULT_FITNESS_ACTION_TAB_ID,
@@ -3177,6 +3177,7 @@ function preventTouchScrollWhileDragging(event: TouchEvent) {
 type SortableNoteSegmentProps = {
   id: string;
   label: string;
+  segmentType: NoteSegment["type"];
   lockedDragSize: NoteSegmentDragSize | null;
   children: ReactNode;
 };
@@ -3187,7 +3188,13 @@ type NoteSegmentDragSize = {
   height: number;
 };
 
-function SortableNoteSegment({ id, label, lockedDragSize, children }: SortableNoteSegmentProps) {
+function SortableNoteSegment({
+  id,
+  label,
+  segmentType,
+  lockedDragSize,
+  children,
+}: SortableNoteSegmentProps) {
   const nodeRef = useRef<HTMLDivElement | null>(null);
   const [fallbackDragSize, setFallbackDragSize] = useState<NoteSegmentDragSize | null>(null);
   const {
@@ -3248,6 +3255,8 @@ function SortableNoteSegment({ id, label, lockedDragSize, children }: SortableNo
     <div
       ref={setSortableNodeRef}
       style={style}
+      data-note-sortable-segment
+      data-note-segment-type={segmentType}
       className={`group/note-sortable relative grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-0 rounded-lg transition-[background-color,box-shadow,opacity] duration-150 sm:grid-cols-[0.875rem_minmax(0,1fr)] ${
         isDragging
           ? "z-30 bg-white/[0.045] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/[0.08]"
@@ -3259,6 +3268,7 @@ function SortableNoteSegment({ id, label, lockedDragSize, children }: SortableNo
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
+        data-note-sortable-handle
         aria-label={`Reorder ${label} block`}
         className="-ml-2 mt-0.5 flex h-8 w-6 cursor-grab touch-none select-none items-center justify-center rounded-md text-white/18 opacity-60 outline-none transition hover:bg-white/[0.055] hover:text-white/62 hover:opacity-100 active:cursor-grabbing active:bg-white/[0.07] active:text-white/72 active:opacity-100 focus-visible:bg-white/[0.075] focus-visible:text-white/72 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-white/18 sm:-ml-1 sm:h-6 sm:w-4 sm:opacity-0 sm:group-hover/note-sortable:opacity-100 sm:group-focus-within/note-sortable:opacity-100 [-webkit-touch-callout:none]"
       >
@@ -12037,42 +12047,6 @@ export function NoteDatabaseEntrySheet({
     void hapticSoftTick();
   }
 
-  function getFitnessActivePlanNextRoutine(plan: FitnessActivePlan) {
-    const template = getFitnessPlanById(plan.planTemplateId);
-    if (!template && !plan.routineSequenceSnapshot?.length) return null;
-
-    const snapshot = plan.routineSequenceSnapshot ?? [];
-    if (plan.source === "custom" && snapshot.length > 0) {
-      const snapshotEntry =
-        snapshot[plan.currentRoutineIndex % snapshot.length] ?? snapshot[0];
-      if (snapshotEntry) {
-        return (
-          allFitnessRoutineTemplates.find(
-            (routine) => routine.id === snapshotEntry.fitnessRoutineTemplateId,
-          ) ??
-          ({
-            id: snapshotEntry.fitnessRoutineTemplateId,
-            group: "custom",
-            title: snapshotEntry.fitnessRoutineTitle,
-            goal: "Foundation",
-            level: "Beginner",
-            equipment: "Custom",
-            durationMinutes: plan.sessionDurationMinutes,
-            exercises: [],
-          } satisfies FitnessRoutineTemplate)
-        );
-      }
-    }
-
-    if (!template) return null;
-
-    return resolveFitnessPlanRoutineAtIndex(
-      template,
-      plan.currentRoutineIndex,
-      allFitnessRoutineTemplates,
-    );
-  }
-
   function openFitnessPlanPreview(plan: FitnessPlanTemplate) {
     setFitnessPlanPreviewId(plan.id);
     setFitnessPlanSheetStep("preview");
@@ -12177,7 +12151,12 @@ export function NoteDatabaseEntrySheet({
   }
 
   function loadNextFitnessActivePlanWorkout(plan: FitnessActivePlan) {
-    const nextRoutine = getFitnessActivePlanNextRoutine(plan);
+    const nextRoutine =
+      getFitnessActivePlanNextRoutine({
+        activePlan: plan,
+        planTemplates: allFitnessPlanTemplates,
+        routineTemplates: allFitnessRoutineTemplates,
+      })?.routine ?? null;
 
     if (!nextRoutine) return;
 
@@ -15636,7 +15615,11 @@ export function NoteDatabaseEntrySheet({
 
   function renderFitnessPlanBrowser() {
     const activePlanRoutine = activeFitnessPlan
-      ? getFitnessActivePlanNextRoutine(activeFitnessPlan)
+      ? getFitnessActivePlanNextRoutine({
+          activePlan: activeFitnessPlan,
+          planTemplates: allFitnessPlanTemplates,
+          routineTemplates: allFitnessRoutineTemplates,
+        })?.routine ?? null
       : null;
 
     return (
@@ -17205,7 +17188,11 @@ export function NoteDatabaseEntrySheet({
   function getActiveFitnessPlanSummary(): FitnessActivePlanSummary | null {
     if (!activeFitnessPlan) return null;
 
-    const nextRoutine = getFitnessActivePlanNextRoutine(activeFitnessPlan);
+    const nextRoutine = getFitnessActivePlanNextRoutine({
+      activePlan: activeFitnessPlan,
+      planTemplates: allFitnessPlanTemplates,
+      routineTemplates: allFitnessRoutineTemplates,
+    })?.routine ?? null;
 
     return {
       activePlan: activeFitnessPlan,
@@ -24765,6 +24752,7 @@ function NoteSlashTextarea({
         key={segmentDragIds[index]}
         id={segmentDragIds[index] ?? buildNoteSegmentDragId(index)}
         label={getNoteSegmentDragLabel(segment)}
+        segmentType={segment.type}
         lockedDragSize={activeSegmentDragSize}
       >
         {children}

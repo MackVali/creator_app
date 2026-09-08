@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastHelpers } from "@/components/ui/toast";
+import { dispatchAreaCardStatusRefresh } from "@/lib/areas/areaCardStatusEvents";
 import { hapticLongPress, hapticPress } from "@/lib/haptics/creatorHaptics";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
@@ -3587,6 +3588,8 @@ function CircleHabitsPanel({
         if (!response.ok) {
           throw new Error(await response.text());
         }
+
+        dispatchAreaCardStatusRefresh();
 
         if (action === "undo") {
           previousCircleHabitStateRef.current.delete(habitId);

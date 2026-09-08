@@ -9,6 +9,7 @@ import {
   getFitnessPlanMatchLabel,
   readFitnessActivePlanFromMetadata,
 } from "../../src/lib/fitness/activePlan";
+import { getFitnessActivePlanNextRoutine } from "../../src/lib/fitness/activePlanNextRoutine";
 import {
   FITNESS_PLAN_TEMPLATES,
   resolveFitnessPlanRoutineAtIndex,
@@ -265,6 +266,149 @@ describe("Fitness active plan metadata", () => {
       "Pull Day",
       "Legs Day",
     ]);
+  });
+
+  it("resolves the active plan next routine from currentRoutineIndex", () => {
+    const activePlan = buildFitnessActivePlan({
+      plan: upperLower,
+      targetDaysPerWeek: 4,
+      weekdays: ["Mon", "Tue", "Thu", "Fri"],
+      sessionDurationMinutes: 60,
+      equipmentProfile: "Full gym",
+      now,
+      existingActivePlan: {
+        ...buildFitnessActivePlan({
+          plan: upperLower,
+          targetDaysPerWeek: 4,
+          weekdays: ["Mon", "Tue", "Thu", "Fri"],
+          sessionDurationMinutes: 60,
+          equipmentProfile: "Full gym",
+          now,
+        }),
+        currentRoutineIndex: 3,
+      },
+    });
+
+    expect(getFitnessActivePlanNextRoutine({ activePlan })).toMatchObject({
+      routineIndex: 1,
+      routine: { id: "lower-body", title: "Lower Body" },
+    });
+  });
+
+  it("resolves custom active plan snapshots without the original plan template", () => {
+    const activePlan = buildFitnessActivePlan({
+      plan: {
+        ...upperLower,
+        id: "custom-plan-deleted",
+        title: "Deleted Custom Plan",
+        source: "custom",
+        routineSequence: ["custom-routine-a", "custom-routine-b"],
+      },
+      targetDaysPerWeek: 4,
+      weekdays: ["Mon", "Tue", "Thu", "Fri"],
+      sessionDurationMinutes: 45,
+      equipmentProfile: "Full gym",
+      routineSequenceSnapshot: [
+        {
+          fitnessRoutineTemplateId: "custom-routine-a",
+          fitnessRoutineTitle: "Custom A",
+        },
+        {
+          fitnessRoutineTemplateId: "custom-routine-b",
+          fitnessRoutineTitle: "Custom B",
+        },
+      ],
+      now,
+      existingActivePlan: {
+        ...buildFitnessActivePlan({
+          plan: {
+            ...upperLower,
+            id: "custom-plan-deleted",
+            title: "Deleted Custom Plan",
+            source: "custom",
+            routineSequence: ["custom-routine-a", "custom-routine-b"],
+          },
+          targetDaysPerWeek: 4,
+          weekdays: ["Mon", "Tue", "Thu", "Fri"],
+          sessionDurationMinutes: 45,
+          equipmentProfile: "Full gym",
+          routineSequenceSnapshot: [
+            {
+              fitnessRoutineTemplateId: "custom-routine-a",
+              fitnessRoutineTitle: "Custom A",
+            },
+            {
+              fitnessRoutineTemplateId: "custom-routine-b",
+              fitnessRoutineTitle: "Custom B",
+            },
+          ],
+          now,
+        }),
+        currentRoutineIndex: 5,
+      },
+    });
+
+    expect(
+      getFitnessActivePlanNextRoutine({
+        activePlan,
+        planTemplates: [],
+        routineTemplates: [],
+      }),
+    ).toMatchObject({
+      routineIndex: 1,
+      routine: {
+        id: "custom-routine-b",
+        title: "Custom B",
+        durationMinutes: 45,
+        exercises: [],
+      },
+    });
+  });
+
+  it("returns null when a creator plan template can no longer be resolved", () => {
+    const activePlan = buildFitnessActivePlan({
+      plan: {
+        ...upperLower,
+        id: "missing-template",
+        title: "Missing Template",
+      },
+      targetDaysPerWeek: 4,
+      weekdays: ["Mon", "Tue", "Thu", "Fri"],
+      sessionDurationMinutes: 60,
+      equipmentProfile: "Full gym",
+      now,
+    });
+
+    expect(
+      getFitnessActivePlanNextRoutine({
+        activePlan,
+        planTemplates: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when a creator plan routine template can no longer be resolved", () => {
+    const activePlan = buildFitnessActivePlan({
+      plan: upperLower,
+      targetDaysPerWeek: 4,
+      weekdays: ["Mon", "Tue", "Thu", "Fri"],
+      sessionDurationMinutes: 60,
+      equipmentProfile: "Full gym",
+      now,
+    });
+
+    expect(
+      getFitnessActivePlanNextRoutine({
+        activePlan,
+        planTemplates: [
+          {
+            ...upperLower,
+            routineSequence: ["deleted-routine"],
+          },
+        ],
+        routineTemplates: [],
+      }),
+    ).toBeNull();
   });
 
   it("returns restrained match labels from saved profile values", () => {

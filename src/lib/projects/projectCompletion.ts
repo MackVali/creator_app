@@ -3,6 +3,7 @@ import {
   completePendingProjectInstances,
   updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
+import { dispatchAreaCardStatusRefresh } from "@/lib/areas/areaCardStatusEvents";
 import {
   resolveCreatorXpSurgeTitle,
   type CreatorXpSurgePayload,
@@ -380,6 +381,7 @@ export async function recordProjectCompletion(
 
   if (action === "undo") {
     const didReverseXp = await reverseProjectXp(context.projectId, scheduleInstanceId);
+    dispatchAreaCardStatusRefresh();
     return {
       ok: didReverseXp,
       completedAt: null,
@@ -441,6 +443,8 @@ export async function recordProjectCompletion(
       burstId: `project:${context.projectId}:${completionTimestamp ?? "completed"}`,
     });
   }
+
+  dispatchAreaCardStatusRefresh();
 
   return {
     ok: didAwardXp,
