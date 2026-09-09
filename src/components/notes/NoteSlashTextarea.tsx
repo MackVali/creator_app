@@ -4350,7 +4350,7 @@ function NutritionFoodIconSlot({
 
   return (
     <span
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       aria-hidden="true"
     >
       {assetPath ? (
@@ -8795,7 +8795,7 @@ function NoteDatabaseFieldEditSheet({
                 title={removeFieldTitle}
                 onClick={onRemoveField}
                 disabled={!canRemoveField}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-red-200/70 focus-visible:bg-white/[0.07] focus-visible:text-red-100 disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-red-200/70 focus-visible:bg-white/[0.07] focus-visible:text-red-100 disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -8806,7 +8806,7 @@ function NoteDatabaseFieldEditSheet({
             <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
               Type
             </p>
-            <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
+            <div className="mt-2 overflow-hidden rounded-[14px] border border-white/[0.04] bg-white/[0.035]">
               {NOTE_DATABASE_FIELD_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
                 const isSelected = field.type === option.type;
@@ -8851,7 +8851,7 @@ function NoteDatabaseFieldEditSheet({
               })}
             </div>
 
-            <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.02]">
+            <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[0.04] bg-white/[0.02]">
               {NOTE_DATABASE_COMING_SOON_FIELD_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
 
@@ -9784,6 +9784,8 @@ export function NoteDatabaseEntrySheet({
   const [expandedFitnessSubcategories, setExpandedFitnessSubcategories] = useState<
     Set<string>
   >(() => new Set());
+  const [fitnessExerciseBrowserSearch, setFitnessExerciseBrowserSearch] = useState("");
+  const [fitnessExerciseBrowserFilter, setFitnessExerciseBrowserFilter] = useState("All");
   const [openNutritionBrowseDepartment, setOpenNutritionBrowseDepartment] =
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
@@ -13309,7 +13311,7 @@ export function NoteDatabaseEntrySheet({
         ? "Grocery item"
         : fieldName;
     const inputClassName = options.compact
-      ? "mt-1.5 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-2 py-2 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]"
+      ? "mt-1.5 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-2 py-1.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]"
       : "mt-2 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]";
 
     return (
@@ -13492,81 +13494,79 @@ export function NoteDatabaseEntrySheet({
       .join(" · ");
 
     return (
-      <div
-        className="fixed inset-0 z-[85] flex items-end justify-center overflow-hidden overscroll-contain bg-black/62 backdrop-blur-sm sm:items-center sm:p-6"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="fitness-exercise-detail-title"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) {
-            void hapticSnap();
-            setFitnessExerciseDetailTarget(null);
-          }
-        }}
-      >
-        <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/[0.055] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:rounded-[28px] sm:border-b">
-          <div className="relative border-b border-white/[0.045] px-4 pb-4 pt-3">
-            <div className="mx-auto h-1 w-11 rounded-full bg-white/20" aria-hidden="true" />
-            <div className="mt-4 pr-10">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/36">
-                {history.primaryMuscleGroup}
-              </p>
-              <h2
-                id="fitness-exercise-detail-title"
-                className="mt-1 truncate text-lg font-semibold leading-6 text-white/92"
-              >
-                {history.exerciseName}
-              </h2>
-              {metadataLine ? (
-                <p className="mt-1 truncate text-xs font-medium text-white/42">
-                  {metadataLine}
-                </p>
-              ) : null}
-            </div>
+      <div className="-mx-4 -mt-2">
+        <div className="flex min-h-0 w-full flex-col">
+          <div className="relative flex h-11 items-center border-b border-white/[0.045] px-3">
             <button
               type="button"
-              aria-label="Close exercise detail"
               onClick={() => {
                 void hapticSnap();
                 setFitnessExerciseDetailTarget(null);
               }}
-              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+              className="absolute left-2 flex h-8 items-center gap-0.5 rounded-lg px-1.5 text-[11px] font-semibold text-white/54 outline-none transition hover:bg-white/[0.05] hover:text-white/82 focus-visible:bg-white/[0.07] focus-visible:text-white"
             >
-              <X className="h-4 w-4" aria-hidden="true" />
+              <ChevronRight
+                className="h-3.5 w-3.5 rotate-180"
+                aria-hidden="true"
+              />
+              Back
             </button>
+
+            <h3 className="w-full px-16 text-center text-[13px] font-semibold text-white/86">
+              Exercise Details
+            </h3>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
-            <div className="grid grid-cols-2 gap-2">
-              {summaryMetrics.map((metric) => (
+          <div className="space-y-4 px-4 pb-4 pt-3">
+            <section>
+              <h2
+                id="fitness-exercise-detail-title"
+                className="truncate text-lg font-semibold text-white/90"
+              >
+                {history.exerciseName}
+              </h2>
+
+              <p className="mt-1 truncate text-sm font-medium text-white/48">
+                {history.primaryMuscleGroup}
+                {metadataLine ? ` · ${metadataLine}` : ""}
+              </p>
+            </section>
+
+            <section className="overflow-hidden rounded-xl border border-white/[0.055] bg-white/[0.03]">
+              {summaryMetrics.map((metric, index) => (
                 <div
                   key={metric.label}
-                  className="min-h-[74px] rounded-xl border border-white/[0.055] bg-white/[0.035] px-3 py-2.5"
+                  className={`flex min-h-11 items-center justify-between gap-4 px-3 ${
+                    index > 0 ? "border-t border-white/[0.045]" : ""
+                  }`}
                 >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
+                  <p className="shrink-0 text-xs font-semibold text-white/46">
                     {metric.label}
                   </p>
-                  <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 text-white/82">
+
+                  <p className="min-w-0 truncate text-right text-xs font-semibold text-white/78">
                     {metric.value}
                   </p>
                 </div>
               ))}
-            </div>
+            </section>
 
-            <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/34 px-3 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/34">
+            <section className="rounded-xl border border-white/[0.055] bg-white/[0.03] p-3">
+              <p className="text-xs font-semibold text-white/70">
                 Progression
               </p>
-              <p className="mt-2 text-sm font-medium leading-5 text-white/68">
+              <p className="mt-1.5 text-xs font-medium leading-5 text-white/48">
                 {history.progressionReason}
               </p>
-            </div>
+            </section>
 
-            <section className="mt-4 space-y-2">
+            <section className="space-y-2">
               <div className="flex items-end justify-between gap-3 px-1">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white/82">Recent Performances</p>
-                  <p className="mt-0.5 text-xs font-medium text-white/38">
+                  <p className="text-sm font-semibold text-white/82">
+                    Recent Performances
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-medium text-white/38">
                     Newest completed sessions
                   </p>
                 </div>
@@ -13606,315 +13606,662 @@ export function NoteDatabaseEntrySheet({
 
   function renderFitnessActionTabs() {
     return (
-      <div className="relative -mx-1">
-        <button
-          type="button"
-          aria-label="Previous Fitness tab"
-          onClick={(event) => {
-            event.preventDefault();
-            selectFitnessActionByOffset(-1);
-          }}
-          className="absolute left-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
-        >
-          <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
-        </button>
-        <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex min-w-max items-center gap-1 pb-1">
-            {FITNESS_ACTION_TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isSelected = selectedFitnessAction === tab.id;
+      <div className="-mx-3 border-b border-white/[0.055] px-3">
+        <div className="grid grid-cols-7">
+          {FITNESS_ACTION_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = selectedFitnessAction === tab.id;
 
-              return (
-                <button
-                  key={tab.id}
-                  ref={(node) => {
-                    fitnessActionTabRefs.current[tab.id] = node;
-                  }}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => selectFitnessAction(tab.id)}
-                  className={`flex h-11 min-w-[3rem] shrink-0 flex-col items-center justify-center gap-0.5 px-2 text-[10px] font-semibold leading-none outline-none transition ${
-                    isSelected
-                      ? "text-white/88"
-                      : "text-white/42 hover:text-white/68"
-                  } focus-visible:text-white/80 focus-visible:ring-1 focus-visible:ring-white/16`}
+            return (
+              <button
+                key={tab.id}
+                ref={(node) => {
+                  fitnessActionTabRefs.current[tab.id] = node;
+                }}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => selectFitnessAction(tab.id)}
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-1 pb-2.5 pt-2 outline-none transition ${
+                  isSelected
+                    ? "text-white/90"
+                    : "text-white/40 active:text-white/65"
+                }`}
+              >
+                <Icon
+                  className={`h-[18px] w-[18px] ${
+                    isSelected ? "stroke-[2]" : "stroke-[1.65]"
+                  }`}
+                  aria-hidden="true"
+                />
+
+                <span
+                  className={`max-w-full truncate text-[9px] leading-none ${
+                    isSelected ? "font-semibold text-white/92" : "font-medium"
+                  }`}
                 >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                  <span className="whitespace-nowrap text-center leading-[1.05]">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+                  {tab.label}
+                </span>
+
+                {isSelected ? (
+                  <span
+                    className="absolute inset-x-2 bottom-0 h-[2px] rounded-full bg-white/90 shadow-[0_0_8px_rgba(255,255,255,0.22)]"
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
         </div>
-        <button
-          type="button"
-          aria-label="Next Fitness tab"
-          onClick={(event) => {
-            event.preventDefault();
-            selectFitnessActionByOffset(1);
-          }}
-          className="absolute right-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
-        >
-          <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
-        </button>
       </div>
     );
   }
 
   function renderFitnessExerciseBrowser() {
+    const normalizedSearch = fitnessExerciseBrowserSearch.trim().toLowerCase();
+
+    const filterChips = [
+      "All",
+      "Push",
+      "Pull",
+      "Legs",
+      "Upper Body",
+      "Lower Body",
+      "Core",
+    ];
+
+    const matchesSearch = (exercise: FitnessExerciseSample) => {
+      if (!normalizedSearch) return true;
+
+      return [
+        exercise.name,
+        exercise.movementType,
+        exercise.equipment,
+        exercise.primaryArea,
+      ].some((value) => value.toLowerCase().includes(normalizedSearch));
+    };
+
+    const matchesFilter = (
+      exercise: FitnessExerciseSample,
+      movementGroupLabel: string,
+      subcategoryLabel: string,
+    ) => {
+      const filter = fitnessExerciseBrowserFilter;
+      if (filter === "All") return true;
+
+      const haystack = [
+        movementGroupLabel,
+        subcategoryLabel,
+        exercise.movementType,
+        exercise.primaryArea,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (filter === "Upper Body") {
+        return [
+          "push",
+          "pull",
+          "chest",
+          "shoulder",
+          "tricep",
+          "back",
+          "lat",
+          "bicep",
+          "rear delt",
+        ].some((term) => haystack.includes(term));
+      }
+
+      if (filter === "Lower Body" || filter === "Legs") {
+        return [
+          "legs",
+          "squat",
+          "lunge",
+          "hinge",
+          "quad",
+          "glute",
+          "hamstring",
+          "calf",
+          "hip",
+        ].some((term) => haystack.includes(term));
+      }
+
+      return haystack.includes(filter.toLowerCase());
+    };
+
+    const visibleFitnessMovementGroups = allFitnessMovementGroups.flatMap(
+      (movementGroup) => {
+        const visibleSubcategories = movementGroup.subcategories.flatMap(
+          (subcategory) => {
+            const exercises = subcategory.exercises
+              .map((exerciseName) => allFitnessExerciseByName.get(exerciseName))
+              .filter(
+                (exercise): exercise is FitnessExerciseSample => Boolean(exercise),
+              )
+              .filter(
+                (exercise) =>
+                  matchesSearch(exercise) &&
+                  matchesFilter(
+                    exercise,
+                    movementGroup.label,
+                    subcategory.label,
+                  ),
+              );
+
+            return exercises.length > 0 ? [{ ...subcategory, exercises }] : [];
+          },
+        );
+
+        return visibleSubcategories.length > 0
+          ? [{ ...movementGroup, subcategories: visibleSubcategories }]
+          : [];
+      },
+    );
+
+    const selectedExerciseCount = selectedFitnessWorkoutExercises.length;
+    const currentWorkoutName = getCurrentFitnessWorkoutName();
+
+    const movementSummary = (label: string) => {
+      const known: Record<string, string> = {
+        Push: "Chest, shoulders, triceps",
+        Pull: "Back, biceps, rear delts",
+        Legs: "Quads, hamstrings, glutes",
+        Core: "Abs, obliques, trunk",
+      };
+
+      return known[label] ?? "Exercise library";
+    };
+
+    const renderBrowserStepper = (
+      exercise: FitnessExerciseSample,
+      key: "sets" | "reps",
+      label: string,
+      value: number,
+    ) => (
+      <div className="grid h-8 min-w-0 grid-cols-[minmax(2.6rem,1fr)_1.5rem_2rem_1.5rem] items-center overflow-hidden rounded-[9px] border border-white/[0.07] bg-black/[0.22]">
+        <span className="px-1.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/37">
+          {label}
+        </span>
+
+        <button
+          type="button"
+          aria-label={`Decrease ${label.toLowerCase()} for ${exercise.name}`}
+          onClick={() => bumpFitnessWorkoutExerciseDetail(exercise, key, -1)}
+          className="flex h-full items-center justify-center border-l border-white/[0.055] text-white/48 outline-none active:bg-white/[0.07]"
+        >
+          <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+
+        <span className="flex h-full items-center justify-center border-l border-white/[0.055] text-[11px] font-semibold tabular-nums text-white/91">
+          {value}
+        </span>
+
+        <button
+          type="button"
+          aria-label={`Increase ${label.toLowerCase()} for ${exercise.name}`}
+          onClick={() => bumpFitnessWorkoutExerciseDetail(exercise, key, 1)}
+          className="flex h-full items-center justify-center border-l border-white/[0.055] text-white/58 outline-none active:bg-white/[0.07]"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    );
+
     return (
-      <div className="mt-3 space-y-2">
-        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
-          {selectedFitnessWorkoutExercises.length > 0 ? (
-            <div className="flex min-h-9 items-center gap-2 border-b border-white/[0.055] bg-white/[0.035] px-3 text-xs font-semibold text-white/62">
-              <Check className="h-3.5 w-3.5 shrink-0 text-white/70" aria-hidden="true" />
-              <span className="min-w-0 truncate">
-                {selectedFitnessWorkoutExercises.length} selected
-              </span>
-              <span className="shrink-0 text-white/34">· Current workout</span>
+      <div className="mt-2.5 space-y-2">
+        {/* Current workout */}
+        <div className="rounded-[16px] border border-white/[0.08] bg-white/[0.037] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-1.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-violet-400/45 bg-violet-500/[0.09] text-violet-300">
+              <Dumbbell className="h-[17px] w-[17px]" aria-hidden="true" />
+            </span>
+
+            <div className="min-w-0">
+              <p className="truncate text-[11.5px] font-semibold text-white/91">
+                {selectedExerciseCount > 0
+                  ? `${selectedExerciseCount} selected · ${currentWorkoutName}`
+                  : "No exercises selected"}
+              </p>
+
+              <p className="mt-0.5 truncate text-[9.5px] font-medium leading-[12px] text-white/42">
+                {selectedExerciseCount > 0
+                  ? "Add exercises to build your workout."
+                  : "Choose exercises to build your workout."}
+              </p>
             </div>
-          ) : null}
-          {allFitnessMovementGroups.map((movementGroup) => {
-            const isGroupOpen = expandedFitnessMovementGroups.has(movementGroup.label);
-            const isFirstGroup =
-              movementGroup.label === allFitnessMovementGroups[0]?.label;
-            const movementExerciseCount = movementGroup.subcategories.reduce(
-              (count, subcategory) => count + subcategory.exercises.length,
-              0,
-            );
-            const MovementIcon = movementGroup.icon;
 
-            return (
-              <Fragment key={movementGroup.label}>
+            {selectedExerciseCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => selectFitnessAction("start")}
+                className="flex h-8 items-center gap-0.5 rounded-[10px] border border-white/[0.1] bg-white/[0.055] pl-2 pr-1.5 text-[9.5px] font-semibold text-white/82 outline-none active:bg-white/[0.11]"
+              >
+                View workout
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="flex gap-2">
+          <label className="flex h-[38px] min-w-0 flex-1 items-center gap-2 rounded-[13px] border border-white/[0.075] bg-white/[0.025] px-3.5 focus-within:border-white/[0.14]">
+            <Search
+              className="h-4 w-4 shrink-0 text-white/40"
+              aria-hidden="true"
+            />
+
+            <input
+              type="search"
+              value={fitnessExerciseBrowserSearch}
+              onChange={(event) =>
+                setFitnessExerciseBrowserSearch(event.target.value)
+              }
+              placeholder="Search exercises..."
+              aria-label="Search exercises"
+              className="min-w-0 flex-1 bg-transparent text-[12px] font-medium text-white/82 outline-none placeholder:text-white/32"
+            />
+          </label>
+
+          <button
+            type="button"
+            aria-label="Reset exercise filters"
+            onClick={() => {
+              setFitnessExerciseBrowserSearch("");
+              setFitnessExerciseBrowserFilter("All");
+              void hapticSoftTick();
+            }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-white/62 outline-none active:bg-white/[0.08]"
+          >
+            <Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Filter chips */}
+        <div className="-mx-0.5 overflow-x-auto overscroll-x-contain px-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max gap-2 pb-0.5">
+            {filterChips.map((filter) => {
+              const isSelected = fitnessExerciseBrowserFilter === filter;
+
+              return (
                 <button
+                  key={filter}
                   type="button"
-                  aria-expanded={isGroupOpen}
-                  onClick={() => {
-                    setExpandedFitnessMovementGroups((currentGroups) => {
-                      const nextGroups = new Set(currentGroups);
+                  aria-pressed={isSelected}
+                  onClick={() => setFitnessExerciseBrowserFilter(filter)}
+                  className={`h-[30px] shrink-0 rounded-full border px-2.5 text-[9.5px] font-semibold outline-none ${
+                    isSelected
+                      ? "border-violet-400/80 bg-violet-500/[0.1] text-white shadow-[0_0_0_1px_rgba(139,92,246,0.08)]"
+                      : "border-white/[0.07] bg-white/[0.025] text-white/49"
+                  }`}
+                >
+                  {filter}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-                      if (nextGroups.has(movementGroup.label)) {
-                        nextGroups.delete(movementGroup.label);
-                      } else {
-                        nextGroups.add(movementGroup.label);
-                      }
+        {/* Exercise hierarchy */}
+        <div className="overflow-hidden rounded-[14px] border border-white/[0.07] bg-[#090909]">
+          {visibleFitnessMovementGroups.length > 0 ? (
+            visibleFitnessMovementGroups.map((movementGroup) => {
+              const isGroupOpen =
+                expandedFitnessMovementGroups.has(movementGroup.label);
+              const MovementIcon = movementGroup.icon;
 
-                      return nextGroups;
-                    });
-                    setExpandedFitnessSubcategories((currentSubcategories) => {
-                      const nextSubcategories = new Set(currentSubcategories);
-                      const subcategoryPrefix = `${movementGroup.label}::`;
+              const movementExerciseCount =
+                movementGroup.subcategories.reduce(
+                  (count, subcategory) =>
+                    count + subcategory.exercises.length,
+                  0,
+                );
 
-                      currentSubcategories.forEach((subcategoryKey) => {
-                        if (subcategoryKey.startsWith(subcategoryPrefix)) {
-                          nextSubcategories.delete(subcategoryKey);
+              return (
+                <Fragment key={movementGroup.label}>
+                  {/* Movement group */}
+                  <button
+                    type="button"
+                    aria-expanded={isGroupOpen}
+                    onClick={() => {
+                      setExpandedFitnessMovementGroups((currentGroups) => {
+                        const next = new Set(currentGroups);
+
+                        if (next.has(movementGroup.label)) {
+                          next.delete(movementGroup.label);
+                        } else {
+                          next.add(movementGroup.label);
                         }
+
+                        return next;
                       });
 
-                      return nextSubcategories;
-                    });
-                  }}
-                  className={`flex h-11 w-full items-center gap-3 border-t px-3 text-left outline-none transition ${
-                    selectedFitnessWorkoutExercises.length > 0 || !isFirstGroup
-                      ? "border-white/[0.055]"
-                      : "border-transparent"
-                  } ${
-                    isGroupOpen
-                      ? "bg-white/[0.035] text-white/90"
-                      : "text-white/62 hover:bg-white/[0.026] hover:text-white/82"
-                  } focus-visible:bg-white/[0.06]`}
-                >
-                  <ChevronRight
-                    className={`h-4 w-4 shrink-0 stroke-[1.65] transition ${
-                      isGroupOpen ? "rotate-90 text-white/58" : "text-white/32"
+                      setExpandedFitnessSubcategories((current) => {
+                        const next = new Set(current);
+                        const prefix = `${movementGroup.label}::`;
+
+                        current.forEach((key) => {
+                          if (key.startsWith(prefix)) next.delete(key);
+                        });
+
+                        return next;
+                      });
+                    }}
+                    className={`flex min-h-[48px] w-full items-center gap-2 px-2.5 text-left outline-none ${
+                      isGroupOpen
+                        ? "bg-white/[0.035]"
+                        : "bg-transparent active:bg-white/[0.02]"
                     }`}
-                    aria-hidden="true"
-                  />
-                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-semibold">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/58">
-                      <MovementIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  >
+                    <ChevronRight
+                      className={`h-4 w-4 shrink-0 text-white/43 transition ${
+                        isGroupOpen ? "rotate-90" : ""
+                      }`}
+                      aria-hidden="true"
+                    />
+
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.065] bg-white/[0.045] text-white/61">
+                      <MovementIcon className="h-4 w-4" aria-hidden="true" />
                     </span>
-                    <span className="min-w-0 truncate">{movementGroup.label}</span>
-                  </span>
-                  <span className="shrink-0 rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-0.5 text-[11px] font-semibold text-white/38">
-                    {movementExerciseCount}
-                  </span>
-                </button>
 
-                <AnimatePresence initial={false}>
-                  {isGroupOpen ? (
-                    <motion.div
-                      key={`${movementGroup.label}-fitness-subcategories`}
-                      initial={{ height: 0, opacity: 0, y: -2 }}
-                      animate={{ height: "auto", opacity: 1, y: 0 }}
-                      exit={{ height: 0, opacity: 0, y: -2 }}
-                      transition={nutritionBrowseAccordionTransition}
-                      className="overflow-hidden"
-                    >
-                      {movementGroup.subcategories.map((subcategory) => {
-                        const exercises = subcategory.exercises
-                          .map((exerciseName) => allFitnessExerciseByName.get(exerciseName))
-                          .filter(
-                            (exercise): exercise is FitnessExerciseSample => Boolean(exercise),
-                          );
-                        const subcategoryKey = `${movementGroup.label}::${subcategory.label}`;
-                        const isSubcategoryOpen =
-                          expandedFitnessSubcategories.has(subcategoryKey);
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-semibold text-white/91">
+                        {movementGroup.label}
+                      </span>
 
-                        return (
-                          <div key={`${movementGroup.label}-${subcategory.label}`}>
-                            <button
-                              type="button"
-                              aria-expanded={isSubcategoryOpen}
-                              onClick={() =>
-                                setExpandedFitnessSubcategories((currentSubcategories) => {
-                                  const nextSubcategories = new Set(currentSubcategories);
+                      <span className="mt-0.5 block truncate text-[9.5px] font-medium text-white/37">
+                        {movementSummary(movementGroup.label)} ·{" "}
+                        {movementExerciseCount} exercises
+                      </span>
+                    </span>
 
-                                  if (nextSubcategories.has(subcategoryKey)) {
-                                    nextSubcategories.delete(subcategoryKey);
-                                  } else {
-                                    nextSubcategories.add(subcategoryKey);
-                                  }
+                    <span className="rounded-full bg-white/[0.03] px-1.5 py-0.5 text-[8.5px] font-semibold text-white/43">
+                      {movementExerciseCount}
+                    </span>
+                  </button>
 
-                                  return nextSubcategories;
-                                })
-                              }
-                              className={`flex h-9 w-full items-center justify-between gap-3 border-t border-white/[0.045] pl-10 pr-3 text-left outline-none transition ${
-                                isSubcategoryOpen
-                                  ? "bg-white/[0.032] text-white/78"
-                                  : "bg-white/[0.018] text-white/56 hover:bg-white/[0.026] hover:text-white/74"
-                              } focus-visible:bg-white/[0.05]`}
+                  <AnimatePresence initial={false}>
+                    {isGroupOpen ? (
+                      <motion.div
+                        key={`${movementGroup.label}-fitness-subcategories`}
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={nutritionBrowseAccordionTransition}
+                        className="overflow-hidden"
+                      >
+                        {movementGroup.subcategories.map((subcategory) => {
+                          const exercises = subcategory.exercises;
+                          const subcategoryKey = `${movementGroup.label}::${subcategory.label}`;
+                          const isSubcategoryOpen =
+                            expandedFitnessSubcategories.has(subcategoryKey);
+
+                          return (
+                            <div
+                              key={`${movementGroup.label}-${subcategory.label}`}
                             >
-                              <span className="flex min-w-0 items-center gap-2">
+                              {/* Subcategory */}
+                              <button
+                                type="button"
+                                aria-expanded={isSubcategoryOpen}
+                                onClick={() =>
+                                  setExpandedFitnessSubcategories((current) => {
+                                    const next = new Set(current);
+
+                                    if (next.has(subcategoryKey)) {
+                                      next.delete(subcategoryKey);
+                                    } else {
+                                      next.add(subcategoryKey);
+                                    }
+
+                                    return next;
+                                  })
+                                }
+                                className={`flex min-h-[38px] w-full items-center gap-1.5 border-t border-white/[0.045] pl-8 pr-2.5 text-left outline-none ${
+                                  isSubcategoryOpen
+                                    ? "bg-white/[0.02]"
+                                    : "bg-black/[0.08]"
+                                }`}
+                              >
                                 <ChevronRight
-                                  className={`h-3.5 w-3.5 shrink-0 stroke-[1.7] transition ${
-                                    isSubcategoryOpen
-                                      ? "rotate-90 text-white/54"
-                                      : "text-white/28"
+                                  className={`h-3.5 w-3.5 shrink-0 text-white/39 transition ${
+                                    isSubcategoryOpen ? "rotate-90" : ""
                                   }`}
                                   aria-hidden="true"
                                 />
-                                <span className="min-w-0 truncate text-xs font-semibold">
-                                  {subcategory.label}
+
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.045] bg-white/[0.03] text-white/45">
+                                  <MovementIcon
+                                    className="h-3.5 w-3.5"
+                                    aria-hidden="true"
+                                  />
                                 </span>
-                              </span>
-                              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/26">
-                                {exercises.length}
-                              </span>
-                            </button>
-                            <AnimatePresence initial={false}>
-                              {isSubcategoryOpen ? (
-                                <motion.div
-                                  key={`${subcategoryKey}-fitness-exercises`}
-                                  initial={{ height: 0, opacity: 0, y: -2 }}
-                                  animate={{ height: "auto", opacity: 1, y: 0 }}
-                                  exit={{ height: 0, opacity: 0, y: -2 }}
-                                  transition={nutritionBrowseAccordionTransition}
-                                  className="overflow-hidden"
-                                >
-                                  {exercises.map((exercise) => {
-                                    const isSelected = selectedFitnessWorkoutExercises.some(
-                                      (selectedExercise) =>
-                                        selectedExercise.name === exercise.name,
-                                    );
-                                    const isFavorite = favoriteFitnessExerciseIds.has(
-                                      exercise.name,
-                                    );
-                                    const customExercise =
-                                      exercise.customExerciseId && activeFitnessCustomLibrary
-                                        ? activeFitnessCustomLibrary.exercises.find(
-                                            (item) => item.id === exercise.customExerciseId,
+
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[11.5px] font-semibold text-white/82">
+                                    {subcategory.label}
+                                  </span>
+
+                                  <span className="mt-px block text-[8.5px] font-medium text-white/32">
+                                    {exercises.length} exercises
+                                  </span>
+                                </span>
+
+                                <span className="rounded-full bg-white/[0.03] px-2 py-0.5 text-[10px] font-semibold text-white/35">
+                                  {exercises.length}
+                                </span>
+                              </button>
+
+                              <AnimatePresence initial={false}>
+                                {isSubcategoryOpen ? (
+                                  <motion.div
+                                    key={`${subcategoryKey}-fitness-exercises`}
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={
+                                      nutritionBrowseAccordionTransition
+                                    }
+                                    className="space-y-1 overflow-hidden border-t border-white/[0.035] bg-black/[0.12] px-1.5 py-1.5"
+                                  >
+                                    {exercises.map((exercise) => {
+                                      const isSelected =
+                                        selectedFitnessWorkoutExercises.some(
+                                          (selectedExercise) =>
+                                            selectedExercise.name ===
+                                            exercise.name,
+                                        );
+
+                                      const isFavorite =
+                                        favoriteFitnessExerciseIds.has(
+                                          exercise.name,
+                                        );
+
+                                      const customExercise =
+                                        exercise.customExerciseId &&
+                                        activeFitnessCustomLibrary
+                                          ? activeFitnessCustomLibrary.exercises.find(
+                                              (item) =>
+                                                item.id ===
+                                                exercise.customExerciseId,
+                                            )
+                                          : null;
+
+                                      const detail = isSelected
+                                        ? getFitnessWorkoutExerciseDetail(
+                                            exercise,
+                                            fitnessWorkoutExerciseDetailsById,
                                           )
                                         : null;
 
-                                    return (
-                                      <div
-                                        key={exercise.name}
-                                        className={`flex min-h-14 w-full items-center gap-2.5 border-t border-white/[0.04] px-3 py-2 text-left transition ${
-                                          isSelected
-                                            ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.68)]"
-                                            : "hover:bg-white/[0.022]"
-                                        }`}
-                                      >
-                                        <button
-                                          type="button"
-                                          aria-label={
-                                            isFavorite
-                                              ? `Remove ${exercise.name} from favorites`
-                                              : `Add ${exercise.name} to favorites`
-                                          }
-                                          aria-pressed={isFavorite}
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            toggleFavoriteFitnessExercise(exercise.name);
-                                          }}
-                                          className={`flex h-8 w-7 shrink-0 items-center justify-center outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
-                                            isFavorite
-                                              ? "text-[#f8d36b]"
-                                              : "text-white/42 hover:text-white/78"
+                                      const sets = detail
+                                        ? getPositiveFitnessDetailValue(
+                                            detail.sets,
+                                          )
+                                        : 0;
+
+                                      const reps = detail
+                                        ? getPositiveFitnessDetailValue(
+                                            detail.reps,
+                                          )
+                                        : 0;
+
+                                      return (
+                                        <div
+                                          key={exercise.name}
+                                          className={`overflow-hidden rounded-[14px] border ${
+                                            isSelected
+                                              ? "border-violet-400/70 bg-violet-500/[0.022] shadow-[0_0_0_1px_rgba(139,92,246,0.08)]"
+                                              : "border-white/[0.05] bg-white/[0.012]"
                                           }`}
                                         >
-                                          <Star
-                                            className={`h-4 w-4 ${
-                                              isFavorite ? "fill-current" : ""
-                                            }`}
-                                            aria-hidden="true"
-                                          />
-                                        </button>
-                                        <div className="min-w-0 flex-1">
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              openFitnessExerciseDetail({
-                                                exerciseId: getFitnessExerciseId(exercise),
-                                                exerciseName: exercise.name,
-                                              })
-                                            }
-                                            className="block w-full min-w-0 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/16"
-                                          >
-                                            <span className="flex min-w-0 items-center gap-1.5">
-                                              {isSelected ? (
-                                                <Check
-                                                  className="h-3.5 w-3.5 shrink-0 text-white/68"
-                                                  aria-hidden="true"
-                                                />
-                                              ) : null}
-                                              <span className="block truncate text-sm font-semibold text-white/84">
+                                          {/* Exercise header */}
+                                          <div className="grid min-h-[52px] grid-cols-[1.85rem_3rem_minmax(0,1fr)_2.1rem] items-center gap-1.5 px-2 py-1">
+                                            <button
+                                              type="button"
+                                              aria-label={
+                                                isFavorite
+                                                  ? `Remove ${exercise.name} from favorites`
+                                                  : `Add ${exercise.name} to favorites`
+                                              }
+                                              aria-pressed={isFavorite}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                toggleFavoriteFitnessExercise(
+                                                  exercise.name,
+                                                );
+                                              }}
+                                              className={`flex h-7 w-7 items-center justify-center rounded-md outline-none ${
+                                                isFavorite
+                                                  ? "text-violet-300"
+                                                  : "text-white/38"
+                                              }`}
+                                            >
+                                              <Star
+                                                className={`h-[18px] w-[18px] ${
+                                                  isFavorite
+                                                    ? "fill-current"
+                                                    : ""
+                                                }`}
+                                                aria-hidden="true"
+                                              />
+                                            </button>
+
+                                            {/* Thumbnail-position visual */}
+                                            <span className="flex h-10 w-12 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-br from-white/[0.07] to-white/[0.025] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+                                              <MovementIcon
+                                                className="h-[17px] w-[17px]"
+                                                aria-hidden="true"
+                                              />
+                                            </span>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openFitnessExerciseDetail({
+                                                  exerciseId:
+                                                    getFitnessExerciseId(
+                                                      exercise,
+                                                    ),
+                                                  exerciseName: exercise.name,
+                                                })
+                                              }
+                                              className="min-w-0 text-left outline-none"
+                                            >
+                                              <span className="block truncate text-[12px] font-semibold text-white/91">
                                                 {exercise.name}
                                               </span>
-                                            </span>
-                                            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                              {exercise.movementType} · {exercise.equipment} ·{" "}
-                                              {exercise.primaryArea}
-                                            </span>
-                                          </button>
-                                          {isSelected
-                                            ? renderFitnessWorkoutDetailControls(exercise)
-                                            : null}
+
+                                              <span className="mt-px block truncate text-[9px] font-medium text-white/39">
+                                                {exercise.movementType} ·{" "}
+                                                {exercise.equipment} ·{" "}
+                                                {exercise.primaryArea}
+                                              </span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              aria-label={
+                                                isSelected
+                                                  ? `Remove ${exercise.name} from current workout`
+                                                  : `Add ${exercise.name} to current workout`
+                                              }
+                                              aria-pressed={isSelected}
+                                              onClick={() =>
+                                                toggleFitnessWorkoutExercise(
+                                                  exercise,
+                                                )
+                                              }
+                                              className={`flex h-8 w-8 items-center justify-center rounded-[9px] border outline-none ${
+                                                isSelected
+                                                  ? "border-violet-300/70 bg-violet-500/[0.15] text-violet-100"
+                                                  : "border-white/[0.085] bg-white/[0.055] text-white/74"
+                                              }`}
+                                            >
+                                              {isSelected ? (
+                                                <Check
+                                                  className="h-[18px] w-[18px]"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : (
+                                                <Plus
+                                                  className="h-[18px] w-[18px]"
+                                                  aria-hidden="true"
+                                                />
+                                              )}
+                                            </button>
+                                          </div>
+
+                                          {/* Selected prescription */}
+                                          {isSelected ? (
+                                            <div className="grid grid-cols-2 gap-1.5 pb-2 pl-[3.35rem] pr-2">
+                                              {renderBrowserStepper(
+                                                exercise,
+                                                "sets",
+                                                "Sets",
+                                                sets,
+                                              )}
+
+                                              {renderBrowserStepper(
+                                                exercise,
+                                                "reps",
+                                                "Reps",
+                                                reps,
+                                              )}
+                                            </div>
+                                          ) : null}
+
                                           {customExercise ? (
-                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                            <div className="flex flex-wrap gap-1.5 pb-2 pl-[3.35rem] pr-2">
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  editCustomFitnessExercise(customExercise)
+                                                  editCustomFitnessExercise(
+                                                    customExercise,
+                                                  )
                                                 }
                                                 className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
                                               >
                                                 Edit
                                               </button>
+
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  duplicateCustomFitnessExercise(customExercise)
+                                                  duplicateCustomFitnessExercise(
+                                                    customExercise,
+                                                  )
                                                 }
                                                 className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
                                               >
                                                 Duplicate
                                               </button>
+
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  void removeCustomFitnessExercise(customExercise)
+                                                  void removeCustomFitnessExercise(
+                                                    customExercise,
+                                                  )
                                                 }
                                                 className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[11px] font-semibold text-red-100/70"
                                               >
@@ -13923,46 +14270,37 @@ export function NoteDatabaseEntrySheet({
                                             </div>
                                           ) : null}
                                         </div>
-                                        <button
-                                          type="button"
-                                          aria-label={
-                                            isSelected
-                                              ? `Remove ${exercise.name} from current workout`
-                                              : `Add ${exercise.name} to current workout`
-                                          }
-                                          aria-pressed={isSelected}
-                                          onClick={() => toggleFitnessWorkoutExercise(exercise)}
-                                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
-                                            isSelected
-                                              ? "border-white/[0.14] bg-white/[0.12] text-white/82 hover:border-white/[0.2] hover:bg-white/[0.16] hover:text-white"
-                                              : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
-                                          }`}
-                                        >
-                                          {isSelected ? (
-                                            <Check className="h-4 w-4" aria-hidden="true" />
-                                          ) : (
-                                            <Plus className="h-4 w-4" aria-hidden="true" />
-                                          )}
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </motion.div>
-                              ) : null}
-                            </AnimatePresence>
-                          </div>
-                        );
-                      })}
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              </Fragment>
-            );
-          })}
+                                      );
+                                    })}
+                                  </motion.div>
+                                ) : null}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </Fragment>
+              );
+            })
+          ) : (
+            <div className="px-4 py-8 text-center">
+              <p className="text-sm font-semibold text-white/70">
+                No matching exercises
+              </p>
+
+              <p className="mt-1 text-xs font-medium text-white/38">
+                Adjust search or filters.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );
   }
+
+
 
   function renderFitnessFavoritesBrowser() {
     const favoriteExercises = allFitnessExercises.filter((exercise) =>
@@ -14036,7 +14374,7 @@ export function NoteDatabaseEntrySheet({
                     }
                     aria-pressed={isSelected}
                     onClick={() => toggleFitnessWorkoutExercise(exercise)}
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
                       isSelected
                         ? "border-white/[0.14] bg-white/[0.12] text-white/82 hover:border-white/[0.2] hover:bg-white/[0.16] hover:text-white"
                         : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
@@ -14238,7 +14576,7 @@ export function NoteDatabaseEntrySheet({
     }
 
     return (
-      <div className="mt-3 space-y-3">
+      <div className="mt-2.5 space-y-2">
         <div className="px-1">
           <p className="text-sm font-semibold text-white/82">Create Fitness Content</p>
           <p className="mt-0.5 text-xs font-medium text-white/38">{customCounts}</p>
@@ -14271,7 +14609,7 @@ export function NoteDatabaseEntrySheet({
             <button
               type="button"
               onClick={closeFitnessCustomBuilder}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
               aria-label="Back to custom Fitness"
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -14292,7 +14630,7 @@ export function NoteDatabaseEntrySheet({
             <button
               type="button"
               onClick={closeFitnessCustomBuilder}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58 outline-none transition hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
               aria-label="Close custom builder"
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -14672,7 +15010,7 @@ export function NoteDatabaseEntrySheet({
                                               exercise.exerciseId,
                                             )
                                           }
-                                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54"
+                                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/54"
                                           aria-label={`Edit ${exercise.name}`}
                                         >
                                           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -14689,7 +15027,7 @@ export function NoteDatabaseEntrySheet({
                                             }))
                                           }
                                           aria-label={`Remove ${exercise.name}`}
-                                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-300/10 bg-red-500/[0.06] text-red-100/70"
+                                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-red-300/10 bg-red-500/[0.06] text-red-100/70"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                         </button>
@@ -14779,7 +15117,7 @@ export function NoteDatabaseEntrySheet({
                         <button
                           type="button"
                           onClick={() => setFitnessCustomRoutineEditingExerciseId(null)}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58"
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.04] text-white/58"
                           aria-label="Close prescription editor"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
@@ -14851,7 +15189,7 @@ export function NoteDatabaseEntrySheet({
                     <summary className="cursor-pointer select-none text-sm font-semibold text-white/76">
                       Routine details
                     </summary>
-                    <div className="mt-3 space-y-3">
+                    <div className="mt-2.5 space-y-2">
                       {renderTextarea({
                         label: "Description",
                         value: fitnessCustomRoutineDraft.description,
@@ -15143,7 +15481,7 @@ export function NoteDatabaseEntrySheet({
                                     return (
                                       <div
                                         key={`${source}-${routine.id}`}
-                                        className="flex min-h-12 items-center gap-2 border-t border-white/[0.04] px-2 py-2 first:border-t-0"
+                                        className="flex min-h-12 items-center gap-2 border-t border-white/[0.04] px-2 py-1.5 first:border-t-0"
                                       >
                                         <button
                                           type="button"
@@ -15424,7 +15762,7 @@ export function NoteDatabaseEntrySheet({
                       <summary className="cursor-pointer select-none text-sm font-semibold text-white/76">
                         Plan details
                       </summary>
-                      <div className="mt-3 space-y-3">
+                      <div className="mt-2.5 space-y-2">
                         {renderTextarea({
                           label: "Description",
                           value: fitnessCustomPlanDraft.description,
@@ -15510,7 +15848,7 @@ export function NoteDatabaseEntrySheet({
         <div className="px-1">
           <p className="text-sm font-semibold text-white/82">Routines</p>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
+        <div className="overflow-hidden rounded-[14px] border border-white/[0.07] bg-[#090909]">
           {allFitnessRoutineGroups.map((routineGroup, groupIndex) => {
             const isGroupOpen = expandedFitnessRoutineGroups.has(routineGroup.id);
 
@@ -15622,69 +15960,117 @@ export function NoteDatabaseEntrySheet({
         })?.routine ?? null
       : null;
 
+    const visibleFitnessPlans = activeFitnessPlan
+      ? allFitnessPlanTemplates.filter(
+          (plan) => plan.title !== activeFitnessPlan.planTitle,
+        )
+      : allFitnessPlanTemplates;
+
     return (
-      <div className="mt-3 space-y-3">
+      <div className="mt-2.5 space-y-2.5">
         <div className="px-1">
-          <p className="text-sm font-semibold text-white/82">Plans</p>
-          <p className="mt-0.5 text-xs font-medium text-white/38">
-            Compact training systems. Open a preview before activating one.
+          <p className="text-[13px] font-semibold text-white/86">
+            Plans
           </p>
         </div>
+
         {activeFitnessPlan ? (
-          <section className="rounded-xl border border-white/[0.07] bg-white/[0.04] p-3">
+          <section className="rounded-[16px] border border-white/[0.075] bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/38">
                   Active Plan
                 </p>
-                <p className="mt-1 text-sm font-semibold text-white/88">
+
+                <p className="mt-1 truncate text-[15px] font-semibold text-white/92">
                   {activeFitnessPlan.planTitle}
                 </p>
-                <p className="mt-0.5 text-xs font-medium text-white/46">
-                  Next: {activePlanRoutine?.title ?? "Routine unavailable"}
+              </div>
+
+              <div className="shrink-0 text-right">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/30">
+                  Next workout
                 </p>
-                <p className="mt-0.5 text-xs font-medium text-white/38">
+                <p className="mt-1 max-w-[7.5rem] truncate text-[11px] font-semibold text-white/62">
+                  {activePlanRoutine?.title ?? "Routine unavailable"}
+                </p>
+              </div>
+
+            </div>
+
+            <div className="mt-2 space-y-1">
+              
+              <div className="flex min-w-0 items-center gap-2 text-white/38">
+                <Clock
+                  className="h-3.5 w-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 truncate text-[10px] font-medium">
                   {formatFitnessActivePlanSchedule(activeFitnessPlan)}
                 </p>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+
+            <button
+              type="button"
+              onClick={() =>
+                loadNextFitnessActivePlanWorkout(activeFitnessPlan)
+              }
+              disabled={!activePlanRoutine}
+              className="mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-[12px] border border-white/[0.44] bg-white/72 px-3 text-[11px] font-semibold text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.80),inset_0_-1px_0_rgba(0,0,0,0.10)] outline-none transition active:bg-white/64 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.05] disabled:text-white/28 disabled:shadow-none"
+            >
+              <Dumbbell
+                className="h-3.5 w-3.5"
+                aria-hidden="true"
+              />
+              Load next workout
+            </button>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => loadNextFitnessActivePlanWorkout(activeFitnessPlan)}
-                disabled={!activePlanRoutine}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/[0.42] bg-white/70 px-2 text-xs font-semibold text-zinc-950 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+                onClick={() =>
+                  editFitnessActivePlanSchedule(activeFitnessPlan)
+                }
+                className="flex h-9 items-center justify-center gap-1.5 rounded-[11px] border border-white/[0.08] bg-black/20 px-2 text-[10px] font-semibold text-white/64 outline-none transition active:bg-white/[0.06] active:text-white/84"
               >
-                <Dumbbell className="h-3.5 w-3.5" aria-hidden="true" />
-                Load next workout
-              </button>
-              <button
-                type="button"
-                onClick={() => editFitnessActivePlanSchedule(activeFitnessPlan)}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/[0.09] bg-black/24 px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.15] hover:bg-white/[0.06] hover:text-white/88 focus-visible:ring-1 focus-visible:ring-white/18"
-              >
-                <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                <Calendar
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
                 Edit schedule
               </button>
+
               <button
                 type="button"
-                onClick={() => editFitnessActivePlanSchedule(activeFitnessPlan)}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/[0.09] bg-black/24 px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.15] hover:bg-white/[0.06] hover:text-white/88 focus-visible:ring-1 focus-visible:ring-white/18"
+                onClick={() =>
+                  editFitnessActivePlanSchedule(activeFitnessPlan)
+                }
+                className="flex h-9 items-center justify-center gap-1.5 rounded-[11px] border border-white/[0.08] bg-black/20 px-2 text-[10px] font-semibold text-white/64 outline-none transition active:bg-white/[0.06] active:text-white/84"
               >
-                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <Settings2
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
                 Manage plan
               </button>
             </div>
           </section>
         ) : null}
+
         {activeFitnessPlan ? (
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/34">
+          <p className="px-1 pt-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/32">
             Other Plans
           </p>
         ) : null}
-        <div className="space-y-2">
-          {allFitnessPlanTemplates.map((plan) => {
-            const matchLabel = getFitnessPlanMatchLabel(plan, activeFitnessProfile);
+
+        <div className="space-y-1.5">
+          {visibleFitnessPlans.map((plan) => {
+            const matchLabel = getFitnessPlanMatchLabel(
+              plan,
+              activeFitnessProfile,
+            );
+
             const customPlan = activeFitnessCustomLibrary?.plans.find(
               (item) => item.id === plan.id,
             );
@@ -15692,76 +16078,105 @@ export function NoteDatabaseEntrySheet({
             return (
               <div
                 key={plan.id}
-                className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
+                className="rounded-[14px] border border-white/[0.055] bg-black/38 px-2.5 py-2.5"
               >
-              <button
-                type="button"
-                onClick={() => openFitnessPlanPreview(plan)}
-                className="w-full text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/18"
-              >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="text-sm font-semibold text-white/86">{plan.title}</p>
-                    {matchLabel ? (
-                      <span className="rounded-full border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-white/48">
-                        {matchLabel}
-                      </span>
-                    ) : null}
+                <button
+                  type="button"
+                  onClick={() => openFitnessPlanPreview(plan)}
+                  className="w-full text-left outline-none"
+                >
+                  <div className="grid grid-cols-[2.6rem_minmax(0,1fr)_auto] items-start gap-2.5">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-white/[0.06] bg-gradient-to-br from-white/[0.06] to-white/[0.02] text-white/52">
+                      <Dumbbell
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
+                    </span>
+
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <p className="min-w-0 truncate text-[12px] font-semibold text-white/88">
+                          {plan.title}
+                        </p>
+
+                        {matchLabel ? (
+                          <span className="shrink-0 rounded-full border border-white/[0.055] bg-white/[0.035] px-1.5 py-0.5 text-[8px] font-semibold text-white/42">
+                            {matchLabel}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <p className="mt-0.5 line-clamp-2 text-[9.5px] font-medium leading-[13px] text-white/39">
+                        {plan.description}
+                      </p>
+                    </div>
+
+                    <span className="flex h-8 shrink-0 items-center gap-1 rounded-[9px] border border-white/[0.075] bg-white/[0.045] pl-2.5 pr-1.5 text-[9.5px] font-semibold text-white/66">
+                      View plan
+                      <ChevronRight
+                        className="h-3 w-3"
+                        aria-hidden="true"
+                      />
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs font-medium text-white/42">
-                    {plan.description}
-                  </p>
-                </div>
-                <span className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72">
-                  View plan
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {getFitnessPlanDaysLabel(plan.allowedDaysPerWeek)}
-                </span>
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {plan.equipment}
-                </span>
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {getFitnessPlanSessionLengthLabel(plan.sessionLengthOptions)}
-                </span>
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {plan.goal}
-                </span>
-              </div>
-            </button>
-            {customPlan ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => editCustomFitnessPlan(customPlan)}
-                  className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
-                >
-                  Edit
+
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <span className="rounded-full border border-white/[0.045] bg-white/[0.025] px-2 py-1 text-[8.5px] font-medium leading-none text-white/44">
+                      {getFitnessPlanDaysLabel(plan.allowedDaysPerWeek)}
+                    </span>
+
+                    <span className="rounded-full border border-white/[0.045] bg-white/[0.025] px-2 py-1 text-[8.5px] font-medium leading-none text-white/44">
+                      {plan.equipment}
+                    </span>
+
+                    <span className="rounded-full border border-white/[0.045] bg-white/[0.025] px-2 py-1 text-[8.5px] font-medium leading-none text-white/44">
+                      {getFitnessPlanSessionLengthLabel(
+                        plan.sessionLengthOptions,
+                      )}
+                    </span>
+
+                    <span className="rounded-full border border-white/[0.045] bg-white/[0.025] px-2 py-1 text-[8.5px] font-medium leading-none text-white/44">
+                      {plan.goal}
+                    </span>
+                  </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => duplicateCustomFitnessPlan(customPlan)}
-                  className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.04] px-2 text-[11px] font-semibold text-white/60"
-                >
-                  Duplicate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void removeCustomFitnessPlan(customPlan)}
-                  className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[11px] font-semibold text-red-100/70"
-                >
-                  Delete
-                </button>
+
+                {customPlan ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => editCustomFitnessPlan(customPlan)}
+                      className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.035] px-2 text-[9px] font-semibold text-white/56"
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        duplicateCustomFitnessPlan(customPlan)
+                      }
+                      className="h-7 rounded-lg border border-white/[0.06] bg-white/[0.035] px-2 text-[9px] font-semibold text-white/56"
+                    >
+                      Duplicate
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void removeCustomFitnessPlan(customPlan)
+                      }
+                      className="h-7 rounded-lg border border-red-300/10 bg-red-500/[0.06] px-2 text-[9px] font-semibold text-red-100/68"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-            </div>
             );
           })}
         </div>
-        {renderFitnessPlanSheet()}
+
       </div>
     );
   }
@@ -16034,32 +16449,29 @@ export function NoteDatabaseEntrySheet({
     }
 
     return (
-      <div
-        className="fixed inset-0 z-[90] flex items-end justify-center overflow-hidden overscroll-contain bg-black/64 backdrop-blur-sm sm:items-center sm:p-6"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${plan.title} plan preview`}
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeFitnessPlanSheet();
-        }}
-      >
-        <div className="animate-in slide-in-from-bottom-5 fade-in-0 flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[26px] border border-white/[0.055] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:rounded-[26px] sm:border-b">
-          <div className="relative border-b border-white/[0.045] px-4 py-3">
-            <div className="mx-auto h-1 w-10 rounded-full bg-white/18 sm:hidden" />
-            <h3 className="mt-3 truncate text-center text-sm font-semibold text-white/88 sm:mt-0">
-              {fitnessPlanSheetStep === "replace" ? "Replace Active Plan" : "Plan Preview"}
-            </h3>
+      <div className="-mx-4 -mt-2">
+        <div className="flex min-h-0 w-full flex-col">
+          <div className="relative flex h-11 items-center border-b border-white/[0.045] px-3">
             <button
               type="button"
-              aria-label="Close plan preview"
               onClick={closeFitnessPlanSheet}
-              className="absolute right-3 top-2.5 flex h-8 w-8 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+              className="absolute left-2 flex h-8 items-center gap-0.5 rounded-lg px-1.5 text-[11px] font-semibold text-white/54 outline-none transition hover:bg-white/[0.05] hover:text-white/82 focus-visible:bg-white/[0.07] focus-visible:text-white"
             >
-              <X className="h-4 w-4" aria-hidden="true" />
+              <ChevronRight
+                className="h-3.5 w-3.5 rotate-180"
+                aria-hidden="true"
+              />
+              Back
             </button>
+
+            <h3 className="w-full px-16 truncate text-center text-[13px] font-semibold text-white/86">
+              {fitnessPlanSheetStep === "replace"
+                ? "Replace Active Plan"
+                : "Plan Preview"}
+            </h3>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 [-webkit-overflow-scrolling:touch]">
+          <div className="space-y-4 px-4 pb-4 pt-3">
             {fitnessPlanSheetStep === "replace" ? (
               <div className="space-y-3">
                 <div className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-3">
@@ -16653,55 +17065,68 @@ export function NoteDatabaseEntrySheet({
     }
 
     return (
-      <div className="mt-3">
-        <div className="rounded-xl border border-white/[0.055] bg-black/42 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.055] text-white/62">
-                <Dumbbell className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white/82">Current Workout</p>
-                {hasSelectedWorkoutExercises ? (
-                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <p className="min-w-0 truncate text-xs font-semibold text-white/58">
-                      {currentWorkoutName}
-                    </p>
-                    <p className="text-xs font-medium text-white/34">
-                      {selectedFitnessWorkoutExercises.length} selected
-                    </p>
-                  </div>
-                ) : null}
+      <div className="mt-2.5">
+        <div className="overflow-hidden rounded-[16px] border border-white/[0.06] bg-black/40">
+          <div className="px-2.5 pt-2.5">
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-white/[0.065] bg-white/[0.045] text-white/58">
+                  <Dumbbell className="h-4 w-4" aria-hidden="true" />
+                </span>
+
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-white/88">
+                    Current Workout
+                  </p>
+
+                  {hasSelectedWorkoutExercises ? (
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                      <p className="min-w-0 truncate text-[11px] font-semibold text-white/50">
+                        {currentWorkoutName}
+                      </p>
+                      <span className="shrink-0 text-[10px] text-white/24">·</span>
+                      <p className="shrink-0 text-[10px] font-medium text-white/34">
+                        {selectedFitnessWorkoutExercises.length} selected
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
+
+              {hasSelectedWorkoutExercises ? (
+                <button
+                  type="button"
+                  onClick={clearFitnessWorkoutExercises}
+                  className="flex h-8 shrink-0 items-center justify-center rounded-[9px] border border-white/[0.065] bg-white/[0.04] px-2.5 text-[10px] font-semibold text-white/54 outline-none transition active:bg-white/[0.08] active:text-white/78"
+                >
+                  Clear
+                </button>
+              ) : null}
             </div>
-            {hasSelectedWorkoutExercises ? (
-              <button
-                type="button"
-                onClick={clearFitnessWorkoutExercises}
-                className="shrink-0 rounded-lg border border-white/[0.06] bg-white/[0.045] px-2.5 py-1.5 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.08] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/16"
-              >
-                Clear
-              </button>
-            ) : null}
           </div>
 
           {hasSelectedWorkoutExercises ? (
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-2 space-y-1.5 px-2.5">
               {selectedFitnessWorkoutExercises.map((exercise) => {
                 const detail = getFitnessWorkoutExerciseDetail(
                   exercise,
                   fitnessWorkoutExerciseDetailsById,
                 );
-                const metadata = formatFitnessWorkoutExerciseDetail(detail, exercise);
+
+                const metadata = formatFitnessWorkoutExerciseDetail(
+                  detail,
+                  exercise,
+                );
+
                 const progression =
                   fitnessProgressionByExerciseId[getFitnessExerciseId(exercise)];
 
                 return (
                   <div
                     key={exercise.name}
-                    className="rounded-lg border border-white/[0.045] bg-white/[0.035] px-2.5 py-2"
+                    className="rounded-[12px] border border-white/[0.05] bg-white/[0.025] px-2 py-2"
                   >
-                    <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                    <div className="grid grid-cols-[2.6rem_minmax(0,1fr)_1.6rem] items-start gap-2">
                       <button
                         type="button"
                         onClick={() =>
@@ -16710,91 +17135,84 @@ export function NoteDatabaseEntrySheet({
                             exerciseName: exercise.name,
                           })
                         }
-                        className="min-w-0 flex-1 text-left outline-none transition focus-visible:ring-1 focus-visible:ring-white/16"
+                        aria-label={`View ${exercise.name} details`}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] border border-white/[0.055] bg-gradient-to-br from-white/[0.06] to-white/[0.022] text-white/50 outline-none transition active:bg-white/[0.06]"
                       >
-                        <p className="truncate text-xs font-semibold text-white/78">
-                          {exercise.name}
-                        </p>
-                        {metadata ? (
-                          <p className="mt-0.5 truncate text-[11px] font-medium text-white/36">
-                            {metadata}
-                          </p>
-                        ) : null}
-                        {progression?.lastLabel ? (
-                          <p className="mt-0.5 truncate text-[10px] font-medium text-white/44">
-                            Last: {progression.lastLabel}
-                            {progression.nextLabel
-                              ? ` · Suggested: ${progression.nextLabel}`
-                              : ""}
-                          </p>
-                        ) : null}
+                        <Dumbbell className="h-4 w-4" aria-hidden="true" />
                       </button>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {renderFitnessWorkoutWeightControl(exercise)}
+
+                      <div className="min-w-0 pt-px">
                         <button
                           type="button"
-                          aria-label={`Remove ${exercise.name} from current workout`}
-                          onClick={() => removeFitnessWorkoutExercise(exercise.name)}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/40 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                          onClick={() =>
+                            openFitnessExerciseDetail({
+                              exerciseId: getFitnessExerciseId(exercise),
+                              exerciseName: exercise.name,
+                            })
+                          }
+                          className="block w-full min-w-0 text-left outline-none"
                         >
-                          <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          <div className="flex min-w-0 items-baseline gap-2">
+                            <p className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-white/84">
+                              {exercise.name}
+                            </p>
+
+                            {progression?.lastLabel ? (
+                              <p className="max-w-[48%] shrink-0 truncate text-[8.75px] font-medium text-white/37">
+                                Last: {progression.lastLabel}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {metadata ? (
+                            <p className="mt-0.5 truncate text-[9.5px] font-medium text-white/38">
+                              {metadata}
+                            </p>
+                          ) : null}
                         </button>
+
+                        <div className="mt-1 flex justify-end">
+                          {renderFitnessWorkoutWeightControl(exercise)}
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        aria-label={`Remove ${exercise.name} from current workout`}
+                        onClick={() => removeFitnessWorkoutExercise(exercise.name)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/34 outline-none transition active:bg-white/[0.07] active:text-white/72"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="mt-3 rounded-lg border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-3 text-center text-xs font-medium leading-5 text-white/40">
+            <div className="mx-2.5 mt-2 rounded-[11px] border border-dashed border-white/[0.06] bg-white/[0.02] px-3 py-3 text-center text-[10px] font-medium leading-4 text-white/38">
               Build this workout from Exercises, Favorites, or Routines.
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => selectFitnessAction("exercises")}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
-            >
-              <ListChecks className="h-4 w-4" aria-hidden="true" />
-              Exercises
-            </button>
-            <button
-              type="button"
-              onClick={() => selectFitnessAction("favorites")}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
-            >
-              <Star className="h-4 w-4" aria-hidden="true" />
-              Favorites
-            </button>
-            <button
-              type="button"
-              onClick={() => selectFitnessAction("workout-routines")}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
-            >
-              <Calendar className="h-4 w-4" aria-hidden="true" />
-              Routines
-            </button>
-          </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-2.5 grid grid-cols-2 gap-1.5 px-2.5 pb-2.5">
             <button
               type="button"
               onClick={() => void startSelectedFitnessWorkout()}
               disabled={!hasSelectedWorkoutExercises || isFitnessWorkoutStarting}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/[0.42] bg-white/70 px-2 text-xs font-semibold text-zinc-900 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none backdrop-blur-xl transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black active:bg-white/65 focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-[12px] border border-white/[0.42] bg-white/70 px-2 text-[11px] font-semibold text-zinc-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.78),inset_0_-1px_0_rgba(0,0,0,0.10)] outline-none transition active:bg-white/64 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.05] disabled:text-white/28 disabled:shadow-none"
             >
-              <Dumbbell className="h-4 w-4" aria-hidden="true" />
+              <Dumbbell className="h-3.5 w-3.5" aria-hidden="true" />
               {isFitnessWorkoutStarting ? "Starting..." : "Start"}
             </button>
+
             <button
               type="button"
               onClick={reviewSelectedFitnessWorkout}
               disabled={!hasSelectedWorkoutExercises}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/[0.14] bg-zinc-800/72 px-2 text-xs font-semibold text-white/88 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(0,0,0,0.32)] outline-none backdrop-blur-xl transition hover:border-white/[0.2] hover:bg-zinc-700/78 hover:text-white active:bg-zinc-800/82 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28 disabled:shadow-none"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-[12px] border border-white/[0.11] bg-white/[0.055] px-2 text-[11px] font-semibold text-white/78 outline-none transition active:bg-white/[0.09] disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.02] disabled:text-white/28"
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               Review &amp; log
             </button>
           </div>
@@ -17418,7 +17836,7 @@ export function NoteDatabaseEntrySheet({
     );
 
     return (
-      <div className="mt-3 space-y-3">
+      <div className="mt-2.5 space-y-2">
         {renderFitnessMyHeader()}
 
         {inProgressEntry && log ? (
@@ -17503,30 +17921,41 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessTabContent() {
+    const isFitnessExerciseDetailOpen = Boolean(fitnessExerciseDetailTarget);
+    const isFitnessPlanDetailOpen = Boolean(fitnessPlanPreviewId);
+
     return (
       <div>
-        {renderFitnessActionTabs()}
-        {selectedFitnessAction === "me" ? (
-          renderFitnessMeContent()
-        ) : selectedFitnessAction === "start" ? (
-          renderFitnessStartContent()
-        ) : selectedFitnessAction === "exercises" ? (
-          renderFitnessExerciseBrowser()
-        ) : selectedFitnessAction === "favorites" ? (
-          renderFitnessFavoritesBrowser()
-        ) : selectedFitnessAction === "custom" ? (
-          renderFitnessCustomIntro()
-        ) : selectedFitnessAction === "workout-routines" ? (
-          renderFitnessRoutineBrowser()
-        ) : selectedFitnessAction === "plans" ? (
-          renderFitnessPlanBrowser()
-        ) : null}
+        {isFitnessExerciseDetailOpen ? (
+          renderFitnessExerciseDetailSheet()
+        ) : isFitnessPlanDetailOpen ? (
+          renderFitnessPlanSheet()
+        ) : (
+          <>
+            {renderFitnessActionTabs()}
+
+            {selectedFitnessAction === "me" ? (
+              renderFitnessMeContent()
+            ) : selectedFitnessAction === "start" ? (
+              renderFitnessStartContent()
+            ) : selectedFitnessAction === "exercises" ? (
+              renderFitnessExerciseBrowser()
+            ) : selectedFitnessAction === "favorites" ? (
+              renderFitnessFavoritesBrowser()
+            ) : selectedFitnessAction === "custom" ? (
+              renderFitnessCustomIntro()
+            ) : selectedFitnessAction === "workout-routines" ? (
+              renderFitnessRoutineBrowser()
+            ) : selectedFitnessAction === "plans" ? (
+              renderFitnessPlanBrowser()
+            ) : null}
+          </>
+        )}
+
         {renderFitnessProfileSetupSheet()}
-        {renderFitnessExerciseDetailSheet()}
       </div>
     );
   }
-
   function renderNutritionDailyProgress() {
     if (!shouldRenderNutritionDailyProgress) return null;
 
@@ -18013,7 +18442,7 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div className="mt-3 border-t border-white/[0.055] pt-3">
-        <div className="mb-2 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-2">
+        <div className="mb-2 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
           <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
             <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/42">
               Amount on hand
@@ -18144,7 +18573,7 @@ export function NoteDatabaseEntrySheet({
     ].filter((field): field is NoteDatabaseFieldDefinition => Boolean(field));
 
     return (
-      <div className="mt-3 space-y-3">
+      <div className="mt-2.5 space-y-2">
         {renderDatabaseEntryField({ ...groceryFoodField, name: "Food" })}
         {renderDatabaseEntryField(caloriesField)}
         <div className="grid grid-cols-3 gap-2">
@@ -19691,7 +20120,7 @@ export function NoteDatabaseEntrySheet({
             return (
               <div
                 key={food.id}
-                className="w-full rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
+                className="w-full rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5"
               >
                 <div className="flex w-full items-center gap-2">
                   {isGroceryDatabase ? null : renderNutritionFavoriteButton(favoriteTarget)}
@@ -19782,9 +20211,9 @@ export function NoteDatabaseEntrySheet({
             {getNutritionSavedMealMeta(selectedNutritionMeal)}
           </span>
         </div>
-        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5">
           {renderNutritionFavoriteButton(favoriteTarget)}
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <Utensils className="h-4 w-4" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
@@ -19828,9 +20257,9 @@ export function NoteDatabaseEntrySheet({
             {lineMeta}
           </span>
         </div>
-        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5">
           {renderNutritionFavoriteButton(favoriteTarget)}
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <NutritionMealTemplateIcon
               icon={getNutritionSavedRecipeIcon(recipe)}
             />
@@ -19932,7 +20361,7 @@ export function NoteDatabaseEntrySheet({
                 onClick={() => addNutritionMealBuilderRecipe(recipe)}
                 className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                   <BookOpen className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -20355,7 +20784,7 @@ export function NoteDatabaseEntrySheet({
             onClick={openNutritionMealBuilder}
             className="flex w-full items-center gap-3 rounded-lg border border-dashed border-white/[0.105] bg-white/[0.026] px-2.5 py-2.5 text-left outline-none transition hover:border-white/[0.16] hover:bg-white/[0.045] focus-visible:border-white/[0.18] focus-visible:bg-white/[0.06]"
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.075] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <Plus className="h-4 w-4" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
@@ -20369,9 +20798,9 @@ export function NoteDatabaseEntrySheet({
           </button>
 
           {isNutritionMealTemplatesLoading ? (
-            <p className="px-2 py-2 text-xs font-medium text-white/42">Loading meals...</p>
+            <p className="px-2 py-1.5 text-xs font-medium text-white/42">Loading meals...</p>
           ) : nutritionMealTemplatesError ? (
-            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
+            <p className="px-2 py-1.5 text-xs font-medium text-red-200/72">
               {nutritionMealTemplatesError}
             </p>
           ) : nutritionMealTemplates.length > 0 ? (
@@ -20392,7 +20821,7 @@ export function NoteDatabaseEntrySheet({
                       : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
                   } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <NutritionMealTemplateIcon icon={getNutritionSavedMealIcon(meal)} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -20413,7 +20842,7 @@ export function NoteDatabaseEntrySheet({
               );
             })
           ) : (
-            <p className="px-2 py-2 text-xs font-medium text-white/38">
+            <p className="px-2 py-1.5 text-xs font-medium text-white/38">
               Create reusable meals for one-tap logging.
             </p>
           )}
@@ -20428,11 +20857,11 @@ export function NoteDatabaseEntrySheet({
         {renderSelectedNutritionMeal()}
         <div className={selectedNutritionMeal ? "mt-2 space-y-1.5" : "space-y-1.5"}>
           {isNutritionSavedMealsLoading ? (
-            <p className="px-2 py-2 text-xs font-medium text-white/42">
+            <p className="px-2 py-1.5 text-xs font-medium text-white/42">
               Loading recent meals...
             </p>
           ) : nutritionSavedMealsError ? (
-            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
+            <p className="px-2 py-1.5 text-xs font-medium text-red-200/72">
               {nutritionSavedMealsError}
             </p>
           ) : nutritionSavedMeals.length > 0 ? (
@@ -20453,7 +20882,7 @@ export function NoteDatabaseEntrySheet({
                       : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
                   } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     {isSelected ? (
                       <Check className="h-4 w-4" aria-hidden="true" />
                     ) : (
@@ -20475,7 +20904,7 @@ export function NoteDatabaseEntrySheet({
               );
             })
           ) : (
-            <p className="px-2 py-2 text-xs font-medium text-white/38">
+            <p className="px-2 py-1.5 text-xs font-medium text-white/38">
               Saved meals will appear here after you log one.
             </p>
           )}
@@ -20511,7 +20940,7 @@ export function NoteDatabaseEntrySheet({
       : "Use this as a meal idea.";
 
     return (
-      <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-black/42">
+      <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[0.07] bg-black/42">
         <div className="border-b border-white/[0.055] p-3">
           <div className="flex items-center gap-2">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/68">
@@ -20576,7 +21005,7 @@ export function NoteDatabaseEntrySheet({
                   }}
                   className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.05]"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.065] bg-white/[0.035] text-[15px] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]" aria-hidden="true">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.065] bg-white/[0.035] text-[15px] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]" aria-hidden="true">
                     {resolveChefCatalogIcon(cuisine.icon)}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -20594,7 +21023,7 @@ export function NoteDatabaseEntrySheet({
                   />
                 </button>
                 {isCuisineOpen ? (
-                  <div className="border-t border-white/[0.045] bg-white/[0.018] px-2 py-2">
+                  <div className="border-t border-white/[0.045] bg-white/[0.018] px-2 py-1.5">
                     {getChefDishFamiliesForCuisine(cuisine.id).filter((dishFamily) => familyHasMatches(cuisine.id, dishFamily.id)).map((dishFamily) => {
                       const familyKey = `${cuisine.id}:${dishFamily.id}`;
                       const isFamilyOpen = openChefDishFamilyKey === familyKey;
@@ -20634,15 +21063,15 @@ export function NoteDatabaseEntrySheet({
                                       const selectedOptionId = selectedChefOptions[optionGroup.id] ?? optionGroup.defaultOptionId;
                                       const isSelected = selectedOptionId === chefOption.id;
                                       const isOptionAvailable = chefAvailabilityCatalog.availableOptionIdsByGroup.get(optionGroup.id)?.has(chefOption.id) ?? false;
-                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : showAvailableChefRecipesOnly && !isOptionAvailable ? "border-white/[0.035] text-white/20" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
+                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : showAvailableChefRecipesOnly && !isOptionAvailable ? "border-white/[0.035] text-white/20" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
                                     })}
                                   </div>
                                 </div>
                               ))}
                               {styles.length > 0 ? (
                                 <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                  <button type="button" aria-pressed={!selectedChefStyleId} onClick={() => { setSelectedChefStyleId(null); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${!selectedChefStyleId ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>All</button>
-                                  {styles.map((chefStyle) => <button key={chefStyle.id} type="button" aria-pressed={selectedChefStyleId === chefStyle.id} onClick={() => { setSelectedChefStyleId(chefStyle.id); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${selectedChefStyleId === chefStyle.id ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefStyle.label}</button>)}
+                                  <button type="button" aria-pressed={!selectedChefStyleId} onClick={() => { setSelectedChefStyleId(null); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${!selectedChefStyleId ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>All</button>
+                                  {styles.map((chefStyle) => <button key={chefStyle.id} type="button" aria-pressed={selectedChefStyleId === chefStyle.id} onClick={() => { setSelectedChefStyleId(chefStyle.id); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${selectedChefStyleId === chefStyle.id ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefStyle.label}</button>)}
                                 </div>
                               ) : null}
                               <div className="space-y-1.5">
@@ -20662,7 +21091,7 @@ export function NoteDatabaseEntrySheet({
                                     {showAvailableChefRecipesOnly && tierInfo?.tier !== "ready" && tierInfo?.tier !== previousTier ? <p className="px-1 pt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/36">{tierInfo.tier === "needs_one" ? "Need 1 ingredient" : "Need 2 ingredients"}</p> : null}
                                     <article className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
                                       <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left outline-none hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
-                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
+                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-px block text-[8.5px] font-medium text-white/32">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
                                         <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
                                         <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
                                       </button>
@@ -20714,7 +21143,7 @@ export function NoteDatabaseEntrySheet({
       : selectedNutritionFoods.length;
 
     return (
-      <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
+      <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[0.07] bg-[#090909]">
         {browseSelectedCount > 0 ? (
           <div className="flex min-h-9 items-center gap-2 border-b border-white/[0.055] bg-white/[0.035] px-3 text-xs font-semibold text-white/62">
             <Check className="h-3.5 w-3.5 shrink-0 text-white/70" aria-hidden="true" />
@@ -20790,7 +21219,7 @@ export function NoteDatabaseEntrySheet({
                                   currentAisle === aisle ? null : aisle,
                                 );
                               }}
-                              className={`flex h-10 w-full items-center gap-2.5 border-t border-white/[0.045] py-0 pl-7 pr-3 text-left outline-none transition ${
+                              className={`flex h-10 w-full items-center gap-2.5 border-t border-white/[0.045] py-0 pl-8 pr-2.5 text-left outline-none transition ${
                                 isAisleOpen
                                   ? "bg-white/[0.026] text-white/76"
                                   : "text-white/44 hover:bg-white/[0.022] hover:text-white/66"
@@ -22271,7 +22700,7 @@ export function NoteDatabaseFocusedView({
                           ? "Unpin from stomach menu"
                           : "Pin to stomach menu"
                     }
-                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
                       isPinned
                         ? "bg-white/[0.12] text-white/86 hover:bg-white/[0.16] hover:text-white disabled:text-white/42 disabled:hover:bg-white/[0.12]"
                         : "bg-white/[0.045] text-white/42 hover:bg-white/[0.065] hover:text-white/68"
@@ -22287,7 +22716,7 @@ export function NoteDatabaseFocusedView({
                   Fields
                 </p>
                 {databaseFields.length > 0 ? (
-                  <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
+                  <div className="mt-2 overflow-hidden rounded-[14px] border border-white/[0.04] bg-white/[0.035]">
                     {databaseFields.map((field) => {
                       const isTitleField = field.id === databaseDefinition.titleFieldId;
                       const isFieldVisible =
@@ -22355,7 +22784,7 @@ export function NoteDatabaseFocusedView({
                               )
                             }
                             disabled={isTitleField}
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
+                            className={`flex h-7 w-7 items-center justify-center rounded-md outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
                               isFieldVisible
                                 ? "text-white/58 hover:bg-white/[0.055] hover:text-white/82"
                                 : "text-white/24 hover:bg-white/[0.055] hover:text-white/58"
@@ -25436,7 +25865,7 @@ function NoteSlashTextarea({
                           ? "Unpin from stomach menu"
                           : "Pin to stomach menu"
                     }
-                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
                       activeDatabaseDefinition.lockedSystemDatabase === true ||
                       activeDatabaseDefinition.pinnedSurface === "body"
                         ? "bg-white/[0.12] text-white/86 hover:bg-white/[0.16] hover:text-white disabled:text-white/42 disabled:hover:bg-white/[0.12]"
@@ -25483,7 +25912,7 @@ function NoteSlashTextarea({
                   Fields
                 </p>
                 {activeDatabaseFields.length > 0 ? (
-                  <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
+                  <div className="mt-2 overflow-hidden rounded-[14px] border border-white/[0.04] bg-white/[0.035]">
                     {activeDatabaseFields.map((field) => {
                       const isTitleField = field.id === activeDatabaseDefinition.titleFieldId;
                       const isFieldVisible =
@@ -25558,7 +25987,7 @@ function NoteSlashTextarea({
                               );
                             }}
                             disabled={isTitleField || !activeDatabaseView}
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
+                            className={`flex h-7 w-7 items-center justify-center rounded-md outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
                               isFieldVisible
                                 ? "text-white/58 hover:bg-white/[0.055] hover:text-white/82"
                                 : "text-white/24 hover:bg-white/[0.055] hover:text-white/58"

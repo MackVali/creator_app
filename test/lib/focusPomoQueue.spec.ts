@@ -6,6 +6,13 @@ import {
   sortFocusPomoQueue,
   type FocusPomoQueueItem,
 } from "../../src/lib/focus/focusPomoQueue";
+import {
+  buildFocusPomoExecutionQueue,
+  buildFocusPomoQueueHierarchy,
+  flattenFocusPomoQueueHierarchy,
+  getFocusPomoProjectChecklistItems,
+  getVisibleFocusPomoHierarchyItemKeys,
+} from "../../src/lib/focus/focusPomoQueueHierarchy";
 
 vi.mock("@/lib/scheduler/habitRecurrence", () => ({
   evaluateHabitDueOnDate: () => ({ isDue: true, dueStart: null }),
@@ -155,6 +162,9 @@ function createAreaFocusPomoQueueClient(options: {
   habits?: Array<Record<string, unknown>>;
   areaSkills?: Array<Record<string, unknown>>;
   projectSkills?: Array<Record<string, unknown>>;
+  tasks?: Array<Record<string, unknown>>;
+  goalWorkspaces?: Array<Record<string, unknown>>;
+  monuments?: Array<Record<string, unknown>>;
 } = {}) {
   const calls: QueryCall[] = [];
   const goals = options.goals ?? [
@@ -202,6 +212,15 @@ function createAreaFocusPomoQueueClient(options: {
 
     if (call.table === "goals" && call.columns === "id") {
       const areaId = filterValue(call, "eq", "area_id");
+      const monumentIds = filterValue(call, "in", "monument_id");
+      if (Array.isArray(monumentIds)) {
+        return {
+          data: goals
+            .filter((goal) => monumentIds.includes(goal.monument_id))
+            .map((goal) => ({ id: goal.id })),
+          error: null,
+        };
+      }
       return {
         data: goals
           .filter((goal) => goal.area_id === areaId)
@@ -222,10 +241,51 @@ function createAreaFocusPomoQueueClient(options: {
 
     if (call.table === "projects") {
       const goalIds = filterValue(call, "in", "goal_id");
+      if (call.columns === "id") {
+        return {
+          data: Array.isArray(goalIds)
+            ? projects
+                .filter((project) => goalIds.includes(project.goal_id))
+                .map((project) => ({ id: project.id }))
+            : projects.map((project) => ({ id: project.id })),
+          error: null,
+        };
+      }
+      const projectIds = filterValue(call, "in", "id");
+      if (Array.isArray(projectIds)) {
+        return {
+          data: projects.filter((project) => projectIds.includes(project.id)),
+          error: null,
+        };
+      }
       return {
         data: Array.isArray(goalIds)
           ? projects.filter((project) => goalIds.includes(project.goal_id))
           : projects,
+        error: null,
+      };
+    }
+
+    if (call.table === "tasks") {
+      return { data: options.tasks ?? [], error: null };
+    }
+
+    if (call.table === "goal_workspaces") {
+      const goalIds = filterValue(call, "in", "goal_id");
+      const rows = options.goalWorkspaces ?? [];
+      return {
+        data: Array.isArray(goalIds)
+          ? rows.filter((row) => goalIds.includes(row.goal_id))
+          : rows,
+        error: null,
+      };
+    }
+
+    if (call.table === "monuments") {
+      const areaId = filterValue(call, "eq", "area_id");
+      const rows = options.monuments ?? [];
+      return {
+        data: rows.filter((row) => row.area_id === areaId),
         error: null,
       };
     }
@@ -429,6 +489,330 @@ describe("sortFocusPomoQueue", () => {
     const second = project("project-same", null, { title: "Same title" });
 
     expect(sortFocusPomoQueue([first, second], { now })).toEqual([first, second]);
+  });
+});
+
+describe("buildFocusPomoQueueHierarchy", () => {
+  it("keeps same-Goal children grouped in Goal ordering after obligations", () => {
+    const chore = dueHabit("chore", "chore");
+    const goalBTask = queueItem({
+      id: "goal-b-task",
+      title: "Goal B task",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal-b",
+      goalTitle: "Goal B",
+      goalPriorityRank: 2,
+    });
+    const goalATodo = queueItem({
+      id: "goal-a-todo",
+      title: "Goal A todo",
+      kind: "task",
+      sourceType: "NOTE_TODO",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      goalIcon: "A",
+      goalPriorityRank: 1,
+      taskOrder: 1,
+    });
+    const goalATask = queueItem({
+      id: "goal-a-task",
+      title: "Goal A task",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      goalPriorityRank: 1,
+      taskOrder: 2,
+    });
+    const sorted = sortFocusPomoQueue([goalBTask, goalATask, chore, goalATodo], {
+      now,
+    });
+
+    const hierarchy = buildFocusPomoQueueHierarchy(sorted);
+
+    expect(hierarchy.map((entry) => entry.type)).toEqual([
+      "item",
+      "goal",
+      "goal",
+    ]);
+    expect(hierarchy[0]).toMatchObject({ type: "item", item: chore });
+    expect(hierarchy[1]).toMatchObject({
+      type: "goal",
+      goalId: "goal-a",
+      title: "Goal A",
+      icon: "A",
+    });
+    expect(hierarchy[2]).toMatchObject({
+      type: "goal",
+      goalId: "goal-b",
+      title: "Goal B",
+    });
+
+    const goalA = hierarchy[1];
+    expect(goalA.type).toBe("goal");
+    if (goalA.type !== "goal") throw new Error("Goal A group missing.");
+    expect(goalA.items.map((item) => item.id)).toEqual([
+      "goal-a-todo",
+      "goal-a-task",
+    ]);
+    expect(goalA.children).toEqual([
+      { type: "item", item: goalATodo },
+      { type: "item", item: goalATask },
+    ]);
+  });
+
+  it("nests project Tasks under their Project while keeping leaf Projects executable", () => {
+    const projectWithTasks = queueItem({
+      id: "project-with-tasks",
+      title: "Project with Tasks",
+      kind: "project",
+      sourceType: "PROJECT",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      projectId: "project-with-tasks",
+      projectGlobalRank: 1,
+      projectOrder: 1,
+    });
+    const childTask = queueItem({
+      id: "child-task",
+      title: "Child Task",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      projectId: "project-with-tasks",
+      projectName: "Project with Tasks",
+      taskOrder: 1,
+    });
+    const leafProject = queueItem({
+      id: "leaf-project",
+      title: "Leaf Project",
+      kind: "project",
+      sourceType: "PROJECT",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      projectId: "leaf-project",
+      projectGlobalRank: 2,
+      projectOrder: 2,
+    });
+
+    const hierarchy = buildFocusPomoQueueHierarchy([
+      projectWithTasks,
+      childTask,
+      leafProject,
+    ]);
+    const goal = hierarchy[0];
+
+    expect(goal.type).toBe("goal");
+    if (goal.type !== "goal") throw new Error("Goal group missing.");
+    expect(goal.children[0]).toMatchObject({
+      type: "project",
+      projectId: "project-with-tasks",
+      title: "Project with Tasks",
+      item: projectWithTasks,
+      items: [childTask],
+    });
+    expect(goal.children[1]).toEqual({ type: "item", item: leafProject });
+  });
+
+  it("does not turn Goal groups into executable queue items or lose non-Goal items", () => {
+    const habit = dueHabit("habit", "habit");
+    const task = queueItem({
+      id: "task",
+      title: "Task",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal",
+      goalTitle: "Goal",
+    });
+
+    const hierarchy = buildFocusPomoQueueHierarchy([habit, task]);
+
+    expect(hierarchy).toHaveLength(2);
+    expect(hierarchy[0]).toEqual({ type: "item", item: habit });
+    expect(flattenFocusPomoQueueHierarchy(hierarchy)).toEqual([habit, task]);
+  });
+});
+
+describe("buildFocusPomoExecutionQueue", () => {
+  it("uses Projects as execution units instead of their child Tasks", () => {
+    const projectA = project("project-a", 1);
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+    const taskA2 = queueItem({
+      id: "task-a-2",
+      title: "Task A2",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+    const projectB = project("project-b", 2);
+
+    expect(
+      buildFocusPomoExecutionQueue([projectA, taskA1, taskA2, projectB]).map(
+        (item) => item.id
+      )
+    ).toEqual(["project-a", "project-b"]);
+  });
+
+  it("retains a Project child Task when its Project is absent", () => {
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+
+    expect(buildFocusPomoExecutionQueue([taskA1])).toEqual([taskA1]);
+  });
+
+  it("keeps Habits and Chores executable", () => {
+    const habit = dueHabit("habit", "habit");
+    const chore = dueHabit("chore", "chore");
+    const projectA = project("project-a", 1);
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+
+    expect(
+      buildFocusPomoExecutionQueue([habit, chore, projectA, taskA1]).map(
+        (item) => item.id
+      )
+    ).toEqual(["habit", "chore", "project-a"]);
+  });
+
+  it("advances from a completed Project to the next execution Project", () => {
+    const projectA = project("project-a", 1);
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+    const projectB = project("project-b", 2);
+    const executionQueue = buildFocusPomoExecutionQueue([
+      projectA,
+      taskA1,
+      projectB,
+    ]);
+    const dismissedKey = `${projectA.sourceType}:${projectA.id}`;
+    const next = executionQueue.find(
+      (item) => `${item.sourceType}:${item.id}` !== dismissedKey
+    );
+
+    expect(next).toBe(projectB);
+  });
+});
+
+describe("getFocusPomoProjectChecklistItems", () => {
+  it("returns Tasks for the current Project checklist", () => {
+    const projectA = project("project-a", 1);
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+    const todoA1 = queueItem({
+      id: "todo-a-1",
+      title: "Todo A1",
+      kind: "task",
+      sourceType: "NOTE_TODO",
+      projectId: "project-a",
+    });
+
+    expect(
+      getFocusPomoProjectChecklistItems([projectA, taskA1, todoA1], projectA)
+    ).toEqual([taskA1, todoA1]);
+  });
+
+  it("excludes Tasks from another Project", () => {
+    const projectA = project("project-a", 1);
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-a",
+    });
+    const taskB1 = queueItem({
+      id: "task-b-1",
+      title: "Task B1",
+      kind: "task",
+      sourceType: "TASK",
+      projectId: "project-b",
+    });
+
+    expect(
+      getFocusPomoProjectChecklistItems([projectA, taskA1, taskB1], projectA)
+    ).toEqual([taskA1]);
+  });
+});
+
+describe("getVisibleFocusPomoHierarchyItemKeys", () => {
+  it("uses a Project group item as the visible selectable key", () => {
+    const projectA = project("project-a", 1, {
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+    });
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      projectId: "project-a",
+    });
+    const [goal] = buildFocusPomoQueueHierarchy([projectA, taskA1]);
+
+    expect(goal?.type).toBe("goal");
+    if (!goal || goal.type !== "goal") throw new Error("Goal group missing.");
+
+    expect(
+      getVisibleFocusPomoHierarchyItemKeys(
+        goal,
+        new Set(),
+        (item) => `${item.sourceType}:${item.id}`
+      )
+    ).toEqual(["PROJECT:project-a"]);
+  });
+
+  it("falls back to child keys when a Project group has no Project item", () => {
+    const taskA1 = queueItem({
+      id: "task-a-1",
+      title: "Task A1",
+      kind: "task",
+      sourceType: "TASK",
+      goalId: "goal-a",
+      goalTitle: "Goal A",
+      projectId: "project-a",
+    });
+    const [goal] = buildFocusPomoQueueHierarchy([taskA1]);
+
+    expect(goal?.type).toBe("goal");
+    if (!goal || goal.type !== "goal") throw new Error("Goal group missing.");
+
+    expect(
+      getVisibleFocusPomoHierarchyItemKeys(
+        goal,
+        new Set(),
+        (item) => `${item.sourceType}:${item.id}`
+      )
+    ).toEqual(["TASK:task-a-1"]);
   });
 });
 
@@ -694,5 +1078,142 @@ describe("fetchFocusPomoQueue", () => {
     expect(new Set(items.map((item) => item.id))).toEqual(
       new Set(["habit-fitness", "project-body"])
     );
+  });
+
+  it("loads Area projects through Goals owned by Monuments in that Area", async () => {
+    const { calls, client } = createAreaFocusPomoQueueClient({
+      goals: [
+        {
+          id: "goal-monument-body",
+          name: "Monument body goal",
+          area_id: null,
+          monument_id: "monument-body",
+          circle_id: null,
+          roadmap_id: null,
+          priority_rank: 1,
+          global_rank: 1,
+          due_date: null,
+          created_at: "2026-06-20T15:00:00.000Z",
+          updated_at: "2026-06-20T16:00:00.000Z",
+        },
+      ],
+      projects: [
+        {
+          id: "project-monument-body",
+          name: "Monument body project",
+          duration_min: 25,
+          energy: "MEDIUM",
+          priority: "HIGH",
+          goal_id: "goal-monument-body",
+          campaign_id: null,
+          completed_at: null,
+          due_date: null,
+          global_rank: 1,
+          created_at: "2026-06-21T15:00:00.000Z",
+          updated_at: "2026-06-21T16:00:00.000Z",
+        },
+      ],
+      monuments: [{ id: "monument-body", area_id: "body" }],
+    });
+    vi.mocked(getSupabaseBrowser).mockReturnValue(client as never);
+
+    const items = await fetchFocusPomoQueue({
+      sourceType: "area",
+      sourceId: "body",
+    });
+
+    expect(
+      calls.find((call) => call.table === "monuments")?.filters
+    ).toContainEqual({ method: "eq", column: "area_id", value: "body" });
+    expect(items.map((item) => item.id)).toEqual(["project-monument-body"]);
+    expect(items[0]).toMatchObject({
+      goalId: "goal-monument-body",
+      goalMonumentId: "monument-body",
+    });
+  });
+
+  it("loads incomplete database Tasks as task execution items", async () => {
+    const { client } = createAreaFocusPomoQueueClient({
+      tasks: [
+        {
+          id: "task-body",
+          name: "Body task",
+          duration_min: 10,
+          energy: "MEDIUM",
+          priority: "HIGH",
+          goal_id: "goal-body",
+          project_id: "project-body",
+          skill_id: "fitness",
+          stage: "TODO",
+          completed_at: null,
+          created_at: "2026-06-21T15:00:00.000Z",
+          updated_at: "2026-06-21T16:00:00.000Z",
+        },
+      ],
+      projectSkills: [{ project_id: "project-body", skill_id: "fitness" }],
+    });
+    vi.mocked(getSupabaseBrowser).mockReturnValue(client as never);
+
+    const items = await fetchFocusPomoQueue({
+      sourceType: "area",
+      sourceId: "body",
+    });
+
+    expect(items.find((item) => item.id === "task-body")).toMatchObject({
+      kind: "task",
+      sourceType: "TASK",
+      taskId: "task-body",
+      goalId: "goal-body",
+      projectId: "project-body",
+      skillId: "fitness",
+    });
+  });
+
+  it("loads incomplete Goal note todos without representing them as database Tasks", async () => {
+    const { client } = createAreaFocusPomoQueueClient({
+      goalWorkspaces: [
+        {
+          goal_id: "goal-body",
+          updated_at: "2026-06-22T16:00:00.000Z",
+          metadata: {
+            noteTodos: [
+              {
+                id: "todo-1",
+                title: "Draft goal note task",
+                completed: false,
+                priority: "HIGH",
+                skillId: "fitness",
+              },
+              {
+                id: "todo-done",
+                title: "Already done",
+                completed: true,
+                priority: "HIGH",
+                skillId: "fitness",
+              },
+            ],
+          },
+        },
+      ],
+      areaSkills: [{ area_id: "body", skill_id: "fitness" }],
+    });
+    vi.mocked(getSupabaseBrowser).mockReturnValue(client as never);
+
+    const items = await fetchFocusPomoQueue({
+      sourceType: "area",
+      sourceId: "body",
+    });
+
+    expect(items.find((item) => item.noteTodoId === "todo-1")).toMatchObject({
+      kind: "task",
+      sourceType: "NOTE_TODO",
+      id: "goal-note-todo:goal-body:todo-1",
+      goalId: "goal-body",
+      noteTodoGoalId: "goal-body",
+      taskId: "goal-note-todo:goal-body:todo-1",
+      skillId: "fitness",
+      priority: "HIGH",
+    });
+    expect(items.some((item) => item.noteTodoId === "todo-done")).toBe(false);
   });
 });

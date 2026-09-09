@@ -3,6 +3,7 @@ import {
   normalizePriority,
   type PriorityBucketId,
 } from "@/app/(app)/schedule/priorities/utils";
+import type { Database, Json } from "@/types/supabase";
 
 export const NOTE_TODOS_METADATA_KEY = "noteTodos";
 export const NOTE_TODO_MARKER_PREFIX = "creator-note-todo:";
@@ -107,4 +108,71 @@ export function upsertNoteTodo(todos: NoteTodo[], todo: NoteTodo) {
   return todos.map((candidate, candidateIndex) =>
     candidateIndex === index ? todo : candidate,
   );
+}
+
+type GoalWorkspaceTodoRow = Pick<
+  Database["public"]["Tables"]["goal_workspaces"]["Row"],
+  "goal_id" | "metadata"
+>;
+type GoalWorkspaceTodoMutation = {
+  select(columns: string): GoalWorkspaceTodoMutation;
+  update(values: {
+    metadata: Json;
+    updated_at: string;
+  }): GoalWorkspaceTodoMutation;
+  eq(column: string, value: string): GoalWorkspaceTodoMutation;
+  maybeSingle(): Promise<{
+    data: GoalWorkspaceTodoRow | null;
+    error: { message?: string } | null;
+  }>;
+  then<TResult1 = { error: { message?: string } | null }, TResult2 = never>(
+    onfulfilled?:
+      | ((value: { error: { message?: string } | null }) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ): PromiseLike<TResult1 | TResult2>;
+};
+
+export async function setGoalNoteTodoCompleted(input: {
+  client: unknown;
+  userId: string;
+  goalId: string;
+  todoId: string;
+  completed: boolean;
+}) {
+  const { client, userId, goalId, todoId, completed } = input;
+  const db = client as {
+    from(table: "goal_workspaces"): GoalWorkspaceTodoMutation;
+  };
+  const { data, error } = await db
+    .from("goal_workspaces")
+    .select("goal_id, metadata")
+    .eq("user_id", userId)
+    .eq("goal_id", goalId)
+    .maybeSingle();
+
+  if (error) throw error;
+  const row = data as GoalWorkspaceTodoRow | null;
+  if (!row) return { ok: false as const, reason: "workspace_not_found" };
+
+  const metadata = isRecord(row.metadata) ? row.metadata : {};
+  const todos = readNoteTodos(metadata);
+  const todo = todos.find((candidate) => candidate.id === todoId);
+  if (!todo) return { ok: false as const, reason: "todo_not_found" };
+
+  const nextTodos = todos.map((candidate) =>
+    candidate.id === todoId ? { ...candidate, completed } : candidate
+  );
+  const nextMetadata = writeNoteTodosMetadata(metadata, nextTodos) as Json;
+  const { error: updateError } = await db
+    .from("goal_workspaces")
+    .update({
+      metadata: nextMetadata,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .eq("goal_id", goalId);
+
+  if (updateError) throw updateError;
+  return { ok: true as const };
 }

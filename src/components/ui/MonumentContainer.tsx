@@ -9,7 +9,6 @@ import {
   type MonumentsListHandle,
 } from "@/components/monuments/MonumentsList";
 import { AddMonumentDialog } from "@/components/monuments/AddMonumentDialog";
-import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 
 export type MonumentContainerHandle = {
   refresh: () => Promise<void>;
@@ -47,12 +46,10 @@ export const MonumentContainer = forwardRef<
   const monumentContent = (
     <MonumentsList
       ref={monumentsListRef}
-      limit={MAX_MONUMENTS}
       createHref="/monuments/new"
       renderEmptyChildren
     >
       {(monuments, saveMonumentOrder) => {
-        const canAddMonument = monuments.length < MAX_MONUMENTS;
         const monumentCards = monuments.map<MonumentCard>((m) => ({
           id: m.id,
           emoji: m.emoji ?? null,
@@ -81,10 +78,7 @@ export const MonumentContainer = forwardRef<
               {pages.map((pageMonuments, pageIndex) => {
                 const pageStartIndex = pageIndex * safePageSize;
                 const isLastPage = pageIndex === pages.length - 1;
-                const canShowNewCard =
-                  isLastPage &&
-                  canAddMonument &&
-                  pageMonuments.length < safePageSize;
+                const canShowNewCard = isLastPage;
 
                 const handlePageReorder = async (pageIds: string[]) => {
                   const fullIds = monuments.map((monument) => monument.id);
@@ -114,7 +108,7 @@ export const MonumentContainer = forwardRef<
                 );
               })}
 
-              {canAddMonument ? <AddMonumentDialog /> : null}
+              <AddMonumentDialog />
             </>
           );
         }
@@ -123,10 +117,10 @@ export const MonumentContainer = forwardRef<
           <div className="app-dashboard-monuments-panel px-4">
             <MonumentGridWithSharedTransition
               monuments={monumentCards}
-              showNewCard={canAddMonument}
+              showNewCard
               onReorder={saveMonumentOrder}
             />
-            {canAddMonument && <AddMonumentDialog />}
+            <AddMonumentDialog />
           </div>
         );
       }}
