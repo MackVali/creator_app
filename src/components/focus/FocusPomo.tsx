@@ -19,6 +19,7 @@ import {
   useEffect,
   useCallback,
   useId,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -32,7 +33,9 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   GripVertical,
   Layers3,
   Minus,
@@ -49,6 +52,18 @@ import {
   sortFocusPomoQueue,
   type FocusPomoQueueItem,
 } from "@/lib/focus/focusPomoQueue";
+import {
+  buildFocusPomoExecutionQueue,
+  buildFocusPomoQueueHierarchy,
+  focusPomoProjectIdForItem,
+  getFocusPomoProjectChecklistItems,
+  getVisibleFocusPomoHierarchyItemKeys,
+  isFocusPomoProjectQueueItem,
+  type FocusPomoGoalQueueGroup,
+  type FocusPomoQueueGoalChild,
+  type FocusPomoQueueHierarchyEntry,
+  type FocusPomoQueueProjectGroup,
+} from "@/lib/focus/focusPomoQueueHierarchy";
 
 declare module "@/lib/focus/focusPomoQueue" {
   interface FocusPomoQueueItem {
@@ -103,6 +118,8 @@ import {
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
   FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY,
   FITNESS_WORKOUT_FOCUS_SESSION_RESULT_STORAGE_KEY,
+  compactFitnessWorkoutCheckpointPayloads,
+  getFitnessWorkoutCheckpointMergeOptions,
   mergeFitnessWorkoutLogSetResults,
   readFitnessWorkoutFocusSessionPayload,
   type FitnessWorkoutLogMetadata,
@@ -118,6 +135,7 @@ import {
   sanitizeFitnessResistanceValue,
 } from "@/lib/fitness/resistance";
 import { updateFitnessWorkoutDatabaseEntryInNote } from "@/lib/notesStorage";
+import { setGoalNoteTodoCompleted } from "@/lib/notes/noteTodos";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -218,6 +236,8 @@ type FocusPomoRunSyncQueueItem = {
   sourceType: string;
   sourceId: string;
   itemId: string;
+  goalId?: string | null;
+  noteTodoId?: string | null;
   scheduleInstanceId: string | null;
   title: string;
   skillIcon: string | null;
@@ -2801,6 +2821,8 @@ function toFocusPomoRunSyncQueueItem(
     sourceType: item.sourceType,
     sourceId,
     itemId: sourceId,
+    goalId: item.goalId ?? item.goal_id ?? null,
+    noteTodoId: item.noteTodoId ?? item.note_todo_id ?? null,
     scheduleInstanceId: readFocusPomoScheduleInstanceId(item),
     title: item.title.trim() || "Focus Pomo",
     skillIcon: itemSkillIcon(item),
@@ -2811,7 +2833,7 @@ function toFocusPomoRunSyncQueueItem(
 function focusPomoQueueItemFromRunSyncItem(
   item: FocusPomoRunSyncQueueItem
 ): FocusPomoQueueItem {
-  const sourceType = item.sourceType === "PROJECT" ? "PROJECT" : "HABIT";
+  const sourceType = item.sourceType;
   const durationMinutes = normalizeFocusPomoDurationMinutes(item.durationMinutes);
   const durationLabel =
     durationMinutes === null
@@ -2820,7 +2842,12 @@ function focusPomoQueueItemFromRunSyncItem(
 
   return {
     id: item.itemId || item.sourceId,
-    kind: sourceType === "PROJECT" ? "project" : "habit",
+    kind:
+      sourceType === "PROJECT"
+        ? "project"
+        : sourceType === "TASK" || sourceType === "NOTE_TODO"
+          ? "task"
+          : "habit",
     sourceType,
     title: item.title.trim() || "Focus Pomo",
     subtitle: "",
@@ -2829,6 +2856,12 @@ function focusPomoQueueItemFromRunSyncItem(
     energyLabel: null,
     statusLabel: "Scheduled",
     skillIcon: item.skillIcon,
+    goalId: item.goalId ?? null,
+    goal_id: item.goalId ?? null,
+    noteTodoId: item.noteTodoId ?? null,
+    note_todo_id: item.noteTodoId ?? null,
+    noteTodoGoalId: item.goalId ?? null,
+    note_todo_goal_id: item.goalId ?? null,
   };
 }
 
@@ -3205,6 +3238,7 @@ function getFocusPomoCompletionKind(
   if (item.sourceType === "PROJECT") return "project";
   if (item.sourceType === "HABIT") return "habit";
   if (item.sourceType === "TASK") return "task";
+  if (item.sourceType === "NOTE_TODO") return "task";
 
   const itemKind = getFocusItemKind(item);
   if (itemKind === "project" || itemKind === "habit" || itemKind === "task") {
@@ -3219,6 +3253,21 @@ function readFocusPomoCompletionSourceType(
   if (kind === "project") return "PROJECT";
   if (kind === "task") return "TASK";
   return "HABIT";
+}
+
+function readGoalNoteTodoIdentity(item: FocusPomoQueueItem) {
+  const goalId =
+    readScopeString(item.noteTodoGoalId) ??
+    readScopeString(item.note_todo_goal_id) ??
+    readScopeString(item.goalId) ??
+    readScopeString(item.goal_id);
+  const todoId =
+    readScopeString(item.noteTodoId) ?? readScopeString(item.note_todo_id);
+
+  return {
+    goalId,
+    todoId,
+  };
 }
 
 function normalizeFocusPomoDurationMinutes(value: unknown): number | null {
@@ -3602,6 +3651,53 @@ async function completeFocusPomoItem({
       void hapticErrorPattern();
       return false;
     }
+  } else if (item.sourceType === "NOTE_TODO") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn("FocusPomo could not complete goal note todo: Supabase unavailable");
+      void hapticErrorPattern();
+      return false;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error(
+        "FocusPomo could not complete goal note todo: user unavailable",
+        userError
+      );
+      void hapticErrorPattern();
+      return false;
+    }
+
+    const { goalId, todoId } = readGoalNoteTodoIdentity(item);
+    if (!goalId || !todoId) {
+      console.error("FocusPomo goal note todo is missing completion identity", item);
+      void hapticErrorPattern();
+      return false;
+    }
+
+    try {
+      const result = await setGoalNoteTodoCompleted({
+        client: supabase,
+        userId: user.id,
+        goalId,
+        todoId,
+        completed: true,
+      });
+      if (!result.ok) {
+        console.error("FocusPomo failed to complete goal note todo", result.reason);
+        void hapticErrorPattern();
+        return false;
+      }
+    } catch (error) {
+      console.error("FocusPomo failed to complete goal note todo", error);
+      void hapticErrorPattern();
+      return false;
+    }
   } else if (kind === "task") {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
@@ -3778,6 +3874,50 @@ async function undoFocusPomoItem({
 
     if (error) {
       console.error("FocusPomo failed to undo project completion", error);
+      return;
+    }
+  } else if (item.sourceType === "NOTE_TODO") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn(
+        "FocusPomo could not undo goal note todo completion: Supabase unavailable"
+      );
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error(
+        "FocusPomo could not undo goal note todo completion: user unavailable",
+        userError
+      );
+      return;
+    }
+
+    const { goalId, todoId } = readGoalNoteTodoIdentity(item);
+    if (!goalId || !todoId) {
+      console.error("FocusPomo goal note todo is missing undo identity", item);
+      return;
+    }
+
+    try {
+      const result = await setGoalNoteTodoCompleted({
+        client: supabase,
+        userId: user.id,
+        goalId,
+        todoId,
+        completed: false,
+      });
+      if (!result.ok) {
+        console.error("FocusPomo failed to undo goal note todo", result.reason);
+        return;
+      }
+    } catch (error) {
+      console.error("FocusPomo failed to undo goal note todo", error);
       return;
     }
   } else if (kind === "task") {
@@ -4218,6 +4358,7 @@ type SortableFocusQueueItemProps = {
   position: number;
   selected: boolean;
   isQueueExpanded: boolean;
+  depth?: number;
   onSelect(): void;
   onLongPressEdit(originElement: HTMLElement): void;
 };
@@ -4238,6 +4379,7 @@ function SortableFocusQueueItem({
   position,
   selected,
   isQueueExpanded,
+  depth = 0,
   onSelect,
   onLongPressEdit,
 }: SortableFocusQueueItemProps) {
@@ -4448,7 +4590,12 @@ function SortableFocusQueueItem({
             ? `Current event: ${item.title}`
             : `Make current event: ${item.title}`
         }
-        className="flex min-w-0 touch-pan-y select-none items-center gap-2 py-2.5 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:py-4 sm:pr-4"
+        className={[
+          "flex min-w-0 touch-pan-y select-none items-center gap-2 py-2.5 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:py-4 sm:pr-4",
+          depth === 1 ? "pl-2 sm:pl-3" : depth >= 2 ? "pl-5 sm:pl-7" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <span className={FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS}>
           {position}
@@ -4478,6 +4625,280 @@ function SortableFocusQueueItem({
       </button>
     </div>
   );
+}
+
+type FocusPomoGoalQueueRowProps = {
+  group: FocusPomoGoalQueueGroup;
+  position: number;
+  expanded: boolean;
+  containsCurrent: boolean;
+  onToggle(): void;
+  onSelectNext(): void;
+};
+
+function FocusPomoGoalQueueRow({
+  group,
+  position,
+  expanded,
+  containsCurrent,
+  onToggle,
+  onSelectNext,
+}: FocusPomoGoalQueueRowProps) {
+  return (
+    <div
+      className={[
+        "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left transition",
+        containsCurrent
+          ? "bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+          : "bg-black/15 hover:bg-white/[0.025]",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Collapse" : "Expand"} ${group.title}`}
+        className="flex min-h-full items-center justify-center text-white/38 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:bg-white/[0.075] focus-visible:text-white/72 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/18"
+      >
+        {expanded ? (
+          <ChevronDown className="size-3.5" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onSelectNext}
+        aria-label={`Select next item in ${group.title}`}
+        className="flex min-w-0 items-center gap-2 py-2.5 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:py-3 sm:pr-4"
+      >
+        <span className={FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS}>{position}</span>
+        <span className={FOCUS_POMO_QUEUE_ICON_BADGE_CLASS}>
+          <span aria-hidden="true">{group.icon ?? "◎"}</span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold uppercase tracking-normal text-white/84 sm:text-sm">
+            {group.title}
+          </span>
+          <span className="mt-0.5 block truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
+            {expanded
+              ? `${group.items.length} remaining`
+              : `Next: ${group.nextItem?.title ?? "None"}`}
+          </span>
+        </span>
+        <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/42 sm:text-[10px]">
+          {group.items.length}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function FocusPomoProjectQueueGroupRow({
+  child,
+  containsCurrent,
+  onSelectProject,
+}: {
+  child: FocusPomoQueueProjectGroup;
+  containsCurrent: boolean;
+  onSelectProject?: (() => void) | undefined;
+}) {
+  const content = (
+    <>
+      <span className="flex size-7 shrink-0 items-center justify-center text-white/28 sm:size-8">
+        <Layers3 className="size-3.5" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-semibold uppercase tracking-normal text-white/68 sm:text-xs">
+          {child.title}
+        </span>
+        <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/32 sm:text-[10px]">
+          {child.items.length} task{child.items.length === 1 ? "" : "s"}
+        </span>
+      </span>
+    </>
+  );
+
+  return (
+    <div
+      className={[
+        "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 bg-black/20 text-left",
+        containsCurrent ? "bg-white/[0.035]" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <span aria-hidden="true" />
+      {onSelectProject ? (
+        <button
+          type="button"
+          onClick={onSelectProject}
+          aria-label={`Make current event: ${child.title}`}
+          className="flex min-w-0 items-center gap-2 py-2 pl-2 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:pl-3 sm:pr-4"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex min-w-0 items-center gap-2 py-2 pl-2 pr-3 sm:gap-3 sm:pl-3 sm:pr-4">
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderFocusPomoExecutableQueueItem(
+  item: FocusPomoQueueItem,
+  options: {
+    keyPrefix?: string;
+    depth?: number;
+    fallbackPosition: number;
+    currentItemKey: string | null;
+    isQueueExpanded: boolean;
+    sortedQueueIndexByKey: ReadonlyMap<string, number>;
+    onSelectItem(itemIndex: number): void;
+    onLongPressItem(item: FocusPomoQueueItem, originElement: HTMLElement): void;
+  }
+): ReactNode {
+  const itemKey = getFocusPomoQueueItemKey(item);
+  const itemIndex =
+    options.sortedQueueIndexByKey.get(itemKey) ?? options.fallbackPosition;
+
+  return (
+    <SortableFocusQueueItem
+      key={`${options.keyPrefix ?? "item"}:${itemKey}`}
+      item={item}
+      position={itemIndex + 1}
+      selected={itemKey === options.currentItemKey}
+      isQueueExpanded={options.isQueueExpanded}
+      depth={options.depth}
+      onSelect={() => options.onSelectItem(itemIndex)}
+      onLongPressEdit={(originElement) =>
+        options.onLongPressItem(item, originElement)
+      }
+    />
+  );
+}
+
+function renderFocusPomoQueueGoalChild(
+  child: FocusPomoQueueGoalChild,
+  options: {
+    childIndex: number;
+    currentItemKey: string | null;
+    isQueueExpanded: boolean;
+    sortedQueueIndexByKey: ReadonlyMap<string, number>;
+    onSelectItem(itemIndex: number): void;
+    onLongPressItem(item: FocusPomoQueueItem, originElement: HTMLElement): void;
+  }
+): ReactNode[] {
+  if (child.type === "item") {
+    return [
+      renderFocusPomoExecutableQueueItem(child.item, {
+        ...options,
+        keyPrefix: "goal-item",
+        depth: 1,
+        fallbackPosition: options.childIndex,
+      }),
+    ];
+  }
+
+  const containsCurrent =
+    child.items.some(
+      (item) => getFocusPomoQueueItemKey(item) === options.currentItemKey
+    ) ||
+    (child.item
+      ? getFocusPomoQueueItemKey(child.item) === options.currentItemKey
+      : false);
+  const projectItemKey = child.item ? getFocusPomoQueueItemKey(child.item) : null;
+  const projectItemIndex =
+    projectItemKey !== null
+      ? options.sortedQueueIndexByKey.get(projectItemKey)
+      : undefined;
+
+  return [
+    <FocusPomoProjectQueueGroupRow
+      key={`project-group:${child.projectId}`}
+      child={child}
+      containsCurrent={containsCurrent}
+      onSelectProject={
+        typeof projectItemIndex === "number"
+          ? () => options.onSelectItem(projectItemIndex)
+          : undefined
+      }
+    />,
+    ...(child.item
+      ? []
+      : child.items.map((item, itemIndex) =>
+          renderFocusPomoExecutableQueueItem(item, {
+            ...options,
+            keyPrefix: `project-item:${child.projectId}`,
+            depth: 2,
+            fallbackPosition: options.childIndex + itemIndex,
+          })
+        )),
+  ];
+}
+
+function renderFocusPomoQueueHierarchyEntry(
+  entry: FocusPomoQueueHierarchyEntry,
+  options: {
+    entryIndex: number;
+    collapsedGoalIds: ReadonlySet<string>;
+    currentGoalId: string | null;
+    currentItemKey: string | null;
+    isQueueExpanded: boolean;
+    sortedQueueIndexByKey: ReadonlyMap<string, number>;
+    onToggleGoal(goalId: string): void;
+    onSelectItem(itemIndex: number): void;
+    onLongPressItem(item: FocusPomoQueueItem, originElement: HTMLElement): void;
+  }
+): ReactNode[] {
+  if (entry.type === "item") {
+    return [
+      renderFocusPomoExecutableQueueItem(entry.item, {
+        ...options,
+        keyPrefix: "top-item",
+        fallbackPosition: options.entryIndex,
+      }),
+    ];
+  }
+
+  const expanded = !options.collapsedGoalIds.has(entry.goalId);
+  const containsCurrent = entry.goalId === options.currentGoalId;
+  const nextItem = entry.nextItem;
+  const nextItemKey = nextItem ? getFocusPomoQueueItemKey(nextItem) : null;
+  const nextItemIndex =
+    nextItemKey !== null ? options.sortedQueueIndexByKey.get(nextItemKey) : undefined;
+  const nodes: ReactNode[] = [
+    <FocusPomoGoalQueueRow
+      key={`goal:${entry.goalId}`}
+      group={entry}
+      position={options.entryIndex + 1}
+      expanded={expanded}
+      containsCurrent={containsCurrent}
+      onToggle={() => options.onToggleGoal(entry.goalId)}
+      onSelectNext={() => {
+        if (typeof nextItemIndex === "number") {
+          options.onSelectItem(nextItemIndex);
+        }
+      }}
+    />,
+  ];
+
+  if (!expanded) return nodes;
+
+  for (const [childIndex, child] of entry.children.entries()) {
+    nodes.push(
+      ...renderFocusPomoQueueGoalChild(child, {
+        ...options,
+        childIndex,
+      })
+    );
+  }
+
+  return nodes;
 }
 
 async function fetchUserHabitTypeOptions(
@@ -4812,12 +5233,21 @@ export default function FocusPomo({
     new Map()
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  const [completedChecklistItemKeys, setCompletedChecklistItemKeys] = useState<
+    Set<string>
+  >(new Set());
+  const [inFlightChecklistItemKeys, setInFlightChecklistItemKeys] = useState<
+    Set<string>
+  >(new Set());
   const [customQueueOrder, setCustomQueueOrder] = useState<string[] | null>(
     null
   );
   const [dismissedQueueItemKeys, setDismissedQueueItemKeys] = useState<
     Set<string>
   >(new Set());
+  const [collapsedGoalIds, setCollapsedGoalIds] = useState<Set<string>>(
+    new Set()
+  );
   const [runHistory, setRunHistory] = useState<FocusPomoRunResult[]>([]);
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
@@ -5771,12 +6201,43 @@ export default function FocusPomo({
     sourceSortedQueue,
     customQueueOrder
   );
-  const sortedQueueIndexByKey = new Map(
-    sortedQueue.map((item, index) => [getFocusPomoQueueItemKey(item), index])
+  const sortedQueueIndexByKey = useMemo(
+    () =>
+      new Map(
+        sortedQueue.map((item, index) => [
+          getFocusPomoQueueItemKey(item),
+          index,
+        ])
+      ),
+    [sortedQueue]
   );
-  const pendingQueueItems = sortedQueue.filter(
+  const focusExecutionQueue = useMemo(
+    () => buildFocusPomoExecutionQueue(sortedQueue),
+    [sortedQueue]
+  );
+  const projectItemKeyByProjectId = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const item of sortedQueue) {
+      if (!isFocusPomoProjectQueueItem(item)) continue;
+      const projectId = focusPomoProjectIdForItem(item) ?? item.id;
+      next.set(projectId, getFocusPomoQueueItemKey(item));
+    }
+    return next;
+  }, [sortedQueue]);
+  const pendingQueueItems = focusExecutionQueue.filter(
     (item) => !dismissedQueueItemKeys.has(getFocusPomoQueueItemKey(item))
   );
+  const pendingQueueGraphItems = sortedQueue.filter((item) => {
+    const itemKey = getFocusPomoQueueItemKey(item);
+    if (dismissedQueueItemKeys.has(itemKey)) return false;
+    if (isFocusPomoProjectQueueItem(item)) return true;
+
+    const projectId = focusPomoProjectIdForItem(item);
+    if (!projectId) return true;
+
+    const projectItemKey = projectItemKeyByProjectId.get(projectId);
+    return !projectItemKey || !dismissedQueueItemKeys.has(projectItemKey);
+  });
   const hasCustomWorkTypeFilters = !isDefaultEnabledItemTypes(enabledItemTypes);
   const hasCustomHabitTypeFilters =
     showHabitTypeSection && enabledHabitTypes !== null;
@@ -5791,10 +6252,20 @@ export default function FocusPomo({
   const selectedQueueItem = sortedQueue[activeIndex] ?? null;
   const currentItem =
     selectedQueueItem &&
+    focusExecutionQueue.includes(selectedQueueItem) &&
     !dismissedQueueItemKeys.has(getFocusPomoQueueItemKey(selectedQueueItem))
       ? selectedQueueItem
       : (pendingQueueItems[0] ?? null);
   const currentItemKey = currentItem ? getFocusPomoQueueItemKey(currentItem) : null;
+  const currentProjectChecklistItems =
+    currentItem && isFocusPomoProjectQueueItem(currentItem)
+      ? getFocusPomoProjectChecklistItems(sortedQueue, currentItem)
+      : [];
+  const currentProjectChecklistRemainingCount =
+    currentProjectChecklistItems.filter(
+      (item) =>
+        !completedChecklistItemKeys.has(getFocusPomoQueueItemKey(item))
+    ).length;
   const pomoDurationMinutes = currentItem?.durationMinutes ?? 25;
   const currentTimerDurationMs = pomoDurationMinutes * 60 * 1000;
   const currentItemTimerKey = currentItem?.id ?? null;
@@ -5843,21 +6314,55 @@ export default function FocusPomo({
   const visibleEarlierRunResults = [...earlierRunResults].reverse();
   const earlierRunResultsCount = earlierRunResults.length;
   const collapsedQueueLimit = 3;
-  const visibleQueueItems = isQueueExpanded
-    ? pendingQueueItems
-    : pendingQueueItems.slice(0, collapsedQueueLimit);
-  const hasMoreQueueItems = pendingQueueItems.length > collapsedQueueLimit;
-  const visibleQueueItemIds = visibleQueueItems.map(getFocusPomoQueueItemKey);
+  const queueHierarchy = buildFocusPomoQueueHierarchy(pendingQueueGraphItems);
+  const queueGoalIdsSignature = queueHierarchy
+    .filter((entry): entry is FocusPomoGoalQueueGroup => entry.type === "goal")
+    .map((entry) => entry.goalId)
+    .join("\u001F");
+  const visibleQueueEntries = isQueueExpanded
+    ? queueHierarchy
+    : queueHierarchy.slice(0, collapsedQueueLimit);
+  const hasMoreQueueItems = queueHierarchy.length > collapsedQueueLimit;
+  const visibleQueueItemIds = visibleQueueEntries.flatMap((entry) =>
+    getVisibleFocusPomoHierarchyItemKeys(
+      entry,
+      collapsedGoalIds,
+      getFocusPomoQueueItemKey
+    )
+  );
   const hiddenQueueCount = Math.max(
-    pendingQueueItems.length - collapsedQueueLimit,
+    queueHierarchy.length - collapsedQueueLimit,
     0
   );
   const currentItemIcon = itemDisplayIcon(currentItem);
   const currentGoalDisplay = getItemGoalDisplay(currentItem);
+  const currentGoalId =
+    currentItem && !isFitnessWorkoutQueueItem(currentItem)
+      ? readScopeString(currentItem.goalId) ?? readScopeString(currentItem.goal_id)
+      : null;
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
   const currentFitnessWeightUnit = currentItem?.fitnessWeightUnit;
+
+  useEffect(() => {
+    const goalIds = queueGoalIdsSignature
+      .split("\u001F")
+      .filter((goalId) => goalId.length > 0);
+
+    setCollapsedGoalIds((current) => {
+      const next = new Set<string>();
+      for (const goalId of goalIds) {
+        if (goalId !== currentGoalId && current.has(goalId)) {
+          next.add(goalId);
+        } else if (goalId !== currentGoalId && !current.has(goalId)) {
+          next.add(goalId);
+        }
+      }
+      return next;
+    });
+  }, [currentGoalId, queueGoalIdsSignature]);
+
   const currentFitnessHasAdjustableWeight = Boolean(
     isFitnessWorkoutQueueItem(currentItem) &&
       currentFitnessWeightUnit &&
@@ -6418,10 +6923,13 @@ export default function FocusPomo({
       } else {
         focusPomoLiveActivityRef.current = null;
         setIsRunning(false);
-        const nextActiveIndex = sortedQueue.findIndex(
+        const nextActiveItem = focusExecutionQueue.find(
           (item) => !syncedHistoryItemKeys.has(getFocusPomoQueueItemKey(item))
         );
-        setActiveIndex(nextActiveIndex >= 0 ? nextActiveIndex : 0);
+        const nextActiveIndex = nextActiveItem
+          ? sortedQueueIndexByKey.get(getFocusPomoQueueItemKey(nextActiveItem))
+          : undefined;
+        setActiveIndex(typeof nextActiveIndex === "number" ? nextActiveIndex : 0);
       }
 
       console.info(`${FOCUS_POMO_RUN_SYNC_LOG} local_queue_reconciled`, {
@@ -6434,7 +6942,12 @@ export default function FocusPomo({
         queueOrderCount: nextQueueOrder.length,
       });
     },
-    [activeFitnessWorkoutSession, sortedQueue]
+    [
+      activeFitnessWorkoutSession,
+      focusExecutionQueue,
+      sortedQueue,
+      sortedQueueIndexByKey,
+    ]
   );
   const handleUndoRunHistorySession = (session: FocusPomoRunResult) => {
     const restoredItemKey = getFocusPomoQueueItemKey(session.item);
@@ -7643,17 +8156,19 @@ export default function FocusPomo({
   };
 
   const getNextPendingItem = (dismissedItemKey: string) => {
-    const dismissedItemIndex =
-      sortedQueueIndexByKey.get(dismissedItemKey) ?? activeIndex;
+    const dismissedExecutionIndex = focusExecutionQueue.findIndex(
+      (item) => getFocusPomoQueueItemKey(item) === dismissedItemKey
+    );
     const isPendingCandidate = (item: FocusPomoQueueItem) => {
       const itemKey = getFocusPomoQueueItemKey(item);
 
       return itemKey !== dismissedItemKey && !dismissedQueueItemKeys.has(itemKey);
     };
     const nextItem =
-      sortedQueue.find(
-        (item, index) => index > dismissedItemIndex && isPendingCandidate(item)
-      ) ?? sortedQueue.find(isPendingCandidate);
+      focusExecutionQueue.find(
+        (item, index) =>
+          index > dismissedExecutionIndex && isPendingCandidate(item)
+      ) ?? focusExecutionQueue.find(isPendingCandidate);
 
     if (!nextItem) return null;
 
@@ -7708,6 +8223,60 @@ export default function FocusPomo({
     if (!editTarget) return;
 
     fabCreation?.requestEntityEdit(editTarget);
+  };
+
+  const handleCompleteProjectChecklistItem = (item: FocusPomoQueueItem) => {
+    const itemKey = getFocusPomoQueueItemKey(item);
+    if (
+      completedChecklistItemKeys.has(itemKey) ||
+      inFlightChecklistItemKeys.has(itemKey)
+    ) {
+      return;
+    }
+
+    const completedAt = new Date().toISOString();
+    const timeZone = getBrowserTimeZone();
+
+    setCompletedChecklistItemKeys((current) => {
+      const next = new Set(current);
+      next.add(itemKey);
+      return next;
+    });
+    setInFlightChecklistItemKeys((current) => {
+      const next = new Set(current);
+      next.add(itemKey);
+      return next;
+    });
+
+    void completeFocusPomoItem({ item, completedAt, timeZone })
+      .then((completed) => {
+        if (completed) {
+          void hapticComplete();
+          return;
+        }
+
+        setCompletedChecklistItemKeys((current) => {
+          const next = new Set(current);
+          next.delete(itemKey);
+          return next;
+        });
+      })
+      .catch((error) => {
+        console.error("FocusPomo failed to complete project checklist item", error);
+        setCompletedChecklistItemKeys((current) => {
+          const next = new Set(current);
+          next.delete(itemKey);
+          return next;
+        });
+        void hapticErrorPattern();
+      })
+      .finally(() => {
+        setInFlightChecklistItemKeys((current) => {
+          const next = new Set(current);
+          next.delete(itemKey);
+          return next;
+        });
+      });
   };
 
   const handleQueueDragStart = () => {
@@ -7816,7 +8385,7 @@ export default function FocusPomo({
       const nextDurationMs =
         (nextPendingItem.item.durationMinutes ?? 25) * 60 * 1000;
       preserveRunningTimerItemRef.current = {
-        itemKey: getFocusPomoQueueItemKey(nextPendingItem.item),
+        itemKey: nextPendingItem.item.id,
         durationMs: nextDurationMs,
       };
       transitionLiveActivityToNextItem(
@@ -7883,7 +8452,7 @@ export default function FocusPomo({
       const nextDurationMs =
         (nextPendingItem.item.durationMinutes ?? 25) * 60 * 1000;
       preserveRunningTimerItemRef.current = {
-        itemKey: getFocusPomoQueueItemKey(nextPendingItem.item),
+        itemKey: nextPendingItem.item.id,
         durationMs: nextDurationMs,
       };
       transitionLiveActivityToNextItem(
@@ -8969,6 +9538,76 @@ export default function FocusPomo({
                           ) : null
                         )}
 
+                        {currentProjectChecklistItems.length > 0 ? (
+                          <div className="mt-3 w-full max-w-2xl border-t border-white/[0.06] pt-3 sm:mt-4 sm:pt-4">
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400 sm:text-[10px]">
+                                Checklist
+                              </p>
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px]">
+                                {currentProjectChecklistRemainingCount} remaining
+                              </p>
+                            </div>
+                            <div className="grid gap-1.5">
+                              {currentProjectChecklistItems.map((item) => {
+                                const itemKey = getFocusPomoQueueItemKey(item);
+                                const completed =
+                                  completedChecklistItemKeys.has(itemKey);
+                                const inFlight =
+                                  inFlightChecklistItemKeys.has(itemKey);
+
+                                return (
+                                  <button
+                                    key={itemKey}
+                                    type="button"
+                                    onClick={() =>
+                                      handleCompleteProjectChecklistItem(item)
+                                    }
+                                    disabled={completed || inFlight}
+                                    aria-pressed={completed}
+                                    className={[
+                                      "grid min-h-8 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 rounded-lg border border-black/45 bg-black/25 px-2 py-1.5 text-left transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-2.5",
+                                      completed
+                                        ? "text-zinc-500"
+                                        : "text-zinc-200 hover:border-black/35 hover:bg-white/[0.055]",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")}
+                                  >
+                                    <span
+                                      className={[
+                                        "flex size-4 items-center justify-center rounded-full border text-[10px] sm:size-4",
+                                        completed
+                                          ? "border-emerald-400/45 bg-emerald-500/14 text-emerald-200"
+                                          : inFlight
+                                            ? "border-white/18 bg-white/[0.06] text-zinc-400"
+                                            : "border-white/18 bg-black/25 text-transparent",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                      aria-hidden="true"
+                                    >
+                                      {completed ? (
+                                        <Check className="size-3" />
+                                      ) : null}
+                                    </span>
+                                    <span
+                                      className={[
+                                        "min-w-0 truncate text-xs font-medium sm:text-sm",
+                                        completed ? "line-through" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    >
+                                      {item.title}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+
                         {scopeEmpty ? (
                           <button
                             type="button"
@@ -9099,30 +9738,37 @@ export default function FocusPomo({
                               items={visibleQueueItemIds}
                               strategy={rectSortingStrategy}
                             >
-                              {visibleQueueItems.map((item, index) => {
-                                const itemKey = getFocusPomoQueueItemKey(item);
-                                const itemIndex =
-                                  sortedQueueIndexByKey.get(itemKey) ?? index;
-
-                                return (
-                                  <SortableFocusQueueItem
-                                    key={itemKey}
-                                    item={item}
-                                    position={itemIndex + 1}
-                                    selected={itemKey === currentItemKey}
-                                    isQueueExpanded={isQueueExpanded}
-                                    onSelect={() =>
-                                      handleQueueRowSelect(itemIndex)
-                                    }
-                                    onLongPressEdit={(originElement) =>
-                                      handleQueueItemLongPressEdit(
-                                        item,
-                                        originElement
-                                      )
-                                    }
-                                  />
-                                );
-                              })}
+                              {visibleQueueEntries.flatMap((entry, entryIndex) =>
+                                renderFocusPomoQueueHierarchyEntry(entry, {
+                                  entryIndex,
+                                  collapsedGoalIds,
+                                  currentGoalId,
+                                  currentItemKey,
+                                  isQueueExpanded,
+                                  sortedQueueIndexByKey,
+                                  onToggleGoal(goalId) {
+                                    void hapticSoftTick();
+                                    setCollapsedGoalIds((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(goalId)) {
+                                        next.delete(goalId);
+                                      } else {
+                                        next.add(goalId);
+                                      }
+                                      return next;
+                                    });
+                                  },
+                                  onSelectItem(itemIndex) {
+                                    handleQueueRowSelect(itemIndex);
+                                  },
+                                  onLongPressItem(item, originElement) {
+                                    handleQueueItemLongPressEdit(
+                                      item,
+                                      originElement
+                                    );
+                                  },
+                                })
+                              )}
                             </SortableContext>
                           </DndContext>
                         )}

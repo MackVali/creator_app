@@ -11,6 +11,7 @@ import {
   createFocusPomoLiveActionToken,
   type FocusPomoLiveAction,
 } from "@/lib/focus/focusPomoLiveActionTokens";
+import { setGoalNoteTodoCompleted } from "@/lib/notes/noteTodos";
 
 export type FocusPomoRunMode = "pomo" | "stopwatch";
 export type FocusPomoRunStatus = "running" | "completed" | "canceled";
@@ -20,6 +21,8 @@ export type FocusPomoRunQueueItem = {
   sourceType: "HABIT" | "PROJECT" | "TASK" | string;
   sourceId: string;
   itemId?: string | null;
+  goalId?: string | null;
+  noteTodoId?: string | null;
   scheduleInstanceId?: string | null;
   title: string;
   skillIcon?: string | null;
@@ -124,6 +127,8 @@ function normalizeRunQueueItem(value: unknown): FocusPomoRunQueueItem | null {
     sourceType,
     sourceId,
     itemId: readString(value.itemId) ?? sourceId,
+    goalId: readString(value.goalId),
+    noteTodoId: readString(value.noteTodoId),
     scheduleInstanceId: readString(value.scheduleInstanceId),
     title,
     skillIcon: readString(value.skillIcon),
@@ -149,6 +154,8 @@ function queueItemsToJson(items: FocusPomoRunQueueItem[]): Json {
     sourceType: item.sourceType,
     sourceId: item.sourceId,
     itemId: item.itemId ?? item.sourceId,
+    goalId: item.goalId ?? null,
+    noteTodoId: item.noteTodoId ?? null,
     scheduleInstanceId: item.scheduleInstanceId ?? null,
     title: item.title,
     skillIcon: item.skillIcon ?? null,
@@ -162,7 +169,6 @@ export function buildFocusPomoRunSyncState(
   run: FocusPomoRunRow
 ): FocusPomoRunSyncState {
   const queueItems = readRunQueueItems(run.queue_items);
-  const completedItemCount = Math.min(run.current_index, queueItems.length);
 
   return {
     sessionId: run.session_id,
@@ -176,15 +182,14 @@ export function buildFocusPomoRunSyncState(
     lastActionAt: run.last_action_at,
     updatedAt: run.updated_at,
     actionHistory: queueItems
-      .slice(0, completedItemCount)
-      .map((item, index) => {
-        const action = item.action ?? "completed";
-        return {
+      .flatMap((item, index) => {
+        if (!item.action) return [];
+        return [{
           ...item,
           index,
-          action,
+          action: item.action,
           actionAt: item.actionAt ?? run.last_action_at,
-        };
+        }];
       }),
   };
 }
@@ -519,6 +524,23 @@ async function completeRunItem(input: {
       .eq("id", item.sourceId)
       .eq("user_id", userId);
     if (error) throw new Error(error.message ?? "Failed to complete task.");
+  } else if (sourceType === "NOTE_TODO") {
+    const goalId = item.goalId ?? null;
+    const todoId = item.noteTodoId ?? null;
+    if (!goalId || !todoId) {
+      throw new Error("Goal note todo completion identity is missing.");
+    }
+
+    const result = await setGoalNoteTodoCompleted({
+      client: supabase,
+      userId,
+      goalId,
+      todoId,
+      completed: true,
+    });
+    if (!result.ok) {
+      throw new Error(`Failed to complete goal note todo: ${result.reason}`);
+    }
   }
 
   try {
@@ -528,8 +550,12 @@ async function completeRunItem(input: {
       input: {
         action: "complete",
         sourceType:
-          sourceType === "PROJECT" || sourceType === "TASK" || sourceType === "HABIT"
+          sourceType === "PROJECT" ||
+          sourceType === "TASK" ||
+          sourceType === "HABIT"
             ? sourceType
+            : sourceType === "NOTE_TODO"
+              ? "TASK"
             : "HABIT",
         sourceId: item.sourceId,
         completedAt,
@@ -678,14 +704,17 @@ export async function performFocusPomoLiveAction(input: {
   }
 
   const nextIndex = run.current_index + 1;
-  const nextQueueItems = queueItems.map((item, index) =>
-    index === run.current_index
-      ? {
+  const completedAction: FocusPomoRunQueueItem["action"] =
+    input.action === "complete" ? "completed" : "skipped";
+  const nextQueueItems: FocusPomoRunQueueItem[] = queueItems.map(
+    (item, index) =>
+      index === run.current_index
+        ? {
           ...item,
-          action: input.action === "complete" ? "completed" : "skipped",
+          action: completedAction,
           actionAt,
         }
-      : item
+        : item
   );
   const nextItem = nextQueueItems[nextIndex] ?? null;
   const nextStatus: FocusPomoRunStatus = nextItem ? "running" : "completed";

@@ -46,6 +46,8 @@ function readQueueItem(value: unknown): FocusPomoRunQueueItem | null {
     sourceType,
     sourceId,
     itemId: readString(record.itemId) ?? sourceId,
+    goalId: readString(record.goalId),
+    noteTodoId: readString(record.noteTodoId),
     scheduleInstanceId: readString(record.scheduleInstanceId),
     title,
     skillIcon: readString(record.skillIcon),

@@ -523,6 +523,102 @@ export function mergeFitnessWorkoutLogSetResults(
   };
 }
 
+export function isFitnessWorkoutSessionResultFullyResolved(
+  results: readonly FitnessWorkoutFocusSessionSetResult[],
+) {
+  return (
+    results.length > 0 &&
+    results.every(
+      (result) =>
+        result.status === "completed" || result.status === "dismissed",
+    )
+  );
+}
+
+export function getFitnessWorkoutCheckpointMergeOptions(
+  payload: FitnessWorkoutFocusSessionResultPayload,
+): {
+  updatedAt: string;
+  status: FitnessWorkoutLogStatus;
+  completedAt: string | null;
+} {
+  const updatedAt = payload.updatedAt || new Date().toISOString();
+  const isFullyResolved = isFitnessWorkoutSessionResultFullyResolved(payload.sets);
+
+  return {
+    updatedAt,
+    status: isFullyResolved ? "completed" : "in_progress",
+    completedAt: isFullyResolved ? updatedAt : null,
+  };
+}
+
+function getFitnessWorkoutCheckpointSessionKey(
+  payload: FitnessWorkoutFocusSessionResultPayload,
+) {
+  return payload.sessionId?.trim() || payload.entryId?.trim() || null;
+}
+
+function getResolvedFitnessWorkoutCheckpointSetCount(
+  payload: FitnessWorkoutFocusSessionResultPayload,
+) {
+  return payload.sets.filter(
+    (set) => set.status === "completed" || set.status === "dismissed",
+  ).length;
+}
+
+function compareFitnessWorkoutCheckpointFreshness(
+  current: FitnessWorkoutFocusSessionResultPayload,
+  candidate: FitnessWorkoutFocusSessionResultPayload,
+) {
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  const candidateUpdatedAt = Date.parse(candidate.updatedAt);
+  const currentTime = Number.isFinite(currentUpdatedAt) ? currentUpdatedAt : 0;
+  const candidateTime = Number.isFinite(candidateUpdatedAt) ? candidateUpdatedAt : 0;
+  if (candidateTime !== currentTime) return candidateTime - currentTime;
+
+  const resolvedDelta =
+    getResolvedFitnessWorkoutCheckpointSetCount(candidate) -
+    getResolvedFitnessWorkoutCheckpointSetCount(current);
+  if (resolvedDelta !== 0) return resolvedDelta;
+
+  return candidate.sets.length - current.sets.length;
+}
+
+export function compactFitnessWorkoutCheckpointPayloads(
+  payloads: readonly FitnessWorkoutFocusSessionResultPayload[],
+) {
+  const order: string[] = [];
+  const bySessionKey = new Map<string, FitnessWorkoutFocusSessionResultPayload>();
+  const withoutSessionKey: FitnessWorkoutFocusSessionResultPayload[] = [];
+
+  for (const payload of payloads) {
+    const sessionKey = getFitnessWorkoutCheckpointSessionKey(payload);
+    if (!sessionKey) {
+      withoutSessionKey.push(payload);
+      continue;
+    }
+
+    const current = bySessionKey.get(sessionKey);
+    if (!current) {
+      order.push(sessionKey);
+      bySessionKey.set(sessionKey, payload);
+      continue;
+    }
+
+    if (compareFitnessWorkoutCheckpointFreshness(current, payload) >= 0) {
+      bySessionKey.set(sessionKey, payload);
+    }
+  }
+
+  return [
+    ...withoutSessionKey,
+    ...order.flatMap((sessionKey) => {
+      const payload = bySessionKey.get(sessionKey);
+      return payload ? [payload] : [];
+    }),
+  ];
+}
+
 export function buildFitnessWorkoutFocusSessionFromEntry({
   entry,
   databaseId,

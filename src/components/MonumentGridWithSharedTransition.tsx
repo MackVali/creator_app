@@ -37,7 +37,6 @@ import {
 import { OPEN_MONUMENT_DIALOG_EVENT } from "@/components/monuments/AddMonumentDialog";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import { hapticMediumImpact, hapticPress } from "@/lib/haptics/creatorHaptics";
-import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 import { cn } from "@/lib/utils";
 
 const DASHBOARD_DETAIL_SAFE_TOP_GAP = 8;
@@ -394,7 +393,7 @@ export function MonumentGridWithSharedTransition({
   const selected = isEmpty
     ? null
     : monuments.find((m) => m.id === activeId) || null;
-  const allowNewMonumentCard = showNewCard && monuments.length < MAX_MONUMENTS;
+  const allowNewMonumentCard = showNewCard;
 
   const previousFocus = useRef<HTMLElement | null>(null);
   const previousBodyOverflow = useRef<string | null>(null);
@@ -868,15 +867,7 @@ export function MonumentGridWithSharedTransition({
       : null;
 
   if (!allowNewMonumentCard && isEmpty) {
-    return (
-      <div className={density === "compact" ? "grid gap-1" : "grid grid-cols-4 gap-1"}>
-        <div className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1">
-          <p className="text-xs text-[var(--muted)]">
-            Monument cap of {MAX_MONUMENTS} reached.
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

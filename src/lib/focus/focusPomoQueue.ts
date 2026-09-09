@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { readNoteTodos, type NoteTodo } from "@/lib/notes/noteTodos";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
@@ -129,6 +130,10 @@ export interface FocusPomoQueueItem {
   task_id?: string | null;
   taskOrder?: number | null;
   task_order?: number | null;
+  noteTodoId?: string | null;
+  note_todo_id?: string | null;
+  noteTodoGoalId?: string | null;
+  note_todo_goal_id?: string | null;
   campaign?: FocusPomoQueueRelation | null;
   campaignId?: string | null;
   campaign_id?: string | null;
@@ -210,6 +215,30 @@ type ProjectRow = {
   updated_at?: string | null;
 };
 
+type TaskRow = {
+  id?: string | null;
+  name?: string | null;
+  title?: string | null;
+  duration_min?: number | string | null;
+  energy?: LookupValue;
+  priority?: LookupValue;
+  goal_id?: string | null;
+  project_id?: string | null;
+  skill_id?: string | null;
+  stage?: string | null;
+  completed_at?: string | null;
+  due_date?: string | null;
+  deadline?: string | null;
+  target_date?: string | null;
+  sort_order?: number | string | null;
+  position?: number | string | null;
+  order_index?: number | string | null;
+  display_order?: number | string | null;
+  sequence?: number | string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 type LookupValue = string | number | { name?: string | null } | null;
 
 type SkillRow = {
@@ -277,6 +306,12 @@ type RoutineRow = {
 type ProjectSkillRow = {
   project_id?: string | null;
   skill_id?: string | null;
+};
+
+type GoalWorkspaceTodoRow = {
+  goal_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+  updated_at?: string | null;
 };
 
 type AreaSkillRow = {
@@ -361,6 +396,13 @@ const PROJECT_SELECTS = [
     columns: "id, name, duration_min, energy, goal_id",
     filterCompleted: false,
   },
+];
+
+const TASK_SELECTS = [
+  "id, name, duration_min, energy, priority, goal_id, project_id, skill_id, stage, completed_at, created_at, updated_at",
+  "id, name, duration_min, energy, priority, goal_id, project_id, skill_id, completed_at, created_at, updated_at",
+  "id, name, duration_min, energy, priority, project_id, skill_id, completed_at, created_at, updated_at",
+  "id, name, duration_min, energy, priority, project_id, completed_at, created_at",
 ];
 
 const ENERGY_CODES = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"];
@@ -1463,6 +1505,243 @@ function mapProject(
   };
 }
 
+function mapTask(
+  row: TaskRow,
+  options: {
+    goalById: Map<string, GoalRow>;
+    projectById: Map<string, ProjectRow>;
+    skillById: Map<string, SkillRow>;
+  }
+): FocusPomoQueueItem | null {
+  const id = readString(row.id);
+  const title = readString(row.title) ?? readString(row.name);
+  if (!id || !title) return null;
+
+  const projectId = readString(row.project_id);
+  const project = projectId ? options.projectById.get(projectId) : undefined;
+  const goalId = readString(row.goal_id) ?? readString(project?.goal_id);
+  const goal = goalId ? options.goalById.get(goalId) : undefined;
+  const goalName = readString(goal?.title) ?? readString(goal?.name);
+  const goalIcon = readRelationIcon(goal);
+  const goalMonumentId = readGoalMonumentId(goal);
+  const goalMonumentName = readGoalMonumentName(goal);
+  const goalMonumentIcon = readGoalMonumentIcon(goal);
+  const goalAreaId = readString(goal?.area_id);
+  const skillId = readString(row.skill_id);
+  const skill = skillId ? options.skillById.get(skillId) : undefined;
+  const skillIcon = readString(skill?.icon) ?? readString(skill?.emoji);
+  const projectName = readString(project?.title) ?? readString(project?.name);
+  const projectOrder =
+    readFiniteNumber(project?.sort_order) ??
+    readFiniteNumber(project?.position) ??
+    readFiniteNumber(project?.order_index) ??
+    readFiniteNumber(project?.display_order) ??
+    readFiniteNumber(project?.sequence) ??
+    readFiniteNumber(project?.global_rank);
+  const taskOrder =
+    readFiniteNumber(row.sort_order) ??
+    readFiniteNumber(row.position) ??
+    readFiniteNumber(row.order_index) ??
+    readFiniteNumber(row.display_order) ??
+    readFiniteNumber(row.sequence);
+  const durationMinutes = readPositiveMinutes(row.duration_min);
+  const skillMonumentId = readString(skill?.monument_id);
+  const monumentIds = Array.from(
+    new Set(
+      [goalMonumentId, skillMonumentId].filter(
+        (monumentId): monumentId is string => Boolean(monumentId)
+      )
+    )
+  );
+
+  return {
+    id,
+    kind: "task",
+    sourceType: "TASK",
+    workType: "task",
+    title,
+    subtitle: projectName ? `Task in ${projectName}` : "Task",
+    durationMinutes,
+    durationLabel: formatDuration(durationMinutes),
+    energyLabel: formatEnergy(row.energy),
+    energyCode: readEnergyCode(row.energy),
+    priority: readLookupValue(row.priority),
+    priorityLabel: formatPriority(row.priority),
+    taskId: id,
+    task_id: id,
+    taskOrder,
+    task_order: taskOrder,
+    projectId,
+    project_id: projectId,
+    projectName,
+    project_name: projectName,
+    projectOrder,
+    project_order: projectOrder,
+    projectGlobalRank: readFiniteNumber(project?.global_rank),
+    project_global_rank: readFiniteNumber(project?.global_rank),
+    completedAt: readString(row.completed_at),
+    completed_at: readString(row.completed_at),
+    createdAt: readString(row.created_at),
+    created_at: readString(row.created_at),
+    updatedAt: readString(row.updated_at),
+    updated_at: readString(row.updated_at),
+    dueDate: readString(row.due_date),
+    due_date: readString(row.due_date),
+    deadline: readString(row.deadline),
+    targetDate: readString(row.target_date),
+    target_date: readString(row.target_date),
+    status: readString(row.stage),
+    statusLabel: "Ready",
+    icon: skillIcon,
+    skillId,
+    skillIds: skillId ? [skillId] : [],
+    skill_ids: skillId ? [skillId] : [],
+    skillName: readString(skill?.name),
+    skillIcon,
+    skillMonumentId,
+    skill_monument_id: skillMonumentId,
+    monumentIds,
+    monument_ids: monumentIds,
+    goalId,
+    goal_id: goalId,
+    areaId: goalAreaId,
+    area_id: goalAreaId,
+    goalTitle: goalName,
+    goalIcon,
+    goal_emoji: goalIcon,
+    goalPriorityRank: readFiniteNumber(goal?.priority_rank),
+    goal_priority_rank: readFiniteNumber(goal?.priority_rank),
+    goalGlobalRank: readFiniteNumber(goal?.global_rank),
+    goal_global_rank: readFiniteNumber(goal?.global_rank),
+    goalDueDate: readString(goal?.due_date),
+    goal_due_date: readString(goal?.due_date),
+    goalCreatedAt: readString(goal?.created_at),
+    goal_created_at: readString(goal?.created_at),
+    goalUpdatedAt: readString(goal?.updated_at),
+    goal_updated_at: readString(goal?.updated_at),
+    goalMonumentId,
+    goal_monument_id: goalMonumentId,
+    goalAreaId,
+    goal_area_id: goalAreaId,
+    goalMonumentName,
+    goal_monument_name: goalMonumentName,
+    goalMonumentIcon,
+    goal_monument_icon: goalMonumentIcon,
+    goal_name: goalName,
+    goal: buildRelation(goalId, goalName, goalIcon, {
+      monumentId: goalMonumentId,
+      monumentName: goalMonumentName,
+      monumentIcon: goalMonumentIcon,
+    }),
+  };
+}
+
+function mapGoalNoteTodo(
+  todo: NoteTodo,
+  options: {
+    goal: GoalRow;
+    skillById: Map<string, SkillRow>;
+    workspaceUpdatedAt?: string | null;
+    order: number;
+  }
+): FocusPomoQueueItem | null {
+  const todoId = readString(todo.id);
+  const title = readString(todo.title);
+  const goalId = readString(options.goal.id);
+  if (!todoId || !title || !goalId || todo.completed) return null;
+
+  const goalName = readString(options.goal.title) ?? readString(options.goal.name);
+  const goalIcon = readRelationIcon(options.goal);
+  const goalMonumentId = readGoalMonumentId(options.goal);
+  const goalMonumentName = readGoalMonumentName(options.goal);
+  const goalMonumentIcon = readGoalMonumentIcon(options.goal);
+  const goalAreaId = readString(options.goal.area_id);
+  const skillId = readString(todo.skillId);
+  const skill = skillId ? options.skillById.get(skillId) : undefined;
+  const skillIcon = readString(skill?.icon) ?? readString(skill?.emoji);
+  const skillMonumentId = readString(skill?.monument_id);
+  const monumentIds = Array.from(
+    new Set(
+      [goalMonumentId, skillMonumentId].filter(
+        (monumentId): monumentId is string => Boolean(monumentId)
+      )
+    )
+  );
+  const id = `goal-note-todo:${goalId}:${todoId}`;
+
+  return {
+    id,
+    kind: "task",
+    sourceType: "NOTE_TODO",
+    source_type: "NOTE_TODO",
+    workType: "task",
+    title,
+    subtitle: goalName ? `Goal to-do in ${goalName}` : "Goal to-do",
+    durationMinutes: null,
+    durationLabel: "No duration",
+    energyLabel: formatLookupLabel(todo.energy),
+    energyCode: todo.energy,
+    priority: todo.priority,
+    priorityLabel: formatPriority(todo.priority),
+    taskId: id,
+    task_id: id,
+    taskOrder: options.order,
+    task_order: options.order,
+    noteTodoId: todoId,
+    note_todo_id: todoId,
+    noteTodoGoalId: goalId,
+    note_todo_goal_id: goalId,
+    completedAt: null,
+    completed_at: null,
+    updatedAt: options.workspaceUpdatedAt ?? readString(options.goal.updated_at),
+    updated_at: options.workspaceUpdatedAt ?? readString(options.goal.updated_at),
+    createdAt: readString(options.goal.created_at),
+    created_at: readString(options.goal.created_at),
+    statusLabel: "Ready",
+    icon: skillIcon ?? goalIcon,
+    skillId,
+    skillIds: skillId ? [skillId] : [],
+    skill_ids: skillId ? [skillId] : [],
+    skillName: readString(skill?.name),
+    skillIcon,
+    skillMonumentId,
+    skill_monument_id: skillMonumentId,
+    monumentIds,
+    monument_ids: monumentIds,
+    goalId,
+    goal_id: goalId,
+    areaId: goalAreaId,
+    area_id: goalAreaId,
+    goalTitle: goalName,
+    goalIcon,
+    goal_emoji: goalIcon,
+    goalPriorityRank: readFiniteNumber(options.goal.priority_rank),
+    goal_priority_rank: readFiniteNumber(options.goal.priority_rank),
+    goalGlobalRank: readFiniteNumber(options.goal.global_rank),
+    goal_global_rank: readFiniteNumber(options.goal.global_rank),
+    goalDueDate: readString(options.goal.due_date),
+    goal_due_date: readString(options.goal.due_date),
+    goalCreatedAt: readString(options.goal.created_at),
+    goal_created_at: readString(options.goal.created_at),
+    goalUpdatedAt: readString(options.goal.updated_at),
+    goal_updated_at: readString(options.goal.updated_at),
+    goalMonumentId,
+    goal_monument_id: goalMonumentId,
+    goalAreaId,
+    goal_area_id: goalAreaId,
+    goalMonumentName,
+    goal_monument_name: goalMonumentName,
+    goalMonumentIcon,
+    goal_monument_icon: goalMonumentIcon,
+    goal_name: goalName,
+    goal: buildRelation(goalId, goalName, goalIcon, {
+      monumentId: goalMonumentId,
+      monumentName: goalMonumentName,
+      monumentIcon: goalMonumentIcon,
+    }),
+  };
+}
+
 async function fetchSkillMetadata(
   supabase: SupabaseBrowserClient,
   userId: string,
@@ -1675,6 +1954,45 @@ async function fetchProjectSkillMetadata(
   return map;
 }
 
+async function fetchProjectMetadata(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  projectIds: string[]
+): Promise<Map<string, ProjectRow>> {
+  const ids = Array.from(new Set(projectIds.filter(Boolean)));
+  if (ids.length === 0) return new Map();
+
+  const selects = [
+    "id, name, title, goal_id, global_rank, sort_order, position, order_index, display_order, sequence",
+    "id, name, goal_id, global_rank, sort_order, position, order_index, display_order, sequence",
+    "id, name, goal_id, global_rank",
+    "id, name, goal_id",
+  ];
+  let lastError: { message?: string } | null = null;
+
+  for (const select of selects) {
+    const { data, error } = await supabase
+      .from("projects")
+      .select(select)
+      .eq("user_id", userId)
+      .in("id", ids);
+
+    if (!error) {
+      return new Map(
+        ((data ?? []) as ProjectRow[])
+          .map((row) => [readString(row.id), row] as const)
+          .filter((entry): entry is readonly [string, ProjectRow] =>
+            Boolean(entry[0])
+          )
+      );
+    }
+
+    lastError = error;
+  }
+
+  throw new Error(lastError?.message ?? "Failed to load project metadata.");
+}
+
 async function fetchAreaIdsBySkillId(
   supabase: SupabaseBrowserClient,
   userId: string,
@@ -1773,6 +2091,53 @@ async function fetchGoalIdsForArea(
 
   if (error) throw error;
 
+  const directGoalIds = (data ?? [])
+    .map((row) => readString((row as { id?: string | null }).id))
+    .filter((id): id is string => Boolean(id));
+  const monumentIds = await fetchMonumentIdsForArea(supabase, userId, areaId);
+  const monumentGoalIds = await fetchGoalIdsForMonuments(
+    supabase,
+    userId,
+    monumentIds
+  );
+
+  return Array.from(new Set([...directGoalIds, ...monumentGoalIds]));
+}
+
+async function fetchMonumentIdsForArea(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  areaId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("monuments")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("area_id", areaId);
+
+  if (error) throw error;
+
+  return (data ?? [])
+    .map((row) => readString((row as { id?: string | null }).id))
+    .filter((id): id is string => Boolean(id));
+}
+
+async function fetchGoalIdsForMonuments(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  monumentIds: string[]
+): Promise<string[]> {
+  const ids = Array.from(new Set(monumentIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("goals")
+    .select("id")
+    .eq("user_id", userId)
+    .in("monument_id", ids);
+
+  if (error) throw error;
+
   return (data ?? [])
     .map((row) => readString((row as { id?: string | null }).id))
     .filter((id): id is string => Boolean(id));
@@ -1798,6 +2163,27 @@ async function fetchProjectIdsForSkill(
         .filter((id): id is string => Boolean(id))
     )
   );
+}
+
+async function fetchProjectIdsForGoals(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  goalIds: string[]
+): Promise<string[]> {
+  const ids = Array.from(new Set(goalIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("user_id", userId)
+    .in("goal_id", ids);
+
+  if (error) throw error;
+
+  return (data ?? [])
+    .map((row) => readString((row as { id?: string | null }).id))
+    .filter((id): id is string => Boolean(id));
 }
 
 async function fetchFocusPomoTimeZone(
@@ -2029,6 +2415,151 @@ async function fetchProjects(
   throw new Error(lastError?.message ?? "Failed to load projects.");
 }
 
+async function fetchTasksByFilter(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  filter:
+    | { column: "all"; values?: undefined }
+    | { column: "goal_id" | "project_id" | "skill_id"; values: string[] }
+): Promise<FocusPomoQueueItem[]> {
+  if (filter.column !== "all" && filter.values.length === 0) return [];
+
+  let lastError: { message?: string } | null = null;
+  for (const select of TASK_SELECTS) {
+    let query = supabase
+      .from("tasks")
+      .select(select)
+      .eq("user_id", userId)
+      .is("completed_at", null);
+
+    if (filter.column !== "all") {
+      query = query.in(filter.column, filter.values);
+    }
+
+    const response = (await query) as QueryResponse<TaskRow>;
+    if (!response.error) {
+      const rows = (response.data ?? []).filter((row) => !row.completed_at);
+      const projectIds = rows
+        .map((row) => readString(row.project_id))
+        .filter((id): id is string => Boolean(id));
+      const projectById = await fetchProjectMetadata(supabase, userId, projectIds);
+      const goalIds = rows
+        .map((row) => readString(row.goal_id) ?? readString(projectById.get(readString(row.project_id) ?? "")?.goal_id))
+        .filter((id): id is string => Boolean(id));
+      const skillIds = rows
+        .map((row) => readString(row.skill_id))
+        .filter((id): id is string => Boolean(id));
+      const [goalById, skillById] = await Promise.all([
+        fetchGoalMetadata(supabase, userId, goalIds),
+        fetchSkillMetadata(supabase, userId, skillIds),
+      ]);
+
+      return rows
+        .map((row) => mapTask(row, { goalById, projectById, skillById }))
+        .filter((item): item is FocusPomoQueueItem => Boolean(item));
+    }
+
+    lastError = response.error;
+  }
+
+  throw new Error(lastError?.message ?? "Failed to load tasks.");
+}
+
+async function fetchTasks(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  params:
+    | { sourceType: "all" }
+    | { sourceType: "monument" | "area"; goalIds: string[]; projectIds: string[] }
+    | { sourceType: "skill"; skillId: string; projectIds: string[] }
+): Promise<FocusPomoQueueItem[]> {
+  if (params.sourceType === "all") {
+    return fetchTasksByFilter(supabase, userId, { column: "all" });
+  }
+
+  const taskMaps = new Map<string, FocusPomoQueueItem>();
+  const groups =
+    params.sourceType === "skill"
+      ? await Promise.all([
+          fetchTasksByFilter(supabase, userId, {
+            column: "skill_id",
+            values: [params.skillId],
+          }),
+          fetchTasksByFilter(supabase, userId, {
+            column: "project_id",
+            values: params.projectIds,
+          }),
+        ])
+      : await Promise.all([
+          fetchTasksByFilter(supabase, userId, {
+            column: "goal_id",
+            values: params.goalIds,
+          }),
+          fetchTasksByFilter(supabase, userId, {
+            column: "project_id",
+            values: params.projectIds,
+          }),
+        ]);
+
+  for (const item of groups.flat()) {
+    taskMaps.set(item.id, item);
+  }
+  return Array.from(taskMaps.values());
+}
+
+async function fetchGoalNoteTodos(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  goalIds?: string[],
+  options: { skillId?: string | null } = {}
+): Promise<FocusPomoQueueItem[]> {
+  if (goalIds && goalIds.length === 0) return [];
+
+  let query = supabase
+    .from("goal_workspaces")
+    .select("goal_id, metadata, updated_at")
+    .eq("user_id", userId);
+
+  if (goalIds) {
+    query = query.in("goal_id", Array.from(new Set(goalIds.filter(Boolean))));
+  }
+
+  const { data, error } = (await query) as QueryResponse<GoalWorkspaceTodoRow>;
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const workspaceGoalIds = rows
+    .map((row) => readString(row.goal_id))
+    .filter((id): id is string => Boolean(id));
+  const rawTodos = rows.flatMap((row) => readNoteTodos(row.metadata));
+  const skillIds = rawTodos
+    .map((todo) => readString(todo.skillId))
+    .filter((id): id is string => Boolean(id));
+  const [goalById, skillById] = await Promise.all([
+    fetchGoalMetadata(supabase, userId, workspaceGoalIds),
+    fetchSkillMetadata(supabase, userId, skillIds),
+  ]);
+  const items: FocusPomoQueueItem[] = [];
+
+  for (const row of rows) {
+    const goalId = readString(row.goal_id);
+    const goal = goalId ? goalById.get(goalId) : undefined;
+    if (!goal) continue;
+    readNoteTodos(row.metadata).forEach((todo, index) => {
+      if (options.skillId && todo.skillId !== options.skillId) return;
+      const item = mapGoalNoteTodo(todo, {
+        goal,
+        skillById,
+        workspaceUpdatedAt: readString(row.updated_at),
+        order: index,
+      });
+      if (item) items.push(item);
+    });
+  }
+
+  return items;
+}
+
 export async function fetchFocusPomoQueue(params: {
   sourceType?: QueueSourceType;
   sourceId?: string;
@@ -2047,9 +2578,11 @@ export async function fetchFocusPomoQueue(params: {
 
   const sourceId = readString(params.sourceId);
   if (!params.sourceType && !sourceId) {
-    const [habits, projects] = await Promise.all([
+    const [habits, projects, tasks, noteTodos] = await Promise.all([
       fetchHabits(supabase, user.id),
       fetchProjects(supabase, user.id, { sourceType: "all" }),
+      fetchTasks(supabase, user.id, { sourceType: "all" }),
+      fetchGoalNoteTodos(supabase, user.id),
     ]);
 
     const now = new Date();
@@ -2077,7 +2610,7 @@ export async function fetchFocusPomoQueue(params: {
       ...completedScheduledHabitIds,
     ]);
     return sortFocusPomoQueue(
-      filterEligibleQueueItems([...habits, ...projects], now, {
+      filterEligibleQueueItems([...habits, ...projects, ...tasks, ...noteTodos], now, {
         completedHabitIdsToday,
         timeZone,
       }),
@@ -2093,34 +2626,67 @@ export async function fetchFocusPomoQueue(params: {
     | { sourceType: "monument"; goalIds: string[] }
     | { sourceType: "area"; goalIds: string[] }
     | { sourceType: "skill"; projectIds: string[] };
+  let taskScope:
+    | { sourceType: "monument" | "area"; goalIds: string[]; projectIds: string[] }
+    | { sourceType: "skill"; skillId: string; projectIds: string[] };
+  let noteTodoGoalIds: string[];
 
   if (params.sourceType === "skill") {
     skillIds = [sourceId];
+    const projectIds = await fetchProjectIdsForSkill(supabase, sourceId);
     projectScope = {
       sourceType: "skill",
-      projectIds: await fetchProjectIdsForSkill(supabase, sourceId),
+      projectIds,
     };
+    taskScope = {
+      sourceType: "skill",
+      skillId: sourceId,
+      projectIds,
+    };
+    noteTodoGoalIds = [];
   } else if (params.sourceType === "area") {
     const [areaSkillIds, areaGoalIds] = await Promise.all([
       fetchSkillIdsForArea(supabase, user.id, sourceId),
       fetchGoalIdsForArea(supabase, user.id, sourceId),
     ]);
+    const projectIds = await fetchProjectIdsForGoals(supabase, user.id, areaGoalIds);
     skillIds = areaSkillIds;
     projectScope = {
       sourceType: "area",
       goalIds: areaGoalIds,
     };
+    taskScope = {
+      sourceType: "area",
+      goalIds: areaGoalIds,
+      projectIds,
+    };
+    noteTodoGoalIds = areaGoalIds;
   } else {
     skillIds = await fetchSkillIdsForMonument(supabase, user.id, sourceId);
+    const goalIds = await fetchGoalIdsForMonument(supabase, user.id, sourceId);
+    const projectIds = await fetchProjectIdsForGoals(supabase, user.id, goalIds);
     projectScope = {
       sourceType: "monument",
-      goalIds: await fetchGoalIdsForMonument(supabase, user.id, sourceId),
+      goalIds,
     };
+    taskScope = {
+      sourceType: "monument",
+      goalIds,
+      projectIds,
+    };
+    noteTodoGoalIds = goalIds;
   }
 
-  const [habits, projects] = await Promise.all([
+  const [habits, projects, tasks, noteTodos] = await Promise.all([
     fetchHabits(supabase, user.id, skillIds),
     fetchProjects(supabase, user.id, projectScope),
+    fetchTasks(supabase, user.id, taskScope),
+    fetchGoalNoteTodos(
+      supabase,
+      user.id,
+      params.sourceType === "skill" ? undefined : noteTodoGoalIds,
+      params.sourceType === "skill" ? { skillId: sourceId } : {}
+    ),
   ]);
 
   const now = new Date();
@@ -2148,7 +2714,7 @@ export async function fetchFocusPomoQueue(params: {
     ...completedScheduledHabitIds,
   ]);
   return sortFocusPomoQueue(
-    filterEligibleQueueItems([...habits, ...projects], now, {
+    filterEligibleQueueItems([...habits, ...projects, ...tasks, ...noteTodos], now, {
       completedHabitIdsToday,
       timeZone,
     }),

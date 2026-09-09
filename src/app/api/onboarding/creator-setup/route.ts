@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 import {
   CREATOR_ONBOARDING_COMPLETE_STEP,
   CREATOR_ONBOARDING_VERSION,
@@ -455,9 +454,9 @@ export async function POST(request: Request) {
     );
   }
 
-  if ((existingMonumentCount ?? 0) + parsed.data.monuments.length > MAX_MONUMENTS) {
+  if ((existingMonumentCount ?? 0) + parsed.data.monuments.length > MAX_SETUP_MONUMENTS) {
     return NextResponse.json(
-      { error: `You can create up to ${MAX_MONUMENTS} Monuments.` },
+      { error: `You can create up to ${MAX_SETUP_MONUMENTS} Monuments during setup.` },
       { status: 400 },
     );
   }

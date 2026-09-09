@@ -1,27 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_MONUMENTS,
-  getMaxMonumentsForTier,
+  FREE_MONUMENTS_PER_AREA,
+  PLUS_MONUMENTS_PER_AREA,
+  getMaxMonumentsPerArea,
 } from "@/lib/monuments/constants";
 
-describe("monument limits", () => {
-  it("uses 8 as the global Monument cap", () => {
-    expect(MAX_MONUMENTS).toBe(8);
+describe("Monument limits", () => {
+  it("allows 4 Monuments per Area for Creator users", () => {
+    expect(FREE_MONUMENTS_PER_AREA).toBe(4);
+    expect(getMaxMonumentsPerArea(false)).toBe(4);
   });
 
-  it.each([
-    ["CREATOR"],
-    ["FREE"],
-    ["free"],
-    ["CREATOR PLUS"],
-    ["ADMIN"],
-    ["creator"],
-    [" creator plus "],
-    [null],
-    [undefined],
-    ["UNKNOWN"],
-  ])("resolves %s to the global Monument cap", (tier) => {
-    expect(getMaxMonumentsForTier(tier)).toBe(MAX_MONUMENTS);
+  it("allows 16 Monuments per Area for Plus users", () => {
+    expect(PLUS_MONUMENTS_PER_AREA).toBe(16);
+    expect(getMaxMonumentsPerArea(true)).toBe(16);
   });
 });
