@@ -485,7 +485,7 @@ async function loadSkillProgressForSurge(
     .eq("user_id", userId)
     .eq("skill_id", skillId)
     .maybeSingle();
-  if (error) return null;
+  if (error) throw error;
   const row = data as SkillProgressSurgeRow | null;
   return row &&
     typeof row.level === "number" &&
@@ -855,6 +855,9 @@ export async function POST(request: NextRequest) {
       surgeSkillId
     );
     if (surgePayload && postAwardSkillProgress) {
+      const postAwardProgressTo =
+        resolveSkillProgressPercent(postAwardSkillProgress);
+
       surgePayload = {
         ...surgePayload,
         currentLevel: postAwardSkillProgress.level,
@@ -862,8 +865,6 @@ export async function POST(request: NextRequest) {
 
       if (preAwardSkillProgress) {
         const progressFrom = resolveSkillProgressPercent(preAwardSkillProgress);
-        const postAwardProgressTo =
-          resolveSkillProgressPercent(postAwardSkillProgress);
         const hasLevelBreak =
           preAwardSkillProgress.level !== postAwardSkillProgress.level ||
           preAwardSkillProgress.prestige !== postAwardSkillProgress.prestige;
@@ -879,6 +880,25 @@ export async function POST(request: NextRequest) {
                 progressRolloverTo: postAwardProgressTo,
               }
             : surgePayload.levelBreak ?? null,
+        };
+      } else {
+        const baselineLevel = 1;
+        const baselinePrestige = 0;
+        const hasLevelBreak =
+          postAwardSkillProgress.level !== baselineLevel ||
+          postAwardSkillProgress.prestige !== baselinePrestige;
+
+        surgePayload = {
+          ...surgePayload,
+          progressFrom: 0,
+          progressTo: hasLevelBreak ? 100 : postAwardProgressTo,
+          levelBreak: hasLevelBreak
+            ? {
+                oldLevel: baselineLevel,
+                newLevel: postAwardSkillProgress.level,
+                progressRolloverTo: postAwardProgressTo,
+              }
+            : null,
         };
       }
     }
