@@ -1754,6 +1754,7 @@ export function MyListSheet({
   const createListInputRef = useRef<HTMLInputElement | null>(null);
   const [activeSkillPickerRowKey, setActiveSkillPickerRowKey] =
     useState<MyListRowKey | null>(null);
+  const [skillPickerOpensAbove, setSkillPickerOpensAbove] = useState(false);
   const [activePriorityPickerRowKey, setActivePriorityPickerRowKey] =
     useState<MyListRowKey | null>(null);
   const [activeDayPickerRowKey, setActiveDayPickerRowKey] =
@@ -5095,9 +5096,46 @@ export function MyListSheet({
     ) =>
       activeSkillPickerRowKey === rowKey ? (
         <div
+          ref={(pickerElement) => {
+            if (!pickerElement || typeof window === "undefined") return;
+
+            const triggerElement = pickerElement.previousElementSibling;
+            if (!(triggerElement instanceof HTMLElement)) return;
+
+            const triggerRect = triggerElement.getBoundingClientRect();
+            const pickerRect = pickerElement.getBoundingClientRect();
+            const viewportMetrics = readMyListViewportMetrics();
+            const scrollRect = sheetScrollRef.current?.getBoundingClientRect();
+
+            const visibleTop = Math.max(
+              viewportMetrics.visualTop,
+              scrollRect?.top ?? viewportMetrics.visualTop,
+            );
+            const visibleBottom = Math.min(
+              viewportMetrics.visualBottom,
+              scrollRect?.bottom ?? viewportMetrics.visualBottom,
+            );
+
+            const gap = 8;
+            const spaceBelow = visibleBottom - triggerRect.bottom - gap;
+            const spaceAbove = triggerRect.top - visibleTop - gap;
+            const requiredHeight = pickerRect.height;
+
+            const shouldOpenAbove =
+              spaceBelow < requiredHeight && spaceAbove > spaceBelow;
+
+            setSkillPickerOpensAbove((current) =>
+              current === shouldOpenAbove ? current : shouldOpenAbove,
+            );
+          }}
           role="listbox"
           aria-label="Choose Skill"
-          className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-64 max-w-[calc(100vw-3rem)] rounded-[1.1rem] border border-white/10 bg-zinc-950/94 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+          className={clsx(
+            "absolute left-0 z-30 w-64 max-w-[calc(100vw-3rem)] rounded-[1.1rem] border border-white/10 bg-zinc-950/94 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
+            skillPickerOpensAbove
+              ? "bottom-[calc(100%+0.5rem)]"
+              : "top-[calc(100%+0.5rem)]",
+          )}
           onPointerDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
@@ -5165,7 +5203,13 @@ export function MyListSheet({
           </div>
         </div>
       ) : null,
-    [activeSkillPickerRowKey, manualSkillGroups, manualSkillSearch, open],
+    [
+      activeSkillPickerRowKey,
+      manualSkillGroups,
+      manualSkillSearch,
+      open,
+      skillPickerOpensAbove,
+    ],
   );
 
   const renderPriorityPicker = useCallback(

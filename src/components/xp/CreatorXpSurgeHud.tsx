@@ -86,8 +86,8 @@ type CreatorXpSurgeHudData = CreatorXpSurgePayload & {
 type CreatorXpSurgeListener = (payload: CreatorXpSurgePayload) => void;
 
 const DEFAULT_TOP_OFFSET_PX = 16;
-const DEFAULT_PROGRESS_FROM = 24;
-const DEFAULT_PROGRESS_TO = 72;
+const DEFAULT_PROGRESS_FROM = 0;
+const DEFAULT_PROGRESS_TO = 0;
 const SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const CREATOR_XP_HEX_FILL_DURATION_MS = 1900;
 const CREATOR_XP_LEVEL_BREAK_FILL_DURATION_MS = 1180;
@@ -174,8 +174,8 @@ export function buildCreatorXpSurgePayload({
     currentLevel: normalizedLevel,
     displayXp:
       CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE[normalizedSourceType] ?? null,
-    progressFrom: normalizedSourceType === "PROJECT" ? 18 : 24,
-    progressTo: normalizedSourceType === "PROJECT" ? 78 : 72,
+    progressFrom: 0,
+    progressTo: 0,
     levelBreak: null,
   };
 }
