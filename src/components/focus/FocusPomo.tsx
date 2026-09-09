@@ -4304,7 +4304,7 @@ function readFitnessWorkoutCheckpointOutbox() {
     );
     if (!rawPayload) return [];
     const parsed = JSON.parse(rawPayload);
-    return Array.isArray(parsed)
+    const payloads = Array.isArray(parsed)
       ? parsed.filter(
           (item): item is FitnessWorkoutFocusSessionResultPayload =>
             item?.source === "fitness" &&
@@ -4312,6 +4312,7 @@ function readFitnessWorkoutCheckpointOutbox() {
             typeof item.entryId === "string",
         )
       : [];
+    return compactFitnessWorkoutCheckpointPayloads(payloads);
   } catch {
     return [];
   }
@@ -4321,15 +4322,16 @@ function writeFitnessWorkoutCheckpointOutbox(
   items: readonly FitnessWorkoutFocusSessionResultPayload[],
 ) {
   if (typeof window === "undefined") return;
+  const compactedItems = compactFitnessWorkoutCheckpointPayloads(items);
 
   try {
-    if (items.length === 0) {
+    if (compactedItems.length === 0) {
       window.localStorage.removeItem(FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY);
       return;
     }
     window.localStorage.setItem(
       FITNESS_WORKOUT_FOCUS_SESSION_OUTBOX_STORAGE_KEY,
-      JSON.stringify(items),
+      JSON.stringify(compactedItems),
     );
   } catch {
     // The in-route result payload remains the immediate review fallback.
@@ -4340,11 +4342,7 @@ function queueFitnessWorkoutCheckpointRetry(
   payload: FitnessWorkoutFocusSessionResultPayload,
 ) {
   const outbox = readFitnessWorkoutCheckpointOutbox();
-  const nextOutbox = [
-    ...outbox.filter((item) => item.sessionId !== payload.sessionId),
-    payload,
-  ];
-  writeFitnessWorkoutCheckpointOutbox(nextOutbox);
+  writeFitnessWorkoutCheckpointOutbox([...outbox, payload]);
 }
 
 function getFitnessRecordMetadata(value: unknown) {
@@ -5252,6 +5250,7 @@ export default function FocusPomo({
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const completionRequestsRef = useRef(new Map<string, Promise<boolean>>());
+  const fitnessWorkoutCheckpointWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const fitnessWorkoutSessionActiveRef = useRef(false);
   const focusPomoLiveActivityRef =
     useRef<ActiveFocusPomoLiveActivitySession | null>(null);
@@ -6402,10 +6401,11 @@ export default function FocusPomo({
         const metadata = getFitnessRecordMetadata(entry.values.metadata);
         const log = getFitnessRecordMetadata(metadata.fitnessWorkoutLog);
         if (log.version !== 1) return entry;
+        const mergeOptions = getFitnessWorkoutCheckpointMergeOptions(payload);
 
         return {
           ...entry,
-          updatedAt: payload.updatedAt,
+          updatedAt: mergeOptions.updatedAt,
           values: {
             ...entry.values,
             metadata: {
@@ -6413,11 +6413,7 @@ export default function FocusPomo({
               fitnessWorkoutLog: mergeFitnessWorkoutLogSetResults(
                 log as FitnessWorkoutLogMetadata,
                 payload.sets,
-                {
-                  status: "in_progress",
-                  updatedAt: payload.updatedAt,
-                  completedAt: null,
-                },
+                mergeOptions,
               ),
             },
           },
@@ -6426,6 +6422,11 @@ export default function FocusPomo({
     });
 
     if (!result.success) {
+      console.error("FocusPomo failed to persist Fitness workout checkpoint", {
+        error: result.error,
+        entryId: payload.entryId,
+        sessionId: payload.sessionId,
+      });
       queueFitnessWorkoutCheckpointRetry(payload);
     }
   }
@@ -6440,47 +6441,91 @@ export default function FocusPomo({
         remaining.push(payload);
         continue;
       }
-      const result = await updateFitnessWorkoutDatabaseEntryInNote({
-        noteId: payload.noteId,
-        databaseId: payload.databaseId,
-        entryId: payload.entryId,
-        sessionId: payload.sessionId,
-        getNextEntry: (entry) => {
-          const metadata = getFitnessRecordMetadata(entry.values.metadata);
-          const log = getFitnessRecordMetadata(metadata.fitnessWorkoutLog);
-          if (log.version !== 1) return entry;
-          return {
-            ...entry,
-            updatedAt: payload.updatedAt,
-            values: {
-              ...entry.values,
-              metadata: {
-                ...metadata,
-                fitnessWorkoutLog: mergeFitnessWorkoutLogSetResults(
-                  log as FitnessWorkoutLogMetadata,
-                  payload.sets,
-                  {
-                    status: "in_progress",
-                    updatedAt: payload.updatedAt,
-                    completedAt: null,
-                  },
-                ),
+      try {
+        const result = await updateFitnessWorkoutDatabaseEntryInNote({
+          noteId: payload.noteId,
+          databaseId: payload.databaseId,
+          entryId: payload.entryId,
+          sessionId: payload.sessionId,
+          getNextEntry: (entry) => {
+            const metadata = getFitnessRecordMetadata(entry.values.metadata);
+            const log = getFitnessRecordMetadata(metadata.fitnessWorkoutLog);
+            if (log.version !== 1) return entry;
+            const mergeOptions = getFitnessWorkoutCheckpointMergeOptions(payload);
+            return {
+              ...entry,
+              updatedAt: mergeOptions.updatedAt,
+              values: {
+                ...entry.values,
+                metadata: {
+                  ...metadata,
+                  fitnessWorkoutLog: mergeFitnessWorkoutLogSetResults(
+                    log as FitnessWorkoutLogMetadata,
+                    payload.sets,
+                    mergeOptions,
+                  ),
+                },
               },
-            },
-          };
-        },
-      });
-      if (!result.success) remaining.push(payload);
+            };
+          },
+        });
+        if (!result.success) {
+          console.error("FocusPomo failed to retry Fitness workout checkpoint", {
+            error: result.error,
+            entryId: payload.entryId,
+            sessionId: payload.sessionId,
+          });
+          remaining.push(payload);
+        }
+      } catch (error) {
+        console.error("FocusPomo failed to retry Fitness workout checkpoint", {
+          error,
+          entryId: payload.entryId,
+          sessionId: payload.sessionId,
+        });
+        remaining.push(payload);
+      }
     }
 
     writeFitnessWorkoutCheckpointOutbox(remaining);
   }
 
+  function enqueueFitnessWorkoutCheckpointPersistence(
+    payload?: FitnessWorkoutFocusSessionResultPayload,
+  ) {
+    const runCheckpointWrite = async () => {
+      try {
+        await retryFitnessWorkoutCheckpointOutbox();
+      } catch (error) {
+        console.error("FocusPomo failed to retry Fitness workout checkpoint outbox", error);
+      }
+
+      if (!payload) return;
+
+      try {
+        await persistFitnessWorkoutCheckpointPayload(payload);
+      } catch (error) {
+        console.error("FocusPomo failed to persist Fitness workout checkpoint", error);
+        queueFitnessWorkoutCheckpointRetry(payload);
+      }
+    };
+
+    const nextWrite = fitnessWorkoutCheckpointWriteChainRef.current
+      .catch((error) => {
+        console.error("FocusPomo Fitness workout checkpoint chain failed", error);
+      })
+      .then(runCheckpointWrite);
+
+    fitnessWorkoutCheckpointWriteChainRef.current = nextWrite.catch((error) => {
+      console.error("FocusPomo Fitness workout checkpoint chain failed", error);
+    });
+  }
+
   function writeFitnessWorkoutSessionResult(
     resultQueue: FocusPomoQueueItem[] = queue,
     action?: {
-      itemKey: string;
-      status: "completed" | "dismissed";
+      itemKey?: string;
+      status?: "completed" | "dismissed";
       actualMs?: number;
       completedAt?: string;
       persist?: boolean;
@@ -6498,7 +6543,7 @@ export default function FocusPomo({
       if (!isFitnessWorkoutQueueItem(item)) return [];
       const itemKey = getFocusPomoQueueItemKey(item);
       const history = historyByItemKey.get(itemKey);
-      const status = action?.itemKey === itemKey
+      const status = action?.itemKey === itemKey && action.status
         ? action.status
         : history?.action === "completed"
           ? "completed"
@@ -6562,14 +6607,14 @@ export default function FocusPomo({
     }
 
     if (action?.persist) {
-      void retryFitnessWorkoutCheckpointOutbox().finally(() => {
-        void persistFitnessWorkoutCheckpointPayload(payload);
-      });
+      enqueueFitnessWorkoutCheckpointPersistence(payload);
     }
   }
 
   useEffect(() => {
-    void retryFitnessWorkoutCheckpointOutbox();
+    enqueueFitnessWorkoutCheckpointPersistence();
+    // Drain local checkpoint retries once when FocusPomo mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function updateCurrentFitnessResistance(
@@ -7833,8 +7878,7 @@ export default function FocusPomo({
   const handleClose = () => {
     void hapticPress();
     setIsRunning(false);
-    writeFitnessWorkoutSessionResult();
-    void retryFitnessWorkoutCheckpointOutbox();
+    writeFitnessWorkoutSessionResult(queue, { persist: true });
     onClose();
   };
 

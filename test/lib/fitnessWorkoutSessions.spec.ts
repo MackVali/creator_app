@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFitnessWorkoutFocusSessionFromEntry,
+  compactFitnessWorkoutCheckpointPayloads,
+  getFitnessWorkoutCheckpointMergeOptions,
   mergeFitnessWorkoutLogSetResults,
   upsertFitnessWorkoutDatabaseEntry,
   type FitnessWorkoutDatabaseEntry,
+  type FitnessWorkoutFocusSessionResultPayload,
   type FitnessWorkoutLogMetadata,
 } from "../../src/lib/focus/fitnessWorkoutFocusSession";
 import { extractFitnessLoggedSetPerformances } from "../../src/lib/fitness/progressiveOverload";
@@ -74,6 +77,24 @@ function log(
   };
 }
 
+function checkpointPayload(
+  sets: FitnessWorkoutFocusSessionResultPayload["sets"],
+  updatedAt = "2026-07-24T10:30:00.000Z",
+): FitnessWorkoutFocusSessionResultPayload {
+  return {
+    source: "fitness",
+    sessionId: "session-1",
+    entryId: "entry-1",
+    noteId: "note-1",
+    databaseId: "fitness",
+    workoutName: "Push",
+    sessionCreatedAt: "2026-07-24T10:00:00.000Z",
+    startedAt: "2026-07-24T10:00:00.000Z",
+    updatedAt,
+    sets,
+  };
+}
+
 describe("Fitness workout structured session helpers", () => {
   it("upserts repeated writes for one session without duplicate entries", () => {
     const databaseId = "fitness";
@@ -132,6 +153,108 @@ describe("Fitness workout structured session helpers", () => {
     };
 
     expect(metadata.fitnessWorkoutLog.status).toBe("completed");
+  });
+
+  it("completed FocusPomo checkpoints finalize the workout without changing dismissed sets", () => {
+    const payload = checkpointPayload([
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench Press",
+        setNumber: 1,
+        totalSets: 2,
+        plannedReps: "5",
+        completedReps: 5,
+        weight: "135",
+        weightUnit: "lb",
+        status: "completed",
+        completedAt: "2026-07-24T10:10:00.000Z",
+      },
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench Press",
+        setNumber: 2,
+        totalSets: 2,
+        plannedReps: "5",
+        completedReps: null,
+        weight: "135",
+        weightUnit: "lb",
+        status: "dismissed",
+        completedAt: "2026-07-24T10:20:00.000Z",
+      },
+    ]);
+
+    const merged = mergeFitnessWorkoutLogSetResults(
+      log("in_progress"),
+      payload.sets,
+      getFitnessWorkoutCheckpointMergeOptions(payload),
+    );
+
+    expect(merged.status).toBe("completed");
+    expect(merged.completedAt).toBe(payload.updatedAt);
+    expect(merged.updatedAt).toBe(payload.updatedAt);
+    expect(merged.exercises?.[0].sets?.[0].status).toBe("completed");
+    expect(merged.exercises?.[0].sets?.[1]).toMatchObject({
+      status: "dismissed",
+      completionStatus: "dismissed",
+      completedReps: null,
+      completedAt: "2026-07-24T10:20:00.000Z",
+    });
+  });
+
+  it("pending FocusPomo checkpoints remain resumable", () => {
+    const payload = checkpointPayload([
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench Press",
+        setNumber: 1,
+        totalSets: 2,
+        plannedReps: "5",
+        completedReps: 5,
+        weight: "135",
+        weightUnit: "lb",
+        status: "completed",
+        completedAt: "2026-07-24T10:10:00.000Z",
+      },
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench Press",
+        setNumber: 2,
+        totalSets: 2,
+        plannedReps: "5",
+        completedReps: null,
+        weight: "135",
+        weightUnit: "lb",
+        status: "pending",
+        completedAt: null,
+      },
+    ]);
+
+    const merged = mergeFitnessWorkoutLogSetResults(
+      log("in_progress"),
+      payload.sets,
+      getFitnessWorkoutCheckpointMergeOptions(payload),
+    );
+
+    expect(merged.status).toBe("in_progress");
+    expect(merged.completedAt).toBeNull();
+    expect(merged.exercises?.[0].sets?.[0].status).toBe("completed");
+    expect(merged.exercises?.[0].sets?.[1].status).toBe("pending");
+  });
+
+  it("dedupes queued checkpoints by keeping the newest same-session snapshot", () => {
+    const older = checkpointPayload([], "2026-07-24T10:05:00.000Z");
+    const newer = checkpointPayload([
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench Press",
+        setNumber: 1,
+        totalSets: 2,
+        status: "completed",
+        completedAt: "2026-07-24T10:10:00.000Z",
+      },
+    ]);
+
+    expect(compactFitnessWorkoutCheckpointPayloads([newer, older])).toEqual([newer]);
   });
 
   it("resume excludes resolved sets and preserves pending set details", () => {
