@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
+import { useProfile } from "@/lib/hooks/useProfile";
 import {
   RelatedRoutineCard,
   type RelatedRoutineCardRoutine,
@@ -44,6 +45,10 @@ import {
 import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import type { CreatorXpBurstSourceOrigin } from "@/lib/effects/creatorXpBurstBus";
+import {
+  persistRelatedHabitCompletion,
+  resolveRelatedHabitCreatorDay,
+} from "@/lib/schedule/relatedHabitCompletion";
 
 interface MonumentRelatedHabitsProps {
   monumentId?: string;
@@ -140,6 +145,14 @@ const RELATED_HABIT_COMPLETED_SHIMMER_CLASS =
 
 const RELATED_HABIT_COMPLETED_FACET_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(135deg,rgba(2,44,34,0.95),transparent_18%)_top_left/42%_42%_no-repeat,linear-gradient(225deg,rgba(6,95,70,0.86),transparent_18%)_top_right/42%_42%_no-repeat,linear-gradient(45deg,rgba(3,67,54,0.90),transparent_18%)_bottom_left/42%_42%_no-repeat,linear-gradient(315deg,rgba(20,184,166,0.28),transparent_18%)_bottom_right/42%_42%_no-repeat] p-[2px] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.36),inset_0_0_0_2px_rgba(2,44,34,0.50)] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+
+function getBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "UTC";
+  }
+}
 
 function renderRelatedHabitAddCard({
   isSmall,
@@ -590,6 +603,7 @@ export function MonumentRelatedHabits({
   const supabase = getSupabaseBrowser();
   const toast = useToastHelpers();
   const fabCreation = useFabCreation();
+  const { localTimeZone } = useProfile();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [relatedHabitSkillIds, setRelatedHabitSkillIds] = useState<string[]>(
@@ -627,22 +641,16 @@ export function MonumentRelatedHabits({
   ] = useState<Set<string>>(() => new Set());
   const [memoCompletionState, setMemoCompletionState] =
     useState<HabitSummary | null>(null);
-  const timeZone = useMemo(() => {
-    try {
-      return normalizeTimeZone(
-        Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC"
-      );
-    } catch (err) {
-      console.error("Failed to determine user timezone", err);
-      return "UTC";
-    }
-  }, []);
-  const [currentDateKey, setCurrentDateKey] = useState(() =>
-    formatDateKeyInTimeZone(
-      startOfDayInTimeZone(new Date(), timeZone),
-      timeZone
-    )
+  const timeZone = useMemo(
+    () => normalizeTimeZone(localTimeZone ?? getBrowserTimeZone()),
+    [localTimeZone]
   );
+  const [creatorDayNow, setCreatorDayNow] = useState(() => new Date());
+  const activeCreatorDay = useMemo(
+    () => resolveRelatedHabitCreatorDay({ timeZone, instant: creatorDayNow }),
+    [creatorDayNow, timeZone]
+  );
+  const currentDateKey = activeCreatorDay.creatorDayDate;
   const relatedHabitIdsKey = useMemo(
     () => relatedHabits.map((habit) => habit.id).join(","),
     [relatedHabits]
@@ -1445,23 +1453,18 @@ export function MonumentRelatedHabits({
   ]);
 
   useEffect(() => {
-    const syncCurrentDateKey = () => {
-      const nextDateKey = formatDateKeyInTimeZone(
-        startOfDayInTimeZone(new Date(), timeZone),
-        timeZone
-      );
-      setCurrentDateKey((previousDateKey) =>
-        previousDateKey === nextDateKey ? previousDateKey : nextDateKey
-      );
-    };
+    const endsAtMs = Date.parse(activeCreatorDay.endsAt);
+    if (!Number.isFinite(endsAtMs)) return;
 
-    syncCurrentDateKey();
-    const intervalId = window.setInterval(syncCurrentDateKey, 60 * 1000);
+    const delay = Math.max(0, endsAtMs - Date.now() + 1_000);
+    const timer = window.setTimeout(() => {
+      setCreatorDayNow(new Date());
+    }, delay);
 
     return () => {
-      window.clearInterval(intervalId);
+      window.clearTimeout(timer);
     };
-  }, [timeZone]);
+  }, [activeCreatorDay.endsAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1565,6 +1568,7 @@ export function MonumentRelatedHabits({
         collapsingCompletedRelatedHabitIdsRef.current.has(habitId);
 
       if (
+        !supabase ||
         !currentUserId ||
         (pendingRelatedHabitIds.has(habitId) && !isPendingCompletedMove)
       ) {
@@ -1654,39 +1658,30 @@ export function MonumentRelatedHabits({
       );
 
       try {
-        const response = await fetch("/api/habits/completion", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            habitId,
-            completedAt,
-            timeZone,
-            action,
-          }),
+        const result = await persistRelatedHabitCompletion({
+          client: supabase,
+          userId: currentUserId,
+          habit: {
+            id: habitBeforeUpdate.id,
+            name: habitBeforeUpdate.name,
+            skillId: habitBeforeUpdate.skillId,
+            routineId: habitBeforeUpdate.routineId,
+            routinePosition: habitBeforeUpdate.routinePosition,
+          },
+          wasCompleted,
+          completedAt,
+          timeZone,
+          monumentIds: monumentId ? [monumentId] : [],
+          areaIds: areaId ? [areaId] : [],
         });
-
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
 
         if (action === "undo") {
           previousRelatedHabitStateRef.current.delete(habitId);
-        } else {
+        } else if (result.visual) {
           dispatchCreatorXpRewardVisual({
-            surge: {
-              sourceType: "HABIT",
-              title:
-                habitBeforeUpdate.skillName?.trim() ||
-                habitBeforeUpdate.name,
-              sourceIcon: habitBeforeUpdate.skillIcon,
-              displayXp: 1,
-            },
-            completedAt,
+            ...result.visual,
             sourceRect,
             sourceOrigin,
-            amount: 1,
-            kind: "habit_complete",
-            burstId: `related-habit:${habitId}:${completedAt}`,
           });
         }
         setRefreshVersion((current) => current + 1);
@@ -1732,7 +1727,10 @@ export function MonumentRelatedHabits({
       clearPendingCompletedRelatedHabitMove,
       currentDateKey,
       currentUserId,
+      supabase,
+      areaId,
       isRelatedHabitCompletedForCurrentDay,
+      monumentId,
       pendingRelatedHabitIds,
       relatedHabits,
       schedulePendingCompletedRelatedHabitMove,
