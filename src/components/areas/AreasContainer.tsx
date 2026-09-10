@@ -64,8 +64,12 @@ type AreaDetailTransition = {
 
 type AreaGoalCountRow = {
   area_id: string | null;
+  monument_id: string | null;
   status: string | null;
   active: boolean | null;
+  monument: {
+    area_id: string | null;
+  } | null;
 };
 
 function measureAreaRect(rect: DOMRect): MeasuredAreaRect {
@@ -300,15 +304,16 @@ function AreasGrid() {
       return;
     }
 
+    const validAreaIds = new Set(
+      sortedAreas.map((area) => area.id)
+    );
+
     const { data, error } = await supabase
       .from("goals")
-      .select("area_id,status,active")
-      .eq("user_id", user.id)
-      .in(
-        "area_id",
-        sortedAreas.map((area) => area.id)
+      .select(
+        "area_id,monument_id,status,active,monument:monuments(area_id)"
       )
-      .is("monument_id", null);
+      .eq("user_id", user.id);
 
     if (error) {
       console.error("Failed to load Area goal counts", error);
@@ -319,10 +324,18 @@ function AreasGrid() {
       Record<string, number>
     >((counts, goal) => {
       if (
-        goal.area_id &&
-        normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+        normalizeGoalStatus(goal.status, goal.active) === "COMPLETED"
       ) {
-        counts[goal.area_id] = (counts[goal.area_id] ?? 0) + 1;
+        return counts;
+      }
+
+      const resolvedAreaId = goal.monument_id
+        ? goal.monument?.area_id
+        : goal.area_id;
+
+      if (resolvedAreaId && validAreaIds.has(resolvedAreaId)) {
+        counts[resolvedAreaId] =
+          (counts[resolvedAreaId] ?? 0) + 1;
       }
 
       return counts;
