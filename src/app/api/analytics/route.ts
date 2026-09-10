@@ -5,6 +5,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { upsertObservedScheduleInstances } from "@/lib/analytics/observedScheduleInstances";
 import {
+  buildScheduleSummary,
+  getEffectiveObservedSummaryStatus,
+  normalizeObservedScheduleAnalyticsRows,
+  normalizeScheduleSummaryType,
+  type NormalizedObservedScheduleAnalyticsRow,
+  type RawObservedScheduleAnalyticsRow,
+  type ScheduleSummaryType,
+} from "@/lib/analytics/scheduleSummary";
+import {
   buildWindowsForDateFromDayTypeBlocks,
   windowsForDateFromSnapshot,
   type WindowLite,
@@ -42,7 +51,6 @@ import type {
   AnalyticsProject,
   AnalyticsRange,
   AnalyticsResponse,
-  AnalyticsScheduleSummary,
   AnalyticsSkill,
   AnalyticsSkillCategoryContribution,
   AnalyticsSkillXpTrendBucket,
@@ -235,23 +243,6 @@ type RawScheduleInstanceRow = {
   completed_at: string | null;
 };
 
-type RawObservedScheduleAnalyticsRow = Pick<
-  Database["public"]["Tables"]["daily_schedule_analytics_observed_instances"]["Row"],
-  | "id"
-  | "schedule_instance_id"
-  | "source_id"
-  | "source_type"
-  | "observed_status"
-  | "scheduled_start_utc"
-  | "scheduled_end_utc"
-  | "day_start_utc"
-  | "day_end_utc"
-  | "duration_min"
-  | "time_block_id"
-  | "day_type_time_block_id"
-  | "window_id"
->;
-
 export type NormalizedScheduleInstanceRow = {
   id: string;
   sourceId: string;
@@ -266,20 +257,6 @@ export type NormalizedScheduleInstanceRow = {
   durationMinutes: number;
   energy: string | null;
   completedAt: string | null;
-};
-
-export type NormalizedObservedScheduleAnalyticsRow = {
-  id: string;
-  sourceId: string;
-  sourceType: ScheduleSummaryType;
-  status: "scheduled" | "completed" | null;
-  dayStartUtc: string | null;
-  windowId: string | null;
-  dayTypeTimeBlockId: string | null;
-  timeBlockId: string | null;
-  startUtc: string;
-  endUtc: string;
-  durationMinutes: number;
 };
 
 type TimeBlockLabelRow = {
@@ -348,7 +325,6 @@ type DayTypeTimeBlockLabelRow = {
 };
 
 type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT" | "EVENT";
-type ScheduleSummaryType = AnalyticsScheduleSummary["byType"][number]["type"];
 type OverviewCompletionSummaryType = ScheduleSummaryType | "goal";
 type TodaySummaryType = AnalyticsTodaySummary["byType"][number]["type"];
 type ScheduleInstanceStatus =
@@ -2020,54 +1996,6 @@ function normalizeScheduleInstanceRows(
       } satisfies NormalizedScheduleInstanceRow;
     })
     .filter((row): row is NormalizedScheduleInstanceRow => row !== null);
-}
-
-function normalizeObservedScheduleAnalyticsRows(
-  rows: RawObservedScheduleAnalyticsRow[]
-): NormalizedObservedScheduleAnalyticsRow[] {
-  return rows
-    .map((row) => {
-      const sourceType = normalizeScheduleSummaryType(row.source_type);
-      const startUtc = normalizeIsoString(row.scheduled_start_utc ?? row.day_start_utc);
-      const endUtc = normalizeIsoString(
-        row.scheduled_end_utc ??
-          row.scheduled_start_utc ??
-          row.day_end_utc ??
-          row.day_start_utc
-      );
-      if (!sourceType || !startUtc || !endUtc) {
-        return null;
-      }
-
-      return {
-        id:
-          typeof row.schedule_instance_id === "string" &&
-          row.schedule_instance_id.length > 0
-            ? row.schedule_instance_id
-            : row.id,
-        sourceId: typeof row.source_id === "string" ? row.source_id : "",
-        sourceType,
-        status: normalizeObservedScheduleStatus(row.observed_status),
-        dayStartUtc: normalizeIsoString(row.day_start_utc),
-        windowId:
-          typeof row.window_id === "string" && row.window_id.length > 0
-            ? row.window_id
-            : null,
-        dayTypeTimeBlockId:
-          typeof row.day_type_time_block_id === "string" &&
-          row.day_type_time_block_id.length > 0
-            ? row.day_type_time_block_id
-            : null,
-        timeBlockId:
-          typeof row.time_block_id === "string" && row.time_block_id.length > 0
-            ? row.time_block_id
-            : null,
-        startUtc,
-        endUtc,
-        durationMinutes: deriveDurationMinutes(row.duration_min, startUtc, endUtc),
-      } satisfies NormalizedObservedScheduleAnalyticsRow;
-    })
-    .filter((row): row is NormalizedObservedScheduleAnalyticsRow => row !== null);
 }
 
 export async function buildOverviewDailySeries({
@@ -4326,16 +4254,6 @@ function normalizeScheduleSourceType(
   return null;
 }
 
-function normalizeScheduleSummaryType(
-  value: string | null | undefined
-): ScheduleSummaryType {
-  const normalized = normalizeScheduleSourceType(value);
-  if (!normalized) {
-    return "unknown";
-  }
-  return SCHEDULE_SOURCE_TYPE_MAP[normalized];
-}
-
 function normalizeCompletionSummaryType(
   value: string | null | undefined
 ): OverviewCompletionSummaryType {
@@ -4357,20 +4275,6 @@ function normalizeScheduleStatus(
     normalized === "canceled"
   ) {
     return normalized;
-  }
-  return null;
-}
-
-function normalizeObservedScheduleStatus(
-  value: string | null | undefined
-): "scheduled" | "completed" | null {
-  if (!value) return null;
-  const normalized = value.toLowerCase();
-  if (normalized === "completed") {
-    return "completed";
-  }
-  if (normalized === "scheduled") {
-    return "scheduled";
   }
   return null;
 }
@@ -4438,103 +4342,6 @@ function collectCancelledScheduleInstances(
     }
   }
   return cancelled;
-}
-
-function buildScheduleSummary(
-  instances: NormalizedObservedScheduleAnalyticsRow[],
-  now: Date
-): AnalyticsScheduleSummary {
-  const byTypeMap = new Map<
-    ScheduleSummaryType,
-    AnalyticsScheduleSummary["byType"][number]
-  >(
-    ["project", "task", "habit", "unknown"].map((type) => [
-      type as ScheduleSummaryType,
-      { type: type as ScheduleSummaryType, planned: 0, completed: 0, missed: 0, minutes: 0 },
-    ])
-  );
-
-  let completedEvents = 0;
-  let scheduledEvents = 0;
-  let missedEvents = 0;
-  let completedMinutes = 0;
-  let missedMinutes = 0;
-  let pastEvents = 0;
-  let completedPastEvents = 0;
-  let upcomingScheduledEvents = 0;
-
-  for (const instance of instances) {
-    const bucket = byTypeMap.get(instance.sourceType);
-    const effectiveStatus = getEffectiveObservedSummaryStatus(instance, now);
-    if (!bucket || !effectiveStatus) {
-      continue;
-    }
-
-    const classification = classifyObservedScheduleInstance(instance, now);
-
-    if (effectiveStatus === "completed") {
-      completedEvents += 1;
-      completedMinutes += instance.durationMinutes;
-      bucket.completed += 1;
-      bucket.planned += 1;
-      bucket.minutes += instance.durationMinutes;
-      if (classification.isAssigned) {
-        if (classification.isPast) {
-          pastEvents += 1;
-          completedPastEvents += 1;
-        }
-      }
-      continue;
-    }
-
-    if (effectiveStatus === "missed") {
-      missedEvents += 1;
-      missedMinutes += instance.durationMinutes;
-      bucket.missed += 1;
-      bucket.planned += 1;
-      if (classification.isAssigned && classification.isPast) {
-        pastEvents += 1;
-      }
-      continue;
-    }
-
-    if (effectiveStatus === "scheduled") {
-      scheduledEvents += 1;
-      bucket.planned += 1;
-      if (classification.isAssigned) {
-        if (classification.isPast) {
-          pastEvents += 1;
-        } else {
-          upcomingScheduledEvents += 1;
-        }
-      }
-      continue;
-    }
-  }
-
-  const plannedEvents = completedEvents + scheduledEvents + missedEvents;
-  const assignedExecutionRate =
-    pastEvents > 0
-      ? Math.round((completedPastEvents / pastEvents) * 100)
-      : 0;
-
-  return {
-    plannedEvents,
-    completedEvents,
-    missedEvents,
-    scheduledEvents,
-    executionRate:
-      plannedEvents > 0 ? Math.round((completedEvents / plannedEvents) * 100) : 0,
-    pastEvents,
-    completedPastEvents,
-    upcomingScheduledEvents,
-    assignedExecutionRate,
-    missedRate:
-      plannedEvents > 0 ? Math.round((missedEvents / plannedEvents) * 100) : 0,
-    completedMinutes,
-    missedMinutes,
-    byType: Array.from(byTypeMap.values()),
-  };
 }
 
 function buildUnscheduledPressure(
@@ -5068,49 +4875,6 @@ function classifyScheduleInstance(
     isPast,
     isFutureOrCurrent: !isPast,
   };
-}
-
-function classifyObservedScheduleInstance(
-  instance: Pick<
-    NormalizedObservedScheduleAnalyticsRow,
-    "endUtc" | "timeBlockId" | "dayTypeTimeBlockId" | "windowId"
-  >,
-  now: Date
-) {
-  const isAssigned = Boolean(
-    instance.timeBlockId || instance.dayTypeTimeBlockId || instance.windowId
-  );
-  const end = parseDate(instance.endUtc);
-  const isPast = end ? end.getTime() < now.getTime() : false;
-
-  return {
-    isAssigned,
-    isPast,
-    isFutureOrCurrent: !isPast,
-  };
-}
-
-function getEffectiveObservedSummaryStatus(
-  instance: NormalizedObservedScheduleAnalyticsRow,
-  now: Date
-): "completed" | "scheduled" | "missed" | null {
-  if (instance.status === "completed") {
-    return "completed";
-  }
-
-  if (instance.status !== "scheduled") {
-    return null;
-  }
-
-  const end = parseDate(instance.endUtc);
-  const start = parseDate(instance.startUtc);
-  const comparisonDate = end ?? start;
-
-  if (comparisonDate && comparisonDate.getTime() < now.getTime()) {
-    return "missed";
-  }
-
-  return "scheduled";
 }
 
 function buildActivityFeed(input: {

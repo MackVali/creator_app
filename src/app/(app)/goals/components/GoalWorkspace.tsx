@@ -7,7 +7,6 @@ import {
   useState,
   type FocusEvent as ReactFocusEvent,
 } from "react";
-import { Plus } from "lucide-react";
 import {
   NoteSlashTextarea,
   type NoteSlashTextareaHandle,
@@ -114,10 +113,11 @@ export function GoalWorkspace({
   projectDropdownMode = "default",
   onProjectLongPress,
   onProjectUpdated,
+  onAddProject,
+  addingProject,
   onTaskEditOpen,
   onTaskToggleCompletion,
 }: GoalWorkspaceProps) {
-  const todoTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedGoalIdRef = useRef<string | null>(null);
@@ -267,12 +267,8 @@ export function GoalWorkspace({
     },
     [todoValue],
   );
-  const handleAddTodo = useCallback(() => {
-    todoTextareaRef.current?.insertTodo();
-  }, []);
-
   return (
-    <div className={usesExpandedLayout ? "min-h-full" : ""}>
+    <div className={usesExpandedLayout ? "min-h-0" : ""}>
       <div
         className={`relative isolate text-white ${
           presentation === "area-featured"
@@ -280,30 +276,13 @@ export function GoalWorkspace({
             : "bg-transparent px-0 py-0"
         } ${
           usesExpandedLayout
-            ? "min-h-full"
+            ? "min-h-0"
             : "min-h-0"
         }`}
         onFocusCapture={handleEditorFocusCapture}
         onBlurCapture={handleEditorBlurCapture}
         data-goal-workspace-editor
       >
-        {showNotes && projectDropdownMode !== "tasks-only" ? (
-          <button
-            type="button"
-            aria-label="Add goal todo"
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              handleAddTodo();
-            }}
-            className="absolute -bottom-3 right-2 z-20 flex h-7 w-7 items-center justify-center text-white/46 outline-none transition hover:text-white/80 focus-visible:text-white focus-visible:ring-1 focus-visible:ring-white/18"
-          >
-            <Plus aria-hidden="true" className="h-4 w-4 stroke-[2.1]" />
-          </button>
-        ) : null}
         <ProjectRowTaskInteractionsProvider
           value={{ goalId: goal.id, onTaskEditOpen, onTaskToggleCompletion }}
         >
@@ -317,7 +296,8 @@ export function GoalWorkspace({
             goalId={goal.id}
             projectTasksOnly={projectDropdownMode === "tasks-only"}
             onTaskToggleCompletion={onTaskToggleCompletion}
-            hideAddProjectControl
+            onAddProject={onAddProject}
+            addingProject={addingProject}
             workspaceEmbedded
           />
         </ProjectRowTaskInteractionsProvider>
@@ -325,7 +305,6 @@ export function GoalWorkspace({
         {showNotes ? (
           <>
             <NoteSlashTextarea
-              ref={todoTextareaRef}
               value={todoValue}
               onValueChange={handleTodoValueChange}
               noteTodos={noteTodos}
@@ -334,10 +313,11 @@ export function GoalWorkspace({
               skills={skills}
               skillCategories={skillCategories}
               noteId={`goal-workspace:${goal.id}`}
-              className={`goal-workspace-todos ${todoValue ? "" : "goal-workspace-todos-empty"} w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
+              className={`goal-workspace-todos ${todoValue ? "" : "goal-workspace-todos-empty"} w-full border-0 bg-transparent p-0 text-[15px] leading-6 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
               aria-label="Goal todos"
             />
 
+            <div className="goal-workspace-freeform-divider" aria-hidden="true" />
 
             <div
               className={`pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-2 transition-[opacity,transform] duration-150 ${
@@ -372,7 +352,7 @@ export function GoalWorkspace({
               skillCategories={skillCategories}
               noteId={`goal-workspace:${goal.id}`}
               placeholder="Write inside this goal..."
-              className={`min-h-[64px] w-full border-0 bg-transparent p-0 text-sm leading-5 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
+              className={`goal-workspace-freeform min-h-[76px] w-full border-0 bg-transparent p-0 text-[15px] leading-6 ${NOTE_SOFT_OLED_CLASSES.body} ${NOTE_SOFT_OLED_CLASSES.caret} outline-none ${NOTE_SOFT_OLED_CLASSES.placeholder}`}
               aria-label="Goal workspace"
             />
           </>
@@ -433,16 +413,49 @@ export function GoalWorkspace({
         }
 
         /*
-         * Mobile sortable handles are 32px tall while the todo row is 28px.
-         * Pull the handle up 2px so their visual centers line up. At the sm
-         * breakpoint the handle becomes 24px tall, where the existing +2px
-         * offset correctly centers it.
+         * Goal workspace todos need workspace-local centering while staying
+         * compact enough for the open Goal card.
          */
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row] {
+          min-height: 32px !important;
+          gap: 9px !important;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row]
+          [role="checkbox"] {
+          width: 22px !important;
+          height: 22px !important;
+          border-radius: 999px !important;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row]
+          [role="checkbox"]
+          svg {
+          width: 14px !important;
+          height: 14px !important;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-todos
+          [data-note-todo-row]
+          [data-note-todo-no-long-press].ml-auto {
+          display: none !important;
+        }
+
+
         [data-goal-workspace-editor]
           .goal-workspace-todos
           .group\\/note-sortable:has([data-note-todo-row])
           > button:first-child {
-          margin-top: -2px !important;
+          margin-top: 1px !important;
         }
 
         @media (min-width: 640px) {
@@ -450,7 +463,7 @@ export function GoalWorkspace({
             .goal-workspace-todos
             .group\\/note-sortable:has([data-note-todo-row])
             > button:first-child {
-            margin-top: 2px !important;
+            margin-top: 4px !important;
           }
         }
 
@@ -466,14 +479,14 @@ export function GoalWorkspace({
         }
 
         /*
-         * Match the drag target to the actual 28px Goal todo row instead of
-         * using the shared 32px mobile handle geometry.
+         * Match the drag target to the Goal workspace todo row instead of the
+         * shared mobile handle geometry.
          */
         [data-goal-workspace-editor]
           .goal-workspace-todos
           [data-note-sortable-segment][data-note-segment-type="noteTodo"]
           > [data-note-sortable-handle] {
-          height: 28px !important;
+          height: 32px !important;
           margin-top: 0 !important;
           align-self: center;
         }
@@ -489,8 +502,28 @@ export function GoalWorkspace({
         [data-goal-workspace-editor]
           [data-note-editable-segment-id^="quote-"] {
           min-height: 24px !important;
-          font-size: 14px !important;
-          line-height: 20px !important;
+          font-size: 15px !important;
+          line-height: 24px !important;
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-freeform-divider {
+          height: 1px;
+          margin: 8px 0 10px;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.12),
+            transparent
+          );
+        }
+
+        [data-goal-workspace-editor]
+          .goal-workspace-freeform::placeholder,
+        [data-goal-workspace-editor]
+          .goal-workspace-freeform
+          [contenteditable]:empty::before {
+          font-size: 15px !important;
         }
       `}</style>
     </div>

@@ -9,7 +9,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import {
   AnimatePresence,
   LayoutGroup,
@@ -309,7 +309,7 @@ export function ProjectsDropdown({
   );
 
   const completedProjectsToggleLabel = `${
-    showCompletedProjects ? "Hide completed Projects" : "Show completed Projects"
+    showCompletedProjects ? "Hide completed" : "Show completed"
   } (${completedProjects.length})`;
   const renderProjectRow = (project: Project, index: number) => (
     <motion.div
@@ -377,7 +377,13 @@ export function ProjectsDropdown({
           : "overflow-hidden px-1.5 pb-2.5 pt-1.5 sm:px-2 sm:pb-3 sm:pt-2"
       }
     >
-      <div className="space-y-2.5 text-sm text-white/70">
+      <div
+        className={
+          workspaceEmbedded
+            ? "space-y-2.5 text-sm text-white/70"
+            : "space-y-2.5 text-sm text-white/70"
+        }
+      >
         {loading ? (
           <Progress
             value={100}
@@ -402,13 +408,70 @@ export function ProjectsDropdown({
           )
         ) : projects.length > 0 ? (
           <LayoutGroup id={`campaign-drawer-projects-${id}`}>
-            <div className="space-y-1 sm:space-y-1.5">
+            <div
+              className={
+                workspaceEmbedded ? "space-y-1" : "space-y-1 sm:space-y-1.5"
+              }
+            >
               <AnimatePresence initial={false}>
                 {activeProjects.map((project, index) =>
                   renderProjectRow(project, index)
                 )}
 
-                {completedProjects.length > 0 ? (
+                {workspaceEmbedded ? (
+                  <motion.div
+                    key="campaign-drawer-project-actions"
+                    className="mb-1.5 mt-2 flex w-full items-center justify-between gap-3 px-1.5"
+                    layout={prefersReducedMotion ? undefined : "position"}
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0.12 }
+                        : { layout: campaignDrawerProjectLayoutTransition }
+                    }
+                  >
+                    {completedProjects.length > 0 ? (
+                      <button
+                        type="button"
+                        aria-expanded={showCompletedProjects}
+                        onClick={() =>
+                          setShowCompletedProjects((current) => !current)
+                        }
+                        className="inline-flex min-h-6 items-center gap-1 rounded-md text-left text-xs font-medium text-white/45 transition hover:text-white/65 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/15"
+                      >
+                        <span>{completedProjectsToggleLabel}</span>
+                        <ChevronDown
+                          aria-hidden="true"
+                          className={`h-3.5 w-3.5 transition-transform ${
+                            showCompletedProjects ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+
+                    {!hideAddProjectControl ? (
+                      <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onAddProject?.(event.currentTarget.getBoundingClientRect());
+                        }}
+                        disabled={addingProject || !onAddProject}
+                        className="ml-auto inline-flex min-h-6 w-fit items-center justify-end gap-2 rounded-md bg-transparent text-[12px] font-medium leading-none text-white/42 transition hover:text-white/68 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <span>{addingProject ? "Adding project" : "Add project"}</span>
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/18 bg-transparent">
+                          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                        </span>
+                      </button>
+                    ) : null}
+                  </motion.div>
+                ) : completedProjects.length > 0 ? (
                   <motion.button
                     key="campaign-drawer-completed-projects-toggle"
                     type="button"
@@ -416,7 +479,7 @@ export function ProjectsDropdown({
                     onClick={() =>
                       setShowCompletedProjects((current) => !current)
                     }
-                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                    className="flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
                     layout={prefersReducedMotion ? undefined : "position"}
                     transition={
                       prefersReducedMotion
@@ -425,6 +488,12 @@ export function ProjectsDropdown({
                     }
                   >
                     <span>{completedProjectsToggleLabel}</span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={`h-3.5 w-3.5 transition-transform ${
+                        showCompletedProjects ? "rotate-180" : ""
+                      }`}
+                    />
                   </motion.button>
                 ) : null}
 
@@ -441,35 +510,66 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        {!hideAddProjectControl ? (
-        <div className="pt-1">
-          <button
-            type="button"
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onAddProject?.(event.currentTarget.getBoundingClientRect());
-            }}
-            disabled={addingProject || !onAddProject}
-            className="relative flex w-full items-center gap-2 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] px-2 py-1.5 text-left text-white transition shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2"
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8">
-              <Plus aria-hidden="true" className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
-              {addingProject
-                ? projectTasksOnly
-                  ? "adding TASK"
-                  : "adding PROJECT"
-                : projectTasksOnly
-                  ? "add TASK"
-                  : "add PROJECT"}
-            </span>
-          </button>
-        </div>
+        {!hideAddProjectControl && !workspaceEmbedded ? (
+          <div className={workspaceEmbedded ? "pt-0.5" : "pt-1"}>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAddProject?.(event.currentTarget.getBoundingClientRect());
+              }}
+              disabled={addingProject || !onAddProject}
+              className={
+                workspaceEmbedded
+                  ? "inline-flex min-h-8 max-w-full items-center gap-2 rounded-md px-2 text-left text-white/45 transition hover:bg-white/[0.035] hover:text-white/68 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-40"
+                  : "relative flex w-full items-center gap-2 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] px-2 py-1.5 text-left text-white transition shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2"
+              }
+            >
+              <span
+                className={
+                  workspaceEmbedded
+                    ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/18 bg-white/[0.025]"
+                    : "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8"
+                }
+              >
+                <Plus
+                  aria-hidden="true"
+                  className={
+                    workspaceEmbedded
+                      ? "h-3.5 w-3.5"
+                      : "h-3.5 w-3.5 sm:h-4 sm:w-4"
+                  }
+                />
+              </span>
+              <span
+                className={
+                  workspaceEmbedded
+                    ? "min-w-0 truncate text-[12px] font-medium leading-none"
+                    : "min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]"
+                }
+              >
+                {addingProject
+                  ? projectTasksOnly
+                    ? workspaceEmbedded
+                      ? "Adding task"
+                      : "adding TASK"
+                    : workspaceEmbedded
+                      ? "Adding project"
+                      : "adding PROJECT"
+                  : projectTasksOnly
+                    ? workspaceEmbedded
+                      ? "Add task"
+                      : "add TASK"
+                    : workspaceEmbedded
+                      ? "Add project"
+                      : "add PROJECT"}
+              </span>
+            </button>
+          </div>
         ) : null}
       </div>
     </div>

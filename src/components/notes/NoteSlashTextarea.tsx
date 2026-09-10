@@ -24932,6 +24932,35 @@ function NoteSlashTextarea({
 
       if (isEmptyRow && isCollapsedAtStart) {
         event.preventDefault();
+
+        if (segment.type === "noteTodo") {
+          if (!onNoteTodosChange) return;
+
+          const segmentStart =
+            getSegmentStartOffsets(segments)[segmentIndex] ?? 0;
+
+          const nextSegments = segments.filter(
+            (_, index) => index !== segmentIndex,
+          );
+          const nextTodos = normalizedNoteTodos.filter(
+            (todo) => todo.id !== segment.todoId,
+          );
+
+          const nextValue = serializeNoteSegments(nextSegments);
+          const parsedNextSegments = parseNoteSegments(nextValue);
+
+          onNoteTodosChange(nextTodos);
+          onValueChange(nextValue);
+
+          setPendingSelection(
+            findTextSelectionForCaret(
+              parsedNextSegments,
+              Math.max(0, segmentStart - 1),
+            ),
+          );
+          return;
+        }
+
         exitInlineRow(segmentIndex);
       }
 
@@ -24951,20 +24980,37 @@ function NoteSlashTextarea({
     }
 
     if (segment.type === "noteTodo") {
-      const insertedText = segmentText.slice(selectionEnd);
+      const currentTodo = noteTodoById.get(segment.todoId);
+      if (!currentTodo || !onNoteTodosChange) return;
+
+      const nextTodo: NoteTodo = {
+        id: createNoteTodoId(),
+        title: segmentText.slice(selectionEnd),
+        completed: false,
+        priority: NOTE_TODO_DEFAULT_PRIORITY,
+        skillId: noteTodoOwner?.type === "SKILL" ? noteTodoOwner.id : null,
+        energy: "MEDIUM",
+      };
+
+      const updatedCurrentTodo: NoteTodo = {
+        ...currentTodo,
+        title: segmentText.slice(0, selectionStart),
+      };
+
       const nextSegments = [...segments];
       nextSegments.splice(segmentIndex + 1, 0, {
-        type: "checklist",
-        checked: false,
-        text: insertedText,
+        type: "noteTodo",
+        todoId: nextTodo.id,
       });
-      updateNoteTodo(segment.todoId, (todo) => ({
-        ...todo,
-        title: segmentText.slice(0, selectionStart),
-      }));
+
+      let nextTodos = upsertNoteTodo(normalizedNoteTodos, updatedCurrentTodo);
+      nextTodos = upsertNoteTodo(nextTodos, nextTodo);
+
+      onNoteTodosChange(nextTodos);
       onValueChange(serializeNoteSegments(nextSegments));
+
       setPendingSelection({
-        type: "checklist",
+        type: "noteTodo",
         segmentIndex: segmentIndex + 1,
         caretPosition: 0,
       });
@@ -25337,7 +25383,7 @@ function NoteSlashTextarea({
                 }
                 className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border outline-none transition ${
                   todo.completed
-                    ? "border-emerald-200/25 bg-emerald-200/70 text-black/85 hover:bg-emerald-100/75 focus-visible:ring-1 focus-visible:ring-emerald-100/32"
+                    ? "border-emerald-200/45 bg-emerald-500 text-white hover:bg-emerald-500 focus-visible:ring-1 focus-visible:ring-emerald-200/30"
                     : "border-emerald-200/24 bg-emerald-300/[0.055] text-transparent hover:border-emerald-100/34 focus-visible:ring-1 focus-visible:ring-emerald-100/28"
                 }`}
                 aria-label={todo.completed ? "Mark todo incomplete" : "Mark todo complete"}
