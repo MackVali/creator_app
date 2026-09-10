@@ -15,9 +15,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Plus } from "lucide-react";
 import type { Project, Task } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
@@ -252,6 +253,7 @@ export function ProjectRow({
     onTaskToggleCompletionProp ??
     taskInteractionContext.onTaskToggleCompletion;
   const toast = useToastHelpers();
+  const fabCreation = useFabCreation();
   const prefersReducedMotion = useReducedMotion();
   const isCompactNested = variant === "compactNested";
   const hasTasks = project.tasks.length > 0;
@@ -327,6 +329,17 @@ export function ProjectRow({
     const slice = project.tasks.slice(0, MAX_VISIBLE_PROJECT_TASKS);
     return [slice, project.tasks.length - slice.length] as const;
   }, [project.tasks]);
+  const completedTaskCount = useMemo(
+    () =>
+      project.tasks.reduce((count, task) => {
+        const overrideCompleted = campaignDrawerRowOverrideCompleted(
+          taskCompletionOverrides?.[campaignDrawerTaskRowKey(task.id)]
+        );
+        const taskCompleted = overrideCompleted ?? isTaskComplete(task);
+        return count + (taskCompleted ? 1 : 0);
+      }, 0),
+    [project.tasks, taskCompletionOverrides]
+  );
 
   const triggerBounce = useCallback(() => {
     setIsBouncing(true);
@@ -832,6 +845,19 @@ export function ProjectRow({
     [toggle]
   );
 
+  const handleAddTaskClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fabCreation?.requestTaskCreation(
+        project.id,
+        goalId ?? null,
+        event.currentTarget.getBoundingClientRect()
+      );
+    },
+    [fabCreation, goalId, project.id]
+  );
+
   const projectStatusLabel = isCompleted ? "Done" : localStatus;
   const projectEnergyLabel =
     project.energyCode?.toString().trim() || project.energy;
@@ -888,7 +914,7 @@ export function ProjectRow({
         data-creator-xp-kind={campaignDrawerXpSource ? "project" : undefined}
         className={`relative border transition-transform select-none ${
           isCompactNested
-            ? "min-h-7 rounded-lg px-1.5 py-0.5 sm:min-h-8 sm:px-2 sm:py-1"
+            ? "min-h-[34px] rounded-md px-1.5 py-1 sm:min-h-[36px] sm:px-2"
             : "rounded-lg px-1.5 py-1.5 sm:px-2.5 sm:py-2"
         } ${cardSurfaceClass} ${primaryTextClass} ${
           completionPending ? "opacity-70" : ""
@@ -914,7 +940,7 @@ export function ProjectRow({
             type="button"
             className={`flex min-w-0 flex-1 text-left select-none ${
               isCompactNested
-                ? "items-center gap-1.5"
+                ? "items-center gap-2"
                 : "flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
             } ${primaryTextClass}`}
             aria-disabled={completionPending}
@@ -922,7 +948,7 @@ export function ProjectRow({
             onPointerUp={handlePointerEnd}
             onPointerCancel={handlePointerEnd}
           >
-            <div
+<div
               className={`flex min-w-0 items-center ${isCompactNested ? "gap-1.5" : "gap-2"} ${primaryTextClass} ${
                 isCompactNested ? "flex-1" : ""
               }`}
@@ -930,7 +956,7 @@ export function ProjectRow({
               <div
                 className={`flex shrink-0 items-center justify-center border font-semibold leading-none ${
                   isCompactNested
-                    ? "h-[18px] w-[18px] text-[9px] sm:h-5 sm:w-5 sm:text-[9px]"
+                    ? "h-5 w-5 rounded-md text-[9px] sm:h-[22px] sm:w-[22px] sm:text-[10px]"
                     : "h-7 w-7 text-[10px] sm:h-8 sm:w-8 sm:text-[11px]"
                 } ${identityClass}`}
               >
@@ -944,7 +970,7 @@ export function ProjectRow({
                 <span
                   className={`${
                     isCompactNested
-                      ? "text-[11px] font-semibold sm:text-[12px]"
+                      ? "text-[13px] font-semibold sm:text-[14px]"
                       : "text-[12px] font-medium sm:text-[13px]"
                   } ${
                     isCompactNested ? "min-w-0 flex-1 truncate" : "line-clamp-2 sm:truncate"
@@ -976,7 +1002,7 @@ export function ProjectRow({
               type="button"
               className={`flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${
                 isCompactNested
-                  ? "h-[18px] w-[18px] sm:h-5 sm:w-5"
+                  ? "h-6 w-6 sm:h-7 sm:w-7"
                   : "h-7 w-7 sm:h-8 sm:w-8 sm:rounded-lg"
               } ${chevronColorClass}`}
               aria-expanded={open}
@@ -987,17 +1013,17 @@ export function ProjectRow({
             >
               <ChevronDown
                 className={`transition-transform ${
-                  isCompactNested ? "h-3.5 w-3.5" : "h-4 w-4"
+                  isCompactNested ? "h-4 w-4" : "h-4 w-4"
                 } ${open ? "rotate-180" : ""}`}
                 aria-hidden="true"
               />
             </button>
           )}
-          {isCompactNested && typeof projectOrder === "number" && (
+          {isCompactNested && (
             <span
-              className={`shrink-0 rounded-md border px-1 py-0 text-[8px] font-semibold leading-[14px] text-white/42 sm:text-[8px] ${metaPillClass}`}
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none tabular-nums sm:text-[12px] ${metaPillClass}`}
             >
-              {projectOrder}
+              {completedTaskCount}/{project.tasks.length}
             </span>
           )}
         </div>
@@ -1006,7 +1032,11 @@ export function ProjectRow({
             {open ? (
               <motion.div
                 id={`project-${project.id}`}
-                className={`relative mt-1 overflow-hidden rounded-lg border p-1.5 ring-1 sm:mt-1.5 sm:p-2 ${tasksPanelClass}`}
+                className={`relative mt-1 overflow-hidden border-0 bg-black/[0.12] py-1 pl-2.5 pr-0 sm:mt-1.5 sm:py-1.5 sm:pl-3 ${
+                  isCompleted
+                    ? "text-emerald-50 shadow-[inset_1px_0_0_rgba(110,231,183,0.2)]"
+                    : "text-white/72 shadow-[inset_1px_0_0_rgba(255,255,255,0.12)]"
+                }`}
                 variants={
                   prefersReducedMotion ? undefined : compactNestedTaskPanelMotion
                 }
@@ -1038,6 +1068,20 @@ export function ProjectRow({
                   campaignDrawerXpSource={campaignDrawerXpSource}
                   compact
                 />
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={handleAddTaskClick}
+                  disabled={!fabCreation}
+                  className="mt-1.5 ml-auto flex min-h-6 w-fit items-center justify-end gap-2 rounded-md bg-transparent px-0 text-[12px] font-medium leading-none text-white/42 transition hover:text-white/68 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <span>Add task</span>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/18 bg-transparent">
+                    <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                  </span>
+                </button>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -1145,7 +1189,7 @@ export function ProjectTasksList({
     <>
       <div
         className={`pointer-events-none absolute left-2 w-px bg-white/10 ${
-          compact ? "inset-y-1" : "inset-y-3"
+          compact ? "inset-y-1.5" : "inset-y-3"
         }`}
       />
       <div
@@ -1157,7 +1201,8 @@ export function ProjectTasksList({
             ? isTaskCompleted(task)
             : Boolean(task.completedAt);
           const taskSkillIcon =
-            typeof task.skillIcon === "string" && task.skillIcon.trim().length > 0
+            typeof task.skillIcon === "string" &&
+            task.skillIcon.trim().length > 0
               ? task.skillIcon.trim()
               : null;
           return (
@@ -1194,7 +1239,7 @@ export function ProjectTasksList({
                 }
                 className={`flex w-full min-w-0 items-center border text-left transition ${
                   compact
-                    ? "min-h-[22px] gap-1 rounded-md px-1 py-[2px] leading-none"
+                    ? "min-h-[29px] gap-1.5 rounded-[5px] px-1.5 py-0.5 leading-none"
                     : "gap-1.5 rounded-lg px-1.5 py-1.5 leading-4 sm:gap-2 sm:px-2.5 sm:py-2"
                 } ${
                   taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
@@ -1208,16 +1253,24 @@ export function ProjectTasksList({
                 <span
                   className={`flex shrink-0 items-center justify-center border font-semibold leading-none transition ${
                     compact
-                      ? "h-4 w-4 rounded text-[8px]"
+                      ? "h-[22px] w-[22px] rounded-full text-[8px]"
                       : "h-[1.625rem] w-[1.625rem] rounded-md text-[9px] sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px]"
                   } ${
-                    taskCompleted
-                      ? completedTaskMarkerClass
-                      : incompleteTaskMarkerClass
+                    compact
+                      ? taskCompleted
+                        ? "border-emerald-200/45 bg-emerald-500 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+                        : "border-white/35 bg-black/20 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                      : taskCompleted
+                        ? completedTaskMarkerClass
+                        : incompleteTaskMarkerClass
                   }`}
                   aria-hidden="true"
                 >
-                  {taskSkillIcon ?? (
+                  {compact ? (
+                    taskCompleted ? (
+                      <Check className="h-4 w-4 stroke-[2.6]" />
+                    ) : null
+                  ) : taskSkillIcon ?? (
                     <span
                       className={`rounded-full bg-current ${
                         compact ? "h-1 w-1" : "h-1.5 w-1.5"
@@ -1225,12 +1278,20 @@ export function ProjectTasksList({
                     />
                   )}
                 </span>
+                {compact && taskSkillIcon ? (
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center text-[0.78rem] leading-none text-white/55"
+                    aria-hidden="true"
+                  >
+                    {taskSkillIcon}
+                  </span>
+                ) : null}
                 <span
                   className={`min-w-0 flex-1 truncate font-medium ${
                     taskCompleted ? "text-emerald-50/92" : "text-white/82"
                   } ${
                     compact
-                      ? "text-[10px] leading-[11px]"
+                      ? "text-[12px] leading-[15px]"
                       : "text-[11px] sm:text-[12px]"
                   }`}
                 >
@@ -1239,7 +1300,7 @@ export function ProjectTasksList({
                 <FlameEmber
                   level={energyCodeToFlameLevel(task.energyCode)}
                   size={compact ? "xs" : "sm"}
-                  className="shrink-0 self-center"
+                  className={`shrink-0 self-center ${compact ? "scale-[1.3]" : ""}`}
                 />
               </button>
             </motion.div>

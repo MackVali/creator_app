@@ -779,6 +779,7 @@ function GoalCardImpl({
   const defaultLongPressEditClass = onGoalLongPressEdit
     ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
     : "";
+  const isOpenWorkspacePresentation = open && !isDrawerCompactDefault;
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {
@@ -1012,7 +1013,9 @@ function GoalCardImpl({
   const defaultContainerClass = [
     isDrawerCompactDefault
       ? "group relative mb-1 h-full overflow-hidden rounded-lg goal-card p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
-      : "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
+      : isOpenWorkspacePresentation
+        ? "group relative mb-2 overflow-hidden rounded-xl goal-card p-3 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-4"
+        : "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
     completedClass,
   ]
     .filter(Boolean)
@@ -1034,19 +1037,25 @@ function GoalCardImpl({
       <div className="relative">
         <motion.div
           ref={defaultCardRef}
-        layout={!prefersReducedMotion}
-        transition={
-          prefersReducedMotion
-            ? { duration: 0.12 }
-            : isDrawerCompactDefault
-              ? { layout: projectDropdownTransition }
-              : shellSpringTransition
-        }
-        className={`${defaultContainerClass} ${shellStateClass}`}
-      >
+          layout={!prefersReducedMotion}
+          transition={
+            prefersReducedMotion
+              ? { duration: 0.12 }
+              : isDrawerCompactDefault
+                ? { layout: projectDropdownTransition }
+                : shellSpringTransition
+          }
+          className={`${defaultContainerClass} ${shellStateClass}`}
+        >
         <div
-          className={`relative flex h-full flex-col ${
-            isDrawerCompactDefault ? "gap-1" : "gap-1.5 sm:gap-2"
+          className={`relative flex flex-col ${
+            isOpenWorkspacePresentation ? "" : "h-full"
+          } ${
+            isDrawerCompactDefault
+              ? "gap-1"
+              : isOpenWorkspacePresentation
+                ? "gap-2.5 sm:gap-3"
+                : "gap-1.5 sm:gap-2"
           }`}
         >
           <div
@@ -1066,21 +1075,29 @@ function GoalCardImpl({
               onPointerLeave={handleShellPointerCancel}
               onContextMenu={handleShellContextMenu}
               className={`relative flex flex-1 flex-col text-left overflow-hidden ${
-                isDrawerCompactDefault ? "gap-0.5" : "gap-1 sm:gap-1.5"
+                  isDrawerCompactDefault
+                    ? "gap-0.5"
+                    : isOpenWorkspacePresentation
+                      ? "gap-1.5"
+                      : "gap-1 sm:gap-1.5"
               } ${defaultLongPressEditClass}`}
               {...shellMotionProps}
             >
               <div
                 className={`relative z-10 flex ${
                   isDrawerCompactDefault
-                      ? "w-full items-center gap-2"
-                    : "items-start gap-2"
+                    ? "w-full items-center gap-2"
+                    : isOpenWorkspacePresentation
+                      ? "items-center gap-2.5"
+                      : "items-start gap-2"
                 }`}
               >
                 <div
                   className={`flex items-center justify-center border border-white/10 font-semibold ${
                     isDrawerCompactDefault
                       ? "h-7 w-7 shrink-0 rounded-lg text-[10px] sm:h-8 sm:w-8 sm:text-[11px]"
+                      : isOpenWorkspacePresentation
+                        ? "h-10 w-10 shrink-0 rounded-xl text-xl sm:h-12 sm:w-12 sm:text-2xl"
                       : "h-9 w-9 rounded-xl text-lg sm:h-10 sm:w-10 sm:rounded-2xl sm:text-xl"
                   } ${completedIconClass}`}
                 >
@@ -1116,6 +1133,8 @@ function GoalCardImpl({
                     className={
                       isDrawerCompactDefault
                         ? "truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]"
+                        : isOpenWorkspacePresentation
+                          ? "mt-0 text-[25px] font-semibold leading-tight sm:text-[30px]"
                         : "mt-0.5 text-[17px] font-semibold leading-tight sm:mt-1 sm:text-lg"
                     }
                     title={goal.title}
@@ -1127,7 +1146,9 @@ function GoalCardImpl({
                     ) : null}
                     {goal.title}
                   </h3>
-                  {goal.why && !isDrawerCompactDefault && (
+                  {goal.why &&
+                    !isDrawerCompactDefault &&
+                    !isOpenWorkspacePresentation && (
                     <p className="mt-0.5 line-clamp-1 text-[13px] leading-4 text-white/65 sm:line-clamp-2 sm:text-sm sm:leading-5">
                       {goal.why}
                     </p>
@@ -1353,7 +1374,7 @@ function GoalCardImpl({
                 className={
                   isDrawerCompactDefault
                     ? "mt-0.5 origin-top overflow-hidden rounded-lg border border-white/8 bg-black/10 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
-                    : "origin-top overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm"
+                    : "origin-top overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/92 shadow-[0_20px_36px_-24px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm"
                 }
                 layout={
                   !isDrawerCompactDefault && !prefersReducedMotion

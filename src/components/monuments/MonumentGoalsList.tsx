@@ -2769,8 +2769,12 @@ export function MonumentGoalsList({
     null
   );
   const goalPanelDragStartRef = useRef<{
-    x: number;
-    y: number;
+    startX: number;
+    startY: number;
+    deltaX: number;
+    deltaY: number;
+    axis: GoalPanelSwipeAxis;
+    width: number;
     pointerId: number;
   } | null>(null);
   const goalPanelTouchRef = useRef<{
@@ -3151,35 +3155,131 @@ export function MonumentGoalsList({
       ) {
         return;
       }
+
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
       goalPanelDragStartRef.current = {
-        x: event.clientX,
-        y: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+        deltaX: 0,
+        deltaY: 0,
+        axis: null,
+        width: event.currentTarget.clientWidth,
         pointerId: event.pointerId,
       };
+
+      setGoalPanelDragOffset(0);
     },
     []
   );
 
+  const handleGoalPanelPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const gesture = goalPanelDragStartRef.current;
+
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - gesture.startX;
+      const deltaY = event.clientY - gesture.startY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      gesture.deltaX = deltaX;
+      gesture.deltaY = deltaY;
+
+      if (!gesture.axis) {
+        if (absX > 12 && absX > absY * 1.15) {
+          gesture.axis = "horizontal";
+        } else if (absY > 12 && absY > absX * 1.15) {
+          gesture.axis = "vertical";
+        } else {
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") {
+        return;
+      }
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const width =
+        gesture.width || event.currentTarget.clientWidth || 1;
+      const baseTransform = -activeGoalPanelIndex * width;
+      const nextTransform = Math.max(
+        -width,
+        Math.min(0, baseTransform + deltaX)
+      );
+
+      setGoalPanelDragOffset(nextTransform - baseTransform);
+    },
+    [activeGoalPanelIndex]
+  );
+
   const handleGoalPanelPointerEnd = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      const start = goalPanelDragStartRef.current;
-      if (!start || start.pointerId !== event.pointerId) return;
-      goalPanelDragStartRef.current = null;
+      const gesture = goalPanelDragStartRef.current;
 
-      const deltaX = event.clientX - start.x;
-      const deltaY = event.clientY - start.y;
-      const horizontalDistance = Math.abs(deltaX);
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return;
+      }
+
+      goalPanelDragStartRef.current = null;
+      setGoalPanelDragOffset(0);
+
+      if (gesture.axis !== "horizontal") {
+        return;
+      }
+
+      const horizontalDistance = Math.abs(gesture.deltaX);
+      const releaseThreshold = Math.min(
+        45,
+        Math.max(28, gesture.width * 0.2)
+      );
 
       if (
-        horizontalDistance < 48 ||
-        horizontalDistance < Math.abs(deltaY) * 1.35
+        horizontalDistance < releaseThreshold ||
+        horizontalDistance < Math.abs(gesture.deltaY) * 1.15
       ) {
         return;
       }
 
-      handleGoalPanelChange(deltaX < 0 ? "completed" : "active");
+      if (
+        activeGoalPanel === "active" &&
+        gesture.deltaX < -releaseThreshold
+      ) {
+        handleGoalPanelChange("completed");
+        return;
+      }
+
+      if (
+        activeGoalPanel === "completed" &&
+        gesture.deltaX > releaseThreshold
+      ) {
+        handleGoalPanelChange("active");
+      }
     },
-    [handleGoalPanelChange]
+    [activeGoalPanel, handleGoalPanelChange]
+  );
+
+  const handleGoalPanelPointerCancel = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const gesture = goalPanelDragStartRef.current;
+
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return;
+      }
+
+      goalPanelDragStartRef.current = null;
+      setGoalPanelDragOffset(0);
+    },
+    []
   );
 
   const resetGoalPanelTouch = useCallback(() => {
@@ -5623,11 +5723,10 @@ export function MonumentGoalsList({
             className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
             style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
             onPointerDown={handleGoalPanelPointerDown}
+            onPointerMove={handleGoalPanelPointerMove}
             onPointerUp={handleGoalPanelPointerEnd}
             onWheel={handleGoalPanelWheel}
-            onPointerCancel={() => {
-              goalPanelDragStartRef.current = null;
-            }}
+            onPointerCancel={handleGoalPanelPointerCancel}
           >
             <div
               ref={loadingGoalPanelRef}
@@ -6227,21 +6326,15 @@ export function MonumentGoalsList({
         filteredStandaloneGoals.length === 0 &&
         !openRoadmapGoalForSection
       ) {
-        const emptyStateClassName =
-          resolvedSourceType === "circle" && section === "completed"
-            ? "rounded-2xl border border-white/[0.06] bg-[#151515] p-4 text-center text-sm text-zinc-500 shadow-[0_6px_24px_rgba(0,0,0,0.35)]"
-            : "rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]";
-
         if (goalAddCard) {
           return <div className={goalGridClass}>{goalAddCard}</div>;
         }
 
         return (
-          <Card className={emptyStateClassName}>
-            {section === "completed"
-              ? `No completed goals linked to this ${ownerLabel} yet.`
-              : `No active goals linked to this ${ownerLabel} yet.`}
-          </Card>
+          <div
+            className={`${goalGridClass} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
+            aria-hidden="true"
+          />
         );
       }
 
@@ -6467,15 +6560,14 @@ export function MonumentGoalsList({
           className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
           style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
           onPointerDown={handleGoalPanelPointerDown}
+          onPointerMove={handleGoalPanelPointerMove}
           onPointerUp={handleGoalPanelPointerEnd}
           onTouchStart={handleGoalPanelTouchStart}
           onTouchMove={handleGoalPanelTouchMove}
           onTouchEnd={handleGoalPanelTouchEnd}
           onTouchCancel={resetGoalPanelTouch}
           onWheel={handleGoalPanelWheel}
-          onPointerCancel={() => {
-            goalPanelDragStartRef.current = null;
-          }}
+          onPointerCancel={handleGoalPanelPointerCancel}
         >
           <div
             ref={goalPanelViewportRef}
@@ -6593,7 +6685,9 @@ export function MonumentGoalsList({
     refreshTrueRoadmaps,
     handleGoalPanelChange,
     handleGoalPanelPointerDown,
+    handleGoalPanelPointerMove,
     handleGoalPanelPointerEnd,
+    handleGoalPanelPointerCancel,
     handleGoalPanelTouchStart,
     handleGoalPanelTouchMove,
     handleGoalPanelTouchEnd,

@@ -1,9 +1,64 @@
 export type AnalyticsRange = "1d" | "7d" | "30d" | "90d";
 
+export type AnalyticsHistorySourceType =
+  | "goal"
+  | "project"
+  | "task"
+  | "habit"
+  | "unknown";
+
+export type AnalyticsHistoryItem = {
+  id: string;
+  sourceId: string;
+  sourceType: AnalyticsHistorySourceType;
+  title: string;
+  completedAt: string | null;
+  scheduledStartUtc: string | null;
+  scheduledEndUtc: string | null;
+  durationMinutes: number | null;
+  wasScheduled: boolean;
+  xpEarned: number;
+  areaId: string | null;
+  areaLabel: string | null;
+  skillId: string | null;
+  skillLabel: string | null;
+  monumentId: string | null;
+  monumentLabel: string | null;
+  goalId: string | null;
+  goalLabel: string | null;
+  projectId: string | null;
+  projectLabel: string | null;
+};
+
+export type AnalyticsHistoryDay = {
+  dayKey: string;
+  dayStartUtc: string;
+  dayEndUtc: string;
+  timezone: string;
+  summary: {
+    planned: number;
+    completedPlanned: number;
+    completedUnplanned: number;
+    completedTotal: number;
+    missed: number;
+    executionRate: number;
+    xpEarned: number;
+  };
+  areas: Array<{
+    areaId: string;
+    label: string;
+    completed: number;
+    xpEarned: number;
+  }>;
+  completed: AnalyticsHistoryItem[];
+  missed: AnalyticsHistoryItem[];
+};
+
 export type AnalyticsView =
   | "overview"
   | "execution"
-  | "habits";
+  | "habits"
+  | "history";
 
 export type AnalyticsKpiId =
   | "skill_xp"

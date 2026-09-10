@@ -29,6 +29,7 @@ import {
 } from "recharts";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { AnalyticsDashboardSkeleton } from "@/components/AnalyticsDashboardSkeleton";
+import CreatorDayHistory from "@/components/analytics/CreatorDayHistory";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 import type {
@@ -292,7 +293,10 @@ function isAnalyticsResponse(payload: unknown): payload is AnalyticsResponse {
   );
 }
 
-export default function AnalyticsDashboard({}: {
+export default function AnalyticsDashboard({
+  activeView,
+  onViewChange,
+}: {
   activeView: AnalyticsView;
   onViewChange: (view: AnalyticsView) => void;
 }) {
@@ -503,8 +507,39 @@ export default function AnalyticsDashboard({}: {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-35%] h-[420px] bg-[radial-gradient(circle_at_top,rgba(120,120,120,0.18),transparent_68%)] blur-3xl"
       />
-      <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-8 sm:pb-8">
-        <section aria-label="Analytics">{analyticsContent}</section>
+      <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-6 sm:pb-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-3xl">
+            Analytics
+          </h1>
+          <div
+            className="grid w-full grid-cols-2 rounded-2xl border border-white/[0.07] bg-zinc-950/80 p-1 sm:w-[260px]"
+            aria-label="Analytics view"
+          >
+            {(["overview", "history"] as const).map((view) => {
+              const selected = activeView === view;
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onViewChange(view)}
+                  className={classNames(
+                    "rounded-xl px-3 py-2 text-sm font-medium capitalize transition",
+                    selected
+                      ? "bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                      : "text-zinc-500 hover:text-zinc-200"
+                  )}
+                >
+                  {view}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <section aria-label="Analytics">
+          {activeView === "history" ? <CreatorDayHistory /> : analyticsContent}
+        </section>
       </div>
     </div>
   );
