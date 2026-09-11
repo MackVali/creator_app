@@ -68,24 +68,39 @@ enum FocusGateDeviceActivity {
         )
     }
 
-    static func configureFailClosedMonitoringFromCachedState() {
+    static func configureMonitoringFromCachedStateAfterRollover() {
         let loaded = FocusGateSharedState.loadState()
         var state = FocusGateSharedState.advanceExpiredCreatorDayIfNeeded(loaded)
-        state.allowedMinutes = 0
         state.xpToday = 0
         state.lastReachedThresholdMinutes = 0
-        state.shielded = true
+        state.shielded = state.allowedMinutes <= 0
         state.lastSyncedAt = FocusGateSharedState.isoString(from: Date())
         FocusGateSharedState.saveState(state)
 
         let selection = FocusGateSharedState.loadSelection()
-        FocusGateShielding.applyShield(selection: selection)
+        let summary = FocusGateSharedState.selectionSummary(selection)
+        guard state.enabled, summary.hasSelection else {
+            FocusGateShielding.clearShield()
+            stopMonitoring()
+            return
+        }
+
+        if state.allowedMinutes > 0 {
+            FocusGateShielding.clearShield()
+        } else {
+            FocusGateShielding.applyShield(selection: selection)
+        }
+
         do {
-            try configureMonitoring(state: state, selection: selection, registerUsageEvent: false)
+            try configureMonitoring(
+                state: state,
+                selection: selection,
+                registerUsageEvent: state.allowedMinutes > 0
+            )
         } catch {
             FocusGateSharedState.recordDebugEvent(
                 source: "deviceActivity",
-                message: "fail_closed_monitoring_failed",
+                message: "rollover_monitoring_failed",
                 details: ["error": String(describing: error)]
             )
         }

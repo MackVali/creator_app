@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -48,17 +48,41 @@ function isXpMutation(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
+const FOCUS_GATE_SYNC_RETRY_DELAYS_MS = [0, 300, 1000, 2500] as const;
+
+function shouldRetryNativeAvailability(
+  availability: ReturnType<typeof getFocusGateNativeAvailability>
+) {
+  return (
+    availability.isBrowser &&
+    availability.isNative &&
+    availability.isIos &&
+    !availability.pluginAvailable
+  );
+}
+
 export function FocusGateXpRefreshBridge() {
   const queryClient = useQueryClient();
   const { ready: authReady, user } = useAuth();
   const userId = user?.id ?? null;
+  const inFlightRef = useRef(false);
+  const rerunRequestedRef = useRef(false);
+  const retryTimersRef = useRef<ReturnType<typeof window.setTimeout>[]>([]);
 
   useEffect(() => {
     if (!authReady || !userId) {
       return;
     }
+    let cancelled = false;
 
-    const syncNativeAllowance = async () => {
+    const clearRetryTimers = () => {
+      for (const timer of retryTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+      retryTimersRef.current = [];
+    };
+
+    const runSyncAttempt = async () => {
       const availability = getFocusGateNativeAvailability();
       if (!availability.canUse) {
         logFocusGateDebug("native syncAllowance skipped", {
@@ -67,13 +91,14 @@ export function FocusGateXpRefreshBridge() {
           isIos: availability.isIos,
           pluginAvailable: availability.pluginAvailable,
         });
-        return;
+        return shouldRetryNativeAvailability(availability) ? "retry" : "done";
       }
 
       logFocusGateDebug("Focus Gate GET started");
       const status = await fetchFocusGateStatus();
       logFocusGateDebug("Focus Gate GET completed", {
         xpToday: status.xpToday,
+        baselineAllowedMinutes: status.baselineAllowedMinutes,
         allowedMinutes: status.allowedMinutes,
       });
 
@@ -92,21 +117,92 @@ export function FocusGateXpRefreshBridge() {
       logFocusGateDebug("native syncAllowance invoked", {
         enabled: status.enabled,
         xpToday: status.xpToday,
+        baselineAllowedMinutes: status.baselineAllowedMinutes,
         allowedMinutes: status.allowedMinutes,
       });
       const result = await syncFocusGateAllowance({
         enabled: status.enabled,
         xpToday: status.xpToday,
+        baselineAllowedMinutes: status.baselineAllowedMinutes,
         allowedMinutes: status.allowedMinutes,
         creatorDayStartsAt: status.creatorDay.startsAt,
         creatorDayEndsAt: status.creatorDay.endsAt,
         timezone: status.creatorDay.timezone,
       });
       logFocusGateDebug("native syncAllowance result", result);
+      return "done";
+    };
+
+    const syncNativeAllowance = async (attemptIndex = 0): Promise<void> => {
+      if (cancelled) return;
+
+      if (inFlightRef.current) {
+        rerunRequestedRef.current = true;
+        return;
+      }
+
+      inFlightRef.current = true;
+      try {
+        const result = await runSyncAttempt();
+        if (
+          result === "retry" &&
+          attemptIndex + 1 < FOCUS_GATE_SYNC_RETRY_DELAYS_MS.length
+        ) {
+          const nextAttemptIndex = attemptIndex + 1;
+          const retryDelay = FOCUS_GATE_SYNC_RETRY_DELAYS_MS[nextAttemptIndex];
+          logFocusGateDebug("native syncAllowance retry scheduled", {
+            attempt: nextAttemptIndex,
+            retryDelay,
+          });
+          const timer = window.setTimeout(() => {
+            if (cancelled) return;
+            retryTimersRef.current = retryTimersRef.current.filter(
+              (current) => current !== timer
+            );
+            void syncNativeAllowance(nextAttemptIndex).catch((error) => {
+              if (process.env.NODE_ENV !== "production") {
+                console.warn("Unable to sync native Focus Gate allowance", error);
+              }
+            });
+          }, retryDelay);
+          retryTimersRef.current.push(timer);
+        }
+      } catch (error) {
+        if (attemptIndex + 1 >= FOCUS_GATE_SYNC_RETRY_DELAYS_MS.length) {
+          throw error;
+        }
+
+        const nextAttemptIndex = attemptIndex + 1;
+        const retryDelay = FOCUS_GATE_SYNC_RETRY_DELAYS_MS[nextAttemptIndex];
+        logFocusGateDebug("native syncAllowance failure retry scheduled", {
+          attempt: nextAttemptIndex,
+          retryDelay,
+          error,
+        });
+        const timer = window.setTimeout(() => {
+          if (cancelled) return;
+          retryTimersRef.current = retryTimersRef.current.filter(
+            (current) => current !== timer
+          );
+          void syncNativeAllowance(nextAttemptIndex).catch((retryError) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("Unable to sync native Focus Gate allowance", retryError);
+            }
+          });
+        }, retryDelay);
+        retryTimersRef.current.push(timer);
+      } finally {
+        inFlightRef.current = false;
+        if (!cancelled && rerunRequestedRef.current) {
+          rerunRequestedRef.current = false;
+          await syncNativeAllowance(0);
+        }
+      }
     };
 
     const invalidate = () => {
       logFocusGateDebug("XP refresh event received");
+      clearRetryTimers();
       void queryClient.invalidateQueries({
         queryKey: FOCUS_GATE_STATUS_QUERY_ROOT,
       });
@@ -116,12 +212,23 @@ export function FocusGateXpRefreshBridge() {
         }
       });
     };
+    const invalidateWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        invalidate();
+      }
+    };
     window.addEventListener(FOCUS_GATE_STATUS_CHANGED_EVENT, invalidate);
     window.addEventListener("creator:app-active", invalidate);
+    window.addEventListener("pageshow", invalidate);
+    document.addEventListener("visibilitychange", invalidateWhenVisible);
     invalidate();
     return () => {
+      cancelled = true;
+      clearRetryTimers();
       window.removeEventListener(FOCUS_GATE_STATUS_CHANGED_EVENT, invalidate);
       window.removeEventListener("creator:app-active", invalidate);
+      window.removeEventListener("pageshow", invalidate);
+      document.removeEventListener("visibilitychange", invalidateWhenVisible);
     };
   }, [authReady, queryClient, userId]);
 

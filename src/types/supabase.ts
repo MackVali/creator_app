@@ -568,6 +568,7 @@ export type Database = {
           revoked_at: string | null
           schedule_instance_id: string | null
           source_id: string
+          source_title: string | null
           source_type: string
           time_zone: string | null
           updated_at: string
@@ -584,6 +585,7 @@ export type Database = {
           revoked_at?: string | null
           schedule_instance_id?: string | null
           source_id: string
+          source_title?: string | null
           source_type: string
           time_zone?: string | null
           updated_at?: string
@@ -600,6 +602,7 @@ export type Database = {
           revoked_at?: string | null
           schedule_instance_id?: string | null
           source_id?: string
+          source_title?: string | null
           source_type?: string
           time_zone?: string | null
           updated_at?: string
@@ -4926,6 +4929,7 @@ export type Database = {
       }
       focus_gate_settings: {
         Row: {
+          baseline_minutes: number
           created_at: string
           daily_max_minutes: number | null
           enabled: boolean
@@ -4934,6 +4938,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          baseline_minutes?: number
           created_at?: string
           daily_max_minutes?: number | null
           enabled?: boolean
@@ -4942,6 +4947,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          baseline_minutes?: number
           created_at?: string
           daily_max_minutes?: number | null
           enabled?: boolean
@@ -5433,7 +5439,14 @@ export type Database = {
       schedule_instance_placement_source: "scheduler" | "manual"
       schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT" | "EVENT"
       task_stage_enum: "PREPARE" | "PRODUCE" | "PERFECT"
-      xp_kind: "task" | "habit" | "project" | "goal" | "event" | "manual"
+      xp_kind:
+        | "task"
+        | "habit"
+        | "project"
+        | "goal"
+        | "event"
+        | "todo"
+        | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -5587,7 +5600,7 @@ export const Constants = {
       schedule_instance_placement_source: ["scheduler", "manual"],
       schedule_instance_source_type: ["PROJECT", "TASK", "HABIT", "EVENT"],
       task_stage_enum: ["PREPARE", "PRODUCE", "PERFECT"],
-      xp_kind: ["task", "habit", "project", "goal", "event", "manual"],
+      xp_kind: ["task", "habit", "project", "goal", "event", "todo", "manual"],
     },
   },
 } as const

@@ -22,6 +22,8 @@ export function mapFocusGateSettingsRow(
 ): FocusGateSettings {
   return {
     enabled: row?.enabled ?? DEFAULT_FOCUS_GATE_SETTINGS.enabled,
+    baselineMinutes:
+      row?.baseline_minutes ?? DEFAULT_FOCUS_GATE_SETTINGS.baselineMinutes,
     minutesPerXp:
       row?.minutes_per_xp ?? DEFAULT_FOCUS_GATE_SETTINGS.minutesPerXp,
     dailyMaxMinutes:
@@ -39,14 +41,25 @@ export function deriveFocusGateAllowance({
   const safeXpToday = Math.max(0, Math.trunc(xpToday));
   const minutesPerXp = Math.max(1, Math.trunc(settings.minutesPerXp));
   const baseAllowedMinutes = safeXpToday * minutesPerXp;
-  const allowedMinutes =
+  const baselineMinutes = Math.max(0, Math.trunc(settings.baselineMinutes));
+  const dailyMaxMinutes =
     settings.dailyMaxMinutes === null
-      ? baseAllowedMinutes
-      : Math.min(baseAllowedMinutes, Math.max(0, Math.trunc(settings.dailyMaxMinutes)));
+      ? null
+      : Math.max(0, Math.trunc(settings.dailyMaxMinutes));
+  const baselineAllowedMinutes =
+    dailyMaxMinutes === null
+      ? baselineMinutes
+      : Math.min(baselineMinutes, dailyMaxMinutes);
+  const totalAllowedMinutes = baselineMinutes + baseAllowedMinutes;
+  const allowedMinutes =
+    dailyMaxMinutes === null
+      ? totalAllowedMinutes
+      : Math.min(totalAllowedMinutes, dailyMaxMinutes);
 
   return {
     xpToday: safeXpToday,
     baseAllowedMinutes,
+    baselineAllowedMinutes,
     allowedMinutes,
   };
 }
@@ -77,6 +90,7 @@ export async function upsertFocusGateSettings(
       {
         user_id: userId,
         enabled: settings.enabled,
+        baseline_minutes: settings.baselineMinutes,
         minutes_per_xp: settings.minutesPerXp,
         daily_max_minutes: settings.dailyMaxMinutes,
       },

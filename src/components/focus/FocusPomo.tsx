@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
+  composeTimeBlockFocusPomoQueue,
   fetchScheduledTimeBlockFocusPomoQueue,
   fetchFocusPomoQueue,
   sortFocusPomoQueue,
@@ -136,6 +137,10 @@ import {
 } from "@/lib/fitness/resistance";
 import { updateFitnessWorkoutDatabaseEntryInNote } from "@/lib/notesStorage";
 import { setGoalNoteTodoCompleted } from "@/lib/notes/noteTodos";
+import {
+  awardNoteTodoCompletionXp,
+  reverseNoteTodoCompletionXp,
+} from "@/lib/xp/todoCompletion";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -3693,6 +3698,19 @@ async function completeFocusPomoItem({
         void hapticErrorPattern();
         return false;
       }
+      const itemRecord = item as unknown as Record<string, unknown>;
+      await awardNoteTodoCompletionXp({
+        owner: { type: "GOAL", id: goalId },
+        todo: {
+          id: todoId,
+          title: item.title,
+          completed: true,
+          priority: "MEDIUM",
+          skillId: item.skillId ?? readScopeString(itemRecord.skill_id),
+          energy: "MEDIUM",
+        },
+        completedAt,
+      });
     } catch (error) {
       console.error("FocusPomo failed to complete goal note todo", error);
       void hapticErrorPattern();
@@ -3762,18 +3780,20 @@ async function completeFocusPomoItem({
   }
 
   let awardPayload: Awaited<ReturnType<typeof awardFocusPomoCompletionXp>> = null;
-  try {
-    awardPayload = await awardFocusPomoCompletionXp({
-      item,
-      kind,
-      completedAt,
-      timeZone,
-      durationMin,
-      scheduleInstanceId,
-      productivityDayKey,
-    });
-  } catch {
-    return false;
+  if (item.sourceType !== "NOTE_TODO") {
+    try {
+      awardPayload = await awardFocusPomoCompletionXp({
+        item,
+        kind,
+        completedAt,
+        timeZone,
+        durationMin,
+        scheduleInstanceId,
+        productivityDayKey,
+      });
+    } catch {
+      return false;
+    }
   }
 
   if (scheduleInstanceId) {
@@ -3916,6 +3936,10 @@ async function undoFocusPomoItem({
         console.error("FocusPomo failed to undo goal note todo", result.reason);
         return;
       }
+      await reverseNoteTodoCompletionXp({
+        owner: { type: "GOAL", id: goalId },
+        todoId,
+      });
     } catch (error) {
       console.error("FocusPomo failed to undo goal note todo", error);
       return;
@@ -3978,15 +4002,17 @@ async function undoFocusPomoItem({
     }
   }
 
-  await awardFocusPomoCompletionUndoXp({
-    item,
-    kind,
-    completedAt,
-    timeZone,
-    durationMin,
-    scheduleInstanceId,
-    productivityDayKey,
-  });
+  if (item.sourceType !== "NOTE_TODO") {
+    await awardFocusPomoCompletionUndoXp({
+      item,
+      kind,
+      completedAt,
+      timeZone,
+      durationMin,
+      scheduleInstanceId,
+      productivityDayKey,
+    });
+  }
 }
 
 function isRecordType(
@@ -4755,16 +4781,22 @@ function renderFocusPomoExecutableQueueItem(
     fallbackPosition: number;
     currentItemKey: string | null;
     isQueueExpanded: boolean;
+    dividerBeforeItemKey?: string | null;
     sortedQueueIndexByKey: ReadonlyMap<string, number>;
     onSelectItem(itemIndex: number): void;
     onLongPressItem(item: FocusPomoQueueItem, originElement: HTMLElement): void;
   }
-): ReactNode {
+): ReactNode[] {
   const itemKey = getFocusPomoQueueItemKey(item);
   const itemIndex =
     options.sortedQueueIndexByKey.get(itemKey) ?? options.fallbackPosition;
+  const nodes: ReactNode[] = [];
 
-  return (
+  if (options.dividerBeforeItemKey === itemKey) {
+    nodes.push(<FocusPomoQueueSectionDivider key={`divider:${itemKey}`} />);
+  }
+
+  nodes.push(
     <SortableFocusQueueItem
       key={`${options.keyPrefix ?? "item"}:${itemKey}`}
       item={item}
@@ -4778,6 +4810,8 @@ function renderFocusPomoExecutableQueueItem(
       }
     />
   );
+
+  return nodes;
 }
 
 function renderFocusPomoQueueGoalChild(
@@ -4786,20 +4820,19 @@ function renderFocusPomoQueueGoalChild(
     childIndex: number;
     currentItemKey: string | null;
     isQueueExpanded: boolean;
+    dividerBeforeItemKey?: string | null;
     sortedQueueIndexByKey: ReadonlyMap<string, number>;
     onSelectItem(itemIndex: number): void;
     onLongPressItem(item: FocusPomoQueueItem, originElement: HTMLElement): void;
   }
 ): ReactNode[] {
   if (child.type === "item") {
-    return [
-      renderFocusPomoExecutableQueueItem(child.item, {
-        ...options,
-        keyPrefix: "goal-item",
-        depth: 1,
-        fallbackPosition: options.childIndex,
-      }),
-    ];
+    return renderFocusPomoExecutableQueueItem(child.item, {
+      ...options,
+      keyPrefix: "goal-item",
+      depth: 1,
+      fallbackPosition: options.childIndex,
+    });
   }
 
   const containsCurrent =
@@ -4814,8 +4847,13 @@ function renderFocusPomoQueueGoalChild(
     projectItemKey !== null
       ? options.sortedQueueIndexByKey.get(projectItemKey)
       : undefined;
+  const nodes: ReactNode[] = [];
 
-  return [
+  if (projectItemKey && options.dividerBeforeItemKey === projectItemKey) {
+    nodes.push(<FocusPomoQueueSectionDivider key={`divider:${projectItemKey}`} />);
+  }
+
+  nodes.push(
     <FocusPomoProjectQueueGroupRow
       key={`project-group:${child.projectId}`}
       child={child}
@@ -4825,18 +4863,23 @@ function renderFocusPomoQueueGoalChild(
           ? () => options.onSelectItem(projectItemIndex)
           : undefined
       }
-    />,
-    ...(child.item
-      ? []
-      : child.items.map((item, itemIndex) =>
-          renderFocusPomoExecutableQueueItem(item, {
-            ...options,
-            keyPrefix: `project-item:${child.projectId}`,
-            depth: 2,
-            fallbackPosition: options.childIndex + itemIndex,
-          })
-        )),
-  ];
+    />
+  );
+
+  if (!child.item) {
+    for (const [itemIndex, item] of child.items.entries()) {
+      nodes.push(
+        ...renderFocusPomoExecutableQueueItem(item, {
+          ...options,
+          keyPrefix: `project-item:${child.projectId}`,
+          depth: 2,
+          fallbackPosition: options.childIndex + itemIndex,
+        })
+      );
+    }
+  }
+
+  return nodes;
 }
 
 function renderFocusPomoQueueHierarchyEntry(
@@ -4847,6 +4890,7 @@ function renderFocusPomoQueueHierarchyEntry(
     currentGoalId: string | null;
     currentItemKey: string | null;
     isQueueExpanded: boolean;
+    dividerBeforeItemKey?: string | null;
     sortedQueueIndexByKey: ReadonlyMap<string, number>;
     onToggleGoal(goalId: string): void;
     onSelectItem(itemIndex: number): void;
@@ -4854,22 +4898,34 @@ function renderFocusPomoQueueHierarchyEntry(
   }
 ): ReactNode[] {
   if (entry.type === "item") {
-    return [
-      renderFocusPomoExecutableQueueItem(entry.item, {
-        ...options,
-        keyPrefix: "top-item",
-        fallbackPosition: options.entryIndex,
-      }),
-    ];
+    return renderFocusPomoExecutableQueueItem(entry.item, {
+      ...options,
+      keyPrefix: "top-item",
+      fallbackPosition: options.entryIndex,
+    });
   }
 
   const expanded = !options.collapsedGoalIds.has(entry.goalId);
   const containsCurrent = entry.goalId === options.currentGoalId;
+  const collapsedDividerBeforeGoal =
+    !expanded &&
+    options.dividerBeforeItemKey !== null &&
+    options.dividerBeforeItemKey !== undefined &&
+    entry.items.some(
+      (item) => getFocusPomoQueueItemKey(item) === options.dividerBeforeItemKey
+    );
   const nextItem = entry.nextItem;
   const nextItemKey = nextItem ? getFocusPomoQueueItemKey(nextItem) : null;
   const nextItemIndex =
     nextItemKey !== null ? options.sortedQueueIndexByKey.get(nextItemKey) : undefined;
   const nodes: ReactNode[] = [
+    ...(collapsedDividerBeforeGoal
+      ? [
+          <FocusPomoQueueSectionDivider
+            key={`divider:goal:${entry.goalId}`}
+          />,
+        ]
+      : []),
     <FocusPomoGoalQueueRow
       key={`goal:${entry.goalId}`}
       group={entry}
@@ -4897,6 +4953,22 @@ function renderFocusPomoQueueHierarchyEntry(
   }
 
   return nodes;
+}
+
+function FocusPomoQueueSectionDivider() {
+  return (
+    <div
+      role="separator"
+      aria-label="Other matching work"
+      className="col-span-full flex items-center gap-2 border-t border-white/[0.07] bg-black/20 px-3 py-2 sm:px-4"
+    >
+      <span className="h-px flex-1 bg-white/[0.08]" aria-hidden="true" />
+      <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px]">
+        Other matching work
+      </span>
+      <span className="h-px flex-1 bg-white/[0.08]" aria-hidden="true" />
+    </div>
+  );
 }
 
 async function fetchUserHabitTypeOptions(
@@ -5194,6 +5266,8 @@ export default function FocusPomo({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
   const [queue, setQueue] = useState<FocusPomoQueueItem[]>([]);
+  const [timeBlockScheduledPriorityItemKeys, setTimeBlockScheduledPriorityItemKeys] =
+    useState<string[]>([]);
   const [activeFitnessWorkoutSession, setActiveFitnessWorkoutSession] =
     useState<FitnessWorkoutFocusSessionPayload | null>(null);
   const [fitnessWeightEditTarget, setFitnessWeightEditTarget] = useState<{
@@ -5639,6 +5713,7 @@ export default function FocusPomo({
       fitnessWorkoutSessionActiveRef.current = false;
       setActiveFitnessWorkoutSession(null);
       setQueue([]);
+      setTimeBlockScheduledPriorityItemKeys([]);
       setQueueLoading(false);
       setQueueError(null);
       setScopeQueue([]);
@@ -5701,6 +5776,7 @@ export default function FocusPomo({
         fitnessWorkoutSessionActiveRef.current = true;
         setActiveFitnessWorkoutSession(fitnessWorkoutSession.session);
         setQueue(fitnessWorkoutSession.queueItems);
+        setTimeBlockScheduledPriorityItemKeys([]);
         setQueueLoading(false);
         setQueueError(null);
         try {
@@ -5716,15 +5792,56 @@ export default function FocusPomo({
 
     setQueueLoading(true);
     setQueueError(null);
+    setTimeBlockScheduledPriorityItemKeys([]);
 
     const queuePromise = hasTimeBlockStartLaunch
-      ? fetchScheduledTimeBlockFocusPomoQueue({
-          timeBlockId: timeBlockStartLaunchTimeBlockId,
-          dayTypeTimeBlockId: timeBlockStartLaunchDayTypeTimeBlockId,
-          windowId: timeBlockStartLaunchWindowId,
-          startUtc: timeBlockStartLaunchStartUtc,
-          endUtc: timeBlockStartLaunchEndUtc,
-        })
+      ? (async () => {
+          const [broadQueue, scheduledQueue, timeBlockOptions] =
+            await Promise.all([
+              fetchFocusPomoQueue({}),
+              fetchScheduledTimeBlockFocusPomoQueue({
+                timeBlockId: timeBlockStartLaunchTimeBlockId,
+                dayTypeTimeBlockId: timeBlockStartLaunchDayTypeTimeBlockId,
+                windowId: timeBlockStartLaunchWindowId,
+                startUtc: timeBlockStartLaunchStartUtc,
+                endUtc: timeBlockStartLaunchEndUtc,
+              }),
+              (async () => {
+                const supabase = getSupabaseBrowser();
+                if (!supabase) return [];
+                const {
+                  data: { user },
+                  error: userError,
+                } = await supabase.auth.getUser();
+                if (userError) throw userError;
+                if (!user) return [];
+                return fetchFocusPomoTimeBlockOptions(supabase, user.id);
+              })(),
+            ]);
+          const launchedTimeBlock =
+            timeBlockOptions.find(
+              (option) => option.id === timeBlockStartLaunchDayTypeTimeBlockId
+            ) ?? null;
+
+          if (!launchedTimeBlock) {
+            return {
+              items: [],
+              scheduledPriorityItemKeys: [],
+              selectedTimeBlockId: null,
+            };
+          }
+
+          return {
+            ...composeTimeBlockFocusPomoQueue({
+              broadQueue,
+              scheduledQueue,
+              passesTimeBlock: (item) =>
+                itemPassesFocusPomoTimeBlock(item, null, launchedTimeBlock),
+              getItemKey: getFocusPomoQueueItemKey,
+            }),
+            selectedTimeBlockId: launchedTimeBlock.id,
+          };
+        })()
       : fetchFocusPomoQueue(
           activeSourceType && activeSourceId
             ? {
@@ -5732,17 +5849,24 @@ export default function FocusPomo({
                 sourceId: activeSourceId,
               }
             : {},
-        );
+        ).then((items) => ({
+          items,
+          scheduledPriorityItemKeys: [],
+          selectedTimeBlockId: null,
+        }));
 
     queuePromise
-      .then((items) => {
+      .then((result) => {
         if (stale || fitnessWorkoutSessionActiveRef.current) return;
-        setQueue(items);
+        setQueue(result.items);
+        setTimeBlockScheduledPriorityItemKeys(result.scheduledPriorityItemKeys);
+        setSelectedTimeBlockId(result.selectedTimeBlockId);
       })
       .catch((error: unknown) => {
         if (stale || fitnessWorkoutSessionActiveRef.current) return;
         console.error("Failed to load FocusPomo queue", error);
         setQueue([]);
+        setTimeBlockScheduledPriorityItemKeys([]);
         setQueueError(
           error instanceof Error
             ? error.message
@@ -6200,6 +6324,10 @@ export default function FocusPomo({
     sourceSortedQueue,
     customQueueOrder
   );
+  const timeBlockScheduledPriorityKeySet = useMemo(
+    () => new Set(timeBlockScheduledPriorityItemKeys),
+    [timeBlockScheduledPriorityItemKeys]
+  );
   const sortedQueueIndexByKey = useMemo(
     () =>
       new Map(
@@ -6237,6 +6365,27 @@ export default function FocusPomo({
     const projectItemKey = projectItemKeyByProjectId.get(projectId);
     return !projectItemKey || !dismissedQueueItemKeys.has(projectItemKey);
   });
+  const timeBlockOtherMatchingWorkDividerBeforeKey = useMemo(() => {
+    if (!isTimeBlockStartLaunchMode || timeBlockScheduledPriorityKeySet.size === 0) {
+      return null;
+    }
+
+    let sawScheduledPriorityItem = false;
+    for (const item of pendingQueueGraphItems) {
+      const key = getFocusPomoQueueItemKey(item);
+      if (timeBlockScheduledPriorityKeySet.has(key)) {
+        sawScheduledPriorityItem = true;
+        continue;
+      }
+      if (sawScheduledPriorityItem) return key;
+    }
+
+    return null;
+  }, [
+    isTimeBlockStartLaunchMode,
+    pendingQueueGraphItems,
+    timeBlockScheduledPriorityKeySet,
+  ]);
   const hasCustomWorkTypeFilters = !isDefaultEnabledItemTypes(enabledItemTypes);
   const hasCustomHabitTypeFilters =
     showHabitTypeSection && enabledHabitTypes !== null;
@@ -9788,6 +9937,8 @@ export default function FocusPomo({
                                   collapsedGoalIds,
                                   currentGoalId,
                                   currentItemKey,
+                                  dividerBeforeItemKey:
+                                    timeBlockOtherMatchingWorkDividerBeforeKey,
                                   isQueueExpanded,
                                   sortedQueueIndexByKey,
                                   onToggleGoal(goalId) {

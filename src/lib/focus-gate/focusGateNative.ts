@@ -31,6 +31,7 @@ export type FocusGateSelectionSummary = {
 export type FocusGateSyncAllowanceInput = {
   enabled: boolean;
   xpToday: number;
+  baselineAllowedMinutes: number;
   allowedMinutes: number;
   creatorDayStartsAt: string;
   creatorDayEndsAt: string;

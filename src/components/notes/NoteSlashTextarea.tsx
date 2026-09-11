@@ -177,6 +177,10 @@ import {
   type NoteTodo,
   type NoteTodoOwner,
 } from "@/lib/notes/noteTodos";
+import {
+  awardNoteTodoCompletionXp,
+  reverseNoteTodoCompletionXp,
+} from "@/lib/xp/todoCompletion";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import {
@@ -9785,7 +9789,6 @@ export function NoteDatabaseEntrySheet({
     Set<string>
   >(() => new Set());
   const [fitnessExerciseBrowserSearch, setFitnessExerciseBrowserSearch] = useState("");
-  const [fitnessExerciseBrowserFilter, setFitnessExerciseBrowserFilter] = useState("All");
   const [openNutritionBrowseDepartment, setOpenNutritionBrowseDepartment] =
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
@@ -13659,16 +13662,6 @@ export function NoteDatabaseEntrySheet({
   function renderFitnessExerciseBrowser() {
     const normalizedSearch = fitnessExerciseBrowserSearch.trim().toLowerCase();
 
-    const filterChips = [
-      "All",
-      "Push",
-      "Pull",
-      "Legs",
-      "Upper Body",
-      "Lower Body",
-      "Core",
-    ];
-
     const matchesSearch = (exercise: FitnessExerciseSample) => {
       if (!normalizedSearch) return true;
 
@@ -13680,54 +13673,6 @@ export function NoteDatabaseEntrySheet({
       ].some((value) => value.toLowerCase().includes(normalizedSearch));
     };
 
-    const matchesFilter = (
-      exercise: FitnessExerciseSample,
-      movementGroupLabel: string,
-      subcategoryLabel: string,
-    ) => {
-      const filter = fitnessExerciseBrowserFilter;
-      if (filter === "All") return true;
-
-      const haystack = [
-        movementGroupLabel,
-        subcategoryLabel,
-        exercise.movementType,
-        exercise.primaryArea,
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      if (filter === "Upper Body") {
-        return [
-          "push",
-          "pull",
-          "chest",
-          "shoulder",
-          "tricep",
-          "back",
-          "lat",
-          "bicep",
-          "rear delt",
-        ].some((term) => haystack.includes(term));
-      }
-
-      if (filter === "Lower Body" || filter === "Legs") {
-        return [
-          "legs",
-          "squat",
-          "lunge",
-          "hinge",
-          "quad",
-          "glute",
-          "hamstring",
-          "calf",
-          "hip",
-        ].some((term) => haystack.includes(term));
-      }
-
-      return haystack.includes(filter.toLowerCase());
-    };
-
     const visibleFitnessMovementGroups = allFitnessMovementGroups.flatMap(
       (movementGroup) => {
         const visibleSubcategories = movementGroup.subcategories.flatMap(
@@ -13737,15 +13682,7 @@ export function NoteDatabaseEntrySheet({
               .filter(
                 (exercise): exercise is FitnessExerciseSample => Boolean(exercise),
               )
-              .filter(
-                (exercise) =>
-                  matchesSearch(exercise) &&
-                  matchesFilter(
-                    exercise,
-                    movementGroup.label,
-                    subcategory.label,
-                  ),
-              );
+              .filter(matchesSearch);
 
             return exercises.length > 0 ? [{ ...subcategory, exercises }] : [];
           },
@@ -13756,9 +13693,6 @@ export function NoteDatabaseEntrySheet({
           : [];
       },
     );
-
-    const selectedExerciseCount = selectedFitnessWorkoutExercises.length;
-    const currentWorkoutName = getCurrentFitnessWorkoutName();
 
     const movementSummary = (label: string) => {
       const known: Record<string, string> = {
@@ -13808,40 +13742,6 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div className="mt-2.5 space-y-2">
-        {/* Current workout */}
-        <div className="rounded-[16px] border border-white/[0.08] bg-white/[0.037] px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-1.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-violet-400/45 bg-violet-500/[0.09] text-violet-300">
-              <Dumbbell className="h-[17px] w-[17px]" aria-hidden="true" />
-            </span>
-
-            <div className="min-w-0">
-              <p className="truncate text-[11.5px] font-semibold text-white/91">
-                {selectedExerciseCount > 0
-                  ? `${selectedExerciseCount} selected · ${currentWorkoutName}`
-                  : "No exercises selected"}
-              </p>
-
-              <p className="mt-0.5 truncate text-[9.5px] font-medium leading-[12px] text-white/42">
-                {selectedExerciseCount > 0
-                  ? "Add exercises to build your workout."
-                  : "Choose exercises to build your workout."}
-              </p>
-            </div>
-
-            {selectedExerciseCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => selectFitnessAction("start")}
-                className="flex h-8 items-center gap-0.5 rounded-[10px] border border-white/[0.1] bg-white/[0.055] pl-2 pr-1.5 text-[9.5px] font-semibold text-white/82 outline-none active:bg-white/[0.11]"
-              >
-                View workout
-                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-
         {/* Search */}
         <div className="flex gap-2">
           <label className="flex h-[38px] min-w-0 flex-1 items-center gap-2 rounded-[13px] border border-white/[0.075] bg-white/[0.025] px-3.5 focus-within:border-white/[0.14]">
@@ -13864,41 +13764,15 @@ export function NoteDatabaseEntrySheet({
 
           <button
             type="button"
-            aria-label="Reset exercise filters"
+            aria-label="Clear exercise search"
             onClick={() => {
               setFitnessExerciseBrowserSearch("");
-              setFitnessExerciseBrowserFilter("All");
               void hapticSoftTick();
             }}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-white/62 outline-none active:bg-white/[0.08]"
           >
             <Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
-        </div>
-
-        {/* Filter chips */}
-        <div className="-mx-0.5 overflow-x-auto overscroll-x-contain px-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex min-w-max gap-2 pb-0.5">
-            {filterChips.map((filter) => {
-              const isSelected = fitnessExerciseBrowserFilter === filter;
-
-              return (
-                <button
-                  key={filter}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => setFitnessExerciseBrowserFilter(filter)}
-                  className={`h-[30px] shrink-0 rounded-full border px-2.5 text-[9.5px] font-semibold outline-none ${
-                    isSelected
-                      ? "border-violet-400/80 bg-violet-500/[0.1] text-white shadow-[0_0_0_1px_rgba(139,92,246,0.08)]"
-                      : "border-white/[0.07] bg-white/[0.025] text-white/49"
-                  }`}
-                >
-                  {filter}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {/* Exercise hierarchy */}
@@ -14291,7 +14165,7 @@ export function NoteDatabaseEntrySheet({
               </p>
 
               <p className="mt-1 text-xs font-medium text-white/38">
-                Adjust search or filters.
+                Adjust search.
               </p>
             </div>
           )}
@@ -24060,7 +23934,24 @@ function NoteSlashTextarea({
   function updateNoteTodo(todoId: string, updater: (todo: NoteTodo) => NoteTodo) {
     const currentTodo = noteTodoById.get(todoId);
     if (!currentTodo) return;
-    onNoteTodosChange?.(upsertNoteTodo(normalizedNoteTodos, updater(currentTodo)));
+    const nextTodo = updater(currentTodo);
+    onNoteTodosChange?.(upsertNoteTodo(normalizedNoteTodos, nextTodo));
+    if (noteTodoOwner?.id && currentTodo.completed !== nextTodo.completed) {
+      const completedAt = new Date().toISOString();
+      const effect = nextTodo.completed
+        ? awardNoteTodoCompletionXp({
+            owner: noteTodoOwner,
+            todo: nextTodo,
+            completedAt,
+          })
+        : reverseNoteTodoCompletionXp({
+            owner: noteTodoOwner,
+            todoId: nextTodo.id,
+          });
+      void effect.catch((error) => {
+        console.warn("Failed to sync NoteTodo XP", error);
+      });
+    }
   }
 
   function downgradeNoteTodoSegment(segmentIndex: number, todo: NoteTodo) {

@@ -77,6 +77,7 @@ export async function updateFocusGateSettings(
     );
   }
 
+  notifyFocusGateStatusChanged();
   return payload as FocusGateStatus;
 }
 

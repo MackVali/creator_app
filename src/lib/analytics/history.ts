@@ -19,6 +19,7 @@ export type HistoryCompletionRow = {
   duration_min: number | null;
   productivity_day_key: string | null;
   revoked_at: string | null;
+  source_title?: string | null;
 };
 
 export type HistoryXpEventRow = {
@@ -137,7 +138,8 @@ function normalizeSourceType(
     normalized === "goal" ||
     normalized === "project" ||
     normalized === "task" ||
-    normalized === "habit"
+    normalized === "habit" ||
+    normalized === "todo"
   ) {
     return normalized;
   }
@@ -346,7 +348,39 @@ function createHierarchyResolver(input: BuildAnalyticsHistoryDayInput) {
     });
   }
 
-  return (sourceType: AnalyticsHistorySourceType, sourceId: string) => {
+  function fromTodo(options: {
+    fallbackTitle?: string | null;
+    skillId?: string | null;
+    areaId?: string | null;
+    monumentId?: string | null;
+  }) {
+    const skill = options.skillId ? skillById.get(options.skillId) ?? null : null;
+    const monumentId =
+      options.monumentId ?? skill?.monument_id ?? null;
+    return labels({
+      title: cleanText(options.fallbackTitle) ?? "Todo",
+      areaId: resolveAreaId({
+        explicitAreaId: options.areaId,
+        monumentId,
+        skillId: options.skillId,
+      }),
+      skillId: options.skillId ?? null,
+      monumentId,
+      goalId: null,
+      projectId: null,
+    });
+  }
+
+  return (
+    sourceType: AnalyticsHistorySourceType,
+    sourceId: string,
+    options?: {
+      fallbackTitle?: string | null;
+      skillId?: string | null;
+      areaId?: string | null;
+      monumentId?: string | null;
+    }
+  ) => {
     if (sourceType === "goal") {
       const goal = goalById.get(sourceId);
       return goal ? fromGoal(goal) : UNKNOWN_HIERARCHY;
@@ -363,6 +397,9 @@ function createHierarchyResolver(input: BuildAnalyticsHistoryDayInput) {
       const habit = habitById.get(sourceId);
       return habit ? fromHabit(habit) : UNKNOWN_HIERARCHY;
     }
+    if (sourceType === "todo") {
+      return fromTodo(options ?? {});
+    }
     return UNKNOWN_HIERARCHY;
   };
 }
@@ -372,6 +409,24 @@ export function buildAnalyticsHistoryDay(
 ): AnalyticsHistoryDay {
   const resolveHierarchy = createHierarchyResolver(input);
   const xpByCompletionId = buildCompletionXpById(input.xpEvents);
+  const attributionByCompletionId = new Map<
+    string,
+    { skillId: string | null; areaId: string | null; monumentId: string | null }
+  >();
+  for (const event of input.xpEvents) {
+    const completionId = event.completion_event_id?.trim();
+    if (!completionId || event.award_key?.trim().startsWith("reverse:")) continue;
+    const current = attributionByCompletionId.get(completionId) ?? {
+      skillId: null,
+      areaId: null,
+      monumentId: null,
+    };
+    attributionByCompletionId.set(completionId, {
+      skillId: current.skillId ?? event.skill_id ?? null,
+      areaId: current.areaId ?? event.area_id ?? null,
+      monumentId: current.monumentId ?? event.monument_id ?? null,
+    });
+  }
   const activeCompletions = input.completions.filter(
     (completion) => completion.revoked_at === null
   );
@@ -384,7 +439,13 @@ export function buildAnalyticsHistoryDay(
     .map((completion): AnalyticsHistoryItem => {
       const sourceType = normalizeSourceType(completion.source_type);
       const sourceId = completion.source_id ?? "";
-      const hierarchy = resolveHierarchy(sourceType, sourceId);
+      const attribution = attributionByCompletionId.get(completion.id);
+      const hierarchy = resolveHierarchy(sourceType, sourceId, {
+        fallbackTitle: completion.source_title ?? null,
+        skillId: attribution?.skillId ?? null,
+        areaId: attribution?.areaId ?? null,
+        monumentId: attribution?.monumentId ?? null,
+      });
       const observedSchedule = completion.schedule_instance_id
         ? observedByScheduleInstanceId.get(completion.schedule_instance_id) ?? null
         : null;

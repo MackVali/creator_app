@@ -956,25 +956,26 @@ function SettingsStaticRow({ icon: Icon, title, description, value }: SettingsSt
   );
 }
 
-function formatFocusGateEarnedTime(minutes: number): string {
+function formatFocusGateMinutes(minutes: number): string {
   const normalizedMinutes = Math.max(0, Math.trunc(minutes));
 
   if (normalizedMinutes < 60) {
-    return `${normalizedMinutes} min earned`;
+    return `${normalizedMinutes} min`;
   }
 
   const hours = Math.floor(normalizedMinutes / 60);
   const remainingMinutes = normalizedMinutes % 60;
 
   if (remainingMinutes === 0) {
-    return `${hours} hr earned`;
+    return `${hours} hr`;
   }
 
-  return `${hours} hr ${remainingMinutes} min earned`;
+  return `${hours} hr ${remainingMinutes} min`;
 }
 
 function FocusGateSettingsCard() {
   const { status, isLoading, isRefreshing, error, invalidate } = useFocusGateStatus();
+  const [baselineMinutes, setBaselineMinutes] = useState("30");
   const [minutesPerXp, setMinutesPerXp] = useState("5");
   const [dailyMaxMinutes, setDailyMaxMinutes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -992,6 +993,7 @@ function FocusGateSettingsCard() {
 
   useEffect(() => {
     if (!status) return;
+    setBaselineMinutes(String(status.baselineMinutes));
     setMinutesPerXp(String(status.minutesPerXp));
     setDailyMaxMinutes(
       status.dailyMaxMinutes === null ? "" : String(status.dailyMaxMinutes)
@@ -1021,41 +1023,6 @@ function FocusGateSettingsCard() {
       );
     });
   }, []);
-
-  useEffect(() => {
-    if (!status) return;
-    const nativeAvailability = getFocusGateNativeAvailability();
-    if (!nativeAvailability.canUse) return;
-
-    void syncFocusGateAllowance({
-        enabled: status.enabled,
-        xpToday: status.xpToday,
-        allowedMinutes: status.allowedMinutes,
-        creatorDayStartsAt: status.creatorDay.startsAt,
-        creatorDayEndsAt: status.creatorDay.endsAt,
-        timezone: status.creatorDay.timezone,
-      })
-      .then((result) => {
-        if (result.ok) {
-          setEnforcementState(result.state);
-          setAuthorizationStatus(result.state.authorizationStatus);
-          setSelectionSummary({
-            selectionStatus: result.state.selectionStatus,
-            hasSelection: result.state.selectionStatus === "configured",
-            applicationCount: result.state.applicationCount ?? null,
-            categoryCount: result.state.categoryCount ?? null,
-            webDomainCount: result.state.webDomainCount ?? null,
-            totalTokenCount: result.state.totalTokenCount ?? null,
-          });
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to sync Focus Gate allowance:", error);
-        setNativeError(
-          error instanceof Error ? error.message : "Unable to sync native Focus Gate."
-        );
-      });
-  }, [status]);
 
   const refreshNativeState = async () => {
     const [authorization, selection, enforcement] = await Promise.all([
@@ -1111,6 +1078,7 @@ function FocusGateSettingsCard() {
         const synced = await syncFocusGateAllowance({
           enabled: status.enabled,
           xpToday: status.xpToday,
+          baselineAllowedMinutes: status.baselineAllowedMinutes,
           allowedMinutes: status.allowedMinutes,
           creatorDayStartsAt: status.creatorDay.startsAt,
           creatorDayEndsAt: status.creatorDay.endsAt,
@@ -1164,6 +1132,19 @@ function FocusGateSettingsCard() {
     }
   };
 
+  const commitBaselineMinutes = () => {
+    const parsed = Number(baselineMinutes);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 1440) {
+      setBaselineMinutes(String(status?.baselineMinutes ?? 30));
+      setSaveError("Daily baseline must be between 0 and 1440 minutes.");
+      void hapticWarningPattern();
+      return;
+    }
+    if (parsed !== status?.baselineMinutes) {
+      void saveSettings({ baselineMinutes: parsed });
+    }
+  };
+
   const commitDailyMax = () => {
     const trimmed = dailyMaxMinutes.trim();
     if (!trimmed) {
@@ -1187,9 +1168,15 @@ function FocusGateSettingsCard() {
   };
 
   const protectedSelectionLabel = focusGateSelectionLabel(selectionSummary);
+  const baselineLabel = isLoading
+    ? "..."
+    : formatFocusGateMinutes(status?.baselineMinutes ?? 30);
   const screenTimeEarnedLabel = isLoading
     ? "..."
-    : formatFocusGateEarnedTime(status?.allowedMinutes ?? 0);
+    : formatFocusGateMinutes(status?.baseAllowedMinutes ?? 0);
+  const screenTimeAvailableLabel = isLoading
+    ? "..."
+    : formatFocusGateMinutes(status?.allowedMinutes ?? 0);
 
   return (
     <section className="app-settings-surface overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
@@ -1220,12 +1207,51 @@ function FocusGateSettingsCard() {
           {saveError ?? error ?? nativeError}
         </p>
       ) : null}
-      <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-b border-[var(--border)]">
+      <div className="grid grid-cols-2 border-b border-[var(--border)] sm:grid-cols-4">
         <FocusGateMetric label="XP Today" value={isLoading ? "..." : `${status?.xpToday ?? 0} XP`} />
-        <FocusGateMetric label="Screen Time" value={screenTimeEarnedLabel} />
+        <FocusGateMetric label="Baseline" value={baselineLabel} />
+        <FocusGateMetric label="Earned" value={screenTimeEarnedLabel} />
+        <FocusGateMetric label="Available" value={screenTimeAvailableLabel} />
       </div>
-      <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-b border-[var(--border)]">
-        <div className="min-w-0 px-4 py-3 sm:px-6">
+      <details className="group border-b border-[var(--border)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm font-medium text-[var(--text)] outline-none transition hover:bg-white/[0.025] sm:px-6">
+          <span>Advanced settings</span>
+          <ChevronRight
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--muted)] transition-transform group-open:rotate-90"
+          />
+        </summary>
+        <div className="min-w-0 border-b border-[var(--border)] px-4 py-3 sm:px-6">
+          <label
+            className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]"
+            htmlFor="focus-gate-baseline-minutes"
+          >
+            Daily baseline
+          </label>
+          <div className="mt-2 flex min-h-10 items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] pr-2 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]">
+            <input
+              id="focus-gate-baseline-minutes"
+              inputMode="numeric"
+              type="number"
+              min={0}
+              max={1440}
+              value={baselineMinutes}
+              disabled={isLoading || saving}
+              onChange={(event) => setBaselineMinutes(event.target.value)}
+              onBlur={commitBaselineMinutes}
+              aria-label="Focus Gate daily baseline"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-semibold text-[var(--text)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+              min
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs leading-5 text-[var(--muted)]">
+            Screen time available each Creator day before XP is required.
+          </p>
+        </div>
+        <div className="grid grid-cols-2">
+        <div className="min-w-0 border-r border-[var(--border)] px-4 py-3 sm:px-6">
           <label
             className="block text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]"
             htmlFor="focus-gate-minutes-per-xp"
@@ -1281,7 +1307,8 @@ function FocusGateSettingsCard() {
             ) : null}
           </div>
         </div>
-      </div>
+        </div>
+      </details>
       <div className="flex items-center gap-3 px-5 py-3 sm:px-6">
         <SettingsIcon icon={Lock} />
         <div className="min-w-0 flex-1">
@@ -1322,7 +1349,7 @@ function FocusGateSettingsCard() {
 
 function FocusGateMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 px-4 py-3 sm:px-6">
+    <div className="min-w-0 px-4 py-3 sm:border-r sm:border-[var(--border)] sm:last:border-r-0">
       <p className="truncate text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
         {label}
       </p>

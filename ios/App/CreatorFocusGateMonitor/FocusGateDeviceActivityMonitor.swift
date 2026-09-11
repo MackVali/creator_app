@@ -33,6 +33,8 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
 
         if state.allowedMinutes <= 0 || state.lastReachedThresholdMinutes >= state.allowedMinutes {
             FocusGateShielding.applyShield(selection: selection)
+        } else {
+            FocusGateShielding.clearShield()
         }
     }
 
@@ -88,7 +90,7 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
             source: "monitorExtension",
             message: "interval_ended"
         )
-        FocusGateDeviceActivity.configureFailClosedMonitoringFromCachedState()
+        FocusGateDeviceActivity.configureMonitoringFromCachedStateAfterRollover()
     }
 
     override func intervalWillStartWarning(for activity: DeviceActivityName) {

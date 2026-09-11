@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  composeTimeBlockFocusPomoQueue,
   fetchFocusPomoQueue,
   sortFocusPomoQueue,
   type FocusPomoQueueItem,
@@ -489,6 +490,124 @@ describe("sortFocusPomoQueue", () => {
     const second = project("project-same", null, { title: "Same title" });
 
     expect(sortFocusPomoQueue([first, second], { now })).toEqual([first, second]);
+  });
+});
+
+describe("composeTimeBlockFocusPomoQueue", () => {
+  const keyFor = (item: FocusPomoQueueItem) =>
+    item.scheduleInstanceId ? `SCHEDULE_INSTANCE:${item.scheduleInstanceId}` : `${item.sourceType}:${item.id}`;
+  const matching = (item: FocusPomoQueueItem) => item.areaId === "work";
+
+  it("puts scheduled matching items before remaining matching work while preserving relative queue order", () => {
+    const scheduledSecond = project("scheduled-second", 2, {
+      areaId: "work",
+      scheduleInstanceId: "inst-second",
+    });
+    const otherFirst = project("other-first", 1, { areaId: "work" });
+    const scheduledFirst = project("scheduled-first", 3, {
+      areaId: "work",
+      scheduleInstanceId: "inst-first",
+    });
+    const otherSecond = project("other-second", 4, { areaId: "work" });
+
+    const result = composeTimeBlockFocusPomoQueue({
+      broadQueue: [scheduledSecond, otherFirst, scheduledFirst, otherSecond],
+      scheduledQueue: [scheduledFirst, scheduledSecond],
+      passesTimeBlock: matching,
+      getItemKey: keyFor,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      "scheduled-second",
+      "scheduled-first",
+      "other-first",
+      "other-second",
+    ]);
+    expect(result.scheduledPriorityItemKeys).toEqual([
+      "SCHEDULE_INSTANCE:inst-second",
+      "SCHEDULE_INSTANCE:inst-first",
+    ]);
+  });
+
+  it("excludes scheduled and unscheduled items that fail the launched Time Block constraints", () => {
+    const scheduledMatch = project("scheduled-match", 1, {
+      areaId: "work",
+      scheduleInstanceId: "inst-match",
+    });
+    const scheduledNonmatch = project("scheduled-nonmatch", 2, {
+      areaId: "home",
+      scheduleInstanceId: "inst-nonmatch",
+    });
+    const otherMatch = project("other-match", 3, { areaId: "work" });
+    const otherNonmatch = project("other-nonmatch", 4, { areaId: "home" });
+
+    const result = composeTimeBlockFocusPomoQueue({
+      broadQueue: [scheduledMatch, scheduledNonmatch, otherMatch, otherNonmatch],
+      scheduledQueue: [scheduledMatch, scheduledNonmatch],
+      passesTimeBlock: matching,
+      getItemKey: keyFor,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      "scheduled-match",
+      "other-match",
+    ]);
+  });
+
+  it("dedupes scheduled items against the broad queue by stable item identity", () => {
+    const broadScheduled = project("shared", 1, {
+      areaId: "work",
+      scheduleInstanceId: "inst-shared",
+    });
+    const scheduledCopy = project("shared-copy", 1, {
+      areaId: "work",
+      scheduleInstanceId: "inst-shared",
+    });
+
+    const result = composeTimeBlockFocusPomoQueue({
+      broadQueue: [broadScheduled],
+      scheduledQueue: [scheduledCopy],
+      passesTimeBlock: matching,
+      getItemKey: keyFor,
+    });
+
+    expect(result.items).toEqual([broadScheduled]);
+    expect(result.scheduledPriorityItemKeys).toEqual([
+      "SCHEDULE_INSTANCE:inst-shared",
+    ]);
+  });
+
+  it("returns no scheduled divider metadata when the scheduled section is empty", () => {
+    const otherMatch = project("other-match", 1, { areaId: "work" });
+
+    const result = composeTimeBlockFocusPomoQueue({
+      broadQueue: [otherMatch],
+      scheduledQueue: [],
+      passesTimeBlock: matching,
+      getItemKey: keyFor,
+    });
+
+    expect(result.items).toEqual([otherMatch]);
+    expect(result.scheduledPriorityItemKeys).toEqual([]);
+  });
+
+  it("returns no remaining items when every matching item is in the scheduled priority section", () => {
+    const scheduledMatch = project("scheduled-match", 1, {
+      areaId: "work",
+      scheduleInstanceId: "inst-match",
+    });
+
+    const result = composeTimeBlockFocusPomoQueue({
+      broadQueue: [scheduledMatch],
+      scheduledQueue: [scheduledMatch],
+      passesTimeBlock: matching,
+      getItemKey: keyFor,
+    });
+
+    expect(result.items).toEqual([scheduledMatch]);
+    expect(result.scheduledPriorityItemKeys).toEqual([
+      "SCHEDULE_INSTANCE:inst-match",
+    ]);
   });
 });
 

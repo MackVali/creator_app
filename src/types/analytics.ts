@@ -5,6 +5,7 @@ export type AnalyticsHistorySourceType =
   | "project"
   | "task"
   | "habit"
+  | "todo"
   | "unknown";
 
 export type AnalyticsHistoryItem = {

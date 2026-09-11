@@ -418,8 +418,9 @@ export interface Database {
           created_at: string;
           updated_at: string;
           user_id: string;
-          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT" | "EVENT" | "TODO";
           source_id: string;
+          source_title: string | null;
           completed_at: string;
           schedule_instance_id: string | null;
           was_scheduled: boolean;
@@ -434,8 +435,9 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           user_id: string;
-          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT" | "EVENT" | "TODO";
           source_id: string;
+          source_title?: string | null;
           completed_at: string;
           schedule_instance_id?: string | null;
           was_scheduled?: boolean;
@@ -450,8 +452,9 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           user_id?: string;
-          source_type?: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_type?: "GOAL" | "PROJECT" | "TASK" | "HABIT" | "EVENT" | "TODO";
           source_id?: string;
+          source_title?: string | null;
           completed_at?: string;
           schedule_instance_id?: string | null;
           was_scheduled?: boolean;
@@ -2569,6 +2572,7 @@ export interface Database {
         Row: {
           user_id: string;
           enabled: boolean;
+          baseline_minutes: number;
           minutes_per_xp: number;
           daily_max_minutes: number | null;
           created_at: string;
@@ -2577,6 +2581,7 @@ export interface Database {
         Insert: {
           user_id: string;
           enabled?: boolean;
+          baseline_minutes?: number;
           minutes_per_xp?: number;
           daily_max_minutes?: number | null;
           created_at?: string;
@@ -2585,6 +2590,7 @@ export interface Database {
         Update: {
           user_id?: string;
           enabled?: boolean;
+          baseline_minutes?: number;
           minutes_per_xp?: number;
           daily_max_minutes?: number | null;
           created_at?: string;
@@ -2915,7 +2921,14 @@ export interface Database {
         | "completed"
         | "missed"
         | "canceled";
-      xp_kind: "task" | "habit" | "project" | "goal" | "event" | "manual";
+      xp_kind:
+        | "task"
+        | "habit"
+        | "project"
+        | "goal"
+        | "event"
+        | "todo"
+        | "manual";
     };
     CompositeTypes: Record<string, unknown>;
   };
