@@ -131,6 +131,7 @@ import {
   groupDependenciesBySource,
   type DependencyRecord,
 } from "@/lib/dependencies";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 type Client = SupabaseClient<Database>;
 type ScheduleInstanceInsert =
@@ -3281,9 +3282,13 @@ export async function scheduleBacklog(
     }
 
     const goal = goalsById.get(goalId);
-    if (goal?.status && goal.status !== "ACTIVE") {
-      ineligibleProjectCountsByGoalStatus[goal.status] =
-        (ineligibleProjectCountsByGoalStatus[goal.status] ?? 0) + 1;
+    const goalStatus = goal
+      ? normalizeGoalStatus(goal.status, goal.active)
+      : "ACTIVE";
+
+    if (goalStatus !== "ACTIVE") {
+      ineligibleProjectCountsByGoalStatus[goalStatus] =
+        (ineligibleProjectCountsByGoalStatus[goalStatus] ?? 0) + 1;
       continue;
     }
 
