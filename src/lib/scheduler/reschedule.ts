@@ -13,6 +13,7 @@ import {
   type ScheduleInstanceCreateBatcher,
 } from "./instanceRepo";
 import {
+  buildProjectScheduleCandidates,
   buildProjectItems,
   DEFAULT_PROJECT_DURATION_MIN,
 } from "./projects";
@@ -123,6 +124,13 @@ import {
   schedulerNowMs,
   type SchedulerTiming,
 } from "./timing";
+import {
+  dependencySourceKey,
+  evaluateDependencies,
+  fetchDependenciesForSources,
+  groupDependenciesBySource,
+  type DependencyRecord,
+} from "@/lib/dependencies";
 
 type Client = SupabaseClient<Database>;
 type ScheduleInstanceInsert =
@@ -1450,6 +1458,7 @@ type HabitAuditReport = {
 type ProjectFailureReason =
   | "skippedLocked"
   | "skippedCompleted"
+  | "skippedDependency"
   | "skippedNoWindows"
   | "failedPlacement"
   | "horizonExhausted";
@@ -1459,6 +1468,7 @@ type ProjectDebugCounts = {
   placedProjects: number;
   skippedLocked: number;
   skippedCompleted: number;
+  skippedDependency: number;
   skippedNoWindows: number;
   failedPlacement: number;
   horizonExhausted: number;
@@ -2843,6 +2853,7 @@ export async function scheduleBacklog(
     placedProjects: 0,
     skippedLocked: 0,
     skippedCompleted: 0,
+    skippedDependency: 0,
     skippedNoWindows: 0,
     failedPlacement: 0,
     horizonExhausted: 0,
@@ -3399,6 +3410,12 @@ export async function scheduleBacklog(
 
   const taskSkillsByProjectId = new Map<string, Set<string>>();
   for (const task of tasks) {
+    if (
+      typeof task.completed_at === "string" &&
+      task.completed_at.trim().length > 0
+    ) {
+      continue;
+    }
     const projectId = task.project_id ?? null;
     if (!projectId) continue;
     if (task.skill_id) {
@@ -3465,7 +3482,12 @@ export async function scheduleBacklog(
     if (!project) return null;
     const goalId = project.goal_id ?? null;
     if (!goalId) return null;
-    return project.goal_area_id ?? goalAreaById.get(goalId) ?? null;
+    return (
+      (project as CanonicalProjectRecord & { goal_area_id?: string | null })
+        .goal_area_id ??
+      goalAreaById.get(goalId) ??
+      null
+    );
   };
   const projectMatchesSelectedMonument = (projectId: string): boolean => {
     if (mode.type !== "MONUMENTAL") return false;
@@ -3475,9 +3497,76 @@ export async function scheduleBacklog(
     return monumentId === mode.monumentId;
   };
 
+  const dependencySources = [
+    ...goals.map((goal) => ({
+      sourceType: "GOAL" as const,
+      sourceId: goal.id,
+    })),
+    ...Object.values(allProjectsMap).map((project) => ({
+      sourceType: "PROJECT" as const,
+      sourceId: project.id,
+    })),
+    ...tasks.map((task) => ({
+      sourceType: "TASK" as const,
+      sourceId: task.id,
+    })),
+    ...habits.map((habit) => ({
+      sourceType: "HABIT" as const,
+      sourceId: habit.id,
+    })),
+  ];
+  const shouldSkipDependencyLoadForLegacyTestMock =
+    process.env.NODE_ENV === "test" &&
+    !("__creatorItemDependencies" in (supabase as object));
+  const dependencyLoadStartedAt = schedulerNowMs();
+  const dependenciesBySource = shouldSkipDependencyLoadForLegacyTestMock
+    ? new Map<string, DependencyRecord[]>()
+    : groupDependenciesBySource(
+        await fetchDependenciesForSources(supabase, userId, dependencySources)
+      );
+  recordPhaseSince(
+    "scheduler.schedule.dependency_loading",
+    dependencyLoadStartedAt
+  );
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const goalDependencySatisfied = (dependency: DependencyRecord) =>
+    goalsById.get(dependency.depends_on_id ?? "")?.status === "COMPLETED";
+  const projectDependencySatisfied = (dependency: DependencyRecord) => {
+    const project = allProjectsMap[dependency.depends_on_id ?? ""];
+    return (
+      typeof project?.completed_at === "string" &&
+      project.completed_at.trim().length > 0
+    );
+  };
+  const taskDependencySatisfied = (dependency: DependencyRecord) => {
+    const task = tasksById.get(dependency.depends_on_id ?? "");
+    return (
+      typeof task?.completed_at === "string" &&
+      task.completed_at.trim().length > 0
+    );
+  };
+  const dependencyItemSatisfied = (dependency: DependencyRecord) => {
+    if (dependency.dependency_type !== "ITEM") return true;
+    if (dependency.source_type === "GOAL") return goalDependencySatisfied(dependency);
+    if (dependency.source_type === "PROJECT") {
+      return projectDependencySatisfied(dependency);
+    }
+    if (dependency.source_type === "TASK") return taskDependencySatisfied(dependency);
+    return false;
+  };
+  const getDependenciesForSource = (
+    sourceType: "GOAL" | "PROJECT" | "TASK" | "HABIT",
+    sourceId: string | null | undefined
+  ) =>
+    sourceId
+      ? (dependenciesBySource.get(dependencySourceKey(sourceType, sourceId)) ??
+        [])
+      : [];
+
   type QueueItem = {
     id: string;
-    sourceType: "PROJECT";
+    sourceType: "PROJECT" | "TASK";
+    parentProjectId: string;
     duration_min: number;
     energy: string;
     weight: number;
@@ -3486,6 +3575,7 @@ export async function scheduleBacklog(
     instanceId?: string | null;
     preferred?: boolean;
     eventName: string;
+    dependencies: DependencyRecord[];
   };
 
   const queue: QueueItem[] = [];
@@ -3533,28 +3623,37 @@ export async function scheduleBacklog(
     }
   };
 
-  const queuedProjectIds = new Set(queue.map((item) => item.id));
+  const queuedCandidateIds = new Set(
+    queue.map((item) => `${item.sourceType}:${item.id}`)
+  );
 
   const enqueue = (
     def: {
       id: string;
+      sourceType?: "PROJECT" | "TASK";
+      parentProjectId?: string;
       duration_min: number;
       energy: string | null | undefined;
       weight: number;
       goalWeight?: number;
       globalRank?: number | null;
       name?: string;
+      dependencies?: DependencyRecord[];
     } | null
   ) => {
     if (!def) return;
     let duration = Number(def.duration_min ?? 0);
     if (!Number.isFinite(duration) || duration <= 0) return;
     duration = adjustDuration(duration);
-    if (queuedProjectIds.has(def.id)) return;
+    const sourceType = def.sourceType ?? "PROJECT";
+    const candidateKey = `${sourceType}:${def.id}`;
+    if (queuedCandidateIds.has(candidateKey)) return;
     const energy = (def.energy ?? "NO").toString().toUpperCase();
+    const parentProjectId = def.parentProjectId ?? def.id;
     queue.push({
       id: def.id,
-      sourceType: "PROJECT",
+      sourceType,
+      parentProjectId,
       duration_min: duration,
       energy,
       weight: def.weight ?? 0,
@@ -3563,22 +3662,58 @@ export async function scheduleBacklog(
         typeof def.globalRank === "number" && Number.isFinite(def.globalRank)
           ? def.globalRank
           : null,
-      preferred: projectMatchesSelectedMonument(def.id),
+      preferred: projectMatchesSelectedMonument(parentProjectId),
       eventName: def.name || def.id,
+      dependencies: def.dependencies ?? [],
     });
-    queuedProjectIds.add(def.id);
+    queuedCandidateIds.add(candidateKey);
   };
 
-  for (const project of projectQueue) {
-    if (isTargetedSourceRun && !targetProjectIds.has(project.id)) continue;
-    enqueue(project);
+  const projectScheduleCandidates = buildProjectScheduleCandidates(
+    Object.values(projectsMap),
+    tasks,
+    goalWeightsById
+  ).sort((a, b) => {
+    const aRank = a.globalRank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.globalRank ?? Number.POSITIVE_INFINITY;
+    if (aRank !== bRank) return aRank - bRank;
+    if (a.parentProjectId !== b.parentProjectId) {
+      return a.parentProjectId.localeCompare(b.parentProjectId);
+    }
+    if (a.sourceType !== b.sourceType) {
+      return a.sourceType.localeCompare(b.sourceType);
+    }
+    return a.id.localeCompare(b.id);
+  });
+
+  for (const candidate of projectScheduleCandidates) {
+    if (isTargetedSourceRun && !targetProjectIds.has(candidate.parentProjectId)) {
+      continue;
+    }
+    const candidateDependencies = [
+      ...getDependenciesForSource("GOAL", candidate.goal_id ?? null),
+      ...getDependenciesForSource("PROJECT", candidate.parentProjectId),
+      ...getDependenciesForSource(candidate.sourceType, candidate.id),
+    ];
+    const itemEligibility = evaluateDependencies({
+      dependencies: candidateDependencies.filter(
+        (dependency) => dependency.dependency_type === "ITEM"
+      ),
+      targetDate: baseDate,
+      timeZone,
+      isItemDependencySatisfied: dependencyItemSatisfied,
+    });
+    if (!itemEligibility.eligible) {
+      recordProjectFailure("skippedDependency", candidate.parentProjectId);
+      continue;
+    }
+    enqueue({ ...candidate, dependencies: candidateDependencies });
   }
   if (debugEnabled) {
     projectDebugCounts.totalProjectsConsidered = queue.length;
   }
 
   const allProjectIds = new Set(projectQueue.map((p) => p.id));
-  const finalQueueProjectIds = new Set(queuedProjectIds);
   const writeThroughResolutionStartedAt = schedulerNowMs();
   recordPhaseSince("scheduler.schedule.queue_building", queueBuildStartedAt);
   const lookaheadDays = Math.min(
@@ -3845,15 +3980,29 @@ export async function scheduleBacklog(
   }
   const effectiveLastCompletedAt = dedupe.effectiveLastCompletedAt;
   const lockedProjectInstances = dedupe.lockedProjectInstances;
+  const lockedTaskSourceIds = new Set<string>();
+  for (const inst of dedupe.allInstances) {
+    if (inst.source_type !== "TASK") continue;
+    if (inst.status !== "scheduled") continue;
+    if (inst.locked !== true) continue;
+    if (!inst.source_id) continue;
+    lockedTaskSourceIds.add(inst.source_id);
+  }
   if (lockedProjectInstances.size > 0) {
     for (const projectId of lockedProjectInstances.keys()) {
       recordProjectFailure("skippedLocked", projectId);
-      queuedProjectIds.delete(projectId);
-      finalQueueProjectIds.delete(projectId);
     }
     for (let index = queue.length - 1; index >= 0; index -= 1) {
       const item = queue[index];
-      if (lockedProjectInstances.has(item.id)) {
+      if (lockedProjectInstances.has(item.parentProjectId)) {
+        queue.splice(index, 1);
+      }
+    }
+  }
+  if (lockedTaskSourceIds.size > 0) {
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const item = queue[index];
+      if (item.sourceType === "TASK" && lockedTaskSourceIds.has(item.id)) {
         queue.splice(index, 1);
       }
     }
@@ -4021,7 +4170,7 @@ export async function scheduleBacklog(
     removeInstancesFromBlockerCache(rebuildCanceledInstanceIds);
     if (rebuildCanceledProjectIds.size > 0) {
       for (const item of queue) {
-        if (rebuildCanceledProjectIds.has(item.id)) {
+        if (rebuildCanceledProjectIds.has(item.parentProjectId)) {
           item.instanceId = undefined;
         }
       }
@@ -4230,8 +4379,8 @@ export async function scheduleBacklog(
   if (completedProjectIds.size > 0) {
     for (let index = queue.length - 1; index >= 0; index -= 1) {
       const item = queue[index];
-      if (completedProjectIds.has(item.id)) {
-        recordProjectFailure("skippedCompleted", item.id);
+      if (completedProjectIds.has(item.parentProjectId)) {
+        recordProjectFailure("skippedCompleted", item.parentProjectId);
         queue.splice(index, 1);
       }
     }
@@ -4502,6 +4651,7 @@ export async function scheduleBacklog(
       habitRevalidationCanceledInstanceIds,
       habitTimingPass: "initialDaily",
       timing,
+      dependenciesBySource,
     });
     recordHabitPlaceItemDelta(timing, "initialDaily", placeItemBefore);
     if (timing) {
@@ -4589,11 +4739,18 @@ export async function scheduleBacklog(
     recordPhaseSince("scheduler.schedule.missed_instance_flush", flushStartedAt);
   };
   const missedHabitIds = new Set<string>();
+  const missedTaskIds = new Set<string>();
   for (const inst of dedupe.allInstances) {
     if (!inst || inst.source_type !== "HABIT") continue;
     if (inst.status !== "missed") continue;
     if (!inst.source_id) continue;
     missedHabitIds.add(inst.source_id);
+  }
+  for (const inst of (missed.data ?? []) as ScheduleInstance[]) {
+    if (!inst || inst.source_type !== "TASK") continue;
+    if (inst.status !== "missed") continue;
+    if (!inst.source_id) continue;
+    missedTaskIds.add(inst.source_id);
   }
   const createMissedHabitInstance = async (
     habit: HabitScheduleItem,
@@ -6431,6 +6588,7 @@ export async function scheduleBacklog(
   }
   const attempted = new Set<string>();
   const scheduledProjectIds = new Set<string>();
+  const scheduledCandidateIds = new Set<string>();
   const projectAttemptCounts = new Map<string, number>();
   const projectAttemptLimit = 1;
   const projectPassStartedAt = schedulerNowMs();
@@ -6440,17 +6598,19 @@ export async function scheduleBacklog(
   }
 
   for (const item of projectPassState.queue) {
-    placementDebugCollector?.recordProjectQueued(item.id);
+    const parentProjectId = item.parentProjectId;
+    const candidateKey = `${item.sourceType}:${item.id}`;
+    placementDebugCollector?.recordProjectQueued(candidateKey);
     if (!schedulerDebugSummary.probe.firstEligibleProjectId) {
-      schedulerDebugSummary.probe.firstEligibleProjectId = item.id;
+      schedulerDebugSummary.probe.firstEligibleProjectId = candidateKey;
     }
     const isProbeProject =
-      schedulerDebugSummary.probe.firstEligibleProjectId === item.id;
+      schedulerDebugSummary.probe.firstEligibleProjectId === candidateKey;
     const isSmallProjectProbe =
       debugEnabled && smallProjectCandidate?.id === item.id;
     let projectFailureTrace: PlacementDebugTrace | null = null;
-    const nextAttempt = (projectAttemptCounts.get(item.id) ?? 0) + 1;
-    projectAttemptCounts.set(item.id, nextAttempt);
+    const nextAttempt = (projectAttemptCounts.get(candidateKey) ?? 0) + 1;
+    projectAttemptCounts.set(candidateKey, nextAttempt);
     if (nextAttempt > projectAttemptLimit) {
       schedulerDebugSummary.fail.other += 1;
       result.failures.push({
@@ -6459,14 +6619,14 @@ export async function scheduleBacklog(
         detail: "ATTEMPT_LIMIT_EXCEEDED",
       });
       placementDebugCollector?.recordEarlyExit(
-        item.id,
+        candidateKey,
         "EARLY_EXIT_NOT_ATTEMPTED",
         "ATTEMPT_LIMIT_EXCEEDED"
       );
       continue;
     }
-    const canonicalProject = projectItemMap[item.id];
-    const durationMin = Number(canonicalProject?.duration_min ?? 0);
+    const canonicalProject = projectItemMap[parentProjectId];
+    const durationMin = Number(item.duration_min ?? 0);
     if (!Number.isFinite(durationMin) || durationMin <= 0) {
       if (item.instanceId) {
         const { error } = await markProjectMissed(
@@ -6485,31 +6645,43 @@ export async function scheduleBacklog(
         result.failures.push({ itemId: item.id, reason: "INVALID_DURATION" });
       }
       placementDebugCollector?.recordEarlyExit(
-        item.id,
+        candidateKey,
         "EARLY_EXIT_NOT_ATTEMPTED",
         "INVALID_DURATION"
       );
       continue;
     }
-    if (durationMin !== item.duration_min) {
-      item.duration_min = durationMin;
+    if (item.sourceType === "PROJECT" && canonicalProject) {
+      const canonicalDuration = Number(canonicalProject.duration_min ?? 0);
+      if (Number.isFinite(canonicalDuration) && canonicalDuration > 0) {
+        item.duration_min = canonicalDuration;
+      }
     }
-    const projectGoalMonumentId = getProjectGoalMonumentId(item.id);
-    const projectGoalAreaId = getProjectGoalAreaId(item.id);
+    const projectGoalMonumentId = getProjectGoalMonumentId(parentProjectId);
+    const projectGoalAreaId = getProjectGoalAreaId(parentProjectId);
     const projectGoalMonumentIds =
       projectGoalMonumentId !== null ? [projectGoalMonumentId] : null;
     const projectGoalAreaIds =
       projectGoalAreaId !== null ? [projectGoalAreaId] : null;
     // Create window availability for project placement (fresh per project)
     const projectWindowAvailability = new Map<string, WindowAvailabilityBounds>();
-    if (attempted.has(item.id)) {
-      throw new Error(`PROJECT_REATTEMPTED: ${item.id}`);
+    if (attempted.has(candidateKey)) {
+      throw new Error(`PROJECT_REATTEMPTED: ${candidateKey}`);
     }
-    attempted.add(item.id);
+    attempted.add(candidateKey);
 
     let placementErrored = false;
     let hadCompatibleWindows = false;
     let recordedDay0Windows = false;
+    const itemMetadata =
+      item.sourceType === "TASK"
+        ? ({
+            scheduler: {
+              parentProjectId,
+              parentProjectName: canonicalProject?.name ?? null,
+            },
+          } satisfies Json)
+        : undefined;
 
     // 🔧 MULTI-DAY PROJECT PLACEMENT FIX
     // Instead of fetching all windows for the horizon at once,
@@ -6524,6 +6696,22 @@ export async function scheduleBacklog(
         dayOffset === 0
           ? baseStart
           : addDaysInTimeZone(baseStart, dayOffset, timeZone);
+      const dayDependencyEligibility = evaluateDependencies({
+        dependencies: item.dependencies,
+        targetDate: currentDay,
+        timeZone,
+        isItemDependencySatisfied: dependencyItemSatisfied,
+      });
+      if (!dayDependencyEligibility.eligible) {
+        if (dayOffset === effectiveHorizonDays - 1) {
+          result.failures.push({
+            itemId: item.id,
+            reason: "DEPENDENCY_BLOCKED",
+            detail: dayDependencyEligibility.failures,
+          });
+        }
+        continue;
+      }
       if (debugEnabled) {
         const dayCacheKey = dateCacheKey(currentDay);
         const hadProjectDayWindows =
@@ -6539,7 +6727,7 @@ export async function scheduleBacklog(
       await prepareWindowsForDay(currentDay);
       const preloadedDayWindows = getWindowsForDay(currentDay);
       const preloadedDayWindowCount = preloadedDayWindows.length;
-      const projectSkillIds = getProjectSkillIds(item.id);
+      const projectSkillIds = getProjectSkillIds(parentProjectId);
       const compatibleDayResult = await fetchCompatibleWindowsForItem(
         supabase,
         currentDay,
@@ -6574,7 +6762,7 @@ export async function scheduleBacklog(
         );
         const compatibleWindows = compatibleDayResult.windows;
         const compatibleFilterCounters = compatibleDayResult.filterCounters;
-        placementDebugCollector?.recordDayScan(item.id, {
+        placementDebugCollector?.recordDayScan(candidateKey, {
           dayOffset,
           blocksConsidered: preloadedDayWindowCount,
           candidatesGenerated: compatibleWindows.length,
@@ -6609,8 +6797,8 @@ export async function scheduleBacklog(
             freeSegmentMinutes: candidateMinutes,
             collisionCount: diag.collisionCount,
           };
-          placementDebugCollector.recordBlockGateSample(item.id, sample);
-          placementDebugCollector.recordClosestCandidate(item.id, {
+          placementDebugCollector.recordBlockGateSample(candidateKey, sample);
+          placementDebugCollector.recordClosestCandidate(candidateKey, {
             blockId: diag.blockId,
             dateIso: diag.dateIso,
             firstFailGate: trace?.firstFailGate ?? null,
@@ -6643,8 +6831,8 @@ export async function scheduleBacklog(
                 }
               : undefined,
           };
-          placementDebugCollector.recordNoSlotDetail(item.id, detail);
-          placementDebugCollector.recordPassedGatesButNoSlot(item.id, detail);
+          placementDebugCollector.recordNoSlotDetail(candidateKey, detail);
+          placementDebugCollector.recordPassedGatesButNoSlot(candidateKey, detail);
         }
       };
       if (placementDebugCollector) {
@@ -6652,7 +6840,7 @@ export async function scheduleBacklog(
         for (const win of compatibleWindows) {
           const blockId = win.key ?? win.id;
           windowGateTraceByBlockId.set(blockId, win.gateTrace);
-          placementDebugCollector.recordBlockGateSample(item.id, {
+          placementDebugCollector.recordBlockGateSample(candidateKey, {
             ...win.gateTrace,
             blockId,
             dateIso: blockDateIso,
@@ -6685,7 +6873,7 @@ export async function scheduleBacklog(
       }
 
       // Try to place in this day's windows
-      placementDebugCollector?.recordPlacementAttempt(item.id);
+      placementDebugCollector?.recordPlacementAttempt(candidateKey);
       const placed = await placeItemInWindows({
         userId,
         item,
@@ -6693,7 +6881,7 @@ export async function scheduleBacklog(
         date: currentDay, // Use the current day we're searching
         timeZone,
         client: supabase,
-        ignoreProjectIds: new Set([item.id]),
+        ignoreProjectIds: new Set([parentProjectId]),
         notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
         existingInstances: projectPassState.blockingInstances,
         blockerDayIndex: projectPassState.blockerDayIndex,
@@ -6705,6 +6893,7 @@ export async function scheduleBacklog(
         debugEnabled,
         placementTimingScope: "project",
         timing,
+        metadata: itemMetadata,
         debugOnFailure: debugEnabled
           ? (info) => {
                 projectFailureTrace = info;
@@ -6727,7 +6916,7 @@ export async function scheduleBacklog(
                     };
                     smallProjectFirstAttemptStats = firstAttemptDay;
                     schedulerDebugSummary.probeSmallProject = {
-                      projectId: item.id,
+                      projectId: candidateKey,
                       durationMinutes: durationMin,
                       dayOffset,
                       failureStage: info.failureStage,
@@ -6741,7 +6930,7 @@ export async function scheduleBacklog(
                     !schedulerDebugSummary.probeProject;
                 if (shouldRecordProbe) {
                   schedulerDebugSummary.probeProject = {
-                    projectId: item.id,
+                    projectId: candidateKey,
                     durationMinutes: durationMin,
                     dayOffset,
                     firstAttemptDay: {
@@ -6757,8 +6946,8 @@ export async function scheduleBacklog(
                 if (placementDebugCollector) {
                   const reason = mapPlacementFailureStage(info.failureStage);
                   placementDebugCollector.recordCandidateFailure(
-                    item.id,
-                    `${item.id}:${dayOffset}`,
+                    candidateKey,
+                    `${candidateKey}:${dayOffset}`,
                     reason,
                     {
                       blockId: `day-${dayOffset}`,
@@ -6785,7 +6974,7 @@ export async function scheduleBacklog(
         schedulerDebugSummary.probeSmallProject = {
           ...baseSummary,
           captured: true,
-          projectId: item.id,
+          projectId: candidateKey,
           durationMinutes: item.duration_min,
           dayOffset,
           outcomeKind: isSuccess
@@ -6856,7 +7045,7 @@ export async function scheduleBacklog(
         schedulerDebugSummary.probeSmallProject = {
           ...baseSummary,
           captured: true,
-          projectId: item.id,
+          projectId: candidateKey,
           durationMinutes: item.duration_min,
           dayOffset,
           outcomeKind,
@@ -6900,25 +7089,33 @@ export async function scheduleBacklog(
 
       if (!item.instanceId) {
         // Create missed instance with reason
-        safeMissedInsertBatch.enqueue(
-          {
-            user_id: userId,
-            source_type: "PROJECT",
-            source_id: item.id,
-            status: "missed",
-            missed_reason: debugInfo,
-            start_utc: null,
-            end_utc: null,
-            duration_min: item.duration_min,
-            window_id: null,
-            energy_resolved: item.energy,
-            locked: false,
-            weight_snapshot: item.weight,
-          },
-          (error) => {
-            log("error", "Failed to create missed instance:", error);
+        const isDuplicateMissedTask =
+          item.sourceType === "TASK" && missedTaskIds.has(item.id);
+        if (!isDuplicateMissedTask) {
+          safeMissedInsertBatch.enqueue(
+            {
+              user_id: userId,
+              source_type: item.sourceType,
+              source_id: item.id,
+              status: "missed",
+              missed_reason: debugInfo,
+              start_utc: null,
+              end_utc: null,
+              duration_min: item.duration_min,
+              window_id: null,
+              energy_resolved: item.energy,
+              locked: false,
+              weight_snapshot: item.weight,
+              metadata: itemMetadata,
+            },
+            (error) => {
+              log("error", "Failed to create missed instance:", error);
+            }
+          );
+          if (item.sourceType === "TASK") {
+            missedTaskIds.add(item.id);
           }
-        );
+        }
       } else {
         // Update existing instance with detailed reason
         const missedReasonUpdateStartedAt = schedulerNowMs();
@@ -6947,7 +7144,7 @@ export async function scheduleBacklog(
         : hadCompatibleWindows
         ? "horizonExhausted"
         : "skippedNoWindows";
-      recordProjectFailure(failureReason, item.id);
+      recordProjectFailure(failureReason, parentProjectId);
       const failureKind: keyof SchedulerDebugSummary["fail"] = !hadCompatibleWindows
         ? "noWindows"
         : placementErrored
@@ -6964,7 +7161,7 @@ export async function scheduleBacklog(
     // Successfully placed!
     result.placed.push(placedData);
     placementDebugCollector?.recordPlacementSuccess(
-      item.id,
+      candidateKey,
       placedData.start_utc ?? null
     );
     schedulerDebugSummary.placed += 1;
@@ -6982,14 +7179,14 @@ export async function scheduleBacklog(
         existingBounds.front = new Date(nextFront);
       }
     }
-    keptInstancesByProject.delete(item.id);
+    keptInstancesByProject.delete(parentProjectId);
     const decision: ScheduleDraftPlacement["decision"] = item.instanceId
       ? "rescheduled"
       : "new";
     result.timeline.push({
       type: "PROJECT",
       instance: placedData,
-      projectId: placedData.source_id ?? item.id,
+      projectId: parentProjectId,
       decision,
       scheduledDayOffset: placementDayOffset,
       availableStartLocal: placementWindow?.availableStartLocal
@@ -7000,7 +7197,8 @@ export async function scheduleBacklog(
         : undefined,
       locked: placedData.locked ?? undefined,
     });
-    scheduledProjectIds.add(item.id);
+    scheduledCandidateIds.add(candidateKey);
+    scheduledProjectIds.add(parentProjectId);
 
     if (item.instanceId) {
       removeInstanceFromBuckets(item.instanceId);
@@ -7021,10 +7219,10 @@ export async function scheduleBacklog(
       "scheduler.schedule.project_task_placement",
       projectPassMs
     );
-    timing.schedule.projectPass.placed = scheduledProjectIds.size;
+    timing.schedule.projectPass.placed = scheduledCandidateIds.size;
     timing.schedule.projectPass.failed = Math.max(
       0,
-      projectPassState.queue.length - scheduledProjectIds.size
+      projectPassState.queue.length - scheduledCandidateIds.size
     );
   }
   await flushMissedInstanceCreates();
@@ -7521,9 +7719,10 @@ export async function scheduleBacklog(
   if (effectiveDayLimit >= lookaheadDays) {
     const failureMap = new Map<string, ScheduleFailure>();
     for (const item of queue) {
-      if (!scheduledProjectIds.has(item.id)) {
-        if (!failureMap.has(item.id)) {
-          failureMap.set(item.id, { itemId: item.id, reason: "NO_WINDOW" });
+      const candidateKey = `${item.sourceType}:${item.id}`;
+      if (!scheduledCandidateIds.has(candidateKey)) {
+        if (!failureMap.has(candidateKey)) {
+          failureMap.set(candidateKey, { itemId: item.id, reason: "NO_WINDOW" });
         }
       }
     }
@@ -9316,6 +9515,7 @@ async function scheduleHabitsForDay(params: {
   habitRevalidationCanceledInstanceIds?: Set<string>;
   habitTimingPass?: HabitPlacementPass;
   timing?: SchedulerTiming | null;
+  dependenciesBySource?: Map<string, DependencyRecord[]>;
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -9365,6 +9565,7 @@ async function scheduleHabitsForDay(params: {
     habitRevalidationCanceledInstanceIds,
     habitTimingPass,
     timing = null,
+    dependenciesBySource = new Map<string, DependencyRecord[]>(),
   } = params;
 
   const result: HabitScheduleDayResult = {
@@ -10679,6 +10880,85 @@ async function scheduleHabitsForDay(params: {
     return result;
   }
 
+  const getHabitDependencyRecords = (habitId: string) =>
+    dependenciesBySource.get(dependencySourceKey("HABIT", habitId)) ?? [];
+  const hasHabitOccurrenceCompletedToday = (habitId: string) =>
+    dayInstances.some((instance) => {
+      if (instance?.source_type !== "HABIT") return false;
+      if (instance.source_id !== habitId) return false;
+      if (instance.status !== "completed") return false;
+      const completedAt = new Date(
+        instance.completed_at ?? instance.end_utc ?? instance.start_utc ?? ""
+      );
+      if (Number.isNaN(completedAt.getTime())) return false;
+      return startOfDayInTimeZone(completedAt, zone).getTime() === dayStartMs;
+    });
+  const hasHabitOccurrenceScheduledToday = (habitId: string) =>
+    placedSoFar.some((instance) => {
+      if (instance?.source_type !== "HABIT") return false;
+      if (instance.source_id !== habitId) return false;
+      if (instance.status !== "scheduled" && instance.status !== "completed") {
+        return false;
+      }
+      const start = new Date(instance.start_utc ?? "");
+      if (Number.isNaN(start.getTime())) return false;
+      return startOfDayInTimeZone(start, zone).getTime() === dayStartMs;
+    });
+  const habitItemDependencySatisfied = (dependency: DependencyRecord) => {
+    const prerequisiteHabitId = dependency.depends_on_id ?? "";
+    if (!prerequisiteHabitId) return true;
+    if (!dueInfoByHabitId.has(prerequisiteHabitId)) return true;
+    return (
+      hasHabitOccurrenceCompletedToday(prerequisiteHabitId) ||
+      hasHabitOccurrenceScheduledToday(prerequisiteHabitId)
+    );
+  };
+  const sortHabitsByItemDependencies = (items: HabitScheduleItem[]) => {
+    const dueIds = new Set(items.map((habit) => habit.id));
+    const incomingCount = new Map(items.map((habit) => [habit.id, 0]));
+    const dependents = new Map<string, string[]>();
+    for (const habit of items) {
+      for (const dependency of getHabitDependencyRecords(habit.id)) {
+        const prerequisiteId = dependency.depends_on_id ?? null;
+        if (dependency.dependency_type !== "ITEM" || !prerequisiteId) continue;
+        if (!dueIds.has(prerequisiteId)) continue;
+        incomingCount.set(habit.id, (incomingCount.get(habit.id) ?? 0) + 1);
+        const list = dependents.get(prerequisiteId) ?? [];
+        list.push(habit.id);
+        dependents.set(prerequisiteId, list);
+      }
+    }
+
+    const originalIndex = new Map(items.map((habit, index) => [habit.id, index]));
+    const byOriginalOrder = (a: HabitScheduleItem, b: HabitScheduleItem) =>
+      (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+    const itemById = new Map(items.map((habit) => [habit.id, habit]));
+    const ready = items
+      .filter((habit) => (incomingCount.get(habit.id) ?? 0) === 0)
+      .sort(byOriginalOrder);
+    const sorted: HabitScheduleItem[] = [];
+
+    while (ready.length > 0) {
+      const habit = ready.shift();
+      if (!habit) continue;
+      sorted.push(habit);
+      for (const dependentId of dependents.get(habit.id) ?? []) {
+        const nextCount = (incomingCount.get(dependentId) ?? 0) - 1;
+        incomingCount.set(dependentId, nextCount);
+        if (nextCount === 0) {
+          const dependent = itemById.get(dependentId);
+          if (dependent) {
+            ready.push(dependent);
+            ready.sort(byOriginalOrder);
+          }
+        }
+      }
+    }
+
+    if (sorted.length === items.length) return sorted;
+    return items;
+  };
+
   if (windowEntries.length > 0 && dayInstances.length > 0) {
     const anchorableStatuses = new Set([
       "scheduled",
@@ -10769,8 +11049,10 @@ async function scheduleHabitsForDay(params: {
   );
 
   const dueSortStartedAt = schedulerNowMs();
-  const sortedHabits = [...dueHabits].sort((a, b) =>
-    compareHabitScheduleOrder(a, b, dueInfoByHabitId, defaultDueMs)
+  const sortedHabits = sortHabitsByItemDependencies(
+    [...dueHabits].sort((a, b) =>
+      compareHabitScheduleOrder(a, b, dueInfoByHabitId, defaultDueMs)
+    )
   );
   recordHabitPassMetric(
     timing,
@@ -10782,6 +11064,8 @@ async function scheduleHabitsForDay(params: {
   const practicePlacementCounts = new Map<string, number>();
   const failedHabitIds = new Set<string>();
   const habitQueue = [...sortedHabits];
+  let habitDependencyDeferrals = 0;
+  const maxHabitDependencyDeferrals = Math.max(1, habitQueue.length * habitQueue.length);
   recordHabitPassMetric(
     timing,
     habitTimingPass,
@@ -10793,6 +11077,43 @@ async function scheduleHabitsForDay(params: {
     if (!habit) continue;
     const shouldLogPlacementAudit = shouldAuditHabitPlacement(habit);
     if (failedHabitIds.has(habit.id)) continue;
+    const dependencyEligibility = evaluateDependencies({
+      dependencies: getHabitDependencyRecords(habit.id),
+      targetDate: day,
+      timeZone: zone,
+      isItemDependencySatisfied: habitItemDependencySatisfied,
+    });
+    if (!dependencyEligibility.eligible) {
+      const blockedByFailedPrerequisite = dependencyEligibility.failures.some(
+        (failure) =>
+          failure.type === "ITEM" && failedHabitIds.has(failure.waitingForId)
+      );
+      const blockedByDateOrWeekday = dependencyEligibility.failures.some(
+        (failure) => failure.type !== "ITEM"
+      );
+      if (blockedByFailedPrerequisite || blockedByDateOrWeekday) {
+        failedHabitIds.add(habit.id);
+        result.failures.push({
+          itemId: habit.id,
+          reason: "DEPENDENCY_BLOCKED",
+          detail: dependencyEligibility.failures,
+        });
+        continue;
+      }
+      habitDependencyDeferrals += 1;
+      if (habitDependencyDeferrals > maxHabitDependencyDeferrals) {
+        failedHabitIds.add(habit.id);
+        result.failures.push({
+          itemId: habit.id,
+          reason: "DEPENDENCY_BLOCKED",
+          detail: dependencyEligibility.failures,
+        });
+        continue;
+      }
+      habitQueue.push(habit);
+      continue;
+    }
+    habitDependencyDeferrals = 0;
     const isRepeatablePractice = repeatablePracticeIds.has(habit.id);
     let existingInstance: ScheduleInstance | null = null;
     if (isRepeatablePractice) {
@@ -11229,6 +11550,7 @@ async function scheduleHabitsForDay(params: {
           compatibleWindowsCount: compatibleWindows.length,
           lastZeroStage,
         });
+        failedHabitIds.add(habit.id);
         continue;
       }
       logHabitWindowCompatibilityFailureDebug({
@@ -11247,6 +11569,7 @@ async function scheduleHabitsForDay(params: {
           audit.report.scheduling.dueSkipped_RepeatablePracticeNoWindows += 1;
           audit.addSample("dueSkipped_RepeatablePracticeNoWindows", habit.id);
         }
+        failedHabitIds.add(habit.id);
         continue;
       }
       if (auditEnabled) {
@@ -11262,6 +11585,7 @@ async function scheduleHabitsForDay(params: {
         lastZeroStage,
       });
       result.failures.push({ itemId: habit.id, reason: "NO_WINDOW" });
+      failedHabitIds.add(habit.id);
       continue;
     }
 

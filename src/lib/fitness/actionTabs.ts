@@ -5,7 +5,6 @@ export const FITNESS_ACTION_TAB_SPECS = [
   { id: "workout-routines", label: "Routines" },
   { id: "plans", label: "Plans" },
   { id: "custom", label: "Custom" },
-  { id: "me", label: "ME" },
 ] as const;
 
 export type FitnessActionTabId = (typeof FITNESS_ACTION_TAB_SPECS)[number]["id"];

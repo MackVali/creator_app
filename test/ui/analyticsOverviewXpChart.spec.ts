@@ -21,6 +21,28 @@ vi.mock(
   }
 );
 
+vi.mock("@/components/AnalyticsDashboardSkeleton", async () => {
+  const React = await import("react");
+
+  return {
+    AnalyticsDashboardSkeleton: () =>
+      React.createElement("div", { "data-analytics-skeleton": true }),
+  };
+});
+
+vi.mock("@/components/analytics/CreatorDayHistory", async () => {
+  const React = await import("react");
+
+  return {
+    default: () =>
+      React.createElement("div", { "data-creator-day-history": true }),
+  };
+});
+
+vi.mock("@/lib/supabase", () => ({
+  getSupabaseBrowser: () => null,
+}));
+
 vi.mock("@/components/ui/button", async () => {
   const React = await import("react");
 
@@ -42,8 +64,13 @@ vi.mock("recharts", async () => {
         "data-area-key": props.dataKey,
         "data-area-name": props.name,
       }),
-    AreaChart: ({ children }: { children?: React.ReactNode }) =>
-      React.createElement("svg", { "data-area-chart": true }, children),
+    Bar: (props: { dataKey: string; name: string }) =>
+      React.createElement("g", {
+        "data-bar-key": props.dataKey,
+        "data-bar-name": props.name,
+      }),
+    ComposedChart: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement("svg", { "data-composed-chart": true }, children),
     CartesianGrid: () => React.createElement("g", { "data-grid": true }),
     XAxis: () => React.createElement("g", { "data-x-axis": true }),
     YAxis: () => React.createElement("g", { "data-y-axis": true }),
@@ -153,10 +180,11 @@ describe("OverviewLineChart XP modes", () => {
       gainedButton?.click();
     });
 
-    expect(container.textContent).toContain("XP gained over time");
+    expect(container.textContent).toContain("XP earned by day");
     expect(container.textContent).toContain("7D · 70 XP gained");
     expect(gainedButton?.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector("[data-area-key]")?.getAttribute("data-area-key"))
+    expect(container.querySelector("[data-bar-key]")?.getAttribute("data-bar-key"))
       .toBe("xpGained");
+    expect(container.querySelector("[data-area-key]")).toBeNull();
   });
 });

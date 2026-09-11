@@ -288,6 +288,7 @@ type TaskRecord = {
   energy?: string | number | null;
   stage?: string | null;
   duration_min?: number | null;
+  completed_at?: string | null;
   goal_id?: string | null;
   project_id?: string | null;
   skill_id?: string | null;
@@ -572,6 +573,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
     "priority",
     "stage",
     "duration_min",
+    "completed_at",
     "energy",
     "goal_id",
     "project_id",
@@ -601,6 +603,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       priority: normalizePriorityValue(priorityName),
       stage: normalizeStageValue(record.stage, "PREPARE"),
       duration_min: safeDuration,
+      completed_at: record.completed_at ?? null,
       energy: normalizeEnergyValue(energyName),
       goal_id: record.goal_id ?? null,
       goal_area_id: record.goals?.area_id ?? null,
@@ -1568,6 +1571,7 @@ export async function fetchAllProjectsMap(
     "effective_duration_min",
     "goal_id",
     "due_date",
+    "completed_at",
     "global_rank",
   ].join(", ");
 
@@ -1588,6 +1592,7 @@ export async function fetchAllProjectsMap(
     effective_duration_min?: number | null;
     goal_id?: string | null;
     due_date?: string | null;
+    completed_at?: string | null;
     global_rank?: number | string | null;
   };
 
@@ -1610,6 +1615,7 @@ export async function fetchAllProjectsMap(
         : null,
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
+      completed_at: p.completed_at ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
       global_rank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
     };

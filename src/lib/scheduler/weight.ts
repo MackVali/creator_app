@@ -13,6 +13,7 @@ export type TaskLite = {
   stage: string;
   duration_min: number;
   energy: string | null;
+  completed_at?: string | null;
   goal_id?: string | null;
   goal_area_id?: string | null;
   project_id?: string | null;
@@ -33,6 +34,7 @@ export type ProjectLite = {
   goal_area_id?: string | null;
   due_date?: string | null;
   dueDate?: string | null;
+  completed_at?: string | null;
   globalRank?: number | null;
   global_rank?: number | null;
 };
