@@ -2709,7 +2709,40 @@ type TaskInstanceInfo = {
 };
 
 type ProjectItem = ReturnType<typeof buildProjectItems>[number];
-type ProjectInstance = ReturnType<typeof computeProjectInstances>[number];
+type TaskGroupPresentationMetadata = {
+  taskGroupPresentation: true;
+  groupedTaskInstanceIds: string[];
+  groupedTaskIds: string[];
+};
+type TaskGroupPresentationInstance = ScheduleInstance & {
+  taskGroupPresentation: true;
+  metadata: (ScheduleInstance["metadata"] & TaskGroupPresentationMetadata) | TaskGroupPresentationMetadata;
+};
+type TimelineProjectInstance = {
+  instance: ScheduleInstance | TaskGroupPresentationInstance;
+  project: ProjectItem;
+  start: Date;
+  end: Date;
+  assignedWindow: RepoWindow | null;
+};
+type ProjectInstance = TimelineProjectInstance;
+
+function isTaskGroupPresentationInstance(
+  instance: ScheduleInstance | TaskGroupPresentationInstance
+): instance is TaskGroupPresentationInstance {
+  return (
+    (instance as Partial<TaskGroupPresentationInstance>)
+      .taskGroupPresentation === true
+  );
+}
+
+function getTaskGroupPresentationInstanceIds(
+  instance: ScheduleInstance | TaskGroupPresentationInstance
+) {
+  if (!isTaskGroupPresentationInstance(instance)) return null;
+  const groupedTaskInstanceIds = instance.metadata.groupedTaskInstanceIds;
+  return new Set(groupedTaskInstanceIds);
+}
 
 function computeManualPlacementPushPreview(
   candidate: ManualPlacementCandidate,
@@ -2809,7 +2842,15 @@ function buildScheduledProjectTaskCardsByInstanceId(
   for (const projectInstance of dayProjectInstances) {
     const projectTasks =
       taskInstancesByProject[projectInstance.project.id] ?? [];
+    const groupedTaskInstanceIds = getTaskGroupPresentationInstanceIds(
+      projectInstance.instance
+    );
     const scheduledCards = projectTasks
+      .filter((taskInfo) =>
+        groupedTaskInstanceIds
+          ? groupedTaskInstanceIds.has(taskInfo.instance.id)
+          : true
+      )
       .filter((taskInfo) =>
         taskMatchesProjectInstance(
           taskInfo,
@@ -2838,6 +2879,141 @@ function buildScheduledProjectTaskCardsByInstanceId(
     }
   }
   return scheduledCardsByInstanceId;
+}
+
+function isUnfinishedProjectTask(task: TaskLite) {
+  const completedAt = task.completed_at?.trim();
+  if (completedAt) return false;
+  return task.stage?.toString().trim().toUpperCase() !== "PERFECT";
+}
+
+function areTaskInstanceRangesContinuous(
+  taskInfos: TaskInstanceInfo[],
+  toleranceMs = TASK_INSTANCE_MATCH_TOLERANCE_MS
+) {
+  if (taskInfos.length === 0) return false;
+  const sorted = [...taskInfos].sort(
+    (a, b) => a.start.getTime() - b.start.getTime()
+  );
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previousEnd = sorted[index - 1].end.getTime();
+    const currentStart = sorted[index].start.getTime();
+    if (currentStart > previousEnd + toleranceMs) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildTaskGroupPresentationProjectInstances({
+  instances,
+  taskMap,
+  tasksByProjectId,
+  projectMap,
+  projectInstanceIds,
+  windowMap,
+}: {
+  instances: ScheduleInstance[];
+  taskMap: Record<string, TaskLite>;
+  tasksByProjectId: Record<string, TaskLite[]>;
+  projectMap: Record<string, ProjectItem>;
+  projectInstanceIds: Set<string>;
+  windowMap: Record<string, RepoWindow>;
+}): TimelineProjectInstance[] {
+  const taskInstancesByProject = new Map<string, TaskInstanceInfo[]>();
+
+  for (const instance of instances) {
+    if (instance.source_type !== "TASK") continue;
+    if (isMyListScheduleInstance(instance)) continue;
+    const task = taskMap[instance.source_id];
+    const projectId = task?.project_id ?? null;
+    if (!task || !projectId) continue;
+    if (projectInstanceIds.has(projectId)) continue;
+    const project = projectMap[projectId];
+    if (!project) continue;
+    const start = toLocal(instance.start_utc);
+    const end = toLocal(instance.end_utc);
+    if (!isValidDate(start) || !isValidDate(end) || end <= start) continue;
+    const bucket = taskInstancesByProject.get(projectId) ?? [];
+    bucket.push({ instance, task, start, end });
+    taskInstancesByProject.set(projectId, bucket);
+  }
+
+  const groupedProjectInstances: TimelineProjectInstance[] = [];
+
+  for (const [projectId, taskInfos] of taskInstancesByProject) {
+    const unfinishedTasks = (tasksByProjectId[projectId] ?? []).filter(
+      isUnfinishedProjectTask
+    );
+    if (unfinishedTasks.length === 0) continue;
+
+    const scheduledTaskIds = new Set(taskInfos.map((taskInfo) => taskInfo.task.id));
+    const allUnfinishedTasksScheduled = unfinishedTasks.every((task) =>
+      scheduledTaskIds.has(task.id)
+    );
+    if (!allUnfinishedTasksScheduled) continue;
+
+    const relevantTaskInfos = taskInfos.filter((taskInfo) =>
+      unfinishedTasks.some((task) => task.id === taskInfo.task.id)
+    );
+    if (relevantTaskInfos.length === 0) continue;
+    if (!areTaskInstanceRangesContinuous(relevantTaskInfos)) continue;
+
+    const sorted = [...relevantTaskInfos].sort(
+      (a, b) => a.start.getTime() - b.start.getTime()
+    );
+    const first = sorted[0];
+    const lastEnd = sorted.reduce(
+      (latest, taskInfo) =>
+        taskInfo.end.getTime() > latest.getTime() ? taskInfo.end : latest,
+      first.end
+    );
+    const project = projectMap[projectId];
+    if (!project) continue;
+
+    const syntheticId = `task-group-presentation:${projectId}:${sorted
+      .map((taskInfo) => taskInfo.instance.id)
+      .join(":")}`;
+    const groupedTaskInstanceIds = sorted.map((taskInfo) => taskInfo.instance.id);
+    const groupedTaskIds = sorted.map((taskInfo) => taskInfo.task.id);
+    const syntheticInstance: TaskGroupPresentationInstance = {
+      ...first.instance,
+      id: syntheticId,
+      source_type: "PROJECT",
+      source_id: projectId,
+      project_name: project.name ?? first.instance.project_name ?? null,
+      window_id: null,
+      start_utc: first.start.toISOString(),
+      end_utc: lastEnd.toISOString(),
+      duration_min: Math.max(
+        1,
+        Math.round((lastEnd.getTime() - first.start.getTime()) / 60000)
+      ),
+      status: "scheduled",
+      completed_at: null,
+      locked: false,
+      taskGroupPresentation: true,
+      metadata: {
+        taskGroupPresentation: true,
+        groupedTaskInstanceIds,
+        groupedTaskIds,
+      },
+    };
+
+    groupedProjectInstances.push({
+      instance: syntheticInstance,
+      project,
+      start: first.start,
+      end: lastEnd,
+      assignedWindow: first.instance.window_id
+        ? (windowMap[first.instance.window_id] ?? null)
+        : null,
+    });
+  }
+
+  return groupedProjectInstances.sort(
+    (a, b) => a.start.getTime() - b.start.getTime()
+  );
 }
 
 function buildScheduleBlockNotificationInstances(
@@ -3705,7 +3881,7 @@ function computeProjectInstances(
   instances: ScheduleInstance[],
   projectMap: Record<string, ProjectItem>,
   windowMap: Record<string, RepoWindow>
-) {
+): TimelineProjectInstance[] {
   return instances
     .filter((inst) => inst.source_type === "PROJECT")
     .map((inst) => {
@@ -3727,13 +3903,7 @@ function computeProjectInstances(
     .filter(
       (
         value
-      ): value is {
-        instance: ScheduleInstance;
-        project: ProjectItem;
-        start: Date;
-        end: Date;
-        assignedWindow: RepoWindow | null;
-      } => value !== null
+      ): value is TimelineProjectInstance => value !== null
     )
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 }
@@ -3744,6 +3914,19 @@ function collectProjectInstanceIds(
   const set = new Set<string>();
   for (const item of projectInstances) {
     set.add(item.project.id);
+  }
+  return set;
+}
+
+function collectTaskGroupPresentationTaskInstanceIds(
+  projectInstances: TimelineProjectInstance[]
+) {
+  const set = new Set<string>();
+  for (const projectInstance of projectInstances) {
+    const groupedTaskInstanceIds = getTaskGroupPresentationInstanceIds(
+      projectInstance.instance
+    );
+    groupedTaskInstanceIds?.forEach((instanceId) => set.add(instanceId));
   }
   return set;
 }
@@ -3781,7 +3964,8 @@ function computeTaskInstancesByProjectForDay(
 function computeStandaloneTaskInstancesForDay(
   instances: ScheduleInstance[],
   taskMap: Record<string, TaskLite>,
-  projectInstanceIds: Set<string>
+  realProjectInstanceIds: Set<string>,
+  taskGroupPresentationTaskInstanceIds: Set<string>
 ) {
   const items: TaskInstanceInfo[] = [];
   for (const inst of instances) {
@@ -3789,7 +3973,8 @@ function computeStandaloneTaskInstancesForDay(
     const task = taskMap[inst.source_id];
     if (!task) continue;
     const projectId = task.project_id ?? undefined;
-    if (projectId && projectInstanceIds.has(projectId)) continue;
+    if (projectId && realProjectInstanceIds.has(projectId)) continue;
+    if (taskGroupPresentationTaskInstanceIds.has(inst.id)) continue;
     const start = toLocal(inst.start_utc);
     const end = toLocal(inst.end_utc);
     if (!isValidDate(start) || !isValidDate(end)) continue;
@@ -4398,7 +4583,24 @@ function buildDayTimelineModel({
     projectMap,
     windowMap
   );
-  const projectInstanceIds = collectProjectInstanceIds(projectInstances);
+  const realProjectInstanceIds = collectProjectInstanceIds(projectInstances);
+  const taskGroupProjectInstances = buildTaskGroupPresentationProjectInstances({
+    instances,
+    taskMap,
+    tasksByProjectId,
+    projectMap,
+    projectInstanceIds: realProjectInstanceIds,
+    windowMap,
+  });
+  const presentationProjectInstances = [
+    ...projectInstances,
+    ...taskGroupProjectInstances,
+  ].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const projectInstanceIds = collectProjectInstanceIds(
+    presentationProjectInstances
+  );
+  const taskGroupPresentationTaskInstanceIds =
+    collectTaskGroupPresentationTaskInstanceIds(presentationProjectInstances);
   const taskInstancesByProject = computeTaskInstancesByProjectForDay(
     instances,
     taskMap,
@@ -4407,19 +4609,20 @@ function buildDayTimelineModel({
   const standaloneTaskInstances = computeStandaloneTaskInstancesForDay(
     instances,
     taskMap,
-    projectInstanceIds
+    realProjectInstanceIds,
+    taskGroupPresentationTaskInstanceIds
   );
   const habitPlacements = computeHabitPlacementsForDay({
     habits,
     windows,
     date,
     timeZone: localTimeZone ?? "UTC",
-    projectInstances,
+    projectInstances: presentationProjectInstances,
     schedulerTimelinePlacements,
     instances,
   });
   const occupiedSegments = buildTimelineOccupiedSegments({
-    projectInstances,
+    projectInstances: presentationProjectInstances,
     habitPlacements,
     standaloneTaskInstances,
     taskInstancesByProject,
@@ -4431,7 +4634,7 @@ function buildDayTimelineModel({
   });
   const windowReports = computeWindowReportsForDay({
     windows,
-    projectInstances,
+    projectInstances: presentationProjectInstances,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
@@ -4454,7 +4657,7 @@ function buildDayTimelineModel({
     pxPerMin,
     windows,
     savedEvents,
-    projectInstances,
+    projectInstances: presentationProjectInstances,
     taskInstancesByProject,
     tasksByProjectId,
     standaloneTaskInstances,
@@ -7060,11 +7263,14 @@ export default function ScheduleTabContent({
       if (!response.ok) {
         throw new Error(`Failed to fetch windows (${response.status})`);
       }
-      const payload = await response.json();
+      const payload = (await response.json()) as {
+        windows?: RepoWindow[];
+        creatorDebug?: unknown;
+      };
       if (payload?.windows) {
         const creatorDebug = payload?.creatorDebug ?? null;
         setWindows(
-          payload.windows.map((window: any) => ({
+          payload.windows.map((window) => ({
             ...window,
             __creatorDebug: creatorDebug,
           }))
@@ -15931,14 +16137,18 @@ export default function ScheduleTabContent({
                   pendingStatus ?? instance.status ?? "scheduled";
                 const isDraggedInstance =
                   shouldHideManualPlacementInstance(instance.id);
+                const isTaskGroupPresentation =
+                  (instance as Partial<TaskGroupPresentationInstance>)
+                    .taskGroupPresentation === true;
                 const canToggle =
-                  effectiveStatus === "completed" ||
-                  effectiveStatus === "scheduled";
+                  !isTaskGroupPresentation &&
+                  (effectiveStatus === "completed" ||
+                    effectiveStatus === "scheduled");
                 const isCompleted = effectiveStatus === "completed";
                 const projectLongPressActive =
-                  longPressBounceId === instance.id;
+                  !isTaskGroupPresentation && longPressBounceId === instance.id;
                 const projectCompletionBounceActive =
-                  completionBounceId === instance.id;
+                  !isTaskGroupPresentation && completionBounceId === instance.id;
 
                 const editorMounted =
                   editingProjectId !== null || editingHabitId !== null;
@@ -15972,6 +16182,10 @@ export default function ScheduleTabContent({
                 const handleProjectPrimaryAction = (
                   source?: ScheduleXpSourceCapture | null
                 ) => {
+                  if (isTaskGroupPresentation) {
+                    handleProjectExpand();
+                    return;
+                  }
                   if (canToggle && !isPending) {
                     handleProjectToggle(source);
                     return;
@@ -16008,8 +16222,12 @@ export default function ScheduleTabContent({
                   <motion.div
                     key={instance.id}
                     data-schedule-instance-id={instance.id}
-                    data-creator-xp-source="schedule-instance"
-                    data-creator-xp-source-id={instance.id}
+                    data-creator-xp-source={
+                      isTaskGroupPresentation ? undefined : "schedule-instance"
+                    }
+                    data-creator-xp-source-id={
+                      isTaskGroupPresentation ? undefined : instance.id
+                    }
                     className="absolute"
                     style={layeredPositionStyle}
                     layout={!prefersReducedMotion}
@@ -16029,12 +16247,19 @@ export default function ScheduleTabContent({
                             ref={bindProjectTimelineNoSelectSurface}
                             aria-label={`Project ${project.name}`}
                             role="button"
-                            tabIndex={canToggle ? 0 : -1}
+                            tabIndex={canToggle || canExpand ? 0 : -1}
                             aria-expanded={canExpand ? isExpanded : undefined}
-                            aria-pressed={isCompleted}
-                            aria-disabled={!canToggle || isPending}
+                            aria-pressed={
+                              isTaskGroupPresentation ? undefined : isCompleted
+                            }
+                            aria-disabled={
+                              isTaskGroupPresentation
+                                ? !canExpand
+                                : !canToggle || isPending
+                            }
                             onPointerDown={(event) => {
                               if (options?.disableInteractions) return;
+                              if (isTaskGroupPresentation) return;
                               handleInstancePointerDown(
                                 event,
                                 instance,
@@ -16137,6 +16362,10 @@ export default function ScheduleTabContent({
                             onDoubleClick={(event) => {
                               event.preventDefault();
                               if (options?.disableInteractions) return;
+                              if (isTaskGroupPresentation) {
+                                handleProjectExpand();
+                                return;
+                              }
                               handleProjectToggle(
                                 captureScheduleXpSourceFromInteraction(
                                   instance.id,
@@ -16146,6 +16375,10 @@ export default function ScheduleTabContent({
                             }}
                             onClick={(event) => {
                               if (shouldBlockClickFromLongPress()) return;
+                              if (isTaskGroupPresentation) {
+                                handleProjectExpand();
+                                return;
+                              }
                               if (canToggle && !isPending) {
                                 handleProjectToggle(
                                   captureScheduleXpSourceFromInteraction(
@@ -16174,8 +16407,14 @@ export default function ScheduleTabContent({
                               );
                             }}
                             data-schedule-instance-id={instance.id}
-                            data-creator-xp-source="schedule-instance"
-                            data-creator-xp-source-id={instance.id}
+                            data-creator-xp-source={
+                              isTaskGroupPresentation
+                                ? undefined
+                                : "schedule-instance"
+                            }
+                            data-creator-xp-source-id={
+                              isTaskGroupPresentation ? undefined : instance.id
+                            }
                             className={clsx(
                               PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
                               "px-3",
@@ -16397,7 +16636,10 @@ export default function ScheduleTabContent({
                                   ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
                                   : "text-sm font-medium leading-tight truncate";
                                 const baseTaskClasses =
-                                  "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none";
+                                  "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 select-none";
+                                const taskCardPaddingClass = goalRelationText
+                                  ? "pt-4 pb-2"
+                                  : "py-2";
                                 const shinyTaskClasses =
                                   "text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
                                 const completedTaskClasses = `${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 backdrop-blur`;
@@ -16463,7 +16705,7 @@ export default function ScheduleTabContent({
                                 const isCompleted = isFallbackCard
                                   ? fallbackCompleted
                                   : scheduledCompleted;
-                                const cardClasses = `${baseTaskClasses} ${
+                                const cardClasses = `${baseTaskClasses} ${taskCardPaddingClass} ${
                                   isCompleted
                                     ? completedTaskClasses
                                     : isFallbackCard
@@ -16474,7 +16716,6 @@ export default function ScheduleTabContent({
                                   position: "absolute",
                                   top: `${topPercent}%`,
                                   height: `${heightPercent}%`,
-                                  ...sharedCardStyle,
                                   background: isCompleted
                                     ? FOCUS_POMO_COMPLETE_BACKGROUND
                                     : isFallbackCard
@@ -16732,6 +16973,13 @@ export default function ScheduleTabContent({
                                           }
                                     }
                                   >
+                                    {goalRelationText ? (
+                                      <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                                        <span className="truncate text-[9px] font-semibold text-white/80">
+                                          {goalRelationText}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                     <div className="flex flex-col">
                                       <motion.span
                                         layoutId={nestedLayoutTokens?.title}
@@ -16860,6 +17108,19 @@ export default function ScheduleTabContent({
                     : "min-w-0 leading-tight truncate";
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
+                  const standaloneProjectId = task.project_id ?? null;
+                  const standaloneGoalRelationInfo = standaloneProjectId
+                    ? projectGoalRelations[standaloneProjectId]
+                    : null;
+                  const standaloneGoalRelationName =
+                    standaloneGoalRelationInfo?.goalName?.trim();
+                  const standaloneGoalRelationText =
+                    standaloneGoalRelationName &&
+                    standaloneGoalRelationName.length > 0
+                      ? standaloneGoalRelationName
+                      : null;
+                  const standaloneCardPaddingClass =
+                    standaloneGoalRelationText ? "pt-4 pb-2" : "py-2";
                   const standaloneCardStyle: CSSProperties = {
                     ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
                     boxShadow: standaloneVisuals.boxShadow,
@@ -17006,7 +17267,8 @@ export default function ScheduleTabContent({
                         data-creator-xp-source-id={instance.id}
                         className={clsx(
                           PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
-                          "px-3 py-2",
+                          "px-3",
+                          standaloneCardPaddingClass,
                           standaloneCornerClass,
                           standaloneVisuals.borderClass,
                           isCompleted && FOCUS_POMO_COMPLETE_EFFECT_CLASSES,
@@ -17014,6 +17276,13 @@ export default function ScheduleTabContent({
                         )}
                         style={standaloneCardStyle}
                       >
+                        {standaloneGoalRelationText ? (
+                          <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                            <span className="truncate text-[9px] font-semibold text-white/80">
+                              {standaloneGoalRelationText}
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="flex min-w-0 flex-1 items-start gap-3">
                           <div className="min-w-0 space-y-1">
                             <motion.span
