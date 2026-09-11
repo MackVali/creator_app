@@ -4138,7 +4138,11 @@ export async function scheduleBacklog(
       }
       continue;
     }
-    if (inst.source_type !== "PROJECT" && inst.source_type !== "HABIT") {
+    if (
+      inst.source_type !== "PROJECT" &&
+      inst.source_type !== "TASK" &&
+      inst.source_type !== "HABIT"
+    ) {
       continue;
     }
     rebuildCanceledInstances.push(inst);
