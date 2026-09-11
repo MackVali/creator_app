@@ -23,7 +23,8 @@ export type CreatorXpSurgeSourceType =
   | "HABIT"
   | "PROJECT"
   | "GOAL"
-  | "EVENT";
+  | "EVENT"
+  | "TODO";
 
 export type CreatorXpSurgePayload = {
   sourceType: CreatorXpSurgeSourceType;
@@ -53,6 +54,7 @@ export const CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE = {
   PROJECT: 3,
   GOAL: 5,
   EVENT: 1,
+  TODO: 1,
 } as const satisfies Record<CreatorXpSurgeSourceType, number>;
 
 export type CreatorXpSurgeBuildInput = CreatorXpSurgeTitleParts & {
@@ -144,7 +146,8 @@ function normalizeCreatorXpSurgeSourceType(
     normalized === "HABIT" ||
     normalized === "PROJECT" ||
     normalized === "GOAL" ||
-    normalized === "EVENT"
+    normalized === "EVENT" ||
+    normalized === "TODO"
     ? normalized
     : "TASK";
 }

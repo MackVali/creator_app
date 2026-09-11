@@ -1193,6 +1193,44 @@ export function sortFocusPomoQueue(
     .map(({ item }) => item);
 }
 
+export type TimeBlockFocusPomoQueueComposition = {
+  items: FocusPomoQueueItem[];
+  scheduledPriorityItemKeys: string[];
+};
+
+export function composeTimeBlockFocusPomoQueue(params: {
+  broadQueue: FocusPomoQueueItem[];
+  scheduledQueue: FocusPomoQueueItem[];
+  passesTimeBlock: (item: FocusPomoQueueItem) => boolean;
+  getItemKey: (item: FocusPomoQueueItem) => string;
+}): TimeBlockFocusPomoQueueComposition {
+  const scheduledCandidateKeys = new Set(
+    params.scheduledQueue.map(params.getItemKey)
+  );
+  const usedKeys = new Set<string>();
+  const scheduledPriorityItems: FocusPomoQueueItem[] = [];
+  const remainingItems: FocusPomoQueueItem[] = [];
+
+  for (const item of params.broadQueue) {
+    if (!params.passesTimeBlock(item)) continue;
+
+    const key = params.getItemKey(item);
+    if (usedKeys.has(key)) continue;
+
+    usedKeys.add(key);
+    if (scheduledCandidateKeys.has(key)) {
+      scheduledPriorityItems.push(item);
+    } else {
+      remainingItems.push(item);
+    }
+  }
+
+  return {
+    items: [...scheduledPriorityItems, ...remainingItems],
+    scheduledPriorityItemKeys: scheduledPriorityItems.map(params.getItemKey),
+  };
+}
+
 function mapHabit(
   row: HabitRow,
   options: {

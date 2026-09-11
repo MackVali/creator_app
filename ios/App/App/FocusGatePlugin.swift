@@ -157,6 +157,7 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         guard
             let enabled = call.getBool("enabled"),
             let xpTodayValue = call.getDouble("xpToday"),
+            let baselineAllowedMinutesValue = call.getDouble("baselineAllowedMinutes"),
             let allowedMinutesValue = call.getDouble("allowedMinutes"),
             let creatorDayStartsAt = call.getString("creatorDayStartsAt"),
             let creatorDayEndsAt = call.getString("creatorDayEndsAt"),
@@ -172,7 +173,11 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let xpToday = max(0, Int(xpTodayValue.rounded(.down)))
+        let baselineAllowedMinutes = FocusGateSharedState.sanitizeBaselineAllowedMinutes(
+            Int(baselineAllowedMinutesValue.rounded(.down))
+        )
         let allowedMinutes = max(0, Int(allowedMinutesValue.rounded(.down)))
+        FocusGateSharedState.saveBaselineAllowedMinutes(baselineAllowedMinutes)
         let creatorDayIdentifier = FocusGateSharedState.creatorDayIdentifier(
             startsAt: creatorDayStartsAt,
             timezone: timezone
@@ -203,6 +208,7 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
             "categoryCount": "\(selectionSummary.categoryCount)",
             "webDomainCount": "\(selectionSummary.webDomainCount)",
             "previousAllowedMinutes": "\(previous.allowedMinutes)",
+            "baselineAllowedMinutes": "\(baselineAllowedMinutes)",
             "incomingAllowedMinutes": "\(allowedMinutes)",
             "lastReachedThresholdMinutes": "\(previousThreshold)",
             "previousShielded": previous.shielded ? "true" : "false",
@@ -321,6 +327,7 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
                 "enabled": enabled ? "true" : "false",
                 "dayChanged": dayChanged ? "true" : "false",
                 "xpToday": "\(xpToday)",
+                "baselineAllowedMinutes": "\(baselineAllowedMinutes)",
                 "allowedMinutes": "\(allowedMinutes)",
                 "lastReachedThresholdMinutes": "\(nextState.lastReachedThresholdMinutes)",
                 "shielded": nextState.shielded ? "true" : "false",
@@ -510,6 +517,7 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
             "setupStatus": setupStatus,
             "enabled": currentState.enabled,
             "xpToday": currentState.xpToday,
+            "baselineAllowedMinutes": FocusGateSharedState.loadBaselineAllowedMinutes(),
             "allowedMinutes": currentState.allowedMinutes,
             "lastReachedThresholdMinutes": currentState.lastReachedThresholdMinutes,
             "creatorDayStartsAt": currentState.creatorDayStartsAt,
@@ -532,6 +540,7 @@ public class FocusGatePlugin: CAPPlugin, CAPBridgedPlugin {
             "setupStatus",
             "enabled",
             "xpToday",
+            "baselineAllowedMinutes",
             "allowedMinutes",
             "lastReachedThresholdMinutes",
             "applicationCount",

@@ -19,28 +19,41 @@ describe("Fitness Exercises browser UI", () => {
     "function renderFitnessFavoritesBrowser",
   );
 
-  it("renders the local search and workout context action", () => {
+  it("renders the local exercise search", () => {
     expect(exerciseBrowser).toContain("Search exercises...");
-    expect(exerciseBrowser).toContain("View workout");
-    expect(exerciseBrowser).toContain('selectFitnessAction("start")');
-    expect(exerciseBrowser).toContain("getCurrentFitnessWorkoutName()");
   });
 
   it("keeps existing favorite, workout toggle, detail, and custom actions wired", () => {
-    expect(exerciseBrowser).toContain("toggleFavoriteFitnessExercise(exercise.name)");
-    expect(exerciseBrowser).toContain("toggleFitnessWorkoutExercise(exercise)");
+    expect(exerciseBrowser).toContain("toggleFavoriteFitnessExercise");
+    expect(exerciseBrowser).toContain("exercise.name");
+    expect(exerciseBrowser).toContain("toggleFitnessWorkoutExercise");
     expect(exerciseBrowser).toContain("openFitnessExerciseDetail");
-    expect(exerciseBrowser).toContain("renderFitnessWorkoutDetailControls(exercise)");
-    expect(exerciseBrowser).toContain("editCustomFitnessExercise(customExercise)");
-    expect(exerciseBrowser).toContain("duplicateCustomFitnessExercise(customExercise)");
-    expect(exerciseBrowser).toContain("removeCustomFitnessExercise(customExercise)");
+    expect(exerciseBrowser).toContain("renderBrowserStepper");
+    expect(exerciseBrowser).toContain("bumpFitnessWorkoutExerciseDetail");
+    expect(exerciseBrowser).toMatch(/editCustomFitnessExercise\(\s*customExercise,\s*\)/);
+    expect(exerciseBrowser).toMatch(/duplicateCustomFitnessExercise\(\s*customExercise,\s*\)/);
+    expect(exerciseBrowser).toMatch(/removeCustomFitnessExercise\(\s*customExercise,\s*\)/);
   });
 
   it("filters the existing movement hierarchy without replacing accordion state", () => {
     expect(exerciseBrowser).toContain("visibleFitnessMovementGroups");
     expect(exerciseBrowser).toContain("allFitnessMovementGroups.flatMap");
+    expect(exerciseBrowser).toContain("movementGroup.subcategories.flatMap");
+    expect(exerciseBrowser).toContain(".filter(matchesSearch)");
     expect(exerciseBrowser).toContain("expandedFitnessMovementGroups.has(movementGroup.label)");
     expect(exerciseBrowser).toContain("expandedFitnessSubcategories.has(subcategoryKey)");
-    expect(exerciseBrowser).toContain("movementGroup.subcategories.flatMap");
+  });
+
+  it("does not render the redundant workout preview or exercise filter chips", () => {
+    expect(exerciseBrowser).not.toContain("View workout");
+    expect(exerciseBrowser).not.toContain("getCurrentFitnessWorkoutName()");
+    expect(exerciseBrowser).not.toContain("exercises selected");
+    expect(exerciseBrowser).not.toContain('selectFitnessAction("start")');
+    expect(exerciseBrowser).not.toContain("selectedExerciseCount");
+    expect(exerciseBrowser).not.toContain("filterChips");
+    expect(exerciseBrowser).not.toContain("setFitnessExerciseBrowserFilter");
+    expect(exerciseBrowser).not.toContain("fitnessExerciseBrowserFilter");
+    expect(exerciseBrowser).not.toContain('"Upper Body"');
+    expect(exerciseBrowser).not.toContain('"Lower Body"');
   });
 });

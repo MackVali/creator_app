@@ -44,7 +44,14 @@ type AwardEvent = Omit<XpEventInsert, "award_key"> & {
   award_key: NonNullable<XpEventInsert["award_key"]>;
 };
 
-type RequestXpKind = "task" | "habit" | "project" | "goal" | "event" | "manual";
+type RequestXpKind =
+  | "task"
+  | "habit"
+  | "project"
+  | "goal"
+  | "event"
+  | "todo"
+  | "manual";
 type LiveXpKind = Exclude<RequestXpKind, "event">;
 
 const xpKindValues = [
@@ -53,6 +60,7 @@ const xpKindValues = [
   "project",
   "goal",
   "event",
+  "todo",
   "manual",
 ] as const satisfies readonly RequestXpKind[];
 const xpKindSchema = z.enum(xpKindValues);
@@ -62,6 +70,7 @@ const completionSourceTypeSchema = z.enum([
   "TASK",
   "HABIT",
   "EVENT",
+  "TODO",
 ]);
 
 const awardRequestSchema = z.object({
@@ -91,6 +100,7 @@ const awardRequestSchema = z.object({
       timeZone: z.string().optional(),
       productivityDayKey: z.string().optional(),
       completionKey: z.string().optional(),
+      sourceTitle: z.string().optional(),
     })
     .optional(),
 });
@@ -101,6 +111,7 @@ const DEFAULT_AMOUNTS: Record<Exclude<RequestXpKind, "manual">, number> = {
   project: 3,
   goal: 5,
   event: 1,
+  todo: 1,
 };
 
 type AwardRequest = z.infer<typeof awardRequestSchema>;
@@ -122,7 +133,7 @@ type SkillAwardContext = {
   monumentIds: string[];
   primarySkillId: string | null;
   surge: {
-    sourceType: "TASK" | "HABIT" | "PROJECT" | "GOAL" | "EVENT";
+    sourceType: "TASK" | "HABIT" | "PROJECT" | "GOAL" | "EVENT" | "TODO";
     title: string;
     sourceIcon: string | null;
     displayXp: number;
@@ -144,6 +155,7 @@ const SURGE_SOURCE_TYPE_BY_KIND: Partial<Record<LiveXpKind, SurgeSourceType>> = 
   habit: "HABIT",
   project: "PROJECT",
   goal: "GOAL",
+  todo: "TODO",
 };
 
 function resolveAmount(kind: RequestXpKind, amount: AwardRequest["amount"]): number {
@@ -556,7 +568,7 @@ async function resolveAwardAreaIds({
       .in("id", monumentIds);
     if (error) throw error;
 
-    for (const row of (data ?? []) as MonumentAreaAwardRow[]) {
+    for (const row of (data ?? []) as unknown as MonumentAreaAwardRow[]) {
       if (typeof row.area_id === "string" && row.area_id.length > 0) {
         areaIds.add(row.area_id);
       }
@@ -741,7 +753,15 @@ export async function POST(request: NextRequest) {
         durationMin: awardRequest.completion.durationMin,
         timeZone: awardRequest.completion.timeZone,
         productivityDayKey: awardRequest.completion.productivityDayKey,
-        completionKey: awardRequest.completion.completionKey,
+        sourceTitle: awardRequest.completion.sourceTitle,
+        // Habit XP uses its own awardKeyBase for occurrence/cycle identity.
+        // The completion ledger must keep one canonical Habit identity:
+        // scheduled -> schedule:<instance>
+        // due       -> habit:<habit>:<creator-day>
+        completionKey:
+          sourceType === "HABIT"
+            ? undefined
+            : awardRequest.completion.completionKey,
       };
     } else if (awardRequest.scheduleInstanceId) {
       completionInput = {

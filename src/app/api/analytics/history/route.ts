@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("completion_events")
         .select(
-          "id, source_type, source_id, completed_at, schedule_instance_id, was_scheduled, duration_min, productivity_day_key, revoked_at"
+          "id, source_type, source_id, source_title, completed_at, schedule_instance_id, was_scheduled, duration_min, productivity_day_key, revoked_at"
         )
         .eq("user_id", user.id)
         .eq("productivity_day_key", requestedDate)
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("completion_events")
         .select(
-          "id, source_type, source_id, completed_at, schedule_instance_id, was_scheduled, duration_min, productivity_day_key, revoked_at"
+          "id, source_type, source_id, source_title, completed_at, schedule_instance_id, was_scheduled, duration_min, productivity_day_key, revoked_at"
         )
         .eq("user_id", user.id)
         .is("productivity_day_key", null)

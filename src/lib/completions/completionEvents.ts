@@ -11,7 +11,8 @@ export type CompletionSourceType =
   | "GOAL"
   | "PROJECT"
   | "TASK"
-  | "HABIT";
+  | "HABIT"
+  | "TODO";
 export type CompletionAction = "complete" | "undo";
 
 export type CompletionEventInput = {
@@ -25,6 +26,7 @@ export type CompletionEventInput = {
   timeZone?: string | null;
   productivityDayKey?: string | null;
   completionKey?: string | null;
+  sourceTitle?: string | null;
 };
 
 type Client = SupabaseClient<Database>;
@@ -44,6 +46,7 @@ const COMPLETION_SOURCE_TYPES = new Set<CompletionSourceType>([
   "PROJECT",
   "TASK",
   "HABIT",
+  "TODO",
 ]);
 
 export function isCompletionSchemaMissing(error: unknown) {
@@ -178,6 +181,9 @@ function buildCompletionKey({
   if (sourceType === "HABIT") {
     return `habit:${sourceId}:${productivityDayKey}`;
   }
+  if (sourceType === "TODO") {
+    return `todo:${sourceId}`;
+  }
   return `${sourceType.toLowerCase()}:${sourceId}`;
 }
 
@@ -261,6 +267,7 @@ export async function ensureCompletionEvent({
         time_zone: timeZone,
         productivity_day_key: productivityDayKey,
         completion_key: completionKey,
+        source_title: input.sourceTitle?.trim() || null,
         revoked_at: null,
         updated_at: new Date().toISOString(),
       },

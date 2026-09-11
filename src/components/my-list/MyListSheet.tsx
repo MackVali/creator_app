@@ -497,7 +497,7 @@ function readTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-type MyListManualRow = {
+export type MyListManualRow = {
   id: string;
   listId: string | null;
   done: boolean;
@@ -1665,6 +1665,7 @@ export function MyListSheet({
   onRemovePinnedSource,
   onRemoveTask,
   onTogglePinnedSourceCompletion,
+  onToggleManualTodoCompletion,
   onTogglePinnedGoalProjectCompletion,
   onCompletePinnedGoal,
   onUpdatePinnedSourceMetadata,
@@ -1692,6 +1693,12 @@ export function MyListSheet({
   onTogglePinnedSourceCompletion?: (
     row: MyListPinnedSourceRow,
     completedAt: string | null,
+  ) => Promise<boolean> | boolean;
+  onToggleManualTodoCompletion?: (
+    row: MyListManualRow,
+    checked: boolean,
+    completedAt: string | null,
+    sourceRect: CreatorXpBurstRect | null,
   ) => Promise<boolean> | boolean;
   onTogglePinnedGoalProjectCompletion?: (
     row: MyListPinnedSourceRow,
@@ -4815,14 +4822,40 @@ export function MyListSheet({
   );
 
   const handleManualCompletionToggle = useCallback(
-    (rowId: string, checked: boolean) => {
+    async (
+      rowId: string,
+      checked: boolean,
+      sourceRect: CreatorXpBurstRect | null = null,
+    ) => {
+      const row = manualRows.find((candidate) => candidate.id === rowId);
+      if (!row) return;
+      const previousDone = row.done;
+      const previousCompletedAt = row.completedAt;
+      const completedAt = checked ? new Date().toISOString() : null;
       updateManualRow(rowId, {
         done: checked,
-        completedAt: checked ? new Date().toISOString() : null,
+        completedAt,
       });
-      dispatchAreaCardStatusRefresh();
+      try {
+        const didPersist = await onToggleManualTodoCompletion?.(
+          row,
+          checked,
+          completedAt,
+          sourceRect,
+        );
+        if (didPersist === false) {
+          throw new Error("Manual todo completion was rejected");
+        }
+        dispatchAreaCardStatusRefresh();
+      } catch (error) {
+        console.error("Failed to toggle manual My List todo", error);
+        updateManualRow(rowId, {
+          done: previousDone,
+          completedAt: previousCompletedAt,
+        });
+      }
     },
-    [updateManualRow],
+    [manualRows, onToggleManualTodoCompletion, updateManualRow],
   );
 
   const handlePrioritySelect = useCallback(

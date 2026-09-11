@@ -7,12 +7,18 @@ import {
 } from "@/lib/completions/completionEvents";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-const completionSourceTypeSchema = z.enum(["GOAL", "PROJECT", "TASK", "HABIT"]);
+const completionSourceTypeSchema = z.enum([
+  "GOAL",
+  "PROJECT",
+  "TASK",
+  "HABIT",
+  "TODO",
+]);
 
 const completionRequestSchema = z.object({
   action: z.enum(["complete", "undo"]).optional(),
   sourceType: completionSourceTypeSchema,
-  sourceId: z.string().uuid(),
+  sourceId: z.string().min(1),
   completedAt: z.string().datetime().optional(),
   scheduleInstanceId: z.string().uuid().optional(),
   wasScheduled: z.boolean().optional(),
@@ -50,7 +56,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await ensureCompletionEvent({
-      client: supabase,
+      client: supabase as never,
       userId: user.id,
       input: parsed.data,
     });

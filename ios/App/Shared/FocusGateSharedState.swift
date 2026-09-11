@@ -65,6 +65,7 @@ struct FocusGateDebugEvent: Codable {
 enum FocusGateSharedState {
     static let appGroupIdentifier = "group.app.trycreator.creator"
     static let stateKey = "creator.focusGate.state.v1"
+    static let baselineAllowedMinutesKey = "creator.focusGate.baselineAllowedMinutes.v1"
     static let selectionKey = "creator.focusGate.familyActivitySelection.v1"
     static let debugEventsKey = "creator.focusGate.debugEvents.v1"
     static let debugEventLimit = 30
@@ -95,6 +96,32 @@ enum FocusGateSharedState {
         }
 
         defaults.set(data, forKey: stateKey)
+        return defaults.synchronize()
+    }
+
+    static func sanitizeBaselineAllowedMinutes(_ value: Int) -> Int {
+        min(1440, max(0, value))
+    }
+
+    static func loadBaselineAllowedMinutes() -> Int {
+        guard let defaults = userDefaults() else {
+            return 30
+        }
+
+        if defaults.object(forKey: baselineAllowedMinutesKey) == nil {
+            return 30
+        }
+
+        return sanitizeBaselineAllowedMinutes(defaults.integer(forKey: baselineAllowedMinutesKey))
+    }
+
+    @discardableResult
+    static func saveBaselineAllowedMinutes(_ value: Int) -> Bool {
+        guard let defaults = userDefaults() else {
+            return false
+        }
+
+        defaults.set(sanitizeBaselineAllowedMinutes(value), forKey: baselineAllowedMinutesKey)
         return defaults.synchronize()
     }
 
@@ -226,6 +253,7 @@ enum FocusGateSharedState {
 
         let startsAt = isoString(from: nextStart)
         let endsAt = isoString(from: nextEnd)
+        let baselineAllowedMinutes = loadBaselineAllowedMinutes()
         return FocusGateSharedStatePayload(
             enabled: state.enabled,
             creatorDayIdentifier: creatorDayIdentifier(startsAt: startsAt, timezone: state.timezone),
@@ -233,9 +261,9 @@ enum FocusGateSharedState {
             creatorDayEndsAt: endsAt,
             timezone: state.timezone,
             xpToday: 0,
-            allowedMinutes: 0,
+            allowedMinutes: baselineAllowedMinutes,
             lastReachedThresholdMinutes: 0,
-            shielded: true,
+            shielded: baselineAllowedMinutes <= 0,
             lastSyncedAt: isoString(from: now)
         )
     }

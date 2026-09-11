@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import {
   MyListSheet,
   type MyListMonumentRow,
+  type MyListManualRow,
   type MyListPinnedGoalRow,
   type MyListPinnedSourceRow,
   type MyListTaskXpContext,
@@ -68,6 +69,7 @@ type MyListXpAwardResult = {
   activePositiveCount?: number;
   alreadyReversedCount?: number;
   surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
+  error?: string;
 };
 
 type MyListXpReverseResult = {
@@ -80,6 +82,7 @@ type MyListXpReverseResult = {
 };
 
 const MY_LIST_TASK_XP_AMOUNT = 1;
+const MY_LIST_TODO_XP_AMOUNT = 1;
 
 type MyListGoalCompletionUpdateQuery = {
   update(values: { status: "COMPLETED"; active: false }): {
@@ -138,6 +141,10 @@ function readCleanId(value: unknown): string | null {
 
 function buildMyListTaskOccurrenceStem(taskId: string) {
   return `my_list:task:${taskId}`;
+}
+
+function buildManualMyListTodoOccurrenceStem(itemId: string) {
+  return `todo:my-list:${itemId}`;
 }
 
 function isProjectCompletionStage(stage: string | null | undefined) {
@@ -211,6 +218,90 @@ async function reverseMyListTaskXp(taskId: string) {
     throw new Error(
       result?.error ?? `XP reverse request failed (${response.status})`
     );
+  }
+  return result;
+}
+
+async function reverseManualMyListTodoXp(itemId: string) {
+  const occurrenceStem = buildManualMyListTodoOccurrenceStem(itemId);
+  const response = await fetch("/api/xp/reverse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ occurrenceStem }),
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | MyListXpReverseResult
+    | null;
+  if (!response.ok) {
+    throw new Error(
+      result?.error ?? `XP reverse request failed (${response.status})`
+    );
+  }
+
+  const undoResponse = await fetch("/api/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "undo",
+      sourceType: "TODO",
+      sourceId: itemId,
+      completionKey: occurrenceStem,
+    }),
+  });
+  if (!undoResponse.ok) {
+    const undoResult = (await undoResponse.json().catch(() => null)) as
+      | MyListXpAwardResult
+      | null;
+    throw new Error(
+      undoResult?.reason ??
+        undoResult?.error ??
+        `Completion undo request failed (${undoResponse.status})`
+    );
+  }
+
+  return result;
+}
+
+async function awardManualMyListTodoXp({
+  row,
+  completedAt,
+}: {
+  row: MyListManualRow;
+  completedAt: string;
+}) {
+  const occurrenceStem = buildManualMyListTodoOccurrenceStem(row.id);
+  const body: Record<string, unknown> = {
+    kind: "todo",
+    amount: MY_LIST_TODO_XP_AMOUNT,
+    awardKeyBase: occurrenceStem,
+    reversible: { occurrenceStem },
+    source: "my-list",
+    completion: {
+      action: "complete",
+      sourceType: "TODO",
+      sourceId: row.id,
+      completedAt,
+      wasScheduled: false,
+      completionKey: occurrenceStem,
+      sourceTitle: row.text.trim() || "Todo",
+    },
+  };
+  if (row.skillId?.trim()) {
+    body.skillIds = [row.skillId.trim()];
+  }
+
+  const response = await fetch("/api/xp/award", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | MyListXpAwardResult
+    | null;
+  if (!response.ok) {
+    throw new Error(result?.reason ?? `XP award request failed (${response.status})`);
   }
   return result;
 }
@@ -1525,6 +1616,61 @@ export function GlobalMyList({
     [user?.id]
   );
 
+  const handleToggleManualTodoCompletion = useCallback(
+    async (
+      row: MyListManualRow,
+      checked: boolean,
+      completedAt: string | null,
+      sourceRect: CreatorXpBurstRect | null
+    ) => {
+      try {
+        if (!checked) {
+          await reverseManualMyListTodoXp(row.id);
+          return true;
+        }
+
+        if (!completedAt) {
+          throw new Error("Missing manual todo completion timestamp");
+        }
+
+        await reverseManualMyListTodoXp(row.id);
+        const awardResult = await awardManualMyListTodoXp({ row, completedAt });
+        if ((awardResult?.inserted ?? 0) <= 0) {
+          throw new Error(
+            awardResult?.reason ??
+              (awardResult?.deduped
+                ? "XP award already exists"
+                : "XP award inserted no rows")
+          );
+        }
+
+        dispatchCreatorXpRewardVisual({
+          surge:
+            awardResult?.surge ??
+            buildCreatorXpSurgePayload({
+              sourceType: "TODO",
+              sourceTitle: row.text.trim() || "Todo",
+              sourceIcon: row.skillIcon || null,
+            }),
+          completedAt,
+          sourceRect,
+          sourceOrigin: sourceRect ? "card" : undefined,
+          amount: MY_LIST_TODO_XP_AMOUNT,
+          kind: "task_complete",
+          burstId: `my-list:todo:${row.id}:${completedAt}`,
+        });
+        void hapticComplete();
+        dispatchAreaCardStatusRefresh();
+        return true;
+      } catch (error) {
+        console.error("Manual My List TODO XP update failed", error);
+        void hapticWarningPattern();
+        return false;
+      }
+    },
+    []
+  );
+
   const handleReorderPinnedSourceRows = useCallback(
     (orderedRows: MyListPinnedSourceRow[]) => {
       if (!user?.id) return;
@@ -1823,6 +1969,7 @@ export function GlobalMyList({
       enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
       onRemovePinnedSource={handleRemovePinnedSource}
       onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
+      onToggleManualTodoCompletion={handleToggleManualTodoCompletion}
       onTogglePinnedGoalProjectCompletion={
         handleTogglePinnedGoalProjectCompletion
       }

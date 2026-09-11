@@ -5,6 +5,7 @@ import {
   deriveFocusGateAllowance,
 } from "@/lib/focus-gate/server";
 import { resolveCreatorDay } from "@/lib/creatorDay";
+import { DEFAULT_FOCUS_GATE_SETTINGS } from "@/lib/focus-gate/types";
 
 type XpRow = {
   amount: number;
@@ -59,6 +60,13 @@ function xpClient({
 }
 
 describe("Focus Gate allowance", () => {
+  const settings = (
+    overrides: Partial<typeof DEFAULT_FOCUS_GATE_SETTINGS> = {}
+  ) => ({
+    ...DEFAULT_FOCUS_GATE_SETTINGS,
+    ...overrides,
+  });
+
   it.each([
     [1, 5, 5],
     [3, 5, 15],
@@ -67,25 +75,112 @@ describe("Focus Gate allowance", () => {
     expect(
       deriveFocusGateAllowance({
         xpToday,
-        settings: { enabled: true, minutesPerXp, dailyMaxMinutes: null },
-      }).allowedMinutes
+        settings: settings({
+          baselineMinutes: 0,
+          enabled: true,
+          minutesPerXp,
+          dailyMaxMinutes: null,
+        }),
+      }).baseAllowedMinutes
     ).toBe(expected);
+  });
+
+  it("adds the daily baseline before XP is earned", () => {
+    expect(
+      deriveFocusGateAllowance({
+        xpToday: 0,
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 30,
+          minutesPerXp: 5,
+          dailyMaxMinutes: null,
+        }),
+      })
+    ).toMatchObject({
+      baseAllowedMinutes: 0,
+      baselineAllowedMinutes: 30,
+      allowedMinutes: 30,
+    });
+  });
+
+  it("returns the effective start-of-day baseline", () => {
+    expect(
+      deriveFocusGateAllowance({
+        xpToday: 0,
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 30,
+          minutesPerXp: 5,
+          dailyMaxMinutes: 20,
+        }),
+      })
+    ).toMatchObject({
+      baseAllowedMinutes: 0,
+      baselineAllowedMinutes: 20,
+      allowedMinutes: 20,
+    });
+  });
+
+  it("adds the daily baseline to XP-earned minutes", () => {
+    expect(
+      deriveFocusGateAllowance({
+        xpToday: 4,
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 30,
+          minutesPerXp: 5,
+          dailyMaxMinutes: null,
+        }),
+      })
+    ).toMatchObject({
+      baseAllowedMinutes: 20,
+      baselineAllowedMinutes: 30,
+      allowedMinutes: 50,
+    });
   });
 
   it("applies an optional daily cap", () => {
     expect(
       deriveFocusGateAllowance({
         xpToday: 20,
-        settings: { enabled: true, minutesPerXp: 5, dailyMaxMinutes: 60 },
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 30,
+          minutesPerXp: 5,
+          dailyMaxMinutes: 60,
+        }),
       })
     ).toMatchObject({ baseAllowedMinutes: 100, allowedMinutes: 60 });
+  });
+
+  it("applies an optional daily cap to the baseline plus earned total", () => {
+    expect(
+      deriveFocusGateAllowance({
+        xpToday: 4,
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 30,
+          minutesPerXp: 5,
+          dailyMaxMinutes: 40,
+        }),
+      })
+    ).toMatchObject({
+      baseAllowedMinutes: 20,
+      baselineAllowedMinutes: 30,
+      allowedMinutes: 40,
+    });
   });
 
   it("leaves uncapped allowance at the base value", () => {
     expect(
       deriveFocusGateAllowance({
         xpToday: 20,
-        settings: { enabled: true, minutesPerXp: 5, dailyMaxMinutes: null },
+        settings: settings({
+          enabled: true,
+          baselineMinutes: 0,
+          minutesPerXp: 5,
+          dailyMaxMinutes: null,
+        }),
       })
     ).toMatchObject({ baseAllowedMinutes: 100, allowedMinutes: 100 });
   });

@@ -2,6 +2,7 @@ import type { CreatorDay } from "@/lib/creatorDay";
 
 export type FocusGateSettings = {
   enabled: boolean;
+  baselineMinutes: number;
   minutesPerXp: number;
   dailyMaxMinutes: number | null;
 };
@@ -9,6 +10,7 @@ export type FocusGateSettings = {
 export type FocusGateDerivedState = {
   xpToday: number;
   baseAllowedMinutes: number;
+  baselineAllowedMinutes: number;
   allowedMinutes: number;
   creatorDay: Pick<CreatorDay, "startsAt" | "endsAt" | "timezone">;
 };
@@ -43,6 +45,7 @@ export type FocusGateNativeEnforcementState = {
   setupStatus?: FocusGateNativeSetupStatus;
   enabled?: boolean;
   xpToday?: number;
+  baselineAllowedMinutes?: number;
   allowedMinutes?: number;
   lastReachedThresholdMinutes?: number;
   creatorDayStartsAt?: string;
@@ -57,6 +60,7 @@ export type FocusGateNativeEnforcementState = {
 
 export const DEFAULT_FOCUS_GATE_SETTINGS: FocusGateSettings = {
   enabled: false,
+  baselineMinutes: 30,
   minutesPerXp: 5,
   dailyMaxMinutes: null,
 };

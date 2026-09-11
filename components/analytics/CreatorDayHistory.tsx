@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Loader2, Star, X } from "lucide-react";
+import { BookOpen, Check, ChevronLeft, ChevronRight, List as ListIcon, Loader2, Star, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/lib/hooks/useProfile";
@@ -365,7 +365,6 @@ export default function CreatorDayHistory() {
       return b.xpEarned - a.xpEarned || b.completed - a.completed;
     });
   }, [history?.areas]);
-  const listItems = listView === "completed" ? history?.completed ?? [] : history?.missed ?? [];
   const canGoForward = selectedDayKey.localeCompare(currentCreatorDayKey) < 0;
   const maxAreaCompleted = Math.max(
     ...sortedAreas.map((area) => area.completed),
@@ -373,7 +372,7 @@ export default function CreatorDayHistory() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 pb-3">
+    <div className="mx-auto max-w-3xl space-y-1.5 pb-2">
       <DateStrip
         currentCreatorDayKey={currentCreatorDayKey}
         days={dateStripDays}
@@ -396,23 +395,23 @@ export default function CreatorDayHistory() {
 
       <section
         className={classNames(
-          "overflow-hidden rounded-[22px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(19,20,23,0.98),rgba(10,11,13,0.98))] shadow-[0_18px_50px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.035)] transition-opacity",
+          "overflow-hidden rounded-[14px] border border-white/[0.06] bg-[linear-gradient(145deg,rgba(28,29,32,0.94),rgba(14,15,18,0.97))] shadow-[0_16px_44px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.055)] transition-opacity",
           historyRefreshing && "opacity-80"
         )}
       >
-        <div className="px-4 pb-3.5 pt-3.5">
+        <div className="px-3 pb-2 pt-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-[17px] font-semibold tracking-[-0.025em] text-white">
+              <h2 className="whitespace-nowrap text-[13px] font-medium text-zinc-100">
                 Creator Day Summary
               </h2>
-              <p className="mt-0.5 text-[11px] text-zinc-400">
+              <p className="mt-0.5 text-[9px] leading-none text-zinc-500">
                 {formatCreatorDayDate(selectedDayKey)}
               </p>
             </div>
 
             <div className="flex shrink-0 items-center gap-2 pt-0.5">
-              <span className="text-[9px] text-zinc-500">
+              <span className="whitespace-nowrap text-[7.5px] font-normal text-zinc-500">
                 4:00 AM → 4:00 AM
               </span>
               {historyRefreshing ? (
@@ -424,7 +423,7 @@ export default function CreatorDayHistory() {
           {historyLoading && !history ? (
             <HistorySkeleton />
           ) : (
-            <div className="mt-3.5 grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3.5">
+            <div className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
               <ExecutionRing percent={ringPercent} />
 
               <div className="min-w-0">
@@ -450,18 +449,22 @@ export default function CreatorDayHistory() {
                   />
                 </div>
 
-                <div className="mt-3 flex min-h-[48px] items-center gap-3 rounded-[13px] border border-white/[0.075] bg-white/[0.04] px-3">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-amber-300/[0.10] text-amber-300">
-                    <Star className="h-[18px] w-[18px] fill-current" />
+                <div className="mt-1.5 grid h-[38px] grid-cols-[auto_minmax(56px,0.75fr)_minmax(0,1fr)] items-center gap-2 rounded-[8px] border border-white/[0.055] bg-white/[0.032] px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  <div className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-amber-300/[0.10] text-amber-300">
+                    <Star className="h-3.5 w-3.5 fill-current" />
                   </div>
 
                   <div className="min-w-0">
-                    <div className="text-[19px] font-semibold leading-none tracking-[-0.035em] text-zinc-100">
+                    <div className="text-[15px] font-medium leading-none text-zinc-100">
                       +{selectedSummary.xpEarned}
                     </div>
-                    <div className="mt-1 text-[9px] text-zinc-500">
+                    <div className="mt-0.5 text-[7px] leading-none text-zinc-500">
                       XP earned
                     </div>
+                  </div>
+
+                  <div className="min-w-0 justify-self-end border-l border-white/[0.045] pl-2 text-right text-[7px] font-normal text-zinc-600">
+                    Creator Day XP
                   </div>
                 </div>
               </div>
@@ -469,18 +472,18 @@ export default function CreatorDayHistory() {
           )}
         </div>
 
-        <div className="border-t border-white/[0.065] px-3.5 py-3">
+        <div className="border-t border-white/[0.045] px-3 py-1.5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-[13px] font-semibold text-zinc-100">
+            <h3 className="text-[11px] font-medium text-zinc-100">
               Area Breakdown
             </h3>
-            <span className="text-[9px] text-zinc-600">
+            <span className="text-[7px] text-zinc-600">
               Completed items by area
             </span>
           </div>
 
           {sortedAreas.length > 0 ? (
-            <div className="mt-2.5 flex gap-2 overflow-x-auto pb-0.5">
+            <div className="mt-1.5 flex gap-1 overflow-x-auto pb-0.5">
               {sortedAreas.map((area) => (
                 <AreaRow
                   key={area.areaId}
@@ -496,12 +499,12 @@ export default function CreatorDayHistory() {
           )}
         </div>
 
-        <div className="border-t border-white/[0.065] px-3.5 py-3">
+        <div className="border-t border-white/[0.045] px-3 py-1.5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-[13px] font-semibold text-zinc-100">
-              Planned vs Actual
+            <h3 className="text-[11px] font-medium text-zinc-100">
+              Planned vs. Actual
             </h3>
-            <span className="text-[9px] text-zinc-500">
+            <span className="whitespace-nowrap text-[7.5px] text-zinc-500">
               {selectedSummary.completedPlanned} of {selectedSummary.planned} planned
               {selectedSummary.completedUnplanned > 0
                 ? ` · ${selectedSummary.completedUnplanned} extra`
@@ -509,115 +512,212 @@ export default function CreatorDayHistory() {
             </span>
           </div>
 
-          <div className="mt-2.5 overflow-hidden rounded-full bg-white/[0.065]">
-            <div className="flex h-2 w-full">
+          <div className="mt-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+            <div className="flex h-[5px] w-full">
               <BarSegment
                 label="Completed planned"
                 value={selectedSummary.completedPlanned}
                 total={plannedActualTotal}
-                className="bg-emerald-300/85"
+                className="bg-emerald-300/75"
               />
               <BarSegment
                 label="Completed unplanned"
                 value={selectedSummary.completedUnplanned}
                 total={plannedActualTotal}
-                className="bg-sky-300/80"
+                className="bg-sky-300/70"
               />
               <BarSegment
                 label="Missed"
                 value={selectedSummary.missed}
                 total={plannedActualTotal}
-                className="bg-red-300/55"
+                className="bg-red-300/50"
               />
             </div>
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between gap-2 text-[9px] text-zinc-500">
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[7px] text-zinc-500">
             <LegendDot
-              label={`Completed ${selectedSummary.completedPlanned}`}
-              className="bg-emerald-300"
+              label={`Completed (planned) ${selectedSummary.completedPlanned}`}
+              className="bg-emerald-300/75"
             />
             <LegendDot
-              label={`Unplanned ${selectedSummary.completedUnplanned}`}
-              className="bg-sky-300"
+              label={`Completed (unplanned) ${selectedSummary.completedUnplanned}`}
+              className="bg-sky-300/70"
             />
             <LegendDot
               label={`Missed ${selectedSummary.missed}`}
-              className="bg-red-300/70"
+              className="bg-red-300/60"
             />
           </div>
         </div>
       </section>
 
-      <section className="space-y-3">
-        <div className="grid grid-cols-2 rounded-2xl border border-white/[0.07] bg-zinc-950/80 p-1">
-          {(["completed", "missed"] as const).map((view) => {
-            const selected = listView === view;
-            const count =
-              view === "completed"
-                ? history?.completed.length ?? 0
-                : history?.missed.length ?? 0;
-            return (
-              <button
-                key={view}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => setListView(view)}
-                className={classNames(
-                  "rounded-xl px-3 py-2 text-sm font-medium capitalize transition",
-                  selected
-                    ? "bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                    : "text-zinc-500 hover:text-zinc-200"
-                )}
-              >
-                {view} <span className="text-xs text-zinc-500">{count}</span>
-              </button>
-            );
-          })}
-        </div>
+      <section className="space-y-2.5">
+        <div className="flex h-[34px] items-center justify-between gap-3">
+          <div className="grid h-full w-[58%] grid-cols-2 rounded-[10px] border border-white/[0.055] bg-zinc-950/55 p-[2px]">
+            {(["completed", "missed"] as const).map((view) => {
+              const selected = listView === view;
+              const count =
+                view === "completed"
+                  ? history?.completed.length ?? 0
+                  : history?.missed.length ?? 0;
 
-        <div className="flex items-center justify-between px-1 pt-1">
-          <h3 className="text-[15px] font-semibold text-zinc-100">
-            {listView === "completed" ? "Completed" : "Missed"}
-          </h3>
-
-          <div className="text-[10px] text-zinc-500">
-            {listView === "completed"
-              ? `${history?.completed.length ?? 0} items · +${selectedSummary.xpEarned} XP`
-              : `${history?.missed.length ?? 0} items`}
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-controls={`history-${view}`}
+                  onClick={() => {
+                    setListView(view);
+                    document
+                      .getElementById(`history-${view}`)
+                      ?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                  }}
+                  className={classNames(
+                    "rounded-[8px] px-1.5 text-[10px] font-normal leading-none transition",
+                    selected
+                      ? "bg-zinc-700/40 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                      : "text-zinc-500 hover:text-zinc-200"
+                  )}
+                >
+                  {view === "completed" ? "Completed" : "Missed"}{" "}
+                  <span className="text-[9px] text-zinc-500">
+                    ({count})
+                  </span>
+                </button>
+              );
+            })}
           </div>
+
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            className="flex h-full shrink-0 items-center gap-1.5 rounded-[10px] border border-white/[0.065] bg-white/[0.012] px-3 text-[9px] font-normal text-zinc-400 disabled:cursor-default"
+          >
+            <ListIcon className="h-3.5 w-3.5" />
+            View timeline
+          </button>
         </div>
 
-        <div className="overflow-hidden rounded-[16px] border border-white/[0.07] bg-[#111214]">
-          {historyLoading && !history ? (
-            <HistoryListSkeleton />
-          ) : listItems.length > 0 ? (
-            listItems.map((item) => (
-              <HistoryItemRow
-                key={item.id}
-                item={item}
-                mode={listView}
-                timezone={history?.timezone ?? getDeviceTimezone()}
-              />
-            ))
-          ) : (
-            <p className="rounded-2xl border border-white/[0.07] bg-zinc-950/70 px-4 py-5 text-center text-sm text-zinc-500">
-              {listView === "completed"
-                ? "No completed work for this Creator day."
-                : "No missed scheduled work for this Creator day."}
-            </p>
-          )}
-        </div>
+        <HistoryActivitySection
+          id="history-completed"
+          mode="completed"
+          items={history?.completed ?? []}
+          timezone={history?.timezone ?? getDeviceTimezone()}
+          xpEarned={selectedSummary.xpEarned}
+          loading={historyLoading && !history}
+        />
+
+        <HistoryActivitySection
+          id="history-missed"
+          mode="missed"
+          items={history?.missed ?? []}
+          timezone={history?.timezone ?? getDeviceTimezone()}
+          xpEarned={0}
+          loading={historyLoading && !history}
+        />
       </section>
 
-      <Button
-        type="button"
-        disabled
-        aria-disabled="true"
-        className="h-12 w-full rounded-2xl border border-white/[0.08] bg-white/[0.05] text-sm font-medium text-zinc-500 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        Open full day review
-      </Button>
+      <div className="space-y-1">
+        <Button
+          type="button"
+          disabled
+          aria-disabled="true"
+          className="flex h-[44px] w-full items-center rounded-[12px] border border-white/[0.075] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] px-4 text-[11px] font-normal text-zinc-300 hover:bg-white/[0.05] disabled:cursor-default disabled:opacity-80"
+        >
+          <BookOpen className="mr-2 h-4 w-4" />
+
+          <span className="flex-1 text-center">
+            Open full day review
+          </span>
+
+          <ChevronRight className="h-4 w-4 text-zinc-500" />
+        </Button>
+
+        <p className="text-center text-[8px] text-zinc-600">
+          Review insights, reflection, and more details about this Creator Day.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function HistoryActivitySection({
+  id,
+  mode,
+  items,
+  timezone,
+  xpEarned,
+  loading,
+}: {
+  id: string;
+  mode: HistoryListView;
+  items: AnalyticsHistoryItem[];
+  timezone: string;
+  xpEarned: number;
+  loading: boolean;
+}) {
+  const isCompleted = mode === "completed";
+
+  return (
+    <div id={id} className="scroll-mt-24 space-y-1.5">
+      <div className="flex items-center justify-between px-0.5">
+        <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-zinc-100">
+          {isCompleted ? "Completed" : "Missed"}
+        </h3>
+
+        <div className="flex items-center gap-1.5 text-[9px] text-zinc-500">
+          <span
+            className={classNames(
+              "grid h-[17px] w-[17px] place-items-center rounded-full",
+              isCompleted
+                ? "bg-emerald-300/85 text-emerald-950"
+                : "bg-red-300/90 text-red-950"
+            )}
+          >
+            {isCompleted ? (
+              <Check className="h-2.5 w-2.5 stroke-[2.8]" />
+            ) : (
+              <X className="h-2.5 w-2.5 stroke-[2.8]" />
+            )}
+          </span>
+
+          <span>{items.length} items</span>
+
+          {isCompleted ? (
+            <>
+              <span className="text-zinc-700">·</span>
+              <span>+{xpEarned} XP</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[12px] border border-white/[0.065] bg-[linear-gradient(180deg,#151619,#121315)]">
+        {loading ? (
+          <HistoryListSkeleton />
+        ) : items.length > 0 ? (
+          items.map((item) => (
+            <HistoryItemRow
+              key={item.id}
+              item={item}
+              mode={mode}
+              timezone={timezone}
+            />
+          ))
+        ) : (
+          <p className="px-4 py-4 text-center text-[10px] text-zinc-600">
+            {isCompleted
+              ? "No completed work for this Creator day."
+              : "No missed scheduled work for this Creator day."}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -667,86 +767,82 @@ function DateStrip({
   canGoForward: boolean;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/[0.07] bg-[#0E0F11] px-1.5 py-1.5">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          aria-label="Previous Creator day"
-          onClick={() => onMove(-1)}
-          className="grid h-10 w-7 shrink-0 place-items-center rounded-lg text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
+    <div className="flex h-[42px] items-center gap-1">
+      <button
+        type="button"
+        aria-label="Previous Creator day"
+        onClick={() => onMove(-1)}
+        className="grid h-8 w-6 shrink-0 place-items-center rounded-[7px] border border-white/[0.055] bg-[#17181b] text-zinc-500 transition hover:border-white/[0.09] hover:bg-[#1d1e22] hover:text-zinc-200"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
 
-        <div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
-          {days.map((dayKey) => {
-            const label = formatDayLabel(dayKey);
-            const selected = dayKey === selectedDayKey;
-            const disabled = dayKey.localeCompare(currentCreatorDayKey) > 0;
+      <div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
+        {days.map((dayKey) => {
+          const label = formatDayLabel(dayKey);
+          const selected = dayKey === selectedDayKey;
+          const disabled = dayKey.localeCompare(currentCreatorDayKey) > 0;
 
-            return (
-              <button
-                key={dayKey}
-                type="button"
-                aria-pressed={selected}
-                aria-label={`Creator day ${dayKey}`}
-                disabled={disabled}
-                onClick={() => onSelectDay(dayKey)}
+          return (
+            <button
+              key={dayKey}
+              type="button"
+              aria-pressed={selected}
+              aria-label={`Creator day ${dayKey}`}
+              disabled={disabled}
+              onClick={() => onSelectDay(dayKey)}
+              className={classNames(
+                "min-w-0 rounded-[6px] border bg-[#17181b] py-[3px] text-center transition disabled:cursor-not-allowed disabled:opacity-55",
+                selected
+                  ? "border-blue-400/65 bg-blue-950/35 text-zinc-100 shadow-[inset_0_1px_0_rgba(147,197,253,0.08)]"
+                  : "border-white/[0.045] text-zinc-500 hover:border-white/[0.075] hover:bg-[#1d1e22] hover:text-zinc-300"
+              )}
+            >
+              <span
                 className={classNames(
-                  "min-w-0 rounded-[11px] border px-0.5 py-1.5 text-center transition disabled:cursor-not-allowed disabled:opacity-55",
-                  selected
-                    ? "border-blue-400/70 bg-blue-400/[0.08] text-white shadow-[0_0_0_1px_rgba(96,165,250,0.10),inset_0_1px_0_rgba(255,255,255,0.05)]"
-                    : "border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
+                  "block text-[6.5px] font-medium uppercase leading-none tracking-[0.04em]",
+                  selected && "text-blue-300/85"
                 )}
               >
-                <span
-                  className={classNames(
-                    "block text-[8px] font-medium uppercase tracking-[0.04em]",
-                    selected ? "text-blue-300" : "text-current"
-                  )}
-                >
-                  {label.weekday}
-                </span>
+                {label.weekday}
+              </span>
 
-                <span className="mt-0.5 block whitespace-nowrap text-[10px] font-medium leading-none">
-                  {formatMonthDay(dayKey)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <button
-          type="button"
-          aria-label="Next Creator day"
-          disabled={!canGoForward}
-          onClick={() => onMove(1)}
-          className="grid h-10 w-7 shrink-0 place-items-center rounded-lg text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+              <span className="mt-1 block whitespace-nowrap text-[8px] font-medium leading-none">
+                {formatMonthDay(dayKey)}
+              </span>
+            </button>
+          );
+        })}
       </div>
+
+      <button
+        type="button"
+        aria-label="Next Creator day"
+        disabled={!canGoForward}
+        onClick={() => onMove(1)}
+        className="grid h-8 w-6 shrink-0 place-items-center rounded-[7px] border border-white/[0.055] bg-[#17181b] text-zinc-500 transition hover:border-white/[0.09] hover:bg-[#1d1e22] hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }
 
 function ExecutionRing({ percent }: { percent: number }) {
-  const background = `conic-gradient(rgb(110 231 183) ${percent}%, rgba(255,255,255,0.10) 0)`;
+  const background = `conic-gradient(rgb(126 211 178) ${percent}%, rgba(255,255,255,0.09) 0)`;
 
   return (
     <div
-      className="grid h-[102px] w-[102px] place-items-center rounded-full p-[8px]"
+      className="grid h-[88px] w-[88px] place-items-center rounded-full p-[5px]"
       style={{ background }}
     >
-      <div className="grid h-full w-full place-items-center rounded-full bg-[#090A0C] text-center shadow-[inset_0_1px_10px_rgba(0,0,0,0.55)]">
+      <div className="grid h-full w-full place-items-center rounded-full bg-[#111216] text-center">
         <div>
-          <div className="text-[31px] font-semibold leading-none tracking-[-0.045em] text-white">
+          <div className="text-[25px] font-medium leading-none text-zinc-100">
             {percent}%
           </div>
-          <div className="mt-1.5 text-[9px] leading-tight text-zinc-400">
-            Execution
-            <br />
-            Rate
+          <div className="mt-1 text-[7px] leading-tight text-zinc-500">
+            Execution Rate
           </div>
         </div>
       </div>
@@ -764,13 +860,13 @@ function Metric({
   tone?: "default" | "completed" | "unplanned" | "missed";
 }) {
   return (
-    <div className="min-w-0 border-l border-white/[0.07] px-1 text-center first:border-l-0">
+    <div className="min-w-0 border-l border-white/[0.045] px-1 text-center first:border-l-0">
       <div
         className={classNames(
-          "text-[22px] font-semibold leading-none tracking-[-0.035em]",
-          tone === "completed" && "text-emerald-300",
-          tone === "unplanned" && "text-blue-300",
-          tone === "missed" && "text-red-300",
+          "text-[16px] font-medium leading-none",
+          tone === "completed" && "text-emerald-300/90",
+          tone === "unplanned" && "text-blue-300/90",
+          tone === "missed" && "text-red-300/80",
           tone === "default" && "text-zinc-100"
         )}
       >
@@ -779,10 +875,10 @@ function Metric({
 
       <div
         className={classNames(
-          "mt-1.5 whitespace-nowrap text-[8px] font-medium leading-none",
-          tone === "completed" && "text-emerald-300/85",
-          tone === "unplanned" && "text-blue-300/85",
-          tone === "missed" && "text-red-300/85",
+          "mt-1 whitespace-nowrap text-[6.5px] font-medium leading-none",
+          tone === "completed" && "text-emerald-300/75",
+          tone === "unplanned" && "text-blue-300/75",
+          tone === "missed" && "text-red-300/70",
           tone === "default" && "text-zinc-500"
         )}
       >
@@ -809,24 +905,24 @@ function AreaRow({
   return (
     <div
       className={classNames(
-        "w-[90px] shrink-0 rounded-[11px] border border-white/[0.06] px-2 py-2",
-        tone?.surface ?? "bg-white/[0.035]"
+        "w-[61px] shrink-0 rounded-[7px] border border-white/[0.045] bg-white/[0.025] px-1.5 py-1",
+        tone?.surface
       )}
     >
       <div className="flex min-w-0 items-center gap-1.5">
         {config?.emoji ? (
-          <span className="shrink-0 text-[12px]" aria-hidden="true">
+          <span className="shrink-0 text-[9px]" aria-hidden="true">
             {config.emoji}
           </span>
         ) : null}
 
-        <span className="truncate text-[10px] font-medium text-zinc-200">
+        <span className="truncate text-[8px] font-normal text-zinc-300">
           {config?.label ?? area.label}
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+      <div className="mt-1 flex items-center gap-1">
+        <div className="h-[3px] min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.065]">
           <div
             className={classNames(
               "h-full rounded-full",
@@ -838,7 +934,7 @@ function AreaRow({
 
         <span
           className={classNames(
-            "shrink-0 text-[10px] font-semibold",
+            "shrink-0 text-[8px] font-medium",
             tone?.count ?? "text-zinc-300"
           )}
         >
@@ -889,11 +985,13 @@ function HistoryItemRow({
   timezone: string;
 }) {
   const isCompleted = mode === "completed";
+
   const time = isCompleted
     ? formatTime(item.completedAt, timezone)
     : formatTime(item.scheduledStartUtc, timezone);
 
   const hierarchy = buildHierarchyTrail(item);
+
   const secondary =
     isCompleted && !item.wasScheduled
       ? hierarchy
@@ -902,41 +1000,41 @@ function HistoryItemRow({
       : hierarchy;
 
   return (
-    <article className="flex min-h-[58px] items-center gap-2.5 border-b border-white/[0.065] px-3 py-2.5 last:border-b-0">
+    <article className="flex min-h-[43px] items-center gap-2 border-b border-white/[0.055] px-2.5 py-1.5 last:border-b-0">
       <div
         className={classNames(
-          "grid h-7 w-7 shrink-0 place-items-center rounded-full",
+          "grid h-[25px] w-[25px] shrink-0 place-items-center rounded-full",
           isCompleted
-            ? "bg-emerald-300/80 text-emerald-950"
+            ? "bg-emerald-300/85 text-emerald-950"
             : "bg-red-300/90 text-red-950"
         )}
       >
         {isCompleted ? (
-          <Check className="h-4 w-4 stroke-[2.5]" />
+          <Check className="h-3.5 w-3.5 stroke-[2.5]" />
         ) : (
-          <X className="h-4 w-4 stroke-[2.5]" />
+          <X className="h-3.5 w-3.5 stroke-[2.5]" />
         )}
       </div>
 
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-[13px] font-medium leading-tight text-zinc-100">
+        <h4 className="truncate text-[11px] font-medium leading-tight tracking-[-0.005em] text-zinc-100">
           {item.title}
-        </h3>
+        </h4>
 
         {secondary ? (
-          <p className="mt-1 truncate text-[10px] leading-none text-zinc-500">
+          <p className="mt-[3px] truncate text-[8px] font-normal leading-none text-zinc-500">
             {secondary}
           </p>
         ) : null}
       </div>
 
       {time ? (
-        <time className="shrink-0 text-[10px] font-medium text-zinc-500">
+        <time className="shrink-0 text-[8.5px] font-normal text-zinc-500">
           {time}
         </time>
       ) : null}
 
-      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+      <ChevronRight className="h-3 w-3 shrink-0 text-zinc-600" />
     </article>
   );
 }

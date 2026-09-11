@@ -507,13 +507,13 @@ export default function AnalyticsDashboard({
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-35%] h-[420px] bg-[radial-gradient(circle_at_top,rgba(120,120,120,0.18),transparent_68%)] blur-3xl"
       />
-      <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-6 sm:pb-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-3xl">
+      <div className="relative mx-auto max-w-7xl space-y-1.5 pb-4 sm:space-y-3 sm:pb-6">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="shrink-0 text-[18px] font-medium leading-none text-zinc-100 sm:text-xl">
             Analytics
           </h1>
           <div
-            className="grid w-full grid-cols-2 rounded-2xl border border-white/[0.07] bg-zinc-950/80 p-1 sm:w-[260px]"
+            className="grid w-[178px] shrink-0 grid-cols-2 rounded-[10px] border border-white/[0.055] bg-zinc-950/45 p-[2px] sm:w-[205px]"
             aria-label="Analytics view"
           >
             {(["overview", "history"] as const).map((view) => {
@@ -525,10 +525,10 @@ export default function AnalyticsDashboard({
                   aria-pressed={selected}
                   onClick={() => onViewChange(view)}
                   className={classNames(
-                    "rounded-xl px-3 py-2 text-sm font-medium capitalize transition",
+                    "rounded-[7px] px-2 py-1 text-[11px] font-normal capitalize leading-none transition",
                     selected
-                      ? "bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                      : "text-zinc-500 hover:text-zinc-200"
+                      ? "bg-zinc-700/45 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]"
+                      : "text-zinc-500 hover:text-zinc-300"
                   )}
                 >
                   {view}

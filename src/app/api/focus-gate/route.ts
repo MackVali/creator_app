@@ -18,6 +18,7 @@ type ServerClient = SupabaseClient<Database>;
 const updateSchema = z
   .object({
     enabled: z.boolean().optional(),
+    baselineMinutes: z.number().int().min(0).max(1440).optional(),
     minutesPerXp: z.number().int().min(1).max(120).optional(),
     dailyMaxMinutes: z.number().int().min(1).max(1440).nullable().optional(),
   })
@@ -112,6 +113,7 @@ export async function PATCH(request: NextRequest) {
     const current = await getFocusGateSettings(auth.db, auth.user.id);
     const next: FocusGateSettings = {
       enabled: parsed.data.enabled ?? current.enabled,
+      baselineMinutes: parsed.data.baselineMinutes ?? current.baselineMinutes,
       minutesPerXp: parsed.data.minutesPerXp ?? current.minutesPerXp,
       dailyMaxMinutes:
         parsed.data.dailyMaxMinutes === undefined
