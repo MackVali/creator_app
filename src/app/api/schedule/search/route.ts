@@ -3,10 +3,16 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
   DEFAULT_HABIT_DURATION_MIN,
   normalizeHabitType,
+  type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
 import { PROJECT_PRIORITY_WEIGHT } from "@/lib/scheduler/config";
 import { DEFAULT_PROJECT_DURATION_MIN } from "@/lib/scheduler/projects";
 import { resolveCanonicalScheduleAreaId } from "@/lib/schedule/canonicalArea";
+import {
+  resolveHabitNextDueAt,
+  resolveProjectNextDueAt,
+} from "@/lib/schedule/fabDue";
+import { normalizeTimeZone } from "@/lib/scheduler/timezone";
 
 const PAGE_SIZE = 25;
 const SORT_OPTIONS = [
@@ -15,6 +21,7 @@ const SORT_OPTIONS = [
   "priority",
   "global_rank",
   "scheduled",
+  "due",
 ] as const;
 type SearchSortMode = (typeof SORT_OPTIONS)[number];
 
@@ -29,6 +36,7 @@ type SearchResult = {
   completedAt: string | null;
   isCompleted: boolean;
   global_rank?: number | null;
+  globalOrder?: number | null;
   habitType?: string | null;
   goalId?: string | null;
   goalName?: string | null;
@@ -58,15 +66,46 @@ type ProjectSearchRecord = {
   priority?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
+  due_date?: string | null;
 };
 
 type HabitSearchRecord = {
   id: string;
   name?: string | null;
+  memo_capture_config?: HabitScheduleItem["memoCaptureConfig"];
   duration_minutes?: number | null;
   habit_type?: string | null;
+  window_id?: string | null;
+  energy?: string | null;
+  recurrence?: string | null;
+  recurrence_days?: number[] | null;
+  recurrence_mode?: string | null;
+  anchor_type?: string | null;
+  anchor_value?: string | null;
+  anchor_start_date?: string | null;
   skill_id?: string | null;
+  goal_id?: string | null;
+  completion_target?: number | null;
+  last_completed_at?: string | null;
   current_streak_days?: number | null;
+  global_order?: number | null;
+  longest_streak_days?: number | null;
+  location_context_id?: string | null;
+  daylight_preference?: string | null;
+  window_edge_preference?: string | null;
+  next_due_override?: string | null;
+  fixed_start_local?: string | null;
+  fixed_end_local?: string | null;
+  fixed_timezone?: string | null;
+  window?: {
+    id?: string | null;
+    label?: string | null;
+    energy?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+    days?: number[] | null;
+    location_context_id?: string | null;
+  } | null;
   updated_at?: string | null;
   created_at?: string | null;
 };
@@ -202,6 +241,38 @@ function normalizeGlobalRank(value?: number | null): number {
   return Number.POSITIVE_INFINITY;
 }
 
+async function resolveProfileTimeZone(
+  client: { from: (table: string) => unknown },
+  userId: string
+): Promise<string | null> {
+  try {
+    const query = client.from("profiles") as {
+      select?: (columns: string) => unknown;
+    };
+    const selected = query.select?.("timezone") as
+      | {
+          eq?: (column: string, value: string) => unknown;
+        }
+      | undefined;
+    const filtered = selected?.eq?.("user_id", userId) as
+      | {
+          maybeSingle?: () => Promise<{
+            data: { timezone?: unknown } | null;
+            error: unknown;
+          }>;
+        }
+      | undefined;
+    const response = await filtered?.maybeSingle?.();
+    if (!response || response.error) return null;
+    const timezone = response.data?.timezone;
+    return typeof timezone === "string" && timezone.trim()
+      ? timezone.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizePositiveDuration(
   value: number | null | undefined,
   fallback: number
@@ -274,6 +345,37 @@ function sortResults(results: SearchResult[], sortMode: SearchSortMode): SearchR
         }
         return compareByNameTypeId(a, b);
       }
+      case "due": {
+        const aIsHabit = a.type === "HABIT";
+        const bIsHabit = b.type === "HABIT";
+
+        if (aIsHabit !== bIsHabit) {
+          return aIsHabit ? -1 : 1;
+        }
+
+        if (aIsHabit && bIsHabit) {
+          const normalizeHabitOrder = (value?: number | null) =>
+            typeof value === "number" && Number.isFinite(value) && value > 0
+              ? value
+              : Number.POSITIVE_INFINITY;
+
+          const orderDiff =
+            normalizeHabitOrder(a.globalOrder) -
+            normalizeHabitOrder(b.globalOrder);
+
+          if (orderDiff !== 0) {
+            return orderDiff;
+          }
+        }
+
+        const aDue = a.nextDueAt;
+        const bDue = b.nextDueAt;
+        if (aDue && bDue && aDue !== bDue) {
+          return aDue < bDue ? -1 : 1;
+        }
+
+        return compareByNameTypeId(a, b);
+      }
       case "recent":
       default: {
         const diff = getRecencyTimestamp(b) - getRecencyTimestamp(a);
@@ -304,6 +406,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const sortMode = normalizeSortMode(searchParams.get("sort"));
   const query = normalizeQuery(searchParams.get("q"));
+  const now = new Date();
+  const profileTimeZone = await resolveProfileTimeZone(supabase, user.id);
+  const timeZone = normalizeTimeZone(profileTimeZone ?? "America/Chicago");
   const likeQuery = query
     ? `%${query.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
     : null;
@@ -312,13 +417,13 @@ export async function GET(request: NextRequest) {
   let projectQuery = supabase
     .from("projects")
     .select(
-      "id,name,duration_min,completed_at,global_rank,goal_id,energy,priority,updated_at,created_at"
+      "id,name,duration_min,completed_at,global_rank,goal_id,energy,priority,updated_at,created_at,due_date"
     )
     .eq("user_id", user.id);
   let habitQuery = supabase
     .from("habits")
     .select(
-      "id,name,duration_minutes,habit_type,skill_id,current_streak_days,updated_at,created_at"
+      "id,name,memo_capture_config,duration_minutes,habit_type,window_id,energy,recurrence,recurrence_days,recurrence_mode,anchor_type,anchor_value,anchor_start_date,skill_id,goal_id,completion_target,last_completed_at,current_streak_days,global_order,longest_streak_days,location_context_id,daylight_preference,window_edge_preference,next_due_override,fixed_start_local,fixed_end_local,fixed_timezone,updated_at,created_at,window:windows(id,label,energy,start_local,end_local,days,location_context_id)"
     )
     .eq("user_id", user.id)
     .is("circle_id", null);
@@ -425,10 +530,11 @@ export async function GET(request: NextRequest) {
   const goalLookup = new Map<string, string>();
   const goalMonumentLookup = new Map<string, string | null>();
   const goalAreaLookup = new Map<string, string | null>();
+  const goalDueDateLookup = new Map<string, string | null>();
   if (goalIds.size > 0) {
     const { data: goalData, error: goalError } = await supabase
       .from("goals")
-      .select("id,name,monument_id,area_id")
+      .select("id,name,monument_id,area_id,due_date")
       .eq("user_id", user.id)
       .in("id", Array.from(goalIds));
     if (goalError) {
@@ -439,6 +545,7 @@ export async function GET(request: NextRequest) {
         name: string | null;
         monument_id: string | null;
         area_id: string | null;
+        due_date: string | null;
       }>) {
         if (!goal?.id) continue;
         if (typeof goal.name === "string") {
@@ -446,6 +553,7 @@ export async function GET(request: NextRequest) {
         }
         goalMonumentLookup.set(goal.id, goal.monument_id ?? null);
         goalAreaLookup.set(goal.id, goal.area_id ?? null);
+        goalDueDateLookup.set(goal.id, goal.due_date ?? null);
       }
     }
   }
@@ -528,7 +636,7 @@ export async function GET(request: NextRequest) {
 
   const scheduleMap = new Map<string, ScheduleInstanceRow>();
   if (allSourceIds.length > 0) {
-    const scheduleNowDate = new Date();
+    const scheduleNowDate = now;
     const scheduleNow = scheduleNowDate.toISOString();
     const scheduleLookback = new Date(
       scheduleNowDate.getTime() - 24 * 60 * 60 * 1000
@@ -612,6 +720,12 @@ export async function GET(request: NextRequest) {
       project.duration_min,
       DEFAULT_PROJECT_DURATION_MIN
     );
+    const nextDueAt = resolveProjectNextDueAt({
+      project,
+      goalDueDatesById: goalDueDateLookup,
+      now,
+      timeZone,
+    });
     results.push({
       id: project.id,
       name: project.name?.trim() || "Untitled project",
@@ -623,7 +737,7 @@ export async function GET(request: NextRequest) {
         Number.isFinite(schedule.duration_min)
           ? schedule.duration_min
           : projectDurationMinutes,
-      nextDueAt: null,
+      nextDueAt,
       completedAt,
       isCompleted: typeof completedAt === "string",
       global_rank: project.global_rank ?? null,
@@ -729,6 +843,19 @@ export async function GET(request: NextRequest) {
       { type: "HABIT", skillId: habitSkillId },
       { goalAreaByGoalId: goalAreaLookup, areaBySkillId }
     );
+    const habitLastScheduledStart = schedule?.start_utc
+      ? new Date(schedule.start_utc)
+      : null;
+    const nextDueAt = resolveHabitNextDueAt({
+      habit,
+      now,
+      timeZone,
+      lastScheduledStart:
+        habitLastScheduledStart &&
+        Number.isFinite(habitLastScheduledStart.getTime())
+          ? habitLastScheduledStart
+          : null,
+    });
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
@@ -740,7 +867,7 @@ export async function GET(request: NextRequest) {
         Number.isFinite(schedule.duration_min)
           ? schedule.duration_min
           : habitDurationMinutes,
-      nextDueAt: null,
+      nextDueAt,
       completedAt: null,
       isCompleted: false,
       habitType: normalizedHabitType,
@@ -748,6 +875,11 @@ export async function GET(request: NextRequest) {
         typeof habit.current_streak_days === "number" &&
         Number.isFinite(habit.current_streak_days)
           ? habit.current_streak_days
+          : null,
+      globalOrder:
+        typeof habit.global_order === "number" &&
+        Number.isFinite(habit.global_order)
+          ? habit.global_order
           : null,
       updatedAt: normalizedUpdated,
       updated_at: normalizedUpdated,
@@ -760,7 +892,16 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const sortedResults = sortResults(results, sortMode);
+  const filteredResults =
+    sortMode === "due"
+      ? results.filter(
+          (result) =>
+            (result.type === "PROJECT" || result.type === "HABIT") &&
+            typeof result.nextDueAt === "string" &&
+            result.nextDueAt.length > 0
+        )
+      : results;
+  const sortedResults = sortResults(filteredResults, sortMode);
   let startIndex = 0;
   if (cursor) {
     const index = sortedResults.findIndex(

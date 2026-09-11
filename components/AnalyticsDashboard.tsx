@@ -22,8 +22,9 @@ import {
 import { Info } from "lucide-react";
 import {
   Area,
-  AreaChart,
+  Bar,
   CartesianGrid,
+  ComposedChart,
   XAxis,
   YAxis,
 } from "recharts";
@@ -311,6 +312,7 @@ export default function AnalyticsDashboard({
   >({});
   const analyticsRequestIdRef = useRef(0);
   const analyticsAbortRef = useRef<AbortController | null>(null);
+  const analyticsPrefetchStartedRef = useRef(false);
   const analyticsRef = useRef<AnalyticsResponse | null>(null);
   const analyticsCacheRef = useRef<
     Partial<Record<AnalyticsRange, AnalyticsResponse>>
@@ -406,6 +408,73 @@ export default function AnalyticsDashboard({
   const overviewTrend = analytics?.overviewDaily ?? [];
   const hasAnalyticsData = analytics !== null;
 
+  useEffect(() => {
+    if (!hasAnalyticsData || analyticsPrefetchStartedRef.current) {
+      return;
+    }
+
+    analyticsPrefetchStartedRef.current = true;
+
+    const controller = new AbortController();
+
+    const timeoutId = window.setTimeout(() => {
+      const prefetchRanges = async () => {
+        const prefetchOrder: AnalyticsRange[] = ["1d", "7d", "30d", "90d"];
+
+        for (const prefetchRange of prefetchOrder) {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          if (analyticsCacheRef.current[prefetchRange]) {
+            continue;
+          }
+
+          try {
+            const payload = await fetchAnalyticsRange(
+              prefetchRange,
+              controller.signal
+            );
+
+            if (controller.signal.aborted) {
+              return;
+            }
+
+            setAnalyticsCache((current) => {
+              if (current[prefetchRange]) {
+                return current;
+              }
+
+              const next = {
+                ...current,
+                [prefetchRange]: payload,
+              };
+
+              analyticsCacheRef.current = next;
+              return next;
+            });
+          } catch (error) {
+            if (
+              controller.signal.aborted ||
+              (error instanceof DOMException && error.name === "AbortError")
+            ) {
+              return;
+            }
+
+            // Prefetch failure should never affect the visible Analytics view.
+          }
+        }
+      };
+
+      void prefetchRanges();
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [hasAnalyticsData]);
+
   const longestStreak = habitSummary.longestStreak;
   const handleUpgrade = () => {
     router.push("/settings/billing");
@@ -478,7 +547,10 @@ export default function AnalyticsDashboard({
         ) : error ? (
           renderErrorState()
         ) : (
-          <DailyConsistencyCard points={overviewTrend} range={selectedRange} />
+          <DailyConsistencyCard
+            points={overviewTrend}
+            range={analytics?.range ?? selectedRange}
+          />
         )}
         <StreakTrendCard
           longestStreak={longestStreak}
@@ -2085,7 +2157,7 @@ const overviewXpChartConfig = {
   },
   xpGained: {
     label: "XP Gained",
-    color: "#67e8f9",
+    color: "#86efac",
   },
 } satisfies ChartConfig;
 
@@ -2109,8 +2181,8 @@ const OVERVIEW_XP_CHART_MODES: Array<{
   },
   {
     value: "xpGained",
-    label: "XP GAINED",
-    heading: "XP gained over time",
+    label: "DAILY XP",
+    heading: "XP earned by day",
     seriesLabel: "XP Gained",
     summarySuffix: "XP gained",
     emptyCopy: "No XP gained in this range",
@@ -2161,6 +2233,12 @@ export function OverviewLineChart({
 }) {
   const [mode, setMode] = useState<OverviewXpChartMode>("totalXp");
   const modeMeta = OVERVIEW_XP_CHART_MODE_META[mode];
+  const chartHeading =
+    mode === "xpGained"
+      ? range === "1d"
+        ? "XP earned by hour"
+        : "XP earned by day"
+      : modeMeta.heading;
   const totalXp =
     points.length > 0
       ? Math.max(0, Number(points[points.length - 1]?.totalXp ?? 0))
@@ -2190,9 +2268,13 @@ export function OverviewLineChart({
       })),
     [points]
   );
-  const yAxisScale = useMemo(() => {
-    return getTotalXpYAxisScale(chartValues);
-  }, [chartValues]);
+  const yAxisScale = useMemo(
+    () =>
+      mode === "xpGained"
+        ? getXpGainedYAxisScale(chartValues)
+        : getTotalXpYAxisScale(chartValues),
+    [chartValues, mode]
+  );
   const xAxisTicks = useMemo(
     () =>
       getTrendAxisLabelIndices(range, points)
@@ -2216,7 +2298,7 @@ export function OverviewLineChart({
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <div className="text-sm font-medium text-zinc-100 sm:text-base">
-              {modeMeta.heading}
+              {chartHeading}
             </div>
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
               {formatAnalyticsRangeLabel(range)} ·{" "}
@@ -2287,13 +2369,14 @@ export function OverviewLineChart({
             className="h-[214px] w-full aspect-auto sm:h-[230px] md:h-[238px]"
             aria-label={`${modeMeta.seriesLabel} chart`}
           >
-            <AreaChart
+            <ComposedChart
               accessibilityLayer
               data={chartData}
               margin={{ top: 20, right: 12, left: 8, bottom: 10 }}
               onMouseMove={handleChartPointer}
               onClick={handleChartPointer}
               onMouseLeave={() => onSelectedPointIndexChange(null)}
+              barCategoryGap="28%"
             >
               <defs>
                 <linearGradient id="fillTotalXp" x1="0" y1="0" x2="0" y2="1">
@@ -2353,23 +2436,39 @@ export function OverviewLineChart({
                   />
                 )}
               />
-              <Area
-                dataKey={mode}
-                name={modeMeta.seriesLabel}
-                type="natural"
-                fill="url(#fillTotalXp)"
-                stroke={`var(--color-${mode})`}
-                strokeWidth={2.5}
-                dot={false}
-                activeDot={{
-                  r: 4,
-                  fill: "#bbf7d0",
-                  stroke: "#09090b",
-                  strokeWidth: 1.5,
-                }}
-                isAnimationActive={false}
-              />
-            </AreaChart>
+              {mode === "totalXp" ? (
+                <Area
+                  dataKey="totalXp"
+                  name={modeMeta.seriesLabel}
+                  type="natural"
+                  fill="url(#fillTotalXp)"
+                  stroke="var(--color-totalXp)"
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{
+                    r: 4,
+                    fill: "#bbf7d0",
+                    stroke: "#09090b",
+                    strokeWidth: 1.5,
+                  }}
+                  isAnimationActive={false}
+                />
+              ) : (
+                <Bar
+                  dataKey="xpGained"
+                  name={modeMeta.seriesLabel}
+                  fill="var(--color-xpGained)"
+                  fillOpacity={0.82}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={28}
+                  activeBar={{
+                    fill: "#bbf7d0",
+                    fillOpacity: 1,
+                  }}
+                  isAnimationActive={false}
+                />
+              )}
+            </ComposedChart>
           </ChartContainer>
 
           <div className="pointer-events-none absolute inset-0 select-none">
@@ -2434,6 +2533,53 @@ function OverviewXpTooltipContent({
       </div>
     </div>
   );
+}
+
+function getXpGainedYAxisScale(values: number[]): {
+  domain: [number, number];
+  ticks: number[];
+} {
+  const finiteValues = values.filter(
+    (value) => Number.isFinite(value) && value >= 0
+  );
+  const maxValue = Math.max(0, ...finiteValues);
+
+  if (maxValue <= 0) {
+    return {
+      domain: [0, 1],
+      ticks: [0, 1],
+    };
+  }
+
+  const targetIntervals = 4;
+  const roughStep = maxValue / targetIntervals;
+  const magnitude =
+    roughStep > 0
+      ? 10 ** Math.floor(Math.log10(roughStep))
+      : 1;
+  const normalized = roughStep / magnitude;
+
+  const niceNormalized =
+    normalized <= 1
+      ? 1
+      : normalized <= 2
+        ? 2
+        : normalized <= 5
+          ? 5
+          : 10;
+
+  const step = Math.max(1, niceNormalized * magnitude);
+  const upper = Math.max(step, Math.ceil(maxValue / step) * step);
+  const ticks: number[] = [];
+
+  for (let tick = 0; tick <= upper + step * 0.001; tick += step) {
+    ticks.push(Math.round(tick * 100) / 100);
+  }
+
+  return {
+    domain: [0, upper],
+    ticks,
+  };
 }
 
 function getTotalXpYAxisScale(values: number[]): {
@@ -2650,7 +2796,13 @@ function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
 }
 
 function parseTrendDate(value: string, range: AnalyticsRange) {
-  return range === "1d" ? new Date(value) : new Date(`${value}T12:00:00Z`);
+  const normalized = value.trim();
+
+  if (range === "1d" || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return new Date(normalized);
+  }
+
+  return new Date(`${normalized}T12:00:00Z`);
 }
 
 function StreakTrendCard({

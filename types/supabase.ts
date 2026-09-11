@@ -81,6 +81,41 @@ export interface Database {
           created_at?: string;
         };
       };
+      item_dependencies: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id: string;
+          dependency_type: "ITEM" | "DATE" | "WEEKDAY";
+          depends_on_id: string | null;
+          not_before_date: string | null;
+          weekdays: number[] | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id: string;
+          dependency_type: "ITEM" | "DATE" | "WEEKDAY";
+          depends_on_id?: string | null;
+          not_before_date?: string | null;
+          weekdays?: number[] | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          source_type?: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id?: string;
+          dependency_type?: "ITEM" | "DATE" | "WEEKDAY";
+          depends_on_id?: string | null;
+          not_before_date?: string | null;
+          weekdays?: number[] | null;
+          created_at?: string;
+        };
+      };
       events: {
         Row: {
           id: string;

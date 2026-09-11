@@ -149,6 +149,15 @@ import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import {
+  createDependency,
+  deleteDependency,
+  fetchDependenciesForSources,
+  wouldCreateItemDependencyCycle,
+  type DependencyRecord,
+  type DependencySourceType,
+  type DependencyType,
+} from "@/lib/dependencies";
+import {
   isSourceItemPinned,
   setSourceItemPinned,
 } from "@/lib/my-list/pinnedSourceItems";
@@ -1133,7 +1142,8 @@ type OverlaySortMode =
   | "alphabetical"
   | "priority"
   | "global_rank"
-  | "scheduled";
+  | "scheduled"
+  | "due";
 type UnifiedGoalSortMode =
   | "default"
   | "alphabetical"
@@ -1164,6 +1174,7 @@ const OVERLAY_SORT_OPTIONS: { value: OverlaySortMode; label: string }[] = [
   { value: "priority", label: "Priority" },
   { value: "global_rank", label: "Global rank" },
   { value: "scheduled", label: "Scheduled order" },
+  { value: "due", label: "Due" },
 ];
 const NEXUS_INSTANCE_TYPE_FILTER_OPTIONS: Array<{
   id: NexusResultInstanceTypeFilter;
@@ -1543,7 +1554,7 @@ const FAB_ADVANCED_INPUT_CLASS =
 const HABIT_ADVANCED_FIELD_LABEL_CLASS =
   "min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50";
 const HABIT_ADVANCED_INPUT_CLASS =
-  "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-500/60 focus:bg-zinc-900/55 focus-visible:border-zinc-500/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
+  "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-[8px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-500/60 focus:bg-zinc-900/55 focus-visible:border-zinc-500/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
 const HABIT_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-left text-[11px] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition-colors hover:border-white/16 hover:bg-zinc-900/55 focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:ring-0 data-[state=open]:border-zinc-500/60 data-[state=open]:bg-zinc-900/55 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
 const HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS =
@@ -4746,6 +4757,19 @@ export function Fab({
     useState<CreationType | null>(null);
   const [activeCreationMode, setActiveCreationMode] =
     useState<CreationFormMode>("main");
+  const [dependencyDrafts, setDependencyDrafts] = useState<DependencyRecord[]>(
+    [],
+  );
+  const [dependencyPickerOpen, setDependencyPickerOpen] = useState(false);
+  const [dependencyAddType, setDependencyAddType] =
+    useState<DependencyType>("ITEM");
+  const [dependencyItemId, setDependencyItemId] = useState("");
+  const [dependencyDate, setDependencyDate] = useState("");
+  const [dependencyWeekdays, setDependencyWeekdays] = useState<number[]>([]);
+  const [dependenciesLoading, setDependenciesLoading] = useState(false);
+  const [dependencyItemOptions, setDependencyItemOptions] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
   const [goalProjectStack, setGoalProjectStack] =
     useState<GoalProjectStackState | null>(null);
   const [projectTaskStack, setProjectTaskStack] =
@@ -7525,7 +7549,163 @@ export function Fab({
     habitCircleId,
     isUnifiedEventSheetOpen,
     manageableCircleById,
-    unifiedEventType,
+      unifiedEventType,
+    ]);
+  const activeDependencySource = useMemo<{
+    sourceType: DependencySourceType | null;
+    sourceId: string | null;
+  }>(() => {
+    if (editTarget?.entityType && editTarget.entityType !== "EVENT") {
+      return {
+        sourceType: editTarget.entityType as DependencySourceType,
+        sourceId: editTarget.entityId ?? null,
+      };
+    }
+    if (isUnifiedEventSheetOpen) {
+      return {
+        sourceType: resolvedUnifiedAddEventSaveSelected as DependencySourceType | null,
+        sourceId: null,
+      };
+    }
+    return {
+      sourceType: selected as DependencySourceType | null,
+      sourceId: null,
+    };
+  }, [
+    editTarget?.entityId,
+    editTarget?.entityType,
+    isUnifiedEventSheetOpen,
+    resolvedUnifiedAddEventSaveSelected,
+    selected,
+  ]);
+  useEffect(() => {
+    const sourceType = activeDependencySource.sourceType;
+    const sourceId = activeDependencySource.sourceId;
+    if (!sourceType || !sourceId) {
+      setDependencyDrafts([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadDependencies = async () => {
+      try {
+        setDependenciesLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        const dependencies = await fetchDependenciesForSources(
+          supabase,
+          user.id,
+          [{ sourceType, sourceId }],
+        );
+        if (!cancelled) {
+          setDependencyDrafts(dependencies);
+        }
+      } catch (error) {
+        console.error("Failed to load dependencies", error);
+        if (!cancelled) setDependencyDrafts([]);
+      } finally {
+        if (!cancelled) setDependenciesLoading(false);
+      }
+    };
+
+    void loadDependencies();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDependencySource.sourceId, activeDependencySource.sourceType]);
+
+  useEffect(() => {
+    const sourceType = activeDependencySource.sourceType;
+    if (!sourceType || !dependencyPickerOpen || dependencyAddType !== "ITEM") {
+      return;
+    }
+
+    let cancelled = false;
+    const loadDependencyItemOptions = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const tableByType = {
+        GOAL: "goals",
+        PROJECT: "projects",
+        TASK: "tasks",
+        HABIT: "habits",
+      } as const;
+      const titleColumns =
+        sourceType === "GOAL"
+          ? "id,name,Title"
+          : sourceType === "TASK"
+            ? "id,name,Title"
+            : "id,name,Title";
+      const { data, error } = await supabase
+        .from(tableByType[sourceType])
+        .select(titleColumns)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const { data: dependencyRows, error: dependencyError } =
+        activeDependencySource.sourceId
+          ? await supabase
+              .from("item_dependencies")
+              .select("source_id,depends_on_id")
+              .eq("user_id", user.id)
+              .eq("source_type", sourceType)
+              .eq("dependency_type", "ITEM")
+          : { data: null, error: null };
+      if (dependencyError) throw dependencyError;
+      if (cancelled) return;
+      const existingEdges = ((dependencyRows ?? []) as Array<{
+        source_id?: string | null;
+        depends_on_id?: string | null;
+      }>)
+        .map((row) => ({
+          sourceId: row.source_id ?? "",
+          dependsOnId: row.depends_on_id ?? "",
+        }))
+        .filter((edge) => edge.sourceId && edge.dependsOnId);
+      setDependencyItemOptions(
+        ((data ?? []) as Array<{
+          id?: string | null;
+          name?: string | null;
+          Title?: string | null;
+        }>)
+          .map((row) => ({
+            id: row.id ?? "",
+            label: row.name ?? row.Title ?? "Untitled",
+          }))
+          .filter(
+            (option) =>
+              option.id &&
+              option.id !== activeDependencySource.sourceId &&
+              (!activeDependencySource.sourceId ||
+                !wouldCreateItemDependencyCycle(existingEdges, {
+                  sourceId: activeDependencySource.sourceId,
+                  dependsOnId: option.id,
+                })),
+          ),
+      );
+    };
+
+    void loadDependencyItemOptions().catch((error) => {
+      console.error("Failed to load dependency options", error);
+      if (!cancelled) setDependencyItemOptions([]);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeDependencySource.sourceId,
+    activeDependencySource.sourceType,
+    dependencyAddType,
+    dependencyPickerOpen,
   ]);
   const [nestedDraftPanel, setNestedDraftPanel] =
     useState<NestedDraftPanel>(null);
@@ -10673,6 +10853,14 @@ export function Fab({
           }
           return compareByNameTypeId(a, b);
         }
+        case "due": {
+          const aDue = a.nextDueAt;
+          const bDue = b.nextDueAt;
+          if (aDue && bDue && aDue !== bDue) {
+            return aDue < bDue ? -1 : 1;
+          }
+          return compareByNameTypeId(a, b);
+        }
         default:
           return 0;
       }
@@ -12021,6 +12209,13 @@ export function Fab({
 
     setSelectedTagIds([]);
     setTagInputValue("");
+    setDependencyDrafts([]);
+    setDependencyPickerOpen(false);
+    setDependencyAddType("ITEM");
+    setDependencyItemId("");
+    setDependencyDate("");
+    setDependencyWeekdays([]);
+    setDependencyItemOptions([]);
     setSaveError(null);
     setGoalProjectStack(null);
     setProjectTaskStack(null);
@@ -14144,6 +14339,269 @@ export function Fab({
     </div>
   );
 
+  const formatDependencyDateLabel = (value?: string | null) => {
+    if (!value) return "";
+    const [year, month, day] = value.split("-").map((part) => Number(part));
+    if (!year || !month || !day) return value;
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+    })
+      .format(new Date(Date.UTC(year, month - 1, day)))
+      .toUpperCase();
+  };
+  const weekdayLabels = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const getDependencyItemLabel = (id: string | null) =>
+    dependencyItemOptions.find((option) => option.id === id)?.label ?? id ?? "";
+  const resetDependencyAddForm = () => {
+    setDependencyAddType("ITEM");
+    setDependencyItemId("");
+    setDependencyDate("");
+    setDependencyWeekdays([]);
+  };
+  const persistDependencyDraftsForSource = useCallback(async (
+    sourceType: DependencySourceType,
+    sourceId: string,
+  ) => {
+    if (!dependencyDrafts.length) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const unsaved = dependencyDrafts.filter((dependency) =>
+      dependency.id.startsWith("draft:"),
+    );
+    for (const dependency of unsaved) {
+      await createDependency(supabase, {
+        userId: user.id,
+        sourceType,
+        sourceId,
+        dependencyType: dependency.dependency_type,
+        dependsOnId: dependency.depends_on_id,
+        notBeforeDate: dependency.not_before_date,
+        weekdays: dependency.weekdays,
+      });
+    }
+  }, [dependencyDrafts]);
+  const handleAddDependency = async () => {
+    const sourceType = activeDependencySource.sourceType;
+    if (!sourceType) return;
+    const payload = {
+      dependencyType: dependencyAddType,
+      dependsOnId: dependencyAddType === "ITEM" ? dependencyItemId : null,
+      notBeforeDate: dependencyAddType === "DATE" ? dependencyDate : null,
+      weekdays: dependencyAddType === "WEEKDAY" ? dependencyWeekdays : null,
+    };
+    if (payload.dependencyType === "ITEM" && !payload.dependsOnId) return;
+    if (payload.dependencyType === "DATE" && !payload.notBeforeDate) return;
+    if (
+      payload.dependencyType === "WEEKDAY" &&
+      (!payload.weekdays || payload.weekdays.length === 0)
+    ) {
+      return;
+    }
+
+    const sourceId = activeDependencySource.sourceId;
+    try {
+      if (sourceId) {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        const saved = await createDependency(supabase, {
+          userId: user.id,
+          sourceType,
+          sourceId,
+          ...payload,
+        });
+        setDependencyDrafts((current) => [...current, saved]);
+      } else {
+        setDependencyDrafts((current) => [
+          ...current,
+          {
+            id: `draft:${Date.now()}:${current.length}`,
+            user_id: "",
+            source_type: sourceType,
+            source_id: "",
+            dependency_type: payload.dependencyType,
+            depends_on_id: payload.dependsOnId,
+            not_before_date: payload.notBeforeDate,
+            weekdays: payload.weekdays,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+      resetDependencyAddForm();
+      setDependencyPickerOpen(false);
+    } catch (error) {
+      toast.error(
+        "Unable to save Dependency",
+        error instanceof Error ? error.message : "Try again in a moment.",
+      );
+    }
+  };
+  const handleRemoveDependency = async (dependency: DependencyRecord) => {
+    if (dependency.id.startsWith("draft:")) {
+      setDependencyDrafts((current) =>
+        current.filter((item) => item.id !== dependency.id),
+      );
+      return;
+    }
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      await deleteDependency(supabase, dependency.id);
+      setDependencyDrafts((current) =>
+        current.filter((item) => item.id !== dependency.id),
+      );
+    } catch (error) {
+      toast.error(
+        "Unable to remove Dependency",
+        error instanceof Error ? error.message : "Try again in a moment.",
+      );
+    }
+  };
+  const renderDependencyRows = (surface: "advanced" | "unified" = "advanced") => {
+    const sourceType = activeDependencySource.sourceType;
+    const compact = surface === "unified";
+    return (
+      <section
+        className={cn(
+          compact
+            ? "grid gap-1.5 border-t border-white/[0.06] pt-2"
+            : "grid gap-2.5 border-t border-white/[0.06] px-0 pt-3",
+        )}
+      >
+        <div className="flex min-h-9 items-center justify-between gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
+            Dependency
+          </span>
+          <button
+            type="button"
+            aria-label="Add Dependency"
+            disabled={!sourceType || dependenciesLoading}
+            onClick={() => setDependencyPickerOpen((current) => !current)}
+            className="inline-flex size-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-white/80 hover:border-white/20 hover:bg-white/[0.08] disabled:opacity-40"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+        {dependencyDrafts.map((dependency) => (
+          <div
+            key={dependency.id}
+            className="flex min-h-8 items-center justify-between gap-2 rounded-md bg-white/[0.035] px-2.5 py-1.5"
+          >
+            <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-white/75">
+              {dependency.dependency_type === "ITEM"
+                ? `${dependency.source_type} · ${getDependencyItemLabel(
+                    dependency.depends_on_id,
+                  )}`
+                : dependency.dependency_type === "DATE"
+                  ? `DATE · ${formatDependencyDateLabel(
+                      dependency.not_before_date,
+                    )}`
+                  : `WEEKDAY · ${(dependency.weekdays ?? [])
+                      .map((day) => weekdayLabels[day] ?? String(day))
+                      .join(", ")}`}
+            </span>
+            <button
+              type="button"
+              aria-label="Remove Dependency"
+              onClick={() => void handleRemoveDependency(dependency)}
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-white/55 hover:bg-white/[0.06] hover:text-white"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+        {dependencyPickerOpen && sourceType ? (
+          <div className="grid gap-2 rounded-md border border-white/10 bg-black/25 p-2">
+            <Select
+              value={dependencyAddType}
+              onValueChange={(value) => setDependencyAddType(value as DependencyType)}
+              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+            >
+              <SelectTrigger className={HABIT_ADVANCED_SELECT_TRIGGER_CLASS}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className={HABIT_ADVANCED_SELECT_CONTENT_CLASS}>
+                <SelectItem value="ITEM">Item</SelectItem>
+                <SelectItem value="DATE">Date</SelectItem>
+                <SelectItem value="WEEKDAY">Weekday</SelectItem>
+              </SelectContent>
+            </Select>
+            {dependencyAddType === "ITEM" ? (
+              <Select
+                value={dependencyItemId}
+                onValueChange={setDependencyItemId}
+                contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                placeholder="Item"
+              >
+                <SelectTrigger className={HABIT_ADVANCED_SELECT_TRIGGER_CLASS}>
+                  <SelectValue placeholder="Item" />
+                </SelectTrigger>
+                <SelectContent className={HABIT_ADVANCED_SELECT_CONTENT_CLASS}>
+                  {dependencyItemOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+            {dependencyAddType === "DATE" ? (
+              <Input
+                type="date"
+                value={dependencyDate}
+                onChange={(event) => setDependencyDate(event.target.value)}
+                className={HABIT_ADVANCED_INPUT_CLASS}
+              />
+            ) : null}
+            {dependencyAddType === "WEEKDAY" ? (
+              <div className="grid grid-cols-7 gap-1">
+                {weekdayLabels.map((label, day) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={dependencyWeekdays.includes(day)}
+                    onClick={() =>
+                      setDependencyWeekdays((current) =>
+                        current.includes(day)
+                          ? current.filter((item) => item !== day)
+                          : [...current, day].sort((a, b) => a - b),
+                      )
+                    }
+                    className={cn(
+                      "h-8 rounded-md border text-[10px] font-semibold",
+                      dependencyWeekdays.includes(day)
+                        ? "border-white/35 bg-white/80 text-black"
+                        : "border-white/10 bg-white/[0.04] text-white/65",
+                    )}
+                  >
+                    {label.slice(0, 1)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleAddDependency()}
+              className="h-8"
+            >
+              Add Dependency
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    );
+  };
+
   const renderFlatAdvancedPanel = ({
     dueDateId,
     dueDateValue,
@@ -14268,6 +14726,8 @@ export function Fab({
               surface: tagSurface,
             })
           : null}
+
+        {renderDependencyRows("advanced")}
 
         {showTaskStageAfterTags ? (
           <section
@@ -15330,7 +15790,7 @@ export function Fab({
               {renderAssociatedPriorityIndicator(project.priority)}
               <span
                 className={cn(
-                  "line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white",
+                  "line-clamp-4 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white",
                   isCompleted && associatedCompletedPrimaryTextClass,
                 )}
               >
@@ -18837,6 +19297,8 @@ export function Fab({
                   label: "Goal Tags",
                   density: "compact",
                   surface: "flat",
+                  footer: renderDependencyRows("advanced"),
+                  flatFooter: true,
                 })}
 
               {selected === "PROJECT" &&
@@ -19327,6 +19789,7 @@ export function Fab({
                   showHeader: false,
                   footer: (
                     <>
+                      {renderDependencyRows("advanced")}
                       <div className="grid min-w-0 gap-1.5">
                         <Label
                           htmlFor="habit-advanced-location-context"
@@ -25309,6 +25772,16 @@ export function Fab({
           createdEntityId = habitData?.id ?? null;
           createdRoutineId = routineIdToUse;
         }
+        if (createdEntityId && createdType !== "TO_DO") {
+          try {
+            await persistDependencyDraftsForSource(createdType, createdEntityId);
+          } catch (error) {
+            toast.error(
+              "Dependency not saved",
+              error instanceof Error ? error.message : "The item was created.",
+            );
+          }
+        }
         if (
           createdType !== "TO_DO" &&
           createdEntityId &&
@@ -25654,10 +26127,12 @@ export function Fab({
     isSavingFab,
     goalCampaignId,
     goalCampaigns,
+    goalCampaignTouched,
     goalDraftProjects,
     goalProjectStack,
     goalDue,
     goalDueMode,
+    goalDueTime,
     goalEnergy,
     goalName,
     goalPinned,
@@ -25685,6 +26160,7 @@ export function Fab({
     projectDraftTasks,
     projectTaskStack,
     replaceSelectedTagsForEntity,
+    persistDependencyDraftsForSource,
     resolveSelectedGoalRelation,
     resolvedAddEventTaskGoalId,
     restoreGoalProjectStack,
@@ -30125,6 +30601,7 @@ export function Fab({
                       <>
                         {workspaceSection}
                         {peopleSection}
+                        {renderDependencyRows("unified")}
 
                         <section className="grid gap-2.5">
                       <div className="flex items-center justify-between gap-3">
@@ -32488,7 +32965,6 @@ export function Fab({
 
                   </section>
                   )}
-
                   {saveError ? (
                     <p className="rounded-xl border border-red-500/20 bg-red-950/45 px-3 py-2 text-sm text-red-100">
                       {saveError}
@@ -32593,7 +33069,7 @@ export function Fab({
                     </section>
                   ) : isGoal ? (
                     <section
-                      className="grid grid-cols-2 gap-1.5 sm:gap-2"
+                      className="grid grid-cols-3 gap-1.5 sm:gap-2"
                       aria-label="Event quick actions"
                     >
                       <button
@@ -32621,6 +33097,29 @@ export function Fab({
                           aria-hidden="true"
                         />
                         <span className={quickActionLabelClass}>Notes</span>
+                      </button>
+                    
+                      <button
+                        type="button"
+                        aria-expanded={isAddEventMoreOpen}
+                        aria-label="More event options"
+                        {...getUnifiedSheetTouchActivationProps(
+                          openAddEventMoreSheet,
+                        )}
+                        className={cn(
+                          quickActionCardClass,
+                          isAddEventMoreOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <Settings2
+                          className={cn(
+                            quickActionIconClass,
+                            isAddEventMoreOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>More</span>
                       </button>
                     </section>
                   ) : (
@@ -35892,7 +36391,7 @@ function FabNexus({
                           </span>
                           <span
                             className={cn(
-                              "block min-w-0 flex-1 line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                              "block min-w-0 flex-1 line-clamp-2 break-words text-[11px] font-medium leading-snug tracking-wide",
                               nameTextClass,
                             )}
                           >

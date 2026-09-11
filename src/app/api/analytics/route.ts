@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { upsertObservedScheduleInstances } from "@/lib/analytics/observedScheduleInstances";
+import { buildCompletionXpById } from "@/lib/analytics/history";
 import {
   buildScheduleSummary,
   getEffectiveObservedSummaryStatus,
@@ -123,6 +124,7 @@ export type RawXpEventRow = {
   amount?: number | null;
   kind?: string | null;
   skill_id?: string | null;
+  award_key?: string | null;
   completion_event_id?: string | null;
 };
 
@@ -737,20 +739,41 @@ export async function GET(request: NextRequest) {
       ? ((completionEventsRes.data ?? []) as RawCompletionEventRow[])
       : []
   );
-  let completionXpEvents: RawXpEventRow[] = [];
+  const completionXpEvents: RawXpEventRow[] = [];
   if (completionEvents.length > 0) {
-    const { data, error } = await supabase
-      .from("xp_events")
-      .select("id, created_at, amount, kind, skill_id, completion_event_id")
-      .eq("user_id", user.id)
-      .in(
-        "completion_event_id",
-        completionEvents.map((completion) => completion.id)
+    const completionIds = completionEvents.map((completion) => completion.id);
+    const completionXpBatchSize = 100;
+    const completionIdBatches: string[][] = [];
+
+    for (
+      let offset = 0;
+      offset < completionIds.length;
+      offset += completionXpBatchSize
+    ) {
+      completionIdBatches.push(
+        completionIds.slice(offset, offset + completionXpBatchSize)
       );
-    if (error && !shouldFallbackToLegacySchema(error)) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    completionXpEvents = (data ?? []) as RawXpEventRow[];
+
+    const completionXpBatchResults = await Promise.all(
+      completionIdBatches.map((completionIdBatch) =>
+        supabase
+          .from("xp_events")
+          .select(
+            "id, created_at, amount, kind, skill_id, award_key, completion_event_id"
+          )
+          .eq("user_id", user.id)
+          .in("completion_event_id", completionIdBatch)
+      )
+    );
+
+    for (const { data, error } of completionXpBatchResults) {
+      if (error && !shouldFallbackToLegacySchema(error)) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      completionXpEvents.push(...((data ?? []) as RawXpEventRow[]));
+    }
   }
   const tasks = normalizeTaskRows(tasksRes.data ?? []);
   const projects = normalizeProjectRows(projectsRes.data ?? []);
@@ -2091,25 +2114,17 @@ export async function buildOverviewDailySeries({
     completionEvents.map((completion) => [completion.id, completion])
   );
 
-  for (const event of completionXpEvents) {
-    const completionId =
-      typeof event.completion_event_id === "string"
-        ? event.completion_event_id
-        : null;
-    if (!completionId) {
-      continue;
-    }
+  const logicalCompletionXpById =
+    buildCompletionXpById(completionXpEvents);
+
+  for (const [completionId, amount] of logicalCompletionXpById) {
     const completion = completionById.get(completionId);
     if (!completion) {
       continue;
     }
+
     const completedAt = parseDate(completion.completedAt);
     if (!isWithinRange(completedAt, start, end) || !completedAt) {
-      continue;
-    }
-
-    const amount = Number(event.amount ?? 0);
-    if (!Number.isFinite(amount) || amount <= 0) {
       continue;
     }
 
@@ -2125,11 +2140,11 @@ export async function buildOverviewDailySeries({
 
     point.xpGained += amount;
 
-    if (event.kind === "project") {
+    if (completion.sourceType === "project") {
       point.projectXp += amount;
-    } else if (event.kind === "habit") {
+    } else if (completion.sourceType === "habit") {
       point.habitXp += amount;
-    } else if (event.kind === "task") {
+    } else if (completion.sourceType === "task") {
       point.taskXp += amount;
     }
   }

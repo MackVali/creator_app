@@ -43,6 +43,24 @@ export default defineConfig({
         replacement: path.resolve(projectRoot, "components/ui/button.tsx"),
       },
       {
+        find: "@/components/ui/chart",
+        replacement: path.resolve(projectRoot, "components/ui/chart.tsx"),
+      },
+      {
+        find: "@/components/AnalyticsDashboardSkeleton",
+        replacement: path.resolve(
+          projectRoot,
+          "components/AnalyticsDashboardSkeleton.tsx"
+        ),
+      },
+      {
+        find: "@/components/analytics/CreatorDayHistory",
+        replacement: path.resolve(
+          projectRoot,
+          "components/analytics/CreatorDayHistory.tsx"
+        ),
+      },
+      {
         find: "@/components/ui/Progress",
         replacement: path.resolve(projectRoot, "components/ui/Progress.tsx"),
       },

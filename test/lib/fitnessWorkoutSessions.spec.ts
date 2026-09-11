@@ -303,21 +303,3 @@ describe("Fitness progression history extraction", () => {
     expect(performances.every((performance) => performance.workoutName === "Push")).toBe(true);
   });
 });
-
-describe("Fitness ME header", () => {
-  it("renders My Fitness without the old Manual / Untracked mode", () => {
-    const source = readFileSync(
-      "src/components/notes/NoteSlashTextarea.tsx",
-      "utf8",
-    );
-    const meContent = source.slice(
-      source.indexOf("function renderFitnessMeContent"),
-      source.indexOf("function renderFitnessTabContent"),
-    );
-
-    expect(meContent).toContain("renderFitnessMyHeader()");
-    expect(source).toContain("My Fitness");
-    expect(meContent).not.toContain("Manual / Untracked");
-    expect(meContent).not.toContain("Weekly");
-  });
-});

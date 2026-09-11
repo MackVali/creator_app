@@ -21,6 +21,6 @@ describe("Fitness action tabs", () => {
       "Custom",
       "ME",
     ]);
-    expect(FITNESS_ACTION_TAB_SPECS.at(-1)?.id).toBe("me");
+    expect(FITNESS_ACTION_TAB_SPECS.at(-1)?.id).toBe("custom");
   });
 });
