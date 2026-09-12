@@ -32,6 +32,8 @@ interface DayTimelineProps {
   date?: Date;
   children?: ReactNode;
   className?: string;
+  showTimeLabels?: boolean;
+  presentation?: "default" | "desktop-column";
   zoomPxPerMin?: MotionValue<number>;
   style?: Record<string, string | number | MotionValue>;
 }
@@ -43,6 +45,8 @@ export function DayTimeline({
   date = new Date(),
   children,
   className,
+  showTimeLabels = true,
+  presentation = "default",
   zoomPxPerMin,
   style: externalStyle,
 }: DayTimelineProps) {
@@ -71,18 +75,33 @@ export function DayTimeline({
     interpolateRange(value, 1.65, 2)
   );
 
+  const isDesktopColumn = presentation === "desktop-column";
+  const effectiveShowTimeLabels = showTimeLabels;
+
+  const labelColumn = effectiveShowTimeLabels
+    ? TIMELINE_LABEL_COLUMN_FALLBACK
+    : "0px";
+  const rightGutter = isDesktopColumn ? "0px" : TIMELINE_RIGHT_GUTTER_FALLBACK;
+  const gridLeft = effectiveShowTimeLabels ? TIMELINE_GRID_LEFT_FALLBACK : "0px";
+  const cardLeft = effectiveShowTimeLabels ? TIMELINE_CARD_LEFT_FALLBACK : "0px";
+  const gridRight = isDesktopColumn ? "0px" : TIMELINE_GRID_RIGHT_FALLBACK;
+  const cardRight = isDesktopColumn
+    ? "0px"
+    : TIMELINE_CARD_RIGHT_FALLBACK;
+
   const timelineVariables: Record<string, string | MotionValue> = {
     "--timeline-minute-unit": minuteUnit,
     "--quarter-intensity": quarterIntensity,
     "--quarter-label-intensity": quarterLabelIntensity,
     "--five-minute-intensity": fiveMinuteIntensity,
     "--half-hour-boost": halfHourBoost,
-    "--timeline-label-column": TIMELINE_LABEL_COLUMN_FALLBACK,
-    "--timeline-right-gutter": TIMELINE_RIGHT_GUTTER_FALLBACK,
-    "--timeline-grid-left": TIMELINE_GRID_LEFT_FALLBACK,
-    "--timeline-grid-right": TIMELINE_GRID_RIGHT_FALLBACK,
-    "--timeline-card-left": TIMELINE_CARD_LEFT_FALLBACK,
-    "--timeline-card-right": TIMELINE_CARD_RIGHT_FALLBACK,
+    "--timeline-label-column": labelColumn,
+    "--timeline-right-gutter": rightGutter,
+    "--timeline-grid-left": gridLeft,
+    "--timeline-grid-right": gridRight,
+    "--timeline-card-left": cardLeft,
+    "--timeline-card-right": cardRight,
+    "--schedule-instance-title-size": isDesktopColumn ? "12px" : "14px",
   };
 
   useEffect(() => {
@@ -119,9 +138,11 @@ export function DayTimeline({
   const combinedStyle: Record<string, string | number | MotionValue> = {
     ...timelineVariables,
     paddingLeft: 0,
-    paddingRight: `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`,
+    paddingRight: `var(--timeline-right-gutter, ${rightGutter})`,
     height: heightExpression,
-    background: backgroundGradient,
+    background: isDesktopColumn
+      ? "linear-gradient(180deg, rgba(10, 10, 10, 0.82), rgba(18, 18, 20, 0.74))"
+      : backgroundGradient,
     touchAction: "pan-y pinch-zoom",
     ...externalStyle,
   };
@@ -129,8 +150,10 @@ export function DayTimeline({
   return (
     <motion.div
       className={cn(
-        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10",
-        "shadow-[0_22px_48px_rgba(15,23,42,0.4)] backdrop-blur",
+        "relative isolate w-full overflow-hidden border border-white/10 backdrop-blur",
+        isDesktopColumn
+          ? "rounded-none border-x border-y-0 shadow-none"
+          : "rounded-[28px] shadow-[0_22px_48px_rgba(15,23,42,0.4)]",
         className
       )}
       style={combinedStyle}
@@ -154,15 +177,17 @@ export function DayTimeline({
                 right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
               }}
             />
-            <div
-              className="pointer-events-none absolute left-0 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
-              style={{
-                top,
-                width: `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`,
-              }}
-            >
-              {formatHour(h)}
-            </div>
+            {effectiveShowTimeLabels ? (
+              <div
+                className="pointer-events-none absolute left-0 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
+                style={{
+                  top,
+                  width: `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`,
+                }}
+              >
+                {formatHour(h)}
+              </div>
+            ) : null}
 
             {[15, 30, 45].map(minute => {
               const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
@@ -188,17 +213,22 @@ export function DayTimeline({
                       opacity: markerOpacity,
                     }}
                   />
-                   <div
-                    className="pointer-events-none absolute -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
-                    style={{
-                      top: minuteTop,
-                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
-                      opacity: labelOpacity,
-                      zIndex: 25,
-                    }}
-                  >
-                    {formatTime(h * 60 + minute)}
-                  </div>
+                  {effectiveShowTimeLabels ? (
+                    <div
+                      className={cn(
+                      "pointer-events-none absolute -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white",
+                      isDesktopColumn && "hidden"
+                    )}
+                      style={{
+                        top: minuteTop,
+                        right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                        opacity: labelOpacity,
+                        zIndex: 25,
+                      }}
+                    >
+                      {formatTime(h * 60 + minute)}
+                    </div>
+                  ) : null}
                 </Fragment>
               );
             })}
@@ -251,16 +281,21 @@ export function DayTimeline({
               <Clock className="h-3 w-3 text-slate-700" />
               <span>Now</span>
             </div>
-            <div
-              className="pointer-events-none absolute -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
-              style={{
-                top: nowTop,
-                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
-                zIndex: NOW_LINE_LAYER_Z_INDEX,
-              }}
-            >
-              {formatTime((nowMinutes ?? 0) + startHour * 60)}
-            </div>
+            {effectiveShowTimeLabels ? (
+              <div
+                className={cn(
+                "pointer-events-none absolute -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80",
+                isDesktopColumn && "hidden"
+              )}
+                style={{
+                  top: nowTop,
+                  right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                  zIndex: NOW_LINE_LAYER_Z_INDEX,
+                }}
+              >
+                {formatTime((nowMinutes ?? 0) + startHour * 60)}
+              </div>
+            ) : null}
         </>
       )}
       </motion.div>

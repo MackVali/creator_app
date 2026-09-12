@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
+  isIndividualInboxThreadRoute,
   shouldHideBottomChrome,
   shouldUseFocusedEditorSpacing,
   shouldUseCompactTopSpacing,
@@ -15,6 +16,7 @@ export default function AppMain({ children }: { children: ReactNode }) {
   const isFocusedEditor = shouldUseFocusedEditorSpacing(pathname);
   const isCompactTop = shouldUseCompactTopSpacing(pathname);
   const isDashboardRoute = pathname === "/dashboard";
+  const hideDesktopShell = isIndividualInboxThreadRoute(pathname);
 
   return (
     <main
@@ -22,7 +24,9 @@ export default function AppMain({ children }: { children: ReactNode }) {
         shouldHideBottomNav || isFocusedEditor
           ? "pb-[env(safe-area-inset-bottom)]"
           : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
-      } ${isCompactTop ? "pt-0" : ""}`}
+      } ${isCompactTop ? "pt-0" : ""} ${
+        hideDesktopShell ? "" : "lg:pt-0"
+      } ${isDashboardRoute ? "lg:pr-[360px]" : ""} lg:pb-0`}
     >
       <MainTabSwipeNavigator>{children}</MainTabSwipeNavigator>
     </main>

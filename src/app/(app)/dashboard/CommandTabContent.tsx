@@ -35,7 +35,7 @@ export default function CommandTabContent() {
       onRefresh={handleRefresh}
       refreshRef={commandSectionRef}
     >
-      <main className="app-dashboard-bg flow-root pb-20">
+      <main className="app-dashboard-bg flow-root pb-20 lg:w-full lg:pb-10">
         <LevelBanner ref={levelBannerRef} />
 
         <AreasContainer />

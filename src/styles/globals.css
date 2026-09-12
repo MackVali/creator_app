@@ -1311,3 +1311,49 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
 
 /* END FINAL COMMAND Area status treatment */
 
+
+
+  /* schedule-instance-responsive-title */
+  .schedule-instance-size-container {
+    container-type: size;
+  }
+
+  .schedule-instance-title {
+    display: -webkit-box;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    line-height: 1.15;
+  }
+
+  /*
+   * Actual card height controls available title lines.
+   * Because these are container queries, pinch/zoom automatically
+   * recalculates them from the rendered schedule-instance height.
+   */
+  @container (min-height: 42px) {
+    .schedule-instance-title {
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+  }
+
+  @container (min-height: 68px) {
+    .schedule-instance-title {
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+    }
+  }
+
+  @container (min-height: 94px) {
+    .schedule-instance-title {
+      -webkit-line-clamp: 4;
+      line-clamp: 4;
+    }
+  }
