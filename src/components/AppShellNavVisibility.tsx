@@ -8,6 +8,7 @@ import {
   shouldHideBottomChrome,
 } from "@/components/appChromeVisibility";
 import AppMain from "@/components/AppMain";
+import DesktopShellNav from "@/components/DesktopShellNav";
 import BottomNav from "@/components/BottomNav";
 import CreatorXpBurstOverlay from "@/components/effects/CreatorXpBurstOverlay";
 import { GlobalMyList } from "@/components/my-list/GlobalMyList";
@@ -39,21 +40,38 @@ export default function AppShellNavVisibility({
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
   const showBottomChrome = !hideNav && !shouldHideBottomChrome(pathname);
   const showGlobalMyList =
-    showBottomChrome || (!hideNav && isScheduleRoute(pathname));
+    showBottomChrome ||
+    (!hideNav && (isScheduleRoute(pathname) || pathname === "/dashboard"));
   const isMainSchedulePage = pathname === "/schedule";
   const enableScheduleTimelineDrag = pathname === "/schedule";
 
   return (
     <>
-      {!hideTopNav && <TopNav />}
+      {!hideNav && <DesktopShellNav />}
+
+      {!hideTopNav && (
+        <div className="lg:hidden">
+          <TopNav />
+        </div>
+      )}
+
       <CreatorXpBurstOverlay />
+
       <AppMain>{children}</AppMain>
-      {showBottomChrome && <BottomNav />}
+
+      {showBottomChrome && (
+        <div className="lg:hidden">
+          <BottomNav />
+        </div>
+      )}
+
       {showGlobalMyList && (
-        <GlobalMyList
-          useFullExpandedHeight={!isMainSchedulePage}
-          enableScheduleTimelineDrag={enableScheduleTimelineDrag}
-        />
+        <div className={pathname === "/dashboard" ? "" : "lg:hidden"}>
+          <GlobalMyList
+            useFullExpandedHeight={!isMainSchedulePage}
+            enableScheduleTimelineDrag={enableScheduleTimelineDrag}
+          />
+        </div>
       )}
     </>
   );

@@ -1093,6 +1093,7 @@ type MyListSortableManualTodoRowProps = {
   reorderGroup: MyListManualReorderGroup | null;
   children: (props: MyListSortableManualTodoHandleProps) => ReactNode;
 };
+export type MyListPresentationMode = "sheet" | "desktop-rail";
 type MyListManualReorderGroup =
   | { kind: "day"; id: MyListDayViewBucketId }
   | { kind: "priority"; id: PriorityBucketId }
@@ -1649,6 +1650,7 @@ function MyListSortableManualTodoRow({
 export function MyListSheet({
   open,
   onOpenChange,
+  presentationMode = "sheet",
   userId,
   tasks,
   pinnedSourceRows,
@@ -1675,6 +1677,7 @@ export function MyListSheet({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  presentationMode?: MyListPresentationMode;
   userId?: string | null;
   tasks: TaskLite[];
   pinnedSourceRows?: MyListPinnedSourceRow[];
@@ -1724,6 +1727,7 @@ export function MyListSheet({
   onTaskSkillSelect: (taskId: string, skill: SkillRow) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
+  const isDesktopRail = presentationMode === "desktop-rail";
   const [note, setNote] = useState("");
   const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
   const notesEditorSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -5363,11 +5367,12 @@ export function MyListSheet({
   );
 
   const expandSheet = useCallback(() => {
-    if (open) setIsExpanded(true);
-  }, [open]);
+    if (open && !isDesktopRail) setIsExpanded(true);
+  }, [isDesktopRail, open]);
 
   const handleSheetTouchStart = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (isDesktopRail) return;
       if (activeManualReorderRowId) {
         if (event.cancelable) event.preventDefault();
         event.stopPropagation();
@@ -5378,11 +5383,12 @@ export function MyListSheet({
       event.stopPropagation();
       sheetTouchStartYRef.current = event.touches[0]?.clientY ?? null;
     },
-    [activeManualReorderRowId],
+    [activeManualReorderRowId, isDesktopRail],
   );
 
   const handleSheetTouchMove = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (isDesktopRail) return;
       if (activeManualReorderRowId) {
         if (event.cancelable) event.preventDefault();
         event.stopPropagation();
@@ -5404,6 +5410,7 @@ export function MyListSheet({
     [
       activeManualReorderRowId,
       expandSheet,
+      isDesktopRail,
       isExpanded,
       isScheduleDragActive,
       open,
@@ -5416,6 +5423,7 @@ export function MyListSheet({
 
   const handleSheetWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (isDesktopRail) return;
       event.stopPropagation();
       if (activeManualReorderRowId) return;
       if (!open || isExpanded) return;
@@ -5428,7 +5436,7 @@ export function MyListSheet({
         expandSheet();
       }
     },
-    [activeManualReorderRowId, expandSheet, isExpanded, open],
+    [activeManualReorderRowId, expandSheet, isDesktopRail, isExpanded, open],
   );
 
   const isEditableElementInsideSheet = useCallback(
@@ -5768,7 +5776,6 @@ export function MyListSheet({
       if (!input) return;
 
       focused = true;
-      beginKeyboardSession();
       try {
         input.focus({ preventScroll: true });
       } catch {
@@ -5777,7 +5784,10 @@ export function MyListSheet({
 
       const caretPosition = input.value.length;
       input.setSelectionRange(caretPosition, caretPosition);
-      scheduleActiveEditableVisibility();
+      if (!isDesktopRail) {
+        beginKeyboardSession();
+        scheduleActiveEditableVisibility();
+      }
       setPendingTitleFocusRowId(null);
     };
 
@@ -5796,6 +5806,7 @@ export function MyListSheet({
   }, [
     activeView,
     beginKeyboardSession,
+    isDesktopRail,
     open,
     pendingTitleFocusRowId,
     scheduleActiveEditableVisibility,
@@ -5808,6 +5819,12 @@ export function MyListSheet({
       if (!sheetRootRef.current?.contains(target)) return;
       if (!target.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
 
+      if (isDesktopRail) {
+        if (!open || activeView !== "list") return;
+        onOpenChange(true);
+        return;
+      }
+
       editableFocusInsideSheetRef.current = true;
       beginKeyboardSession();
       scheduleActiveEditableVisibility();
@@ -5816,11 +5833,13 @@ export function MyListSheet({
       if (!open || activeView !== "list") return;
 
       onOpenChange(true);
+      if (isDesktopRail) return;
       if (!isExpanded) setIsExpanded(true);
     },
     [
       activeView,
       beginKeyboardSession,
+      isDesktopRail,
       isExpanded,
       onOpenChange,
       open,
@@ -5857,6 +5876,7 @@ export function MyListSheet({
   );
 
   useEffect(() => {
+    if (isDesktopRail) return;
     if (typeof window === "undefined" || typeof document === "undefined")
       return;
 
@@ -5882,7 +5902,7 @@ export function MyListSheet({
         scheduleViewportMeasurement,
       );
     };
-  }, [measureViewportGeometry, scheduleViewportMeasurement]);
+  }, [isDesktopRail, measureViewportGeometry, scheduleViewportMeasurement]);
 
   useEffect(() => {
     return () => {
@@ -5912,6 +5932,7 @@ export function MyListSheet({
   }, [clearKeyboardCloseTimeout, clearScheduleDragPress]);
 
   useEffect(() => {
+    if (isDesktopRail) return;
     if (!open || !isExpanded || typeof document === "undefined") return;
 
     const scrollY = window.scrollY;
@@ -5939,9 +5960,10 @@ export function MyListSheet({
       bodyStyle.overflow = previousOverflow;
       window.scrollTo(0, scrollY);
     };
-  }, [isExpanded, open]);
+  }, [isDesktopRail, isExpanded, open]);
 
   useEffect(() => {
+    if (isDesktopRail) return;
     if (!open) {
       editableFocusInsideSheetRef.current = false;
       clearKeyboardSession();
@@ -5953,7 +5975,7 @@ export function MyListSheet({
       setPendingDeleteRowId(null);
       setPendingTitleFocusRowId(null);
     }
-  }, [clearKeyboardSession, open]);
+  }, [clearKeyboardSession, isDesktopRail, open]);
 
   useEffect(() => {
     if (completedTodoCount === 0) {
@@ -6058,10 +6080,11 @@ export function MyListSheet({
   }, [clearScheduleDragPress, isScheduleDragActive]);
 
   useEffect(() => {
+    if (isDesktopRail) return;
     if (open && activeView === "list" && shouldExpandOnOpen) {
       setIsExpanded(true);
     }
-  }, [activeView, open, shouldExpandOnOpen]);
+  }, [activeView, isDesktopRail, open, shouldExpandOnOpen]);
 
   const handleCreateList = useCallback(async () => {
     const name = newListName.trim();
@@ -6098,14 +6121,16 @@ export function MyListSheet({
       data-no-tab-swipe
       data-my-list-sheet
       className={clsx(
-        "fixed inset-x-0 bottom-0 z-[150] w-full sm:mx-auto sm:max-w-[34rem] sm:px-4",
+        isDesktopRail
+          ? "fixed inset-y-0 right-0 z-40 hidden w-[360px] lg:block"
+          : "fixed inset-x-0 bottom-0 z-[150] w-full sm:mx-auto sm:max-w-[34rem] sm:px-4",
         open ? "pointer-events-auto" : "pointer-events-none",
         isScheduleDragActive && "pointer-events-none",
       )}
       initial={false}
-      animate={{ y: open ? 0 : "calc(100% - 2px)" }}
+      animate={isDesktopRail ? { y: 0 } : { y: open ? 0 : "calc(100% - 2px)" }}
       transition={
-        prefersReducedMotion
+        isDesktopRail || prefersReducedMotion
           ? { duration: 0 }
           : { type: "spring", stiffness: 245, damping: 30, mass: 0.9 }
       }
@@ -6125,7 +6150,7 @@ export function MyListSheet({
       onFocusCapture={handleSheetFocusCapture}
       onBlurCapture={handleSheetBlurCapture}
     >
-      {!open ? (
+      {!isDesktopRail && !open ? (
         <button
           type="button"
           aria-label="Open My List"
@@ -6242,7 +6267,7 @@ export function MyListSheet({
             My List
           </span>
         </button>
-      ) : isExpanded ? (
+      ) : !isDesktopRail && isExpanded ? (
         <button
           type="button"
           aria-label="Close My List"
@@ -6263,7 +6288,7 @@ export function MyListSheet({
             aria-hidden="true"
           />
         </button>
-      ) : (
+      ) : !isDesktopRail ? (
         <div
           role="group"
           aria-label="My List size controls"
@@ -6310,26 +6335,31 @@ export function MyListSheet({
             />
           </button>
         </div>
-      )}
+      ) : null}
       <motion.div
         aria-hidden={!open}
         className={clsx(
-          "flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708] text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)]",
+          "flex flex-col overflow-hidden bg-[#070708] text-white",
+          isDesktopRail
+            ? "h-full rounded-none border-l border-white/[0.085] shadow-[-18px_0_42px_-30px_rgba(0,0,0,0.95),inset_1px_0_0_rgba(255,255,255,0.035)]"
+            : "rounded-t-[1.65rem] border border-b-0 border-white/[0.095] shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)]",
         )}
         initial={false}
         animate={{
-          height: currentSheetHeight,
-          maxHeight: currentSheetHeight,
+          height: isDesktopRail ? "100%" : currentSheetHeight,
+          maxHeight: isDesktopRail ? "100%" : currentSheetHeight,
         }}
         transition={
-          prefersReducedMotion
+          isDesktopRail || prefersReducedMotion
             ? { duration: 0 }
             : keyboardGeometry.internalBottomInset > 0
               ? { duration: 0 }
               : { type: "spring", stiffness: 220, damping: 34, mass: 0.9 }
         }
         style={{
-          paddingBottom: "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
+          paddingBottom: isDesktopRail
+            ? undefined
+            : "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
         <div className="relative border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
@@ -6652,11 +6682,11 @@ export function MyListSheet({
           onWheel={handleSheetWheel}
           style={{
             paddingBottom:
-              keyboardGeometry.internalBottomInset > 0
+              !isDesktopRail && keyboardGeometry.internalBottomInset > 0
                 ? `calc(0.75rem + ${keyboardGeometry.internalBottomInset}px)`
                 : undefined,
             scrollPaddingBottom:
-              keyboardGeometry.internalBottomInset > 0
+              !isDesktopRail && keyboardGeometry.internalBottomInset > 0
                 ? `${keyboardGeometry.internalBottomInset + 12}px`
                 : undefined,
           }}

@@ -4439,7 +4439,7 @@ function SortableFocusQueueItem({
       ? "relative grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border border-white/10 bg-white/[0.055] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_0_18px_rgba(255,255,255,0.022),inset_0_-12px_20px_rgba(0,0,0,0.18)] transition"
       : isQueueExpanded
         ? "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left opacity-60 transition hover:bg-white/[0.035] hover:opacity-90"
-        : "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left opacity-60 transition hover:bg-white/[0.035] hover:opacity-90 sm:border-l sm:border-t-0",
+        : "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left opacity-60 transition hover:bg-white/[0.035] hover:opacity-90 sm:border-l sm:border-t-0 lg:border-l-0 lg:border-t",
     isDragging
       ? "z-20 bg-white/[0.075] opacity-95 shadow-[0_20px_45px_-28px_rgba(0,0,0,0.98),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-white/15"
       : "",
@@ -5357,6 +5357,19 @@ export default function FocusPomo({
   const previousStopwatchSecondInMinuteRef = useRef<number | null>(null);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
+  const [isDesktopQueue, setIsDesktopQueue] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const syncDesktopQueue = () => setIsDesktopQueue(media.matches);
+
+    syncDesktopQueue();
+    media.addEventListener("change", syncDesktopQueue);
+
+    return () => {
+      media.removeEventListener("change", syncDesktopQueue);
+    };
+  }, []);
   const [selectedMonumentIds, setSelectedMonumentIds] = useState<string[]>([]);
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -6467,10 +6480,12 @@ export default function FocusPomo({
     .filter((entry): entry is FocusPomoGoalQueueGroup => entry.type === "goal")
     .map((entry) => entry.goalId)
     .join("\u001F");
-  const visibleQueueEntries = isQueueExpanded
-    ? queueHierarchy
-    : queueHierarchy.slice(0, collapsedQueueLimit);
-  const hasMoreQueueItems = queueHierarchy.length > collapsedQueueLimit;
+  const visibleQueueEntries =
+    isDesktopQueue || isQueueExpanded
+      ? queueHierarchy
+      : queueHierarchy.slice(0, collapsedQueueLimit);
+  const hasMoreQueueItems =
+    !isDesktopQueue && queueHierarchy.length > collapsedQueueLimit;
   const visibleQueueItemIds = visibleQueueEntries.flatMap((entry) =>
     getVisibleFocusPomoHierarchyItemKeys(
       entry,
@@ -6478,10 +6493,9 @@ export default function FocusPomo({
       getFocusPomoQueueItemKey
     )
   );
-  const hiddenQueueCount = Math.max(
-    queueHierarchy.length - collapsedQueueLimit,
-    0
-  );
+  const hiddenQueueCount = isDesktopQueue
+    ? 0
+    : Math.max(queueHierarchy.length - collapsedQueueLimit, 0);
   const currentItemIcon = itemDisplayIcon(currentItem);
   const currentGoalDisplay = getItemGoalDisplay(currentItem);
   const currentGoalId =
@@ -8693,6 +8707,107 @@ export default function FocusPomo({
     skip: handleSkip,
   };
 
+  const sessionControls = (
+    <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4 lg:grid-cols-[minmax(13rem,18rem)_minmax(0,1fr)]">
+      <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-black/50 bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+          <svg
+            aria-hidden="true"
+            className="size-5 shrink-0 -rotate-90 overflow-visible sm:size-11 lg:size-12"
+            viewBox="0 0 44 44"
+          >
+            <circle
+              cx="22"
+              cy="22"
+              fill="none"
+              r={timerRingRadius}
+              stroke="rgba(16, 185, 129, 0.18)"
+              strokeWidth="6"
+            />
+            <circle
+              cx="22"
+              cy="22"
+              fill="none"
+              r={timerRingRadius}
+              stroke={
+                mode === "pomo"
+                  ? "rgba(209, 250, 229, 0.92)"
+                  : "rgba(255, 255, 255, 0.78)"
+              }
+              strokeDasharray={timerRingCircumference}
+              strokeDashoffset={timerRingDashOffset}
+              strokeLinecap="round"
+              strokeWidth="6"
+              style={{
+                transition: timerRingTransition,
+              }}
+            />
+          </svg>
+          <p className="min-w-0 truncate text-[7px] font-semibold uppercase tracking-[0.08em] text-zinc-300/80 sm:text-[10px] sm:tracking-[0.22em]">
+            {timerLabel}
+          </p>
+        </div>
+        <p className="min-w-0 max-w-full shrink whitespace-nowrap font-mono text-[1.05rem] font-semibold leading-none tabular-nums tracking-normal text-white min-[390px]:text-[1.15rem] sm:text-[1.65rem] md:text-[2rem] lg:text-[2.1rem]">
+          {timerDisplay}
+        </p>
+      </div>
+
+      <div className="flex min-w-0">
+        <button
+          type="button"
+          onClick={handlePrimaryAction}
+          disabled={!isRunning && !currentItem}
+          aria-disabled={!isRunning && !currentItem}
+          className={
+            isRunning
+              ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
+              : currentItem
+                ? "shimmer-border-complete focus-pomo-start-glint relative z-0 inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-green-500/45 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+                : "inline-flex min-h-12 w-full flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+          }
+        >
+          {isRunning ? (
+            <Square className="size-4 sm:size-5" aria-hidden="true" />
+          ) : (
+            <Play
+              className="size-4 fill-current sm:size-5"
+              aria-hidden="true"
+            />
+          )}
+          {isRunning ? "Cancel" : "Start"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const desktopPrimaryAction = (
+    <div className="flex min-w-0">
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              disabled={!isRunning && !currentItem}
+              aria-disabled={!isRunning && !currentItem}
+              className={
+                isRunning
+                  ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
+                  : currentItem
+                    ? "shimmer-border-complete focus-pomo-start-glint relative z-0 inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-green-500/45 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+                    : "inline-flex min-h-12 w-full flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+              }
+            >
+              {isRunning ? (
+                <Square className="size-4 sm:size-5" aria-hidden="true" />
+              ) : (
+                <Play
+                  className="size-4 fill-current sm:size-5"
+                  aria-hidden="true"
+                />
+              )}
+              {isRunning ? "Cancel" : "Start"}
+            </button>
+          </div>
+  );
+
   const scopeEditorBody = (
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 pb-5 pr-2 pt-3 [-webkit-overflow-scrolling:touch] sm:space-y-4 sm:px-0 sm:pb-0 sm:pr-1">
     <div className="flex items-center justify-between gap-2 sm:gap-3">
@@ -9194,7 +9309,7 @@ export default function FocusPomo({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-hidden bg-black/95 p-0 text-white backdrop-blur-xl sm:items-center sm:p-5"
+          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-hidden bg-black/95 p-0 text-white backdrop-blur-xl sm:items-center sm:p-5 lg:left-0 lg:items-stretch lg:bg-transparent lg:p-0 lg:backdrop-blur-0"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -9202,7 +9317,7 @@ export default function FocusPomo({
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.08),transparent_32%),linear-gradient(180deg,rgba(24,24,27,0.36),rgba(0,0,0,0.82)),repeating-linear-gradient(120deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_1px,transparent_1px,transparent_9px)]" />
           <motion.div
-            className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#050707] px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:rounded-[22px] sm:border sm:border-black/70 sm:px-7 sm:pb-6 sm:pt-6"
+            className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#050707] px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:rounded-[22px] sm:border sm:border-black/70 sm:px-7 sm:pb-6 sm:pt-6 lg:w-[min(96vw,88rem)] lg:max-w-none lg:px-6 lg:h-dvh lg:max-h-none lg:w-full lg:max-w-none lg:rounded-none lg:border-0 lg:bg-transparent lg:px-6 lg:pb-6 lg:pt-5 lg:shadow-none"
             initial={
               prefersReducedMotion
                 ? { opacity: 0 }
@@ -9225,7 +9340,7 @@ export default function FocusPomo({
           >
             <div className="pointer-events-none absolute inset-0 rounded-[inherit] border border-black/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),transparent_24%,rgba(255,255,255,0.025)_72%,rgba(0,0,0,0.38)),radial-gradient(circle_at_25%_35%,rgba(255,255,255,0.04),transparent_28%)]" />
             <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-            <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 sm:gap-6">
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 sm:gap-6 lg:gap-4">
               <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
                 <div className="min-w-0">
                   <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-600 sm:text-sm sm:tracking-[0.28em]">
@@ -9259,22 +9374,33 @@ export default function FocusPomo({
                   })}
                 </div>
                 <div className="flex justify-end">
-                  <button
+<button
                     type="button"
                     aria-label="Close focus pomo"
                     onClick={handleClose}
-                    className="inline-flex size-10 items-center justify-center bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:size-12"
+                    className="inline-flex size-10 items-center justify-center bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:size-12 lg:hidden"
                   >
                     <X className="size-5 sm:size-6" aria-hidden="true" />
                   </button>
+
+                  <div className="hidden items-center justify-end lg:flex">
+                    <div className="text-right">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                        {timerLabel}
+                      </p>
+                      <p className="mt-1 whitespace-nowrap font-mono text-[1.5rem] font-semibold leading-none tabular-nums text-white">
+                        {timerDisplay}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </header>
 
               <main
                 className={
                   scopeOpen && !hasRunStarted
-                    ? "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pb-0 sm:gap-5 sm:overflow-y-auto sm:pb-0"
-                    : "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0"
+                    ? "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pb-0 sm:gap-5 sm:overflow-y-auto sm:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-start lg:gap-4 lg:overflow-hidden"
+                    : "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-start lg:gap-4 lg:overflow-hidden"
                 }
               >
                 {!hasRunStarted && scopeOpen ? (
@@ -9289,12 +9415,13 @@ export default function FocusPomo({
                   </section>
                 ) : null}
 
+                <div className="contents lg:col-start-1 lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
                 {!hasRunStarted ? (
                   <section
                     className={
                       scopeOpen
-                        ? "relative mx-auto hidden min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px]"
-                        : "relative mx-auto min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]"
+                        ? "relative mx-auto hidden min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px] lg:order-1 lg:mx-0 lg:max-w-none lg:self-start"
+                        : "relative mx-auto min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px] lg:order-1 lg:mx-0 lg:max-w-none lg:self-start"
                     }
                   >
                     <div className="min-h-0 overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
@@ -9315,7 +9442,7 @@ export default function FocusPomo({
                           return (
                             <motion.div
                               id={executionScopePanelId}
-                              className="flex max-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden border-b border-black/40 bg-black/25 sm:max-h-none"
+                              className="flex max-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden border-b border-black/40 bg-black/25 sm:max-h-none lg:max-h-[calc(100dvh-10.5rem)]"
                               initial={
                                 prefersReducedMotion
                                   ? { opacity: 0 }
@@ -9381,7 +9508,7 @@ export default function FocusPomo({
                 ) : null}
 
                 {hasRunStarted ? (
-                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px] lg:order-3 lg:mx-0 lg:max-w-none lg:self-start">
                     <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[21px]">
                       {latestRunResult ? (
                         <>
@@ -9458,13 +9585,13 @@ export default function FocusPomo({
                   </section>
                 ) : null}
 
-                <section className="relative mx-auto w-full max-w-3xl overflow-visible rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
+                <section className="relative mx-auto w-full max-w-3xl overflow-visible rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px] lg:order-2 lg:mx-0 lg:max-w-none lg:self-start">
                   <div className="relative overflow-hidden rounded-[19px] border border-black/60 bg-zinc-950/80 px-3 pb-3 pt-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:rounded-[25px] sm:px-6 sm:py-5">
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(135deg,rgba(255,255,255,0.065),transparent_24%,rgba(255,255,255,0.022)_74%,rgba(0,0,0,0.32)),radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.045),transparent_34%)]" />
                     <div className="pointer-events-none absolute inset-x-10 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-white/28 to-transparent" />
 
                   <div className="relative">
-                    <div className="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_6.5rem] md:items-start">
+                    <div className="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_6.5rem] md:items-start lg:grid-cols-1">
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
                           {activeCardLoading ? (
@@ -9812,7 +9939,7 @@ export default function FocusPomo({
                         ) : null}
                       </div>
 
-                      <div className="hidden justify-self-end md:block">
+                      <div className="hidden justify-self-end md:block lg:hidden">
                         <div className="relative flex size-24 rotate-3 items-center justify-center border border-black/60 bg-[#0b0e11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-18px_28px_rgba(0,0,0,0.44),0_18px_34px_-26px_rgba(0,0,0,0.9)] [clip-path:polygon(18%_0,88%_7%,100%_55%,74%_100%,8%_90%,0_34%)]">
                           <div className="flex size-14 -rotate-3 items-center justify-center rounded-xl border border-black/60 bg-white/[0.045] text-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.28)]">
                             {activeCardLoading ? (
@@ -9870,18 +9997,22 @@ export default function FocusPomo({
                   </div>
                   </div>
                 </section>
+                </div>
 
                 {currentItem || activeCardLoading ? (
                   <div
                     className={
                       scopeOpen
-                        ? "relative hidden overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px]"
-                        : "relative overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]"
+                        ? "relative hidden overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px] lg:col-start-2 lg:flex lg:h-[calc(100dvh-7rem)] lg:min-h-0 lg:flex-col lg:overflow-hidden lg:self-start lg:rounded-none lg:border-0 lg:bg-none lg:p-0 lg:shadow-none"
+                        : "relative overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px] lg:col-start-2 lg:flex lg:h-[calc(100dvh-7rem)] lg:min-h-0 lg:flex-col lg:overflow-hidden lg:self-start lg:rounded-none lg:border-0 lg:bg-none lg:p-0 lg:shadow-none"
                     }
                   >
+                    <p className="mb-2 hidden px-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38 lg:block">
+                      Current Execution Order / Up Next
+                    </p>
                     <motion.div
                       layout
-                      className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"
+                      className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px] lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
                       transition={{
                         duration: prefersReducedMotion ? 0.01 : 0.18,
                         ease: [0.22, 1, 0.36, 1],
@@ -9892,8 +10023,8 @@ export default function FocusPomo({
                         layout
                         className={
                           isQueueExpanded
-                            ? "grid max-h-[min(42dvh,22rem)] overflow-y-auto"
-                            : "grid sm:grid-cols-3"
+                            ? "grid max-h-[min(42dvh,22rem)] overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 lg:overscroll-contain"
+                            : "grid sm:grid-cols-3 lg:max-h-none lg:min-h-0 lg:flex-1 lg:grid-cols-1 lg:overflow-y-auto lg:overscroll-contain"
                         }
                         transition={{
                           duration: prefersReducedMotion ? 0.01 : 0.18,
@@ -9906,15 +10037,15 @@ export default function FocusPomo({
                               key={`queue-skeleton-${index}`}
                               className={
                                 index === 0
-                                  ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
-                                  : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
+                                  ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4 lg:gap-2 lg:px-3 lg:py-2.5"
+                                  : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4 lg:gap-2 lg:border-l-0 lg:border-t lg:px-3 lg:py-2.5"
                               }
                             >
-                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
-                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
+                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:size-8 sm:rounded-lg lg:size-7" />
+                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.04] sm:size-8 sm:rounded-lg lg:size-7" />
                               <div className="min-w-0 flex-1 space-y-1.5">
-                                <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4" />
-                                <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3" />
+                                <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4 lg:h-3 lg:w-7/12" />
+                                <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3 lg:h-2 lg:w-14" />
                               </div>
                               <div className="ml-auto h-7 w-5 shrink-0 animate-pulse rounded-full bg-white/[0.05] sm:h-9 sm:w-7" />
                             </div>
@@ -9988,12 +10119,16 @@ export default function FocusPomo({
                         </div>
                       ) : null}
                     </motion.div>
+
+                    <div className="hidden shrink-0 border-t border-black/50 bg-[#080a0d] p-3 lg:block lg:p-4">
+                      {desktopPrimaryAction}
+                    </div>
                   </div>
                 ) : null}
 
               </main>
 
-              <div className="shrink-0 rounded-[18px] border border-black/70 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
+              <div className="shrink-0 rounded-[18px] border border-black/70 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4 lg:hidden">
                 <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4">
                   <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-black/50 bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
                     <div className="flex min-w-0 items-center gap-1 sm:gap-3">

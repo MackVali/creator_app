@@ -2201,7 +2201,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                   }}
                   role="group"
                   aria-label={`Category ${idx + 1} of ${categories.length}`}
-                  className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                  className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[47%] xl:w-[47%]"
                   style={{ scrollMarginInline: "12px" }}
                 >
                   <CategoryCard
@@ -2266,7 +2266,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
             <div
               role="group"
               aria-label={communitySkillPickerOpen ? "Community skills picker" : "Add skill"}
-              className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+              className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[47%] xl:w-[47%]"
               style={{ scrollMarginInline: "12px" }}
             >
               {communitySkillPickerOpen ? (

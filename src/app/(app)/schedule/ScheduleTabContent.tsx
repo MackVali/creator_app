@@ -21,6 +21,7 @@ import {
   animate,
   motion,
   useAnimationControls,
+  useMotionTemplate,
   useMotionValue,
   useReducedMotion,
 } from "framer-motion";
@@ -304,7 +305,7 @@ const TIMELINE_COMPACT_CARD_SHADOW =
 const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const PROJECT_SCHEDULE_INSTANCE_CARD_CLASS =
-  "relative flex h-full w-full items-center justify-between text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none";
+  "schedule-instance-size-container relative flex h-full w-full items-center justify-between text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none";
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
 const FOCUS_POMO_COMPLETE_BACKGROUND =
   "linear-gradient(155deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 48%, rgb(21, 128, 61) 100%)";
@@ -1070,9 +1071,10 @@ type ManualPlacementPushPreviewResult = {
 };
 
 const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
-  width: "100vw",
-  marginLeft: "calc(50% - 50vw)",
-  marginRight: "calc(50% - 50vw)",
+  width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
+  overflowX: "hidden",
   "--timeline-label-column": "clamp(1.75rem, 5vw, 2.5rem)",
   "--timeline-grid-left": "0px",
 };
@@ -1080,6 +1082,15 @@ const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
 const TIMELINE_CARD_BOUNDS: CSSProperties = {
   left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
   right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
+};
+
+const DESKTOP_COLUMN_TIMELINE_CSS_VARIABLES: CSSProperties = {
+  "--timeline-label-column": "0px",
+  "--timeline-right-gutter": "0px",
+  "--timeline-grid-left": "0px",
+  "--timeline-grid-right": "0px",
+  "--timeline-card-left": "6px",
+  "--timeline-card-right": "6px",
 };
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
@@ -1777,7 +1788,7 @@ function ManualPlacementProjectCard({
       ) : null}
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <div className="min-w-0 space-y-1">
-          <motion.span className="block text-sm font-medium">
+          <motion.span className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]">
             <span className="flex min-w-0 items-center gap-2">
               <span className={projectTitleInnerClass}>{title}</span>
               {rankDisplay ? (
@@ -2170,9 +2181,9 @@ function ProjectScheduleInstanceCard({
           />
         </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-start gap-3">
+      <div className="flex min-w-0 flex-1 items-start gap-2">
         <div className="min-w-0 space-y-1">
-          <motion.span className="block text-sm font-medium">
+          <motion.span className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]">
             <span className="flex min-w-0 items-center gap-2">
               <span className={titleClass}>{title}</span>
             </span>
@@ -2210,8 +2221,8 @@ function ManualPlacementHabitCard({
   const showHabitStreakBadge = safeStreakDays >= 2;
   const streakLabel = `${safeStreakDays}x`;
   const titleClass = wrapTitle
-    ? "pr-8 text-sm font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate"
-    : "truncate pr-8 text-sm font-medium leading-snug";
+    ? "pr-8 font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate text-[length:var(--schedule-instance-title-size,14px)]"
+    : "truncate pr-8 font-medium leading-snug text-[length:var(--schedule-instance-title-size,14px)]";
   return (
     <>
       {practiceContextLabel ? (
@@ -2317,7 +2328,7 @@ function ManualPlacementTimelineCard({
     return (
       <div
         className={clsx(
-          "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+          "habit-card schedule-instance-size-container relative flex h-full w-full items-center justify-between gap-3 border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
           getTimelineCardCornerClass("full"),
           habitVisuals.borderClass,
           habitVisuals.typeClass,
@@ -2811,8 +2822,11 @@ type DayTimelineModel = {
 
 type DayTimelineRenderOptions = {
   disableInteractions?: boolean;
+  disableQuickCreateSurface?: boolean;
   containerRef?: RefObject<HTMLDivElement | null>;
   fullBleed?: boolean;
+  presentation?: "default" | "desktop-column";
+  showTimeLabels?: boolean;
 };
 
 type DebugSchedulingViewMode = "DEFAULT" | "MANUAL" | "SIMPLE";
@@ -4477,8 +4491,8 @@ export function computeWindowReportsForDay({
   return reports;
 }
 
-const TIMELINE_LEFT_OFFSET = "4rem";
-const TIMELINE_RIGHT_OFFSET = "0.5rem";
+const TIMELINE_LEFT_OFFSET = "var(--timeline-card-left, 4rem)";
+const TIMELINE_RIGHT_OFFSET = "var(--timeline-card-right, 0.5rem)";
 const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`;
 const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`;
 
@@ -4534,6 +4548,78 @@ function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
     return "rounded-r-[var(--schedule-instance-radius)] rounded-l-none";
   }
   return "rounded-[var(--schedule-instance-radius)]";
+}
+
+type DesktopTimelineStackEntry = {
+  slot: number;
+  count: number;
+};
+
+const ENABLE_DESKTOP_TIMELINE_STACKING = false;
+
+function buildDesktopTimelineStackEntries({
+  habitPlacements,
+  habitLayouts,
+  projectInstances,
+  projectLayouts,
+  taskInstances,
+  taskLayouts,
+}: {
+  habitPlacements: HabitTimelinePlacement[];
+  habitLayouts: TimelineCardLayoutMode[];
+  projectInstances: ProjectInstance[];
+  projectLayouts: TimelineCardLayoutMode[];
+  taskInstances: TaskInstanceInfo[];
+  taskLayouts: TimelineCardLayoutMode[];
+}) {
+  const groups = new Map<
+    string,
+    Array<{ kind: "habit" | "project" | "task"; index: number }>
+  >();
+  const habitEntries = new Map<number, DesktopTimelineStackEntry>();
+  const projectEntries = new Map<number, DesktopTimelineStackEntry>();
+  const taskEntries = new Map<number, DesktopTimelineStackEntry>();
+
+  const add = (
+    kind: "habit" | "project" | "task",
+    index: number,
+    start: Date,
+    end: Date,
+    layoutMode: TimelineCardLayoutMode
+  ) => {
+    if (layoutMode === "full") return;
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      return;
+    }
+    const key = `${startMs}:${endMs}`;
+    const group = groups.get(key) ?? [];
+    group.push({ kind, index });
+    groups.set(key, group);
+  };
+
+  habitPlacements.forEach((placement, index) => {
+    add("habit", index, placement.start, placement.end, habitLayouts[index] ?? "full");
+  });
+  projectInstances.forEach((instance, index) => {
+    add("project", index, instance.start, instance.end, projectLayouts[index] ?? "full");
+  });
+  taskInstances.forEach((instance, index) => {
+    add("task", index, instance.start, instance.end, taskLayouts[index] ?? "full");
+  });
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    group.forEach((entry, slot) => {
+      const stackEntry = { slot, count: group.length };
+      if (entry.kind === "habit") habitEntries.set(entry.index, stackEntry);
+      if (entry.kind === "project") projectEntries.set(entry.index, stackEntry);
+      if (entry.kind === "task") taskEntries.set(entry.index, stackEntry);
+    });
+  }
+
+  return { habitEntries, projectEntries, taskEntries };
 }
 
 function buildDayTimelineModel({
@@ -5979,6 +6065,7 @@ export default function ScheduleTabContent({
 
   const [pxPerMin, setPxPerMin] = useState<number>(INITIAL_PX_PER_MIN);
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
+  const animatedTimelineMinuteUnit = useMotionTemplate`${animatedPxPerMin}px`;
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
   const basePxPerMinRef = useRef(INITIAL_PX_PER_MIN);
   // Skip the first post-mount viewport/layout pass so the midpoint fallback
@@ -6486,6 +6573,13 @@ export default function ScheduleTabContent({
     jumpPullDistanceRef.current = 0;
   }, []);
 
+  const isDesktopScheduleLayout = useCallback(() => {
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1024px)").matches
+    );
+  }, []);
+
   const animateInlineJumpOpen = useCallback(
     async ({ source = "button" }: { source?: "button" | "pull" } = {}) => {
       jumpPullControls.stop();
@@ -6557,13 +6651,14 @@ export default function ScheduleTabContent({
 
   const canInitiateJumpPull = useCallback(() => {
     if (typeof window === "undefined") return false;
+    if (isDesktopScheduleLayout()) return false;
     if (view !== "day") return false;
     if (prefersReducedMotion) return false;
     if (pinchActiveRef.current) return false;
     if (manualPlacementSessionRef.current) return false;
     const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
     return scrollY <= 2;
-  }, [view, prefersReducedMotion]);
+  }, [isDesktopScheduleLayout, view, prefersReducedMotion]);
 
   const navLock = useRef(false);
   const navigate = useCallback((next: ScheduleView) => {
@@ -10240,6 +10335,17 @@ export default function ScheduleTabContent({
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
   const inlineJumpPanelRef = useRef<HTMLDivElement | null>(null);
+  const [isDesktopScheduleViewport, setIsDesktopScheduleViewport] =
+    useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktopScheduleViewport(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const isInsideInlineJumpPanelTarget = (target: EventTarget | null) => {
     return (
@@ -10732,6 +10838,13 @@ export default function ScheduleTabContent({
   }, [animateInlineJumpClosed, isInlineJumpToDateOpen]);
 
   const openInlineJumpToDateFromButton = useCallback(() => {
+    if (isDesktopScheduleLayout()) {
+      setIsJumpToDateOpen(false);
+      setIsInlineJumpToDateOpen(false);
+      jumpPullControls.set({ y: 0 });
+      return;
+    }
+
     if (isInlineJumpToDateOpen) {
       void closeInlineJumpToDate();
       return;
@@ -10752,7 +10865,9 @@ export default function ScheduleTabContent({
   }, [
     animateInlineJumpOpen,
     closeInlineJumpToDate,
+    isDesktopScheduleLayout,
     isInlineJumpToDateOpen,
+    jumpPullControls,
   ]);
 
   const handleInlineJumpToDateSelect = useCallback(
@@ -11540,6 +11655,54 @@ export default function ScheduleTabContent({
     timeZoneShortName,
     friendlyTimeZone,
     effectiveTimeZone,
+    canonicalTodayDateKey,
+  ]);
+
+  const desktopDayTimelineModels = useMemo(() => {
+    return [0, 1, 2, 3, 4].map((dayOffset) => {
+      const date =
+        dayOffset === 0
+          ? currentDate
+          : addDaysInTimeZone(currentDate, dayOffset, effectiveTimeZone);
+      return buildDayTimelineModel({
+        date,
+        windows,
+        savedEvents,
+        instances: filterInstancesForDate(date, effectiveTimeZone),
+        projectMap,
+        taskMap,
+        tasksByProjectId,
+        habits,
+        startHour,
+        pxPerMin,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        schedulerDebug,
+        schedulerTimelinePlacements,
+        timeZoneShortName,
+        friendlyTimeZone,
+        localTimeZone: effectiveTimeZone,
+        todayDateKey: canonicalTodayDateKey,
+      });
+    });
+  }, [
+    currentDate,
+    windows,
+    savedEvents,
+    filterInstancesForDate,
+    effectiveTimeZone,
+    projectMap,
+    taskMap,
+    tasksByProjectId,
+    habits,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    timeZoneShortName,
+    friendlyTimeZone,
     canonicalTodayDateKey,
   ]);
 
@@ -14209,19 +14372,30 @@ export default function ScheduleTabContent({
       const containerClass = options?.disableInteractions
         ? "pointer-events-none select-none"
         : "";
+      const quickCreateSurfaceDisabled =
+        options?.disableInteractions || options?.disableQuickCreateSurface;
 
       const timelineTouchAction = manualPlacementSession
         ? "none"
         : TIMELINE_TOUCH_ACTION;
 
+      const isDesktopColumnPresentation =
+        options?.presentation === "desktop-column";
+      const baseTimelineVariables = isDesktopColumnPresentation
+        ? DESKTOP_COLUMN_TIMELINE_CSS_VARIABLES
+        : TIMELINE_CSS_VARIABLES;
+
       const containerStyle: CSSProperties = options?.fullBleed
         ? {
-            ...TIMELINE_CSS_VARIABLES,
+            ...baseTimelineVariables,
             ...TIMELINE_FULL_BLEED_STYLE,
+            ...(isDesktopColumnPresentation
+              ? DESKTOP_COLUMN_TIMELINE_CSS_VARIABLES
+              : null),
             touchAction: timelineTouchAction,
           }
         : {
-            ...TIMELINE_CSS_VARIABLES,
+            ...baseTimelineVariables,
             touchAction: timelineTouchAction,
           };
 
@@ -14372,7 +14546,9 @@ export default function ScheduleTabContent({
         };
 
         return (
-          <div className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
+          <div
+            className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none"
+          >
             <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
               <FlameEmber
                 level={energyLabel}
@@ -14447,6 +14623,16 @@ export default function ScheduleTabContent({
           taskInstances: modelStandaloneTaskInstances,
           syncPairingsByInstanceId: syncPairings,
         });
+      const desktopTimelineStackEntries = ENABLE_DESKTOP_TIMELINE_STACKING && isDesktopColumnPresentation
+        ? buildDesktopTimelineStackEntries({
+            habitPlacements: dayHabitPlacements,
+            habitLayouts,
+            projectInstances: dayProjectInstances,
+            projectLayouts,
+            taskInstances: modelStandaloneTaskInstances,
+            taskLayouts,
+          })
+        : null;
       const foregroundHabitPlacements = isSimpleSchedulingMode
         ? []
         : dayHabitPlacements;
@@ -14656,42 +14842,42 @@ export default function ScheduleTabContent({
           ref={options?.containerRef ?? undefined}
           style={containerStyle}
           onPointerDownCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerDown
           }
           onPointerMoveCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerMove
           }
           onPointerUpCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerEnd
           }
           onPointerCancelCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfacePointerEnd
           }
           onTouchStartCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchStart
           }
           onTouchMoveCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchMove
           }
           onTouchEndCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchEnd
           }
           onTouchCancelCapture={
-            options?.disableInteractions || isSimpleSchedulingMode
+            quickCreateSurfaceDisabled || isSimpleSchedulingMode
               ? undefined
               : handleQuickCreateSurfaceTouchEnd
           }
@@ -14700,8 +14886,24 @@ export default function ScheduleTabContent({
             date={date}
             startHour={modelStartHour}
             pxPerMin={modelPxPerMin}
+            presentation={options?.presentation}
             zoomPxPerMin={animatedPxPerMin}
-            style={TIMELINE_CSS_VARIABLES}
+            showTimeLabels={options?.showTimeLabels ?? true}
+            style={
+              (isDesktopColumnPresentation
+                ? {
+                    ...TIMELINE_CSS_VARIABLES,
+                    ...DESKTOP_COLUMN_TIMELINE_CSS_VARIABLES,
+                  }
+                : options?.showTimeLabels === false
+                ? {
+                    ...TIMELINE_CSS_VARIABLES,
+                    "--timeline-label-column": "0px",
+                    "--timeline-grid-left": "0px",
+                    "--timeline-card-left": "0px",
+                  }
+                : TIMELINE_CSS_VARIABLES) as Record<string, string | number>
+            }
           >
 
             {modelWindows.map((w) => {
@@ -14729,6 +14931,27 @@ export default function ScheduleTabContent({
                   typeof w.label === "string" &&
                   w.label.trim().length > 0 &&
                   segmentHeightPx >= 24;
+                const blockKindLabel =
+                  normalizeTimeBlockConstraintKind(w.window_kind);
+                if (isDesktopColumnPresentation) {
+                  return (
+                    <div
+                      key={`${w.id}-${index}`}
+                      aria-label={index === 0 ? w.label : undefined}
+                      className="pointer-events-none absolute left-0 right-0 border-l border-zinc-700/50"
+                      style={{
+                        top: toTimelinePosition(segment.start),
+                        height: toTimelinePosition(segment.end - segment.start),
+                      }}
+                    >
+                      {shouldShowLabel ? (
+                        <div className="absolute left-1.5 right-1.5 top-1 z-20 truncate text-[9px] font-semibold uppercase leading-none tracking-wide text-white/42">
+                          {w.label?.trim()} · {blockKindLabel}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={`${w.id}-${index}`}
@@ -15132,9 +15355,11 @@ export default function ScheduleTabContent({
                     zIndex: stackingZIndex,
                   }}
                 >
-                  <div className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
+                  <div
+                    className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
+                  >
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">
+                      <span className="schedule-instance-title min-w-0 font-semibold text-white text-[length:var(--schedule-instance-title-size,14px)]">
                         {card.title}
                       </span>
                       {card.meetingUrl ? (
@@ -15200,10 +15425,8 @@ export default function ScheduleTabContent({
                 durationMinutes * modelPxPerMin,
                 0
               );
-              const shouldWrapHabitTitle = Number(durationMinutes) >= 30;
-              const habitTitleClass = shouldWrapHabitTitle
-                ? "pr-8 text-sm font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate"
-                : "truncate pr-8 text-sm font-medium leading-snug";
+              const habitTitleClass =
+                "schedule-instance-title pr-8 font-medium text-[length:var(--schedule-instance-title-size,14px)]";
               const pendingStatus = placement.instanceId
                 ? pendingInstanceStatuses.get(placement.instanceId)
                 : undefined;
@@ -15236,15 +15459,21 @@ export default function ScheduleTabContent({
               const streakLabel = `${streakDays}x`;
               let streakBadgeStyle: CSSProperties | undefined;
               if (showHabitStreakBadge) {
-                let streakBadgeTopPx = HABIT_STREAK_BADGE_TOP_MARGIN_PX;
+                const streakBadgeTopMarginPx =
+                  HABIT_STREAK_BADGE_TOP_MARGIN_PX;
+                const streakBadgeBaseHeightPx =
+                  HABIT_STREAK_BADGE_BASE_HEIGHT_PX;
+                const streakBadgeBottomMarginPx =
+                  HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX;
+                let streakBadgeTopPx = streakBadgeTopMarginPx;
                 const overflow =
                   streakBadgeTopPx +
-                  HABIT_STREAK_BADGE_BASE_HEIGHT_PX +
-                  HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX -
+                  streakBadgeBaseHeightPx +
+                  streakBadgeBottomMarginPx -
                   habitHeightPx;
                 if (overflow > 0) {
                   streakBadgeTopPx = Math.max(
-                    HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX,
+                    streakBadgeBottomMarginPx,
                     streakBadgeTopPx - overflow
                   );
                 }
@@ -15288,14 +15517,21 @@ export default function ScheduleTabContent({
                 ? "pt-4 pb-2"
                 : "py-2";
               const originalLayoutMode = habitLayouts[index] ?? "full";
+              const desktopStackEntry =
+                desktopTimelineStackEntries?.habitEntries.get(index) ?? null;
               const pairedProjectIndex = habitPairedProjectIndex.get(index);
               const pairedProjectIsLeft =
+                !desktopStackEntry &&
                 pairedProjectIndex !== undefined &&
                 projectLayouts[pairedProjectIndex] === "paired-left";
-              const layoutMode = pairedProjectIsLeft
+              const layoutMode = desktopStackEntry
+                ? "full"
+                : pairedProjectIsLeft
                 ? "paired-right"
                 : originalLayoutMode;
-              const syncLaneLayout = syncHabitLaneLayouts.get(index) ?? null;
+              const syncLaneLayout = desktopStackEntry
+                ? null
+                : syncHabitLaneLayouts.get(index) ?? null;
               const habitCornerClass = getTimelineCardCornerClass(layoutMode);
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;
@@ -15324,8 +15560,16 @@ export default function ScheduleTabContent({
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   ...TIMELINE_CARD_BOUNDS,
-                  top: topStyle,
-                  height: heightStyle,
+                  top: desktopStackEntry
+                    ? toTimelinePosition(
+                        startOffsetMinutes +
+                          (durationMinutes / desktopStackEntry.count) *
+                            desktopStackEntry.slot
+                      )
+                    : topStyle,
+                  height: desktopStackEntry
+                    ? toTimelinePosition(durationMinutes / desktopStackEntry.count)
+                    : heightStyle,
                 },
                 layoutMode,
                 {
@@ -15591,7 +15835,8 @@ export default function ScheduleTabContent({
                       placement.instanceId ?? undefined
                     }
                     className={clsx(
-                      "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                      "habit-card schedule-instance-size-container relative flex h-full w-full items-center justify-between border text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                      "gap-3 px-3",
                       habitCornerClass,
                       habitPaddingClass,
                       habitBorderClass,
@@ -15647,7 +15892,8 @@ export default function ScheduleTabContent({
                     {practiceContextLabel ? (
                       <div
                         className={clsx(
-                          "pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight",
+                          "pointer-events-none absolute top-0 max-w-[60%] text-right leading-tight",
+                          "right-3",
                           isCompletedGemCard && "z-[2]"
                         )}
                       >
@@ -15689,8 +15935,11 @@ export default function ScheduleTabContent({
                     {showHabitStreakBadge ? (
                       <span
                         className={clsx(
-                          "pointer-events-none absolute top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100",
-                          isFitnessPlanHabitCard ? "right-12" : "right-3",
+                          "pointer-events-none absolute flex items-center gap-0.5 rounded-full bg-white/10 font-semibold leading-tight text-amber-100",
+                          "top-2 px-1.5 py-[2px] text-xs",
+                          isFitnessPlanHabitCard
+                            ? "right-12"
+                            : "right-3",
                           isCompletedGemCard && "z-[2]"
                         )}
                         style={streakBadgeStyle}
@@ -16026,7 +16275,6 @@ export default function ScheduleTabContent({
                   0,
                   (visualEnd.getTime() - visualStart.getTime()) / 60000
                 );
-                const shouldWrapProjectTitle = Number(durationMinutes) >= 30;
 
                 if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
                   hasLoggedInstance = true;
@@ -16055,13 +16303,18 @@ export default function ScheduleTabContent({
                         project.taskCount === 1 ? "task" : "tasks"
                       }`
                     : null;
-                const layoutMode = projectLayouts[index] ?? "full";
+                const desktopStackEntry =
+                  desktopTimelineStackEntries?.projectEntries.get(index) ?? null;
+                const layoutMode = desktopStackEntry
+                  ? "full"
+                  : projectLayouts[index] ?? "full";
                 const projectCornerClass =
                   getTimelineCardCornerClass(layoutMode);
                 const goalRelationInfo = projectGoalRelations[projectId];
                 const goalRelationName = goalRelationInfo?.goalName?.trim();
                 const goalRelationText =
-                  goalRelationName && goalRelationName.length > 0
+                  goalRelationName &&
+                  goalRelationName.length > 0
                     ? goalRelationName
                     : null;
                 const collapsedCardPaddingClass = goalRelationText
@@ -16078,8 +16331,18 @@ export default function ScheduleTabContent({
                 const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                   {
                     ...TIMELINE_CARD_BOUNDS,
-                    top: topStyle,
-                    height: heightStyle,
+                    top: desktopStackEntry
+                      ? toTimelinePosition(
+                          startOffsetMinutes +
+                            (durationMinutes / desktopStackEntry.count) *
+                              desktopStackEntry.slot
+                        )
+                      : topStyle,
+                    height: desktopStackEntry
+                      ? toTimelinePosition(
+                          durationMinutes / desktopStackEntry.count
+                        )
+                      : heightStyle,
                   },
                   layoutMode,
                   { animate: !prefersReducedMotion }
@@ -16214,9 +16477,8 @@ export default function ScheduleTabContent({
                 const projectEnergyLevel = resolveEnergyLevel(project.energy);
                 const cardEnergyLevel: FlameLevel =
                   instanceEnergyLevel ?? projectEnergyLevel ?? "NO";
-                const projectTitleInnerClass = shouldWrapProjectTitle
-                  ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
-                  : "min-w-0 leading-tight truncate";
+                const projectTitleInnerClass =
+                  "schedule-instance-title min-w-0 font-medium text-[length:var(--schedule-instance-title-size,14px)]";
                 if (isDraggedInstance) return null;
                 return (
                   <motion.div
@@ -16488,7 +16750,7 @@ export default function ScheduleTabContent({
                               <div className="min-w-0 space-y-1">
                                 <motion.span
                                   layoutId={layoutTokens.title}
-                                  className="block text-sm font-medium"
+                                  className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                                 >
                                   <span className="flex min-w-0 items-center gap-2">
                                     <span className={projectTitleInnerClass}>
@@ -16630,11 +16892,8 @@ export default function ScheduleTabContent({
                                   heightRatio * 100,
                                   minHeightRatio * 100
                                 );
-                                const allowTaskTitleWrap =
-                                  taskCard.displayDurationMinutes >= 30;
-                                const taskTitleClass = allowTaskTitleWrap
-                                  ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
-                                  : "text-sm font-medium leading-tight truncate";
+                                const taskTitleClass =
+                                  "schedule-instance-title font-medium text-[length:var(--schedule-instance-title-size,14px)]";
                                 const baseTaskClasses =
                                   "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 select-none";
                                 const taskCardPaddingClass = goalRelationText
@@ -16992,7 +17251,10 @@ export default function ScheduleTabContent({
                                       energyLevel={energyLevel}
                                       skillIcon={task.skill_icon}
                                       size="xs"
-                                      className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
+                                      className={clsx(
+                                        "pointer-events-none absolute flex items-center gap-1 rounded-full bg-zinc-950/70",
+                                        "-top-1 -right-1 px-1.5 py-[1px]"
+                                      )}
                                       iconClassName="text-xs leading-none"
                                       flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
                                     />
@@ -17073,7 +17335,11 @@ export default function ScheduleTabContent({
                     ? canToggleMyListScheduleStatus(status)
                     : status === "completed" || status === "scheduled";
                   const isCompleted = status === "completed";
-                  const layoutMode = taskLayouts[index] ?? "full";
+                  const desktopStackEntry =
+                    desktopTimelineStackEntries?.taskEntries.get(index) ?? null;
+                  const layoutMode = desktopStackEntry
+                    ? "full"
+                    : taskLayouts[index] ?? "full";
                   const standaloneHeightPx = Math.max(
                     durationMinutes * modelPxPerMin,
                     1
@@ -17086,8 +17352,18 @@ export default function ScheduleTabContent({
                     {
                       ...TIMELINE_CARD_BOUNDS,
                       position: "absolute",
-                      top: toTimelinePosition(startOffsetMinutes),
-                      height: toTimelinePosition(durationMinutes),
+                      top: desktopStackEntry
+                        ? toTimelinePosition(
+                            startOffsetMinutes +
+                              (durationMinutes / desktopStackEntry.count) *
+                                desktopStackEntry.slot
+                          )
+                        : toTimelinePosition(startOffsetMinutes),
+                      height: desktopStackEntry
+                        ? toTimelinePosition(
+                            durationMinutes / desktopStackEntry.count
+                          )
+                        : toTimelinePosition(durationMinutes),
                     },
                     layoutMode,
                     { animate: !prefersReducedMotion }
@@ -17101,11 +17377,8 @@ export default function ScheduleTabContent({
                       instance.overlay_window_id
                     ),
                   };
-                  const shouldWrapStandaloneTitle =
-                    Number(durationMinutes) >= 30;
-                  const standaloneTitleClass = shouldWrapStandaloneTitle
-                    ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
-                    : "min-w-0 leading-tight truncate";
+                  const standaloneTitleClass =
+                    "schedule-instance-title min-w-0 font-medium text-[length:var(--schedule-instance-title-size,14px)]";
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
                   const standaloneProjectId = task.project_id ?? null;
@@ -17120,7 +17393,9 @@ export default function ScheduleTabContent({
                       ? standaloneGoalRelationName
                       : null;
                   const standaloneCardPaddingClass =
-                    standaloneGoalRelationText ? "pt-4 pb-2" : "py-2";
+                    standaloneGoalRelationText
+                      ? "pt-4 pb-2"
+                      : "py-2";
                   const standaloneCardStyle: CSSProperties = {
                     ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
                     boxShadow: standaloneVisuals.boxShadow,
@@ -17287,7 +17562,7 @@ export default function ScheduleTabContent({
                           <div className="min-w-0 space-y-1">
                             <motion.span
                               layoutId={layoutTokens.title}
-                              className="block text-sm font-medium"
+                              className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                             >
                               <span className="flex min-w-0 items-center gap-2">
                                 <span className={standaloneTitleClass}>
@@ -17404,6 +17679,103 @@ export default function ScheduleTabContent({
       }),
     [renderDayTimeline, dayTimelineModel]
   );
+
+  const desktopMultiDayTimelineNode = useMemo(() => {
+    const formatDesktopHeader = (date: Date, timeZone: string) => {
+      try {
+        const parts = new Intl.DateTimeFormat(undefined, {
+          weekday: "short",
+          day: "numeric",
+          timeZone,
+        }).formatToParts(date);
+        const weekday =
+          parts.find((part) => part.type === "weekday")?.value ?? "";
+        const day = parts.find((part) => part.type === "day")?.value ?? "";
+        return {
+          weekday: weekday.slice(0, 3).toUpperCase(),
+          day,
+        };
+      } catch {
+        return {
+          weekday: date.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(),
+          day: String(date.getDate()),
+        };
+      }
+    };
+
+    return (
+      <div data-desktop-multiday-schedule>
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#090a0b]/72 shadow-[0_22px_48px_rgba(15,23,42,0.28)]">
+          <div
+            className="sticky z-30 grid border-b border-white/10 bg-[#090a0b]/94 backdrop-blur-xl"
+            style={{
+              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+              top:
+                topBarHeight !== null && Number.isFinite(topBarHeight)
+                  ? Math.max(0, topBarHeight)
+                  : 0,
+            }}
+          >
+            {desktopDayTimelineModels.map((model, index) => {
+              const label = formatDesktopHeader(model.date, model.viewTimeZone);
+              const isSelected = index === 0;
+              return (
+                <div
+                  key={`desktop-day-header-${model.dayViewDateKey}`}
+                  className={clsx(
+                    "flex min-h-14 items-center justify-center border-l border-white/[0.07] first:border-l-0",
+                    isSelected ? "bg-white/[0.065]" : "bg-transparent",
+                    model.isViewingToday && !isSelected ? "shadow-[inset_0_-1px_0_rgba(255,255,255,0.22)]" : ""
+                  )}
+                >
+                  <div className="flex flex-col items-center gap-0.5 leading-none">
+                    <span
+                      className={clsx(
+                        "text-[10px] font-semibold uppercase tracking-[0.22em]",
+                        isSelected ? "text-white/85" : "text-white/48"
+                      )}
+                    >
+                      {label.weekday}
+                    </span>
+                    <span
+                      className={clsx(
+                        "text-base font-semibold tabular-nums",
+                        isSelected ? "text-white" : "text-white/70",
+                        model.isViewingToday ? "text-white" : ""
+                      )}
+                    >
+                      {label.day}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div
+            className="grid"
+            ref={dayTimelineContainerRef}
+            style={{
+              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+            }}
+          >
+            {desktopDayTimelineModels.map((model, index) => (
+              <div
+                key={`desktop-day-${model.dayViewDateKey}`}
+                className="min-w-0 border-l border-white/[0.07] first:border-l-0"
+              >
+                {renderDayTimeline(model, {
+                  fullBleed: true,
+                  presentation: "desktop-column",
+                  showTimeLabels: index === 0,
+                  disableQuickCreateSurface: index !== 0,
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }, [desktopDayTimelineModels, renderDayTimeline, topBarHeight]);
 
   useEffect(() => {
     if (view !== "day") {
@@ -18287,10 +18659,15 @@ export default function ScheduleTabContent({
             isSimpleSchedulingMode={isSimpleSchedulingMode}
             onToggleSimpleSchedulingMode={handleToggleSimpleSchedulingMode}
             onHeightChange={setTopBarHeight}
+            className={!isSwipePreview ? "lg:left-0 lg:right-0" : undefined}
           />
         ) : null}
         <div
-          className="space-y-4 text-[var(--text)]"
+          className={clsx(
+            "min-w-0 space-y-4 overflow-x-hidden text-[var(--text)]",
+            !isSwipePreview &&
+              "lg:w-screen lg:max-w-none lg:min-w-0"
+          )}
           style={{ paddingTop: scheduleContentPaddingTop }}
           data-schedule-root
         >
@@ -18393,6 +18770,8 @@ export default function ScheduleTabContent({
                           <div className="flex h-64 items-center justify-center text-zinc-500">
                             Loading schedule...
                           </div>
+                        ) : isDesktopScheduleViewport ? (
+                          desktopMultiDayTimelineNode
                         ) : prefersReducedMotion ? (
                           dayTimelineNode
                         ) : isSwipingDayView ? (
@@ -18475,6 +18854,21 @@ export default function ScheduleTabContent({
             </motion.div>
           </div>
         </div>
+        {!isSwipePreview ? (
+          <aside className="hidden">
+            <JumpToDateSheet
+              variant="inline"
+              presentation="desktop-rail"
+              open
+              onOpenChange={() => undefined}
+              currentDate={currentDate}
+              timeZone={effectiveTimeZone}
+              onSelectDate={handleJumpToDateSelect}
+              snapshot={jumpToDateSnapshot ?? undefined}
+              className="h-dvh min-h-dvh rounded-none border-b-0 bg-[#090a0b] bg-none shadow-none backdrop-blur-none"
+            />
+          </aside>
+        ) : null}
       </ProtectedRoute>
       <MemoCompletionDialog
         open={Boolean(memoCompletionState)}
@@ -18484,17 +18878,19 @@ export default function ScheduleTabContent({
         }}
         onCompleted={handleMemoCompletionSubmitted}
       />
-      <JumpToDateSheet
-        open={isJumpToDateOpen}
-        onOpenChange={(open) => {
-          void hapticSnap();
-          setIsJumpToDateOpen(open);
-        }}
-        currentDate={currentDate}
-        timeZone={effectiveTimeZone}
-        onSelectDate={handleJumpToDateSelect}
-        snapshot={jumpToDateSnapshot ?? undefined}
-      />
+      <div className="lg:hidden">
+        <JumpToDateSheet
+          open={isJumpToDateOpen}
+          onOpenChange={(open) => {
+            void hapticSnap();
+            setIsJumpToDateOpen(open);
+          }}
+          currentDate={currentDate}
+          timeZone={effectiveTimeZone}
+          onSelectDate={handleJumpToDateSelect}
+          snapshot={jumpToDateSnapshot ?? undefined}
+        />
+      </div>
       <ScheduleSearchSheet
         open={isSearchOpen}
         onOpenChange={(open) => {

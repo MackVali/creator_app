@@ -229,7 +229,7 @@ function AreaCard({
       data-area-status={status}
       onClick={onClick}
       className={cn(
-        "card app-dashboard-area-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-[background-color,border-color,box-shadow] hover:bg-[var(--subtle-surface)] active:scale-[0.98]",
+        "card app-dashboard-area-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-[background-color,border-color,box-shadow] hover:bg-[var(--subtle-surface)] active:scale-[0.98]  lg:aspect-auto lg:h-[112px]",
         isHidden && "pointer-events-none opacity-0"
       )}
     >
@@ -722,7 +722,7 @@ function AreasGrid() {
   return (
     <div>
       <div className="app-dashboard-areas-panel px-4">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-4 gap-1 lg:max-w-[660px] lg:grid-cols-4 lg:gap-2">
           {sortedAreas.map((area) => (
             <AreaCard
               key={area.id}
@@ -755,7 +755,9 @@ export function AreasContainer() {
             <AreasGrid />
           </div>
 
-          <MonumentContainer embedded paginated pageSize={8} />
+          <div className="w-full shrink-0 snap-start lg:hidden">
+            <MonumentContainer embedded paginated pageSize={8} />
+          </div>
         </div>
       </div>
     </section>

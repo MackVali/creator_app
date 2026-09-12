@@ -34,6 +34,7 @@ interface ScheduleTopBarProps {
   isSimpleSchedulingMode?: boolean;
   onToggleSimpleSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
+  className?: string;
 }
 
 export function ScheduleTopBar({
@@ -55,6 +56,7 @@ export function ScheduleTopBar({
   isSimpleSchedulingMode = false,
   onToggleSimpleSchedulingMode,
   onHeightChange,
+  className,
 }: ScheduleTopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
   const debugMenuRef = useRef<HTMLDivElement | null>(null);
@@ -193,7 +195,10 @@ export function ScheduleTopBar({
 
   return (
     <header
-      className="app-surface-elevated fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 shadow-sm border-b border-[var(--hairline)]"
+      className={cn(
+        "app-surface-elevated fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 shadow-sm border-b border-[var(--hairline)]",
+        className
+      )}
       style={safeAreaPadding}
       ref={headerRef}
     >

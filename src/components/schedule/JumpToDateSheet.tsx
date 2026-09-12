@@ -74,6 +74,7 @@ import { AREAS } from "@/config/areas";
 
 interface JumpToDateSheetProps {
   variant?: "sheet" | "inline";
+  presentation?: "default" | "desktop-rail";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
@@ -223,6 +224,7 @@ const normalizeTimeLabel = (value?: string | null) => {
 
 export function JumpToDateSheet({
   variant = "sheet",
+  presentation = "default",
   open,
   onOpenChange,
   currentDate,
@@ -1133,7 +1135,7 @@ export function JumpToDateSheet({
   function GoalTickerCard({ goal }: { goal: LikelyGoal }) {
     const completeBy = formatCompleteBy(goal.completionUtc);
     return (
-      <div className="min-w-[110px] sm:min-w-[180px] shrink-0 rounded-lg bg-[var(--surface-elevated)] px-2 py-1 text-white/90 shadow-[0_12px_30px_rgba(5,7,12,0.32)]">
+      <div className="min-w-[220px] max-w-[260px] shrink-0 rounded-lg bg-[var(--surface-elevated)] px-2.5 py-1.5 text-white/90 shadow-[0_12px_30px_rgba(5,7,12,0.32)] sm:min-w-[240px] sm:max-w-[280px]">
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] sm:text-base">{goal.emoji ?? "🎯"}</span>
           <span className="truncate text-[11px] sm:text-sm font-medium leading-tight">
@@ -1141,11 +1143,11 @@ export function JumpToDateSheet({
           </span>
         </div>
         {completeBy ? (
-          <div className="mt-1 flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/60 leading-tight">
+          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-white/60 leading-tight sm:text-[10px] sm:tracking-[0.12em]">
             <span className="whitespace-nowrap">
               COMPLETE BY {completeBy.dateLabel}
             </span>
-            <span className="text-[9px] sm:text-[9px] font-normal uppercase text-white/45 leading-none">
+            <span className="min-w-0 truncate text-[9px] font-normal uppercase leading-none text-white/45">
               {completeBy.timeLabel}
             </span>
           </div>
@@ -2579,6 +2581,7 @@ export function JumpToDateSheet({
     const selectedPaintMode =
       selectedPaintDayType?.schedulerMode ?? "REGULAR";
     const isPaintPickerDisabled = isLoadingDayTypes;
+    const isDesktopRailPresentation = presentation === "desktop-rail";
     const header = (
       <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
@@ -2604,6 +2607,133 @@ export function JumpToDateSheet({
         </div>
       </SheetHeader>
     );
+    const energyHoursSection = (
+      <div className="rounded-xl border border-white/5 bg-white/5 p-1.5 sm:p-2.5 w-full">
+        <div className="flex items-center justify-between gap-2 whitespace-nowrap">
+          <div className="text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.08em] sm:tracking-[0.12em] text-white/60 leading-tight whitespace-nowrap">
+            Energy hours
+          </div>
+          <button
+            type="button"
+            onClick={cycleEnergyView}
+            className="text-center text-[10px] sm:text-[12px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/80 leading-none rounded-full bg-white/5 px-2 py-1.25 sm:px-2.5 sm:py-1.5 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 whitespace-nowrap"
+          >
+            {energyViewLabels[energyView]}
+          </button>
+        </div>
+        {visibleLevels.length === 0 ? (
+          <div className="mt-1.5 sm:mt-3 rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
+            No energy windows found for this period.
+          </div>
+        ) : (
+          <div className="mt-1 w-full relative text-[11px] sm:text-[13px] text-white/80 leading-[1.1]">
+            {prevEnergyView ? (
+              <div
+                className={cn(
+                  "absolute inset-0 grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out pointer-events-none",
+                  isPrevFading
+                    ? "opacity-0 translate-y-1"
+                    : "opacity-100 translate-y-0"
+                )}
+              >
+                {visibleLevels.map((level) => (
+                  <Fragment key={`${prevEnergyView}-${level}`}>
+                    <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
+                      {level}
+                    </span>
+                    <EnergyHoursCell
+                      value={energyHours[prevEnergyView]?.[level]}
+                      level={level}
+                    />
+                  </Fragment>
+                ))}
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out",
+                isEnteringEnergy
+                  ? "opacity-0 translate-y-1"
+                  : "opacity-100 translate-y-0"
+              )}
+            >
+              {visibleLevels.map((level) => (
+                <Fragment key={`${energyView}-${level}`}>
+                  <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
+                    {level}
+                  </span>
+                  <EnergyHoursCell
+                    value={energyHours[energyView]?.[level]}
+                    level={level}
+                  />
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+    const likelyGoalsSection = (
+      <div className="min-w-0 rounded-xl border border-white/5 bg-white/5 p-2 sm:p-2.5 w-full overflow-hidden">
+        <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.1em] sm:tracking-[0.12em] text-white/60">
+          LIKELY TO BE COMPLETED
+        </div>
+        <div className="mt-1.5 sm:mt-3 space-y-1 sm:space-y-2.5 text-[11px] sm:text-sm text-white/80">
+          <div className="space-y-1">
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/50">
+              LIKELY THIS WEEK
+            </div>
+            {weekLikelyGoals.length === 0 ? (
+              <div className="rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
+                No likely goals this week.
+              </div>
+            ) : (
+              <Ticker
+                className="w-full"
+                items={weekLikelyGoals}
+                speed={40}
+                trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
+                renderItem={(goal, index) => (
+                  <GoalTickerCard key={`${goal.id}-${index}`} goal={goal} />
+                )}
+              />
+            )}
+          </div>
+          <div className="space-y-1">
+            <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/50">
+              LIKELY THIS MONTH
+            </div>
+            {monthLikelyGoals.length === 0 ? (
+              <div className="rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
+                No likely goals this month.
+              </div>
+            ) : (
+              <Ticker
+                className="w-full"
+                items={monthLikelyGoals}
+                speed={40}
+                trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
+                renderItem={(goal, index) => (
+                  <GoalTickerCard key={`${goal.id}-${index}`} goal={goal} />
+                )}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+    const snapshotSection = snapshot ? (
+      <div className="space-y-1.5 sm:space-y-2.5">
+        <div className="flex items-center justify-between text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] sm:tracking-[0.18em] text-white/70">
+          <span className="text-white/80">Snapshot</span>
+          <span className="text-white/50">Current view</span>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:gap-3">
+          {energyHoursSection}
+          {likelyGoalsSection}
+        </div>
+      </div>
+    ) : null;
 
     return (
       <>
@@ -3841,133 +3971,11 @@ export function JumpToDateSheet({
                 ) : null}
               </div>
             </div>
-          ) : snapshot ? (
-            <div className="space-y-1.5 sm:space-y-2.5">
-              <div className="flex items-center justify-between text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] sm:tracking-[0.18em] text-white/70">
-                <span className="text-white/80">Snapshot</span>
-                <span className="text-white/50">Current view</span>
-              </div>
-              <div className="grid grid-cols-[0.9fr_1.1fr] gap-2 sm:gap-3">
-                <div className="rounded-xl border border-white/5 bg-white/5 p-1.5 sm:p-2.5 w-full">
-                  <div className="flex items-center justify-between gap-2 whitespace-nowrap">
-                    <div className="text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.08em] sm:tracking-[0.12em] text-white/60 leading-tight whitespace-nowrap">
-                      Energy hours
-                    </div>
-                    <button
-                      type="button"
-                      onClick={cycleEnergyView}
-                      className="text-center text-[10px] sm:text-[12px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/80 leading-none rounded-full bg-white/5 px-2 py-1.25 sm:px-2.5 sm:py-1.5 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 whitespace-nowrap"
-                    >
-                      {energyViewLabels[energyView]}
-                    </button>
-                  </div>
-                  {visibleLevels.length === 0 ? (
-                    <div className="mt-1.5 sm:mt-3 rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
-                      No energy windows found for this period.
-                    </div>
-                  ) : (
-                    <div className="mt-1 w-full relative text-[11px] sm:text-[13px] text-white/80 leading-[1.1]">
-                      {prevEnergyView ? (
-                        <div
-                          className={cn(
-                            "absolute inset-0 grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out pointer-events-none",
-                            isPrevFading
-                              ? "opacity-0 translate-y-1"
-                              : "opacity-100 translate-y-0"
-                          )}
-                        >
-                          {visibleLevels.map((level) => (
-                            <Fragment key={`${prevEnergyView}-${level}`}>
-                              <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
-                                {level}
-                              </span>
-                              <EnergyHoursCell
-                                value={energyHours[prevEnergyView]?.[level]}
-                                level={level}
-                              />
-                            </Fragment>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div
-                        className={cn(
-                          "grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out",
-                          isEnteringEnergy
-                            ? "opacity-0 translate-y-1"
-                            : "opacity-100 translate-y-0"
-                        )}
-                      >
-                        {visibleLevels.map((level) => (
-                          <Fragment key={`${energyView}-${level}`}>
-                            <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
-                              {level}
-                            </span>
-                            <EnergyHoursCell
-                              value={energyHours[energyView]?.[level]}
-                              level={level}
-                            />
-                          </Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="rounded-xl border border-white/5 bg-white/5 p-1.5 sm:p-2.5 w-full overflow-hidden">
-                  <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.1em] sm:tracking-[0.12em] text-white/60">
-                    LIKELY TO BE COMPLETED
-                  </div>
-                  <div className="mt-1.5 sm:mt-3 space-y-1 sm:space-y-2.5 text-[11px] sm:text-sm text-white/80">
-                    <div className="space-y-1">
-                      <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/50">
-                        LIKELY THIS WEEK
-                      </div>
-                      {weekLikelyGoals.length === 0 ? (
-                        <div className="rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
-                          No likely goals this week.
-                        </div>
-                      ) : (
-                        <Ticker
-                          className="w-full"
-                          items={weekLikelyGoals}
-                          speed={40}
-                          trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
-                          renderItem={(goal, index) => (
-                            <GoalTickerCard
-                              key={`${goal.id}-${index}`}
-                              goal={goal}
-                            />
-                          )}
-                        />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-[9px] sm:text-[10px] uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/50">
-                        LIKELY THIS MONTH
-                      </div>
-                      {monthLikelyGoals.length === 0 ? (
-                        <div className="rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-[10px] sm:text-sm text-white/70">
-                          No likely goals this month.
-                        </div>
-                      ) : (
-                        <Ticker
-                          className="w-full"
-                          items={monthLikelyGoals}
-                          speed={40}
-                          trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
-                          renderItem={(goal, index) => (
-                            <GoalTickerCard
-                              key={`${goal.id}-${index}`}
-                              goal={goal}
-                            />
-                          )}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
+          ) : isDesktopRailPresentation && snapshot ? (
+            likelyGoalsSection
+          ) : (
+            snapshotSection
+          )}
           <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.25">
             <div className="flex items-center gap-1">
               <button
@@ -4191,6 +4199,9 @@ export function JumpToDateSheet({
                 </button>
               </div>
             )}
+            {!isPaintMode && isDesktopRailPresentation && snapshot
+              ? energyHoursSection
+              : null}
             </div>
         </div>
       </>
