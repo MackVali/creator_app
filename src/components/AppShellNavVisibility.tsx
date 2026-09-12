@@ -47,7 +47,7 @@ export default function AppShellNavVisibility({
 
   return (
     <>
-      {!hideNav && <DesktopShellNav />}
+      {!hideNav && pathname !== "/schedule" && <DesktopShellNav />}
 
       {!hideTopNav && (
         <div className="lg:hidden">

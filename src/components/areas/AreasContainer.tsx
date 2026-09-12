@@ -722,7 +722,7 @@ function AreasGrid() {
   return (
     <div>
       <div className="app-dashboard-areas-panel px-4">
-        <div className="grid grid-cols-4 gap-1 lg:max-w-[660px] lg:grid-cols-4 lg:gap-2">
+        <div className="grid grid-cols-4 gap-1 lg:max-w-[820px] lg:grid-cols-4 lg:gap-3">
           {sortedAreas.map((area) => (
             <AreaCard
               key={area.id}

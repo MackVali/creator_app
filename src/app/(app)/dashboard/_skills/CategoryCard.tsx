@@ -392,9 +392,9 @@ export default function CategoryCard({
     typeof category.order === "number" && Number.isFinite(category.order) ? `#${category.order}` : "#";
 
   return (
-    <div className="relative h-full" onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+    <div className="relative" onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
       <article
-        className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
+        className="relative flex flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
         style={{
           color: palette.on,
           background: palette.surface,
@@ -432,13 +432,13 @@ export default function CategoryCard({
             style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.6 : 0.35 }}
           />
         </div>
-        <div className="relative z-10 flex h-full flex-col">
+        <div className="relative z-10 flex flex-col">
           <header className="mb-3 flex items-start justify-between gap-3">
             <div className="relative inline-flex flex-col">
               <button
                 ref={menuTriggerRef}
                 type="button"
-                className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
+                className="relative inline-flex min-w-0 items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors"
                 style={{
                   color: palette.on,
                   backgroundColor: palette.badgeNameBg,
@@ -447,8 +447,8 @@ export default function CategoryCard({
                 onClick={toggleMenu}
                 aria-disabled={editingRestricted && !canDeleteCategory}
               >
-                {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
-                <span className="pr-3">{category.name}</span>
+                {icon && <span className="mr-1.5 text-base leading-none">{icon}</span>}
+                <span className="min-w-0 truncate pr-1">{category.name}</span>
                 <span
                   aria-hidden
                   className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
@@ -656,7 +656,7 @@ export default function CategoryCard({
               )}
             </div>
             <span
-              className="rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide"
+              className="shrink-0 rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em]"
               style={{
                 color: palette.on,
                 backgroundColor: palette.badgeBg,
@@ -678,7 +678,7 @@ export default function CategoryCard({
             values={localSkills}
             onReorder={handleSkillReorder}
             as="div"
-            className="flex-1 overflow-y-auto overscroll-contain rounded-2xl px-3 pb-5 pt-4 backdrop-blur-sm"
+            className="overflow-y-auto overscroll-contain rounded-2xl px-3 pb-5 pt-4 backdrop-blur-sm"
             style={{
               backgroundColor: palette.listBg,
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -10px 18px rgba(15, 23, 42, 0.12)",

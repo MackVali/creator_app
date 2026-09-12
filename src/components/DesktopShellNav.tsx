@@ -134,6 +134,7 @@ function getWorkspaceMeta(pathname: string) {
 
 export default function DesktopShellNav() {
   const pathname = usePathname();
+  const forceExpanded = pathname === "/dashboard" || pathname === "/command";
 
   return (
     <div className="group pointer-events-none fixed inset-y-0 left-0 z-50 hidden w-52 lg:block">
@@ -142,7 +143,13 @@ export default function DesktopShellNav() {
         className="pointer-events-auto absolute inset-y-0 left-0 z-10 w-2"
       />
 
-      <aside className="pointer-events-auto absolute inset-y-0 left-0 flex w-52 -translate-x-full flex-col border-r border-white/[0.07] bg-[#090a0b] text-white shadow-[18px_0_40px_rgba(0,0,0,0.38)] transition-transform duration-200 ease-out group-hover:translate-x-0 hover:translate-x-0">
+      <aside
+        className={`pointer-events-auto absolute inset-y-0 left-0 flex w-52 flex-col border-r border-white/[0.07] bg-[#090a0b] text-white shadow-[18px_0_40px_rgba(0,0,0,0.38)] transition-transform duration-200 ease-out ${
+          forceExpanded
+            ? "translate-x-0"
+            : "-translate-x-full group-hover:translate-x-0 hover:translate-x-0"
+        } `}
+      >
       <div className="px-4 pb-4 pt-5">
         <div className="text-[18px] font-semibold tracking-[-0.02em]">
           Creator
