@@ -35,20 +35,26 @@ export default function CommandTabContent() {
       onRefresh={handleRefresh}
       refreshRef={commandSectionRef}
     >
-      <main className="app-dashboard-bg flow-root pb-20 lg:w-full lg:pb-10">
-        <LevelBanner ref={levelBannerRef} />
+      <main className="app-dashboard-bg flow-root pb-20 lg:ml-52 lg:w-[calc(100%-13rem)] lg:pb-10">
 
-        <AreasContainer />
+        <div className="lg:flex lg:w-full lg:items-start">
 
-        <Section title="Skills" className="mt-1 px-4">
-          <SkillsCarousel ref={skillsCarouselRef} />
-        </Section>
+          <div className="min-w-0 flex-1">
+            <LevelBanner ref={levelBannerRef} />
 
-        {canUseCommandManagement ? (
-          <div className="mx-auto w-full max-w-6xl px-4 pt-4">
-            <CommandCirclesSection ref={commandSectionRef} />
+            <AreasContainer />
+
+            <Section title="Skills" className="mt-1 px-4">
+              <SkillsCarousel ref={skillsCarouselRef} />
+            </Section>
+
+            {canUseCommandManagement ? (
+              <div className="mx-auto w-full max-w-6xl px-4 pt-4">
+                <CommandCirclesSection ref={commandSectionRef} />
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </main>
     </CommandPullRefreshShell>
   );

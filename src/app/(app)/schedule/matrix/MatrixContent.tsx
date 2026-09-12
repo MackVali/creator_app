@@ -48,7 +48,7 @@ import { PullRefreshShell } from "@/components/ui/PullRefreshShell";
 import {
   CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE,
 } from "@/components/xp/CreatorXpSurgeHud";
-import type { Goal, Project } from "@/app/(app)/goals/types";
+import type { Goal } from "@/app/(app)/goals/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useProfile } from "@/lib/hooks/useProfile";
@@ -57,7 +57,6 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
 import { resolveCreatorDay, type CreatorDay } from "@/lib/creatorDay";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
-import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
   FITNESS_PLAN_HABIT_TITLE,
@@ -67,7 +66,6 @@ import {
   isFitnessPlanScheduleMetadata,
   readFitnessPlanScheduleRoutineAssignment,
   resolveFitnessPlanDueRoutineAssignment,
-  resolveFitnessPlanScheduleCardPresentation,
 } from "@/lib/fitness/planHabit";
 import { dispatchOpenFitnessWorkoutEvent } from "@/lib/fitness/openWorkout";
 import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
@@ -87,6 +85,12 @@ import {
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import {
+  buildMatrixEvents as buildSharedMatrixEvents,
+  buildMatrixInferredMealMatrixEvents as buildSharedMatrixInferredMealMatrixEvents,
+  buildMatrixScheduledEvents as buildSharedMatrixScheduledEvents,
+  sortMatrixScheduledItems as sortSharedMatrixScheduledItems,
+} from "@/lib/matrix/scheduledEvents";
+import {
   hapticComplete,
   hapticErrorPattern,
   hapticWarningPattern,
@@ -104,7 +108,6 @@ import {
   buildMatrixInferredMealNutritionLogContext,
   buildMatrixScheduledMealNutritionLogContext,
   claimMatrixInferredMealLogOpen,
-  findActualScheduledMealTimeBlock,
   releaseMatrixInferredMealLogOpen,
   type MatrixInferredMealEventData,
   type MatrixMealTimeBlockWindow,
@@ -1309,44 +1312,6 @@ function getHabitRowTypeClass(
   return MATRIX_ROW_NEXUS_CARD_CLASS;
 }
 
-function mapPriority(priority: string | null | undefined): Goal["priority"] {
-  const normalized = priority?.trim().toUpperCase();
-  switch (normalized) {
-    case "NO":
-      return "No";
-    case "ULTRA-CRITICAL":
-      return "Ultra";
-    case "CRITICAL":
-      return "Critical";
-    case "HIGH":
-      return "High";
-    case "MEDIUM":
-      return "Medium";
-    case "LOW":
-      return "Low";
-    default:
-      return "Low";
-  }
-}
-
-function mapEnergy(energy: string | null | undefined): Goal["energy"] {
-  const normalized = energy?.trim().toUpperCase();
-  switch (normalized) {
-    case "LOW":
-      return "Low";
-    case "MEDIUM":
-      return "Medium";
-    case "HIGH":
-      return "High";
-    case "ULTRA":
-      return "Ultra";
-    case "EXTREME":
-      return "Extreme";
-    default:
-      return "No";
-  }
-}
-
 function normalizePriorityCode(value?: string | null): string {
   const upper = typeof value === "string" ? value.toUpperCase() : "NO";
   return ["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"].includes(
@@ -1595,528 +1560,6 @@ function resolveHabitMonumentId({
   return habit.skill_id
     ? (skillIdToMonumentId.get(habit.skill_id) ?? null)
     : null;
-}
-
-function getExplicitProjectSkillIds(project: ProjectRow): string[] {
-  return (project.project_skills ?? [])
-    .map((record) => record.skill_id)
-    .filter((skillId): skillId is string => Boolean(skillId));
-}
-
-function getProjectSkillIds(project: ProjectRow): string[] {
-  const projectSkillIds = getExplicitProjectSkillIds(project);
-  const taskSkillIds = (project.tasks ?? [])
-    .map((task) => task.skill_id)
-    .filter((skillId): skillId is string => Boolean(skillId));
-
-  return Array.from(new Set([...projectSkillIds, ...taskSkillIds]));
-}
-
-function buildProjectGoal({
-  project,
-  goal,
-  skillIdToIcon,
-  monumentIdToEmoji,
-}: {
-  project: ProjectRow;
-  goal: GoalRow | null;
-  skillIdToIcon: Map<string, string>;
-  monumentIdToEmoji: Map<string, string>;
-}): Goal {
-  const tasks = (project.tasks ?? []).map((task) => ({
-    id: task.id,
-    name: task.name,
-    stage: task.stage,
-    skillId: task.skill_id ?? null,
-    skillIcon: task.skill_id ? (skillIdToIcon.get(task.skill_id) ?? null) : null,
-    priorityCode: task.priority ?? null,
-    isNew: false,
-  }));
-  const projectSkillIds = getExplicitProjectSkillIds(project);
-  const taskSkillIds = tasks
-    .map((task) => task.skillId)
-    .filter((skillId): skillId is string => Boolean(skillId));
-  const projectEmoji =
-    projectSkillIds
-      .map((skillId) => skillIdToIcon.get(skillId) ?? null)
-      .find((icon): icon is string => Boolean(icon)) ??
-    taskSkillIds
-      .map((skillId) => skillIdToIcon.get(skillId) ?? null)
-      .find((icon): icon is string => Boolean(icon)) ??
-    null;
-  const completedAt =
-    typeof project.completed_at === "string" &&
-    project.completed_at.trim().length > 0
-      ? project.completed_at
-      : null;
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((task) => task.stage === "PERFECT").length;
-  const progress = completedAt
-    ? 100
-    : totalTasks
-      ? Math.round((completedTasks / totalTasks) * 100)
-      : 0;
-  const energyCode = normalizeEnergyCode(project.energy);
-  const priorityCode = normalizePriorityCode(project.priority);
-  const stage = project.stage ?? "BUILD";
-  const mappedProject: Project = {
-    id: project.id,
-    name: project.name,
-    status: completedAt ? "Done" : "In-Progress",
-    progress,
-    energy: mapEnergy(energyCode),
-    energyCode,
-    dueDate: project.due_date ?? undefined,
-    durationMinutes:
-      typeof project.duration_min === "number" &&
-      Number.isFinite(project.duration_min)
-        ? project.duration_min
-        : null,
-    skillIds: projectSkillIds,
-    emoji: projectEmoji,
-    stage,
-    priorityCode,
-    isNew: false,
-    tasks,
-  };
-  const createdAt = project.created_at ?? new Date().toISOString();
-  const monumentId = goal?.monument_id ?? null;
-
-  return {
-    id: project.id,
-    parentGoalId: goal?.id ?? project.goal_id ?? null,
-    title: project.name,
-    emoji: projectEmoji ?? undefined,
-    priority: mapPriority(priorityCode),
-    energy: mapEnergy(energyCode),
-    progress,
-    status: completedAt ? "COMPLETED" : "ACTIVE",
-    active: !completedAt,
-    createdAt,
-    updatedAt: createdAt,
-    dueDate: project.due_date ?? undefined,
-    projects: [mappedProject],
-    monumentId,
-    monumentEmoji: monumentId ? (monumentIdToEmoji.get(monumentId) ?? null) : null,
-    priorityCode,
-    energyCode,
-    skills: Array.from(new Set([...projectSkillIds, ...taskSkillIds])),
-    weightBoost: 0,
-  };
-}
-
-function buildLegacyMatrixFitnessOccurrenceOffsets(
-  instances: readonly ScheduleInstance[],
-  habits: Map<string, HabitRow>,
-) {
-  const grouped = new Map<string, Array<{ id: string; start: Date }>>();
-  for (const instance of instances) {
-    if (instance.source_type !== "HABIT") continue;
-    if (instance.status !== "scheduled" && instance.status !== "completed") {
-      continue;
-    }
-    if (!instance.id) continue;
-    const habit = habits.get(instance.source_id);
-    if (
-      !habit ||
-      !(
-        isFitnessPlanScheduleMetadata(instance.metadata) ||
-        isFitnessPlanManagedHabit(habit)
-      )
-    ) {
-      continue;
-    }
-    const start = new Date(instance.start_utc ?? "");
-    if (Number.isNaN(start.getTime())) continue;
-    const group = grouped.get(habit.id) ?? [];
-    group.push({ id: instance.id, start });
-    grouped.set(habit.id, group);
-  }
-
-  const offsets = new Map<string, number>();
-  for (const group of grouped.values()) {
-    group
-      .sort((a, b) => a.start.getTime() - b.start.getTime())
-      .forEach((item, index) => offsets.set(item.id, index));
-  }
-  return offsets;
-}
-
-function buildMatrixEvents({
-  instances,
-  projects,
-  habits,
-  goals,
-  skillIdToMonumentId,
-  skillIdToIcon,
-  monumentIdToEmoji,
-  mealWindows,
-  dateKey,
-  date,
-  timeZone,
-  completedHabitIds,
-}: {
-  instances: ScheduleInstance[];
-  projects: Map<string, ProjectRow>;
-  habits: Map<string, HabitRow>;
-  goals: Map<string, GoalRow>;
-  skillIdToMonumentId: Map<string, string>;
-  skillIdToIcon: Map<string, string>;
-  monumentIdToEmoji: Map<string, string>;
-  mealWindows: MatrixMealTimeBlockWindow[];
-  dateKey: string;
-  date: Date;
-  timeZone: string;
-  completedHabitIds: ReadonlySet<string>;
-}): MatrixEvent[] {
-  const legacyFitnessOccurrenceOffsets = buildLegacyMatrixFitnessOccurrenceOffsets(
-    instances,
-    habits,
-  );
-
-  return instances.flatMap((instance) => {
-    if (instance.source_type === "EVENT") {
-      const mealWindow = findActualScheduledMealTimeBlock(instance, mealWindows);
-      const skillContext = resolveScheduleEventSkillContext(instance.metadata);
-      const skillIds = skillContext.skillIds;
-      const firstSkillId = skillIds[0] ?? null;
-      const monumentId = firstSkillId
-        ? (skillIdToMonumentId.get(firstSkillId) ?? null)
-        : null;
-      const glyph = firstSkillId
-        ? (skillIdToIcon.get(firstSkillId) ??
-          (monumentId ? (monumentIdToEmoji.get(monumentId) ?? null) : null) ??
-          "◇")
-        : "◇";
-      const event: MatrixEvent = {
-        instance,
-        title: instance.event_name ?? "Untitled event",
-        monumentId,
-        skillIds,
-        skillResolverSource: skillContext.source,
-        glyph,
-        goal: null,
-        habit: null,
-        routine: null,
-        inferredMeal: null,
-        scheduledMeal: mealWindow
-          ? {
-              scheduleInstanceId: instance.id,
-              eventId: instance.source_id ?? null,
-              title: instance.event_name ?? mealWindow.label ?? "Meal",
-              timeBlockId:
-                instance.time_block_id ??
-                mealWindow.timeBlockId ??
-                mealWindow.time_block_id ??
-                mealWindow.sourceWindowId ??
-                mealWindow.id ??
-                null,
-              dayTypeTimeBlockId:
-                instance.day_type_time_block_id ??
-                mealWindow.dayTypeTimeBlockId ??
-                mealWindow.day_type_time_block_id ??
-                null,
-              windowId: instance.window_id ?? mealWindow.window_id ?? null,
-              dateKey,
-              startUtc: instance.start_utc ?? "",
-              endUtc: instance.end_utc ?? "",
-              startLocal: mealWindow.start_local ?? null,
-              endLocal: mealWindow.end_local ?? null,
-            }
-          : null,
-      };
-      return [event];
-    }
-
-    if (instance.source_type === "PROJECT") {
-      const project = projects.get(instance.source_id);
-      const goal = project?.goal_id ? goals.get(project.goal_id) : null;
-      const monumentId = goal?.monument_id ?? null;
-      const projectGoal = project
-        ? buildProjectGoal({
-            project,
-            goal: goal ?? null,
-            skillIdToIcon,
-            monumentIdToEmoji,
-          })
-        : null;
-      const event: MatrixEvent = {
-        instance,
-        title: instance.event_name ?? project?.name ?? "Untitled project",
-        monumentId,
-        skillIds: project ? getProjectSkillIds(project) : [],
-        skillResolverSource: null,
-        glyph: monumentId ? (monumentIdToEmoji.get(monumentId) ?? "◇") : "◇",
-        goal: projectGoal,
-        habit: null,
-        routine: null,
-        inferredMeal: null,
-        scheduledMeal: null,
-      };
-      return [event];
-    }
-
-    if (instance.source_type !== "HABIT") return [];
-
-    const habit = habits.get(instance.source_id);
-    const habitSkillIcon =
-      habit?.skill_id ? skillIdToIcon.get(habit.skill_id) : null;
-    const dueStatus = habit
-      ? getMatrixHabitDisplayStatus(habit, date, timeZone, completedHabitIds)
-      : undefined;
-    const fitnessCard = habit
-      ? resolveFitnessPlanScheduleCardPresentation({
-          metadata: instance.metadata,
-          memoCaptureConfig: habit.memo_capture_config ?? null,
-          fallbackOccurrenceOffset: instance.id
-            ? (legacyFitnessOccurrenceOffsets.get(instance.id) ?? null)
-            : null,
-        })
-      : null;
-    const event: MatrixEvent = {
-      instance,
-      title:
-        fitnessCard?.title ??
-        instance.event_name ??
-        habit?.name ??
-        "Untitled habit",
-      subtitle: fitnessCard?.routineTitle ?? null,
-      monumentId: resolveHabitMonumentId({
-        habit,
-        goals,
-        skillIdToMonumentId,
-      }),
-      skillIds: habit?.skill_id ? [habit.skill_id] : [],
-      skillResolverSource: habit?.skill_id ? "habit.skill_id" : null,
-      glyph: habitSkillIcon ?? getHabitFallbackGlyph(habit?.habit_type),
-      goal: null,
-      habit: habit
-        ? {
-            ...habit,
-            monumentId: resolveHabitMonumentId({
-              habit,
-              goals,
-              skillIdToMonumentId,
-            }),
-            skillIds: habit.skill_id ? [habit.skill_id] : [],
-            skillIcon: habitSkillIcon ?? null,
-            glyph: habitSkillIcon ?? getHabitFallbackGlyph(habit.habit_type),
-            dueStatus,
-          }
-        : null,
-      routine: null,
-      inferredMeal: null,
-      scheduledMeal: null,
-    };
-    return [event];
-  });
-}
-
-function buildMatrixInferredMealMatrixEvents({
-  inferredMeals,
-  userId,
-}: {
-  inferredMeals: MatrixInferredMealEventData[];
-  userId: string;
-}): MatrixEvent[] {
-  const nowIso = new Date().toISOString();
-
-  return inferredMeals.map((inferredMeal) => {
-    const instance: ScheduleInstance = {
-      id: inferredMeal.syntheticEventId,
-      user_id: userId,
-      source_id: inferredMeal.syntheticEventId,
-      source_type: "EVENT",
-      start_utc: inferredMeal.startUtc,
-      end_utc: inferredMeal.endUtc,
-      duration_min: inferredMeal.durationMinutes,
-      status: inferredMeal.completed ? "completed" : "scheduled",
-      weight_snapshot: 0,
-      energy_resolved: "NO",
-      event_name: inferredMeal.title,
-      time_block_id: inferredMeal.timeBlockId,
-      day_type_time_block_id: inferredMeal.dayTypeTimeBlockId,
-      window_id: inferredMeal.windowId,
-      overlay_window_id: null,
-      practice_context_monument_id: null,
-      metadata: {
-        matrixInferredMeal: {
-          source: "matrix-inferred-meal",
-          syntheticEventId: inferredMeal.syntheticEventId,
-          dateKey: inferredMeal.dateKey,
-          timeBlockId: inferredMeal.timeBlockId,
-          dayTypeTimeBlockId: inferredMeal.dayTypeTimeBlockId,
-          startUtc: inferredMeal.startUtc,
-          endUtc: inferredMeal.endUtc,
-          startLocal: inferredMeal.startLocal,
-          endLocal: inferredMeal.endLocal,
-        },
-      },
-      completed_at: inferredMeal.completedAt,
-      canceled_reason: null,
-      locked: true,
-      missed_reason: null,
-      notes: null,
-      placement_source: "manual",
-      project_name: null,
-      scheduled_at: nowIso,
-      updated_at: nowIso,
-    };
-
-    return {
-      instance,
-      title: inferredMeal.title,
-      monumentId: null,
-      skillIds: [],
-      skillResolverSource: null,
-      glyph: "🍽️",
-      goal: null,
-      habit: null,
-      routine: null,
-      inferredMeal,
-      scheduledMeal: null,
-    };
-  });
-}
-
-function buildMatrixScheduledEvents({
-  events,
-  routines,
-}: {
-  events: MatrixEvent[];
-  routines: Map<string, RoutineRow>;
-}): MatrixEvent[] {
-  const scheduledEvents: MatrixEvent[] = [];
-  const routineEventGroups = new Map<string, MatrixEvent[]>();
-
-  for (const event of events) {
-    const routineId = event.habit?.routine_id?.trim();
-    if (!routineId) {
-      scheduledEvents.push(event);
-      continue;
-    }
-
-    const group = routineEventGroups.get(routineId);
-    if (group) {
-      group.push(event);
-    } else {
-      routineEventGroups.set(routineId, [event]);
-    }
-  }
-
-  for (const [routineId, routineEvents] of routineEventGroups) {
-    if (routineEvents.length === 0) continue;
-
-    const routine = routines.get(routineId);
-    const sortedEvents = [...routineEvents].sort((a, b) => {
-      const firstPosition =
-        typeof a.habit?.routine_position === "number" &&
-        Number.isFinite(a.habit.routine_position)
-          ? a.habit.routine_position
-          : Number.POSITIVE_INFINITY;
-      const secondPosition =
-        typeof b.habit?.routine_position === "number" &&
-        Number.isFinite(b.habit.routine_position)
-          ? b.habit.routine_position
-          : Number.POSITIVE_INFINITY;
-      if (firstPosition !== secondPosition) {
-        return firstPosition - secondPosition;
-      }
-
-      const firstStartTime = getMatrixEventStartTime(a);
-      const secondStartTime = getMatrixEventStartTime(b);
-      if (firstStartTime !== secondStartTime) {
-        return firstStartTime - secondStartTime;
-      }
-
-      return a.title.localeCompare(b.title);
-    });
-    const representativeEvent = sortedEvents[0];
-    if (!representativeEvent) continue;
-
-    const matrixRoutineHabits: MatrixRoutineHabit[] = sortedEvents.flatMap(
-      (event, index) => {
-        const habit = event.habit;
-        if (!habit) return [];
-
-        return [
-          {
-            id: habit.id,
-            name: habit.name,
-            dueLabel: getMatrixScheduledHabitLabel(event.instance.status),
-            skillIcon: habit.skillIcon,
-            completed: isMatrixScheduledRoutineHabitCompleted({
-              sourceInstance: event.instance,
-            }),
-            routinePosition: habit.routine_position ?? index + 1,
-            currentStreakDays: habit.current_streak_days,
-            habitType: habit.habit_type,
-            recurrence: habit.recurrence,
-            durationMinutes:
-              event.instance.duration_min ?? habit.duration_minutes,
-            energy: habit.energy,
-            goalId: habit.goal_id,
-            skillId: habit.skill_id,
-            routineId: habit.routine_id,
-            locationContextId: habit.location_context_id,
-            daylightPreference: habit.daylight_preference,
-            windowEdgePreference: habit.window_edge_preference,
-            nextDueOverride: habit.next_due_override,
-            sourceHabit: habit,
-            sourceInstance: event.instance,
-          },
-        ];
-      }
-    );
-    if (matrixRoutineHabits.length === 0) continue;
-
-    const routineSkillIds = Array.from(
-      new Set(sortedEvents.flatMap((event) => event.skillIds))
-    );
-    const routineMonumentId =
-      sortedEvents.find((event) => event.monumentId)?.monumentId ?? null;
-    const totalDuration = matrixRoutineHabits.reduce((sum, habit) => {
-      const duration = habit.durationMinutes;
-      return typeof duration === "number" && Number.isFinite(duration)
-        ? sum + duration
-        : sum;
-    }, 0);
-    const routineName = routine?.name?.trim() || "Routine";
-    const routineIcon = routine?.icon?.trim() || "🔁";
-    const routineItem: MatrixRoutine = {
-      id: routineId,
-      name: routineName,
-      description: routine?.description ?? null,
-      icon: routineIcon,
-      habits: matrixRoutineHabits,
-      completed: isMatrixScheduledRoutineCompleted(matrixRoutineHabits),
-      monumentId: routineMonumentId,
-      skillIds: routineSkillIds,
-      glyph: routineIcon,
-      dueHabitCount: matrixRoutineHabits.length,
-      totalDueDurationMinutes: totalDuration > 0 ? totalDuration : null,
-      sortRank: Math.min(
-        ...matrixRoutineHabits.map((habit) =>
-          getMatrixHabitTypeRank(habit.sourceHabit.habit_type)
-        )
-      ),
-    };
-
-    scheduledEvents.push({
-      ...representativeEvent,
-      title: routineName,
-      monumentId: routineMonumentId,
-      skillIds: routineSkillIds,
-      glyph: routineIcon,
-      goal: null,
-      habit: null,
-      routine: routineItem,
-      inferredMeal: null,
-      scheduledMeal: null,
-    });
-  }
-
-  return scheduledEvents;
 }
 
 function buildMatrixDueItems({
@@ -9243,7 +8686,7 @@ export function MatrixContent({
           }
         }
 
-        const rawEvents = buildMatrixEvents({
+        const rawEvents = buildSharedMatrixEvents({
           instances,
           projects: projectMap,
           habits: habitMap,
@@ -9257,11 +8700,11 @@ export function MatrixContent({
           timeZone,
           completedHabitIds: completedHabitIdsForCreatorDay,
         });
-        const events = buildMatrixScheduledEvents({
+        const events = buildSharedMatrixScheduledEvents({
           events: rawEvents,
           routines: routineMap,
         });
-        const inferredMealEvents = buildMatrixInferredMealMatrixEvents({
+        const inferredMealEvents = buildSharedMatrixInferredMealMatrixEvents({
           inferredMeals: buildMatrixInferredMealEvents({
             windows: matrixWindowsForDate,
             instances,
@@ -9270,7 +8713,7 @@ export function MatrixContent({
           }),
           userId,
         });
-        const scheduledEvents = sortMatrixScheduledItems([
+        const scheduledEvents = sortSharedMatrixScheduledItems([
           ...events,
           ...inferredMealEvents,
         ]);

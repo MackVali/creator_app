@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import { addGoalToCampaign } from "@/lib/queries/roadmaps";
+import { ensureGoalGlobalPriorityOrder } from "@/lib/goals/globalPriorityOrder";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
@@ -496,6 +497,11 @@ export async function persistGoalUpdate({
       roadmapId: goal.roadmapId,
     });
   }
+
+  await ensureGoalGlobalPriorityOrder({
+    supabase,
+    goalId: goal.id,
+  });
 
   const { error: rankError } = await supabase.rpc("recalculate_goal_global_rank");
   if (rankError) {

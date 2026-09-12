@@ -287,7 +287,7 @@ const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
 const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
 const QUICK_CREATE_INTERACTION_SELECTOR =
-  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory], [data-quick-create-duration-picker], [data-quick-create-priority-picker]";
+  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory], [data-quick-create-duration-picker], [data-quick-create-priority-picker], [data-desktop-time-block-label]";
 const UNIFIED_EVENT_SHEET_SELECTOR = "[data-unified-event-sheet]";
 const QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX = 56;
 const QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX = 8;
@@ -334,6 +334,7 @@ const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
+const DESKTOP_MULTIDAY_HEADER_FALLBACK_HEIGHT_PX = 56;
 const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 
 type ScheduleXpResultStatus =
@@ -1089,7 +1090,7 @@ const DESKTOP_COLUMN_TIMELINE_CSS_VARIABLES: CSSProperties = {
   "--timeline-right-gutter": "0px",
   "--timeline-grid-left": "0px",
   "--timeline-grid-right": "0px",
-  "--timeline-card-left": "6px",
+  "--timeline-card-left": "14px",
   "--timeline-card-right": "6px",
 };
 
@@ -2188,11 +2189,7 @@ function ProjectScheduleInstanceCard({
               <span className={titleClass}>{title}</span>
             </span>
           </motion.span>
-          {showDurationLabel ? (
-            <div className="text-xs text-zinc-200/70">
-              {Math.round(durationMinutes)}m
-            </div>
-          ) : null}
+          {null}
         </div>
       </div>
       <SkillEnergyBadge
@@ -2652,6 +2649,225 @@ function DayTypeBlockLabel({
       </span>
     </button>
   );
+}
+
+type DesktopTimeBlockLabelProps = {
+  label: string;
+  availableHeight: number;
+  onActivate?: (() => void) | null;
+};
+
+function DesktopTimeBlockLabel({
+  label,
+  availableHeight,
+  onActivate,
+}: DesktopTimeBlockLabelProps) {
+  const safeHeight = Number.isFinite(availableHeight)
+    ? Math.max(0, availableHeight)
+    : 0;
+  const blockSize = safeHeight > 0 ? safeHeight : undefined;
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{
+    identifier: number | null;
+    x: number;
+    y: number;
+  } | null>(null);
+  const touchMovedRef = useRef(false);
+  const isInteractive = Boolean(onActivate);
+
+  const triggerActivate = useCallback(() => {
+    onActivate?.();
+  }, [onActivate]);
+
+  const stopGesturePropagation = useCallback(
+    (
+      event:
+        | ReactPointerEvent<HTMLButtonElement>
+        | ReactMouseEvent<HTMLButtonElement>
+        | ReactTouchEvent<HTMLButtonElement>
+    ) => {
+      event.stopPropagation();
+    },
+    []
+  );
+
+  const handleTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      if (event.touches.length !== 1) {
+        touchStartRef.current = null;
+        touchMovedRef.current = false;
+        lastTapRef.current = null;
+        return;
+      }
+      const [touch] = event.touches;
+      touchStartRef.current = {
+        identifier: touch.identifier,
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+      touchMovedRef.current = false;
+    },
+    []
+  );
+
+  const handleTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const start = touchStartRef.current;
+      if (!start) return;
+      const match =
+        Array.from(event.changedTouches).find(
+          (touch) => touch.identifier === start.identifier
+        ) ?? event.changedTouches[0];
+      if (!match) return;
+      const dx = match.clientX - start.x;
+      const dy = match.clientY - start.y;
+      if (Math.hypot(dx, dy) > DAY_TYPE_TOUCH_MOVE_PX) {
+        touchMovedRef.current = true;
+      }
+    },
+    []
+  );
+
+  const handleTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const start = touchStartRef.current;
+      if (!start) return;
+      const match =
+        Array.from(event.changedTouches).find(
+          (touch) => touch.identifier === start.identifier
+        ) ?? event.changedTouches[0];
+      if (!match) {
+        touchStartRef.current = null;
+        return;
+      }
+      const now = performance.now();
+      const currentPos = { x: match.clientX, y: match.clientY };
+      if (touchMovedRef.current) {
+        lastTapRef.current = null;
+        touchStartRef.current = null;
+        touchMovedRef.current = false;
+        return;
+      }
+      if (
+        lastTapRef.current &&
+        now - lastTapRef.current.time <= DAY_TYPE_DOUBLE_TAP_DELAY_MS &&
+        Math.hypot(
+          currentPos.x - lastTapRef.current.x,
+          currentPos.y - lastTapRef.current.y
+        ) <= DAY_TYPE_DOUBLE_TAP_MOVE_PX
+      ) {
+        lastTapRef.current = null;
+        event.preventDefault();
+        triggerActivate();
+        touchStartRef.current = null;
+        return;
+      }
+      lastTapRef.current = {
+        time: now,
+        x: currentPos.x,
+        y: currentPos.y,
+      };
+      touchStartRef.current = null;
+    },
+    [triggerActivate]
+  );
+
+  const handleTouchCancel = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      lastTapRef.current = null;
+      touchStartRef.current = null;
+      touchMovedRef.current = false;
+    },
+    []
+  );
+
+  if (!isInteractive) {
+    return (
+      <span
+        title={label}
+        className="pointer-events-none absolute left-0 top-0 z-20 flex w-4 items-start justify-center overflow-hidden border-l border-zinc-500/45 bg-zinc-950/20 text-[9px] font-semibold uppercase leading-none text-white/45"
+        style={{ height: toFinitePixelHeight(blockSize) }}
+      >
+        <span
+          className="mt-1"
+          style={{
+            writingMode: "vertical-rl",
+            textOrientation: "mixed",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+            overflowWrap: "anywhere",
+            overflow: "hidden",
+            maxBlockSize: blockSize,
+            maxInlineSize: blockSize,
+            inlineSize: blockSize,
+          }}
+        >
+          {label}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={`Edit constraints for ${label || "time block"}`}
+      data-desktop-time-block-label="true"
+      className="pointer-events-auto absolute left-0 top-0 z-20 flex w-4 items-start justify-center overflow-hidden border-l border-zinc-400/55 bg-zinc-950/25 text-[9px] font-semibold uppercase leading-none text-white/55 transition-colors hover:bg-zinc-900/50 hover:text-white/75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
+      style={{
+        height: toFinitePixelHeight(blockSize),
+        touchAction: "manipulation",
+      }}
+      onPointerDown={stopGesturePropagation}
+      onPointerMove={stopGesturePropagation}
+      onPointerUp={stopGesturePropagation}
+      onPointerCancel={stopGesturePropagation}
+      onMouseDown={stopGesturePropagation}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        triggerActivate();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          triggerActivate();
+        }
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+    >
+      <span
+        className="mt-1"
+        style={{
+          writingMode: "vertical-rl",
+          textOrientation: "mixed",
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          overflow: "hidden",
+          maxBlockSize: blockSize,
+          maxInlineSize: blockSize,
+          inlineSize: blockSize,
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function toFinitePixelHeight(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value}px`
+    : undefined;
 }
 
 function formatDayViewLabel(date: Date, timeZone: string) {
@@ -5323,6 +5539,58 @@ export default function ScheduleTabContent({
   const { localTimeZone, loading: profileLoading } = useProfile();
   const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
+
+  const schedulePerfHudRef = useRef<HTMLDivElement | null>(null);
+  const schedulePerfRenderCountRef = useRef(0);
+  schedulePerfRenderCountRef.current += 1;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let frameId = 0;
+    let lastFrameAt = performance.now();
+    let sampleStartedAt = lastFrameAt;
+    let frameCount = 0;
+    let slowFrames = 0;
+    let worstFrameMs = 0;
+
+    const tick = (now: number) => {
+      const delta = now - lastFrameAt;
+      lastFrameAt = now;
+      frameCount += 1;
+
+      if (delta > 20) slowFrames += 1;
+      worstFrameMs = Math.max(worstFrameMs, delta);
+
+      const elapsed = now - sampleStartedAt;
+      if (elapsed >= 1000) {
+        const fps = Math.round((frameCount * 1000) / elapsed);
+        const timelineRoot = document.querySelector(
+          "[data-desktop-multiday-schedule]"
+        );
+        const domNodes = timelineRoot
+          ? timelineRoot.querySelectorAll("*").length
+          : 0;
+
+        if (schedulePerfHudRef.current) {
+          schedulePerfHudRef.current.textContent =
+            `FPS ${fps} | slow ${slowFrames} | worst ${Math.round(
+              worstFrameMs
+            )}ms | renders ${schedulePerfRenderCountRef.current} | DOM ${domNodes}`;
+        }
+
+        sampleStartedAt = now;
+        frameCount = 0;
+        slowFrames = 0;
+        worstFrameMs = 0;
+      }
+
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
 
   // 1. browser timezone detection
   const browserTimeZone = useMemo(() => {
@@ -10333,10 +10601,16 @@ export default function ScheduleTabContent({
   }, []);
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
+  const desktopMultiDayShellRef = useRef<HTMLDivElement | null>(null);
+  const desktopMultiDayHeaderRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
   const inlineJumpPanelRef = useRef<HTMLDivElement | null>(null);
   const [isDesktopScheduleViewport, setIsDesktopScheduleViewport] =
     useState(false);
+  const [desktopMultiDayHeaderBounds, setDesktopMultiDayHeaderBounds] =
+    useState<{ left: number; width: number } | null>(null);
+  const [desktopMultiDayHeaderHeight, setDesktopMultiDayHeaderHeight] =
+    useState(DESKTOP_MULTIDAY_HEADER_FALLBACK_HEIGHT_PX);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -11704,6 +11978,64 @@ export default function ScheduleTabContent({
     timeZoneShortName,
     friendlyTimeZone,
     canonicalTodayDateKey,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const measureDesktopMultiDayHeader = () => {
+      if (!isDesktopScheduleViewport || view !== "day") {
+        setDesktopMultiDayHeaderBounds(null);
+        return;
+      }
+
+      const shell = desktopMultiDayShellRef.current;
+      if (!shell) {
+        setDesktopMultiDayHeaderBounds(null);
+        return;
+      }
+
+      const shellRect = shell.getBoundingClientRect();
+      const shellStyles = window.getComputedStyle(shell);
+      const shellBorderLeft = Number.parseFloat(shellStyles.borderLeftWidth);
+      const nextBounds = {
+        left:
+          shellRect.left +
+          (Number.isFinite(shellBorderLeft) ? shellBorderLeft : 0),
+        width: shell.clientWidth,
+      };
+      if (
+        Number.isFinite(nextBounds.left) &&
+        Number.isFinite(nextBounds.width) &&
+        nextBounds.width > 0
+      ) {
+        setDesktopMultiDayHeaderBounds((current) =>
+          current &&
+          Math.abs(current.left - nextBounds.left) < 0.5 &&
+          Math.abs(current.width - nextBounds.width) < 0.5
+            ? current
+            : nextBounds
+        );
+      }
+
+      const header = desktopMultiDayHeaderRef.current;
+      const headerHeight = header?.getBoundingClientRect().height ?? 0;
+      if (Number.isFinite(headerHeight) && headerHeight > 0) {
+        setDesktopMultiDayHeaderHeight((current) =>
+          Math.abs(current - headerHeight) < 0.5 ? current : headerHeight
+        );
+      }
+    };
+
+    measureDesktopMultiDayHeader();
+    window.addEventListener("resize", measureDesktopMultiDayHeader);
+    return () => {
+      window.removeEventListener("resize", measureDesktopMultiDayHeader);
+    };
+  }, [
+    isDesktopScheduleViewport,
+    view,
+    desktopDayTimelineModels.length,
   ]);
 
   const buildTimeBlockAdjustmentManualPlacements = useCallback(
@@ -13867,21 +14199,31 @@ export default function ScheduleTabContent({
         requireHit: activeSession?.candidate.requireTimelineHit === true,
       });
       const preview = next ? snapToFiveMinuteGrid(next) : null;
-      updateManualPlacementSession((prev) =>
-        prev
-          ? {
+        updateManualPlacementSession((prev) => {
+          if (!prev) return prev;
+
+          if (!preview) {
+            if (prev.pushPreview === null) return prev;
+            return {
               ...prev,
-              previewTime: preview ?? prev.previewTime,
-              pushPreview: preview
-                ? computeManualPlacementPushPreview(
-                    prev.candidate,
-                    preview,
-                    currentDayProjectInstances
-                  )
-                : null,
-            }
-          : prev
-      );
+              pushPreview: null,
+            };
+          }
+
+          if (prev.previewTime?.getTime() === preview.getTime()) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            previewTime: preview,
+            pushPreview: computeManualPlacementPushPreview(
+              prev.candidate,
+              preview,
+              currentDayProjectInstances
+            ),
+          };
+        });
 
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight ?? 0;
@@ -14002,18 +14344,16 @@ export default function ScheduleTabContent({
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
       const clientY = event.clientY;
-      updateManualPlacementSession((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          ghost: {
-            ...prev.ghost,
-            x: event.clientX,
-            y: event.clientY,
-            mode: "placing",
-          },
-        };
-      });
+        updateManualPlacementSession((prev) => {
+          if (!prev || prev.ghost.mode === "placing") return prev;
+          return {
+            ...prev,
+            ghost: {
+              ...prev.ghost,
+              mode: "placing",
+            },
+          };
+        });
       updatePreviewAndScrollIntent(clientY, event.clientX);
     };
 
@@ -14047,18 +14387,16 @@ export default function ScheduleTabContent({
         event.preventDefault();
       }
 
-      updateManualPlacementSession((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          ghost: {
-            ...prev.ghost,
-            x: touch.clientX,
-            y: touch.clientY,
-            mode: "placing",
-          },
-        };
-      });
+        updateManualPlacementSession((prev) => {
+          if (!prev || prev.ghost.mode === "placing") return prev;
+          return {
+            ...prev,
+            ghost: {
+              ...prev.ghost,
+              mode: "placing",
+            },
+          };
+        });
       lastPointerClientYRef.current = touch.clientY;
       updatePreviewAndScrollIntent(touch.clientY, touch.clientX);
     };
@@ -14485,6 +14823,70 @@ export default function ScheduleTabContent({
             )
         : [];
 
+      const passiveDesktopWindowSegments = isDesktopColumnPresentation
+        ? modelWindows.flatMap((w) => {
+            const { topMinutes, heightMinutes } = windowRectMinutes(
+              w,
+              modelStartHour
+            );
+            if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
+              return [];
+            }
+            const windowSegments = subtractOverlayRangesFromWindow(
+              { start: topMinutes, end: topMinutes + heightMinutes },
+              timeBlockPresentationOverlayRanges
+            );
+            const label = typeof w.label === "string" ? w.label.trim() : "";
+
+            return windowSegments.flatMap((segment, index) => {
+              const durationMinutes = segment.end - segment.start;
+              if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                return [];
+              }
+              const segmentHeightPx = Math.max(
+                0,
+                durationMinutes * modelPxPerMin
+              );
+              return {
+                key: `${w.id}-${index}`,
+                ariaLabel: index === 0 ? w.label : undefined,
+                startMinutes: segment.start,
+                durationMinutes,
+                heightPx: segmentHeightPx,
+                label,
+                window: w,
+                isAdjustable: Boolean(w.dayTypeTimeBlockId),
+                showLabel: index === 0 && label.length > 0 && segmentHeightPx >= 24,
+              };
+            });
+          })
+        : [];
+      const passiveDesktopWindowBackgroundStyle: CSSProperties | null =
+        passiveDesktopWindowSegments.length > 0
+          ? {
+              backgroundImage: passiveDesktopWindowSegments
+                .map(
+                  () =>
+                    "linear-gradient(to right, rgba(63, 63, 70, 0.5) 0 1px, transparent 1px)"
+                )
+                .join(", "),
+              backgroundPosition: passiveDesktopWindowSegments
+                .map(
+                  (segment) => `0 ${toTimelinePosition(segment.startMinutes)}`
+                )
+                .join(", "),
+              backgroundRepeat: passiveDesktopWindowSegments
+                .map(() => "no-repeat")
+                .join(", "),
+              backgroundSize: passiveDesktopWindowSegments
+                .map(
+                  (segment) =>
+                    `100% ${toTimelinePosition(segment.durationMinutes)}`
+                )
+                .join(", "),
+            }
+          : null;
+
       const launchTimeBlock = (timeBlock: (typeof simpleTimeBlocks)[number]) => {
         const params = new URLSearchParams();
         params.set("launch", "time_block_start");
@@ -14906,83 +15308,103 @@ export default function ScheduleTabContent({
             }
           >
 
-            {modelWindows.map((w) => {
-              const { topMinutes, heightMinutes } = windowRectMinutes(
-                w,
-                modelStartHour
-              );
-              if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
-                return null;
-              }
-              const windowSegments = subtractOverlayRangesFromWindow(
-                { start: topMinutes, end: topMinutes + heightMinutes },
-                timeBlockPresentationOverlayRanges
-              );
-              if (windowSegments.length === 0) {
-                return null;
-              }
-              return windowSegments.map((segment, index) => {
-                const segmentHeightPx = Math.max(
-                  0,
-                  (segment.end - segment.start) * modelPxPerMin
+            {isDesktopColumnPresentation ? (
+              <>
+                {passiveDesktopWindowBackgroundStyle ? (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={passiveDesktopWindowBackgroundStyle}
+                  />
+                ) : null}
+                {passiveDesktopWindowSegments.map((segment) =>
+                  segment.showLabel ? (
+                    <div
+                      key={`passive-window-label-${segment.key}`}
+                      aria-hidden={segment.isAdjustable ? undefined : true}
+                      aria-label={
+                        segment.isAdjustable ? segment.ariaLabel : undefined
+                      }
+                      className="pointer-events-none absolute left-0 z-20"
+                      style={{
+                        top: toTimelinePosition(segment.startMinutes),
+                        height: toTimelinePosition(segment.durationMinutes),
+                      }}
+                    >
+                      <DesktopTimeBlockLabel
+                        label={segment.label}
+                        availableHeight={segment.heightPx}
+                        onActivate={
+                          segment.isAdjustable
+                            ? () =>
+                                handleOpenTimelineTimeBlockAdjustment(
+                                  segment.window
+                                )
+                            : null
+                        }
+                      />
+                    </div>
+                  ) : null
+                )}
+              </>
+            ) : (
+              modelWindows.map((w) => {
+                const { topMinutes, heightMinutes } = windowRectMinutes(
+                  w,
+                  modelStartHour
                 );
-                const shouldShowLabel =
-                  index === 0 &&
-                  typeof w.label === "string" &&
-                  w.label.trim().length > 0 &&
-                  segmentHeightPx >= 24;
-                const blockKindLabel =
-                  normalizeTimeBlockConstraintKind(w.window_kind);
-                if (isDesktopColumnPresentation) {
+                if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
+                  return null;
+                }
+                const windowSegments = subtractOverlayRangesFromWindow(
+                  { start: topMinutes, end: topMinutes + heightMinutes },
+                  timeBlockPresentationOverlayRanges
+                );
+                if (windowSegments.length === 0) {
+                  return null;
+                }
+                return windowSegments.map((segment, index) => {
+                  const segmentHeightPx = Math.max(
+                    0,
+                    (segment.end - segment.start) * modelPxPerMin
+                  );
+                  const shouldShowLabel =
+                    index === 0 &&
+                    typeof w.label === "string" &&
+                    w.label.trim().length > 0 &&
+                    segmentHeightPx >= 24;
                   return (
                     <div
                       key={`${w.id}-${index}`}
                       aria-label={index === 0 ? w.label : undefined}
-                      className="pointer-events-none absolute left-0 right-0 border-l border-zinc-700/50"
+                      className="absolute left-0 flex"
                       style={{
                         top: toTimelinePosition(segment.start),
                         height: toTimelinePosition(segment.end - segment.start),
                       }}
                     >
+                      <div className="w-0.5 bg-zinc-700 opacity-50" />
                       {shouldShowLabel ? (
-                        <div className="absolute left-1.5 right-1.5 top-1 z-20 truncate text-[9px] font-semibold uppercase leading-none tracking-wide text-white/42">
-                          {w.label?.trim()} · {blockKindLabel}
-                        </div>
+                        w.dayTypeTimeBlockId ? (
+                          <DayTypeBlockLabel
+                            label={w.label ?? ""}
+                            availableHeight={segmentHeightPx}
+                            onActivate={() =>
+                              handleOpenTimelineTimeBlockAdjustment(w)
+                            }
+                          />
+                        ) : (
+                          <WindowLabel
+                            label={w.label ?? ""}
+                            availableHeight={segmentHeightPx}
+                          />
+                        )
                       ) : null}
                     </div>
                   );
-                }
-                return (
-                  <div
-                    key={`${w.id}-${index}`}
-                    aria-label={index === 0 ? w.label : undefined}
-                    className="absolute left-0 flex"
-                    style={{
-                      top: toTimelinePosition(segment.start),
-                      height: toTimelinePosition(segment.end - segment.start),
-                    }}
-                  >
-                    <div className="w-0.5 bg-zinc-700 opacity-50" />
-                    {shouldShowLabel ? (
-                      w.dayTypeTimeBlockId ? (
-                        <DayTypeBlockLabel
-                          label={w.label ?? ""}
-                          availableHeight={segmentHeightPx}
-                          onActivate={() =>
-                            handleOpenTimelineTimeBlockAdjustment(w)
-                          }
-                        />
-                      ) : (
-                        <WindowLabel
-                          label={w.label ?? ""}
-                          availableHeight={segmentHeightPx}
-                        />
-                      )
-                    ) : null}
-                  </div>
-                );
-              });
-            })}
+                });
+              })
+            )}
             {!isSimpleSchedulingMode ? modelWindowReports.map((report) => {
               const { rangeStart, rangeEnd } = report;
               if (!isValidDate(rangeStart) || !isValidDate(rangeEnd)) {
@@ -15022,6 +15444,7 @@ export default function ScheduleTabContent({
                 return (
                   <div
                     key={`${report.key}-${index}`}
+                    data-schedule-perf-layer="time-block-report"
                     className="absolute"
                     style={{
                       ...TIMELINE_CARD_BOUNDS,
@@ -15056,6 +15479,7 @@ export default function ScheduleTabContent({
               return (
                 <div
                   key={`simple-time-block-${block.timeBlock.id}-${block.startOffsetMinutes}`}
+                  data-schedule-perf-layer="simple-time-block"
                   className="absolute"
                   style={{
                     ...TIMELINE_CARD_BOUNDS,
@@ -15069,6 +15493,7 @@ export default function ScheduleTabContent({
               );
             })}
             <div
+              data-schedule-perf-layer="overlays"
               className="pointer-events-none absolute inset-0"
             >
               {overlaySegments.map((segment) => {
@@ -15403,6 +15828,7 @@ export default function ScheduleTabContent({
               if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
                 durationMinutes = placement.durationMinutes;
               }
+
 
               if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
                 hasLoggedInstance = true;
@@ -15803,8 +16229,8 @@ export default function ScheduleTabContent({
                       ? `habit-${placement.instanceId}`
                       : `habit-${placement.habitId}-${dayViewDateKey}-${placement.startMinute}-${placement.endMinute}`
                   }
-                  layout="position"
-                  layoutId={habitLayoutTokens?.card}
+                  layout={isDesktopColumnPresentation ? false : "position"}
+                  layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.card}
                   className="absolute"
                   style={layeredCardStyle}
                   initial={prefersReducedMotion ? false : { y: 4 }}
@@ -15846,9 +16272,9 @@ export default function ScheduleTabContent({
                       isHabitCompleted
                         ? "habit-card--completed"
                         : "habit-card--scheduled",
-                      disableHabitInteractions
-                        ? "pointer-events-none cursor-default"
-                        : "cursor-pointer"
+	                      disableHabitInteractions
+	                        ? "pointer-events-none cursor-default"
+	                        : "cursor-pointer"
                     )}
                     role="button"
                     tabIndex={disableHabitInteractions ? -1 : 0}
@@ -15904,7 +16330,7 @@ export default function ScheduleTabContent({
                     ) : null}
                     {isFitnessPlanHabitCard ? (
                       <motion.span
-                        layoutId={habitLayoutTokens?.title}
+                        layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.title}
                         className={clsx(
                           "min-w-0 flex-1",
                           isCompletedGemCard && "relative z-[2]",
@@ -15923,7 +16349,7 @@ export default function ScheduleTabContent({
                       </motion.span>
                     ) : (
                       <motion.span
-                        layoutId={habitLayoutTokens?.title}
+                        layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.title}
                         className={clsx(
                           habitTitleClass,
                           isCompletedGemCard && "relative z-[2]"
@@ -16385,6 +16811,7 @@ export default function ScheduleTabContent({
                 const detailText = detailParts.join(" · ");
                 const globalRank = project.globalRank;
                 const rankDisplay =
+                  layoutMode !== "paired-left" &&
                   typeof globalRank === "number" &&
                   Number.isFinite(globalRank) &&
                   globalRank > 0
@@ -16492,7 +16919,7 @@ export default function ScheduleTabContent({
                     }
                     className="absolute"
                     style={layeredPositionStyle}
-                    layout={!prefersReducedMotion}
+                    layout={!isDesktopColumnPresentation && !prefersReducedMotion}
                     transition={
                       prefersReducedMotion
                         ? undefined
@@ -16504,8 +16931,8 @@ export default function ScheduleTabContent({
                         hideForEdit ? null : (
                           <motion.div
                             key="project"
-                            layout="position"
-                            layoutId={layoutTokens.card}
+                            layout={isDesktopColumnPresentation ? false : "position"}
+                            layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.card}
                             ref={bindProjectTimelineNoSelectSurface}
                             aria-label={`Project ${project.name}`}
                             role="button"
@@ -16749,7 +17176,7 @@ export default function ScheduleTabContent({
                             <div className="flex min-w-0 flex-1 items-start gap-3">
                               <div className="min-w-0 space-y-1">
                                 <motion.span
-                                  layoutId={layoutTokens.title}
+                                  layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.title}
                                   className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                                 >
                                   <span className="flex min-w-0 items-center gap-2">
@@ -16771,7 +17198,7 @@ export default function ScheduleTabContent({
                                 </motion.span>
                                 {detailText ? (
                                   <motion.div
-                                    layoutId={layoutTokens.meta}
+                                    layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.meta}
                                     className="text-xs text-zinc-200/70"
                                   >
                                     {detailText}
@@ -16781,7 +17208,11 @@ export default function ScheduleTabContent({
                             </div>
                             <SkillEnergyBadge
                               energyLevel={cardEnergyLevel}
-                              skillIcon={project.skill_icon}
+                              skillIcon={
+                                layoutMode === "paired-left"
+                                  ? null
+                                  : project.skill_icon
+                              }
                               className="flex flex-shrink-0 items-center gap-2"
                               iconClassName="text-lg leading-none"
                               flameClassName="flex-shrink-0"
@@ -17067,8 +17498,16 @@ export default function ScheduleTabContent({
                                 return (
                                   <motion.div
                                     key={key}
-                                    layout={instanceId ? "position" : false}
-                                    layoutId={nestedLayoutTokens?.card}
+                                    layout={
+                                      !isDesktopColumnPresentation && instanceId
+                                        ? "position"
+                                        : false
+                                    }
+                                    layoutId={
+                                      isDesktopColumnPresentation
+                                        ? undefined
+                                        : nestedLayoutTokens?.card
+                                    }
                                     data-schedule-instance-id={
                                       kind === "scheduled" && instanceId
                                         ? instanceId
@@ -17241,7 +17680,7 @@ export default function ScheduleTabContent({
                                     ) : null}
                                     <div className="flex flex-col">
                                       <motion.span
-                                        layoutId={nestedLayoutTokens?.title}
+                                        layoutId={isDesktopColumnPresentation ? undefined : nestedLayoutTokens?.title}
                                         className={taskTitleClass}
                                       >
                                         {taskDisplayName}
@@ -17249,7 +17688,11 @@ export default function ScheduleTabContent({
                                     </div>
                                     <SkillEnergyBadge
                                       energyLevel={energyLevel}
-                                      skillIcon={task.skill_icon}
+                                      skillIcon={
+                                        layoutMode === "paired-left"
+                                          ? null
+                                          : task.skill_icon
+                                      }
                                       size="xs"
                                       className={clsx(
                                         "pointer-events-none absolute flex items-center gap-1 rounded-full bg-zinc-950/70",
@@ -17451,8 +17894,8 @@ export default function ScheduleTabContent({
                   return (
                     <motion.div
                       key={instance.id}
-                      layout="position"
-                      layoutId={layoutTokens.card}
+                      layout={isDesktopColumnPresentation ? false : "position"}
+                      layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.card}
                       data-schedule-instance-id={instance.id}
                       data-creator-xp-source="schedule-instance"
                       data-creator-xp-source-id={instance.id}
@@ -17561,7 +18004,7 @@ export default function ScheduleTabContent({
                         <div className="flex min-w-0 flex-1 items-start gap-3">
                           <div className="min-w-0 space-y-1">
                             <motion.span
-                              layoutId={layoutTokens.title}
+                              layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.title}
                               className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                             >
                               <span className="flex min-w-0 items-center gap-2">
@@ -17570,20 +18013,16 @@ export default function ScheduleTabContent({
                                 </span>
                               </span>
                             </motion.span>
-                            <motion.div
-                              layoutId={layoutTokens.meta}
-                              className="text-xs text-zinc-200/70"
-                            >
-                              {Math.round(
-                                (end.getTime() - start.getTime()) / 60000
-                              )}
-                              m
-                            </motion.div>
+                            {null}
                           </div>
                         </div>
                         <SkillEnergyBadge
                           energyLevel={standaloneEnergyLevel}
-                          skillIcon={task.skill_icon}
+                          skillIcon={
+                            layoutMode === "paired-left"
+                              ? null
+                              : task.skill_icon
+                          }
                           className="flex flex-shrink-0 items-center gap-2"
                           iconClassName="text-lg leading-none"
                           flameClassName="flex-shrink-0"
@@ -17681,6 +18120,11 @@ export default function ScheduleTabContent({
   );
 
   const desktopMultiDayTimelineNode = useMemo(() => {
+    const fixedHeaderTop =
+      topBarHeight !== null && Number.isFinite(topBarHeight)
+        ? Math.max(0, topBarHeight)
+        : 0;
+
     const formatDesktopHeader = (date: Date, timeZone: string) => {
       try {
         const parts = new Intl.DateTimeFormat(undefined, {
@@ -17703,54 +18147,72 @@ export default function ScheduleTabContent({
       }
     };
 
+    const desktopHeaderRowContent = desktopDayTimelineModels.map((model, index) => {
+      const label = formatDesktopHeader(model.date, model.viewTimeZone);
+      const isSelected = index === 0;
+      return (
+        <div
+          key={`desktop-day-header-${model.dayViewDateKey}`}
+          className={clsx(
+            "flex min-h-14 items-center justify-center border-l border-white/[0.07] first:border-l-0",
+            isSelected ? "bg-white/[0.065]" : "bg-transparent",
+            model.isViewingToday && !isSelected
+              ? "shadow-[inset_0_-1px_0_rgba(255,255,255,0.22)]"
+              : ""
+          )}
+        >
+          <div className="flex flex-col items-center gap-0.5 leading-none">
+            <span
+              className={clsx(
+                "text-[10px] font-semibold uppercase tracking-[0.22em]",
+                isSelected ? "text-white/85" : "text-white/48"
+              )}
+            >
+              {label.weekday}
+            </span>
+            <span
+              className={clsx(
+                "text-base font-semibold tabular-nums",
+                isSelected ? "text-white" : "text-white/70",
+                model.isViewingToday ? "text-white" : ""
+              )}
+            >
+              {label.day}
+            </span>
+          </div>
+        </div>
+      );
+    });
+
     return (
       <div data-desktop-multiday-schedule>
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#090a0b]/72 shadow-[0_22px_48px_rgba(15,23,42,0.28)]">
+        <div
+          ref={schedulePerfHudRef}
+          className="fixed right-3 top-3 z-[99999] rounded-md border border-white/15 bg-black/90 px-2 py-1 font-mono text-[10px] text-white/80"
+        >
+          Measuring Schedule…
+        </div>
+        <div
+          ref={desktopMultiDayShellRef}
+          className="rounded-xl border border-white/10 bg-[#090a0b]/72 shadow-[0_22px_48px_rgba(15,23,42,0.28)]"
+        >
           <div
-            className="sticky z-30 grid border-b border-white/10 bg-[#090a0b]/94 backdrop-blur-xl"
+            ref={desktopMultiDayHeaderRef}
+            className="fixed z-[110] grid rounded-t-xl border-b border-white/10 bg-[#090a0b]"
             style={{
               gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-              top:
-                topBarHeight !== null && Number.isFinite(topBarHeight)
-                  ? Math.max(0, topBarHeight)
-                  : 0,
+              top: fixedHeaderTop,
+              left: desktopMultiDayHeaderBounds?.left ?? 0,
+              width: desktopMultiDayHeaderBounds?.width ?? "100%",
+              visibility: desktopMultiDayHeaderBounds ? "visible" : "hidden",
             }}
           >
-            {desktopDayTimelineModels.map((model, index) => {
-              const label = formatDesktopHeader(model.date, model.viewTimeZone);
-              const isSelected = index === 0;
-              return (
-                <div
-                  key={`desktop-day-header-${model.dayViewDateKey}`}
-                  className={clsx(
-                    "flex min-h-14 items-center justify-center border-l border-white/[0.07] first:border-l-0",
-                    isSelected ? "bg-white/[0.065]" : "bg-transparent",
-                    model.isViewingToday && !isSelected ? "shadow-[inset_0_-1px_0_rgba(255,255,255,0.22)]" : ""
-                  )}
-                >
-                  <div className="flex flex-col items-center gap-0.5 leading-none">
-                    <span
-                      className={clsx(
-                        "text-[10px] font-semibold uppercase tracking-[0.22em]",
-                        isSelected ? "text-white/85" : "text-white/48"
-                      )}
-                    >
-                      {label.weekday}
-                    </span>
-                    <span
-                      className={clsx(
-                        "text-base font-semibold tabular-nums",
-                        isSelected ? "text-white" : "text-white/70",
-                        model.isViewingToday ? "text-white" : ""
-                      )}
-                    >
-                      {label.day}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+            {desktopHeaderRowContent}
           </div>
+          <div
+            aria-hidden="true"
+            style={{ height: desktopMultiDayHeaderHeight }}
+          />
           <div
             className="grid"
             ref={dayTimelineContainerRef}
@@ -17775,7 +18237,13 @@ export default function ScheduleTabContent({
         </div>
       </div>
     );
-  }, [desktopDayTimelineModels, renderDayTimeline, topBarHeight]);
+  }, [
+    desktopDayTimelineModels,
+    desktopMultiDayHeaderBounds,
+    desktopMultiDayHeaderHeight,
+    renderDayTimeline,
+    topBarHeight,
+  ]);
 
   useEffect(() => {
     if (view !== "day") {
@@ -18664,7 +19132,8 @@ export default function ScheduleTabContent({
         ) : null}
         <div
           className={clsx(
-            "min-w-0 space-y-4 overflow-x-hidden text-[var(--text)]",
+            "min-w-0 space-y-4 text-[var(--text)]",
+            isDesktopScheduleViewport ? "overflow-x-clip" : "overflow-x-hidden",
             !isSwipePreview &&
               "lg:w-screen lg:max-w-none lg:min-w-0"
           )}
@@ -18674,7 +19143,9 @@ export default function ScheduleTabContent({
           <div
             className={clsx(
               "app-surface relative",
-              isInlineJumpToDateOpen ? "overflow-visible" : "overflow-hidden"
+              isDesktopScheduleViewport || isInlineJumpToDateOpen
+                ? "overflow-visible"
+                : "overflow-hidden"
             )}
             ref={swipeContainerRef}
             style={{
@@ -18692,8 +19163,8 @@ export default function ScheduleTabContent({
             onTouchCancel={manualPlacementSession ? undefined : handleTouchCancel}
           >
             <motion.div
-              animate={jumpPullControls}
-              initial={false}
+              animate={isDesktopScheduleViewport ? undefined : jumpPullControls}
+              initial={isDesktopScheduleViewport ? undefined : false}
             >
               <div
                 data-inline-jump-panel
@@ -18764,14 +19235,35 @@ export default function ScheduleTabContent({
                   }
                 >
                   <AnimatePresence mode="wait" initial={false}>
-                    {view === "day" && (
+                    {view === "day" && isDesktopScheduleViewport ? (
+                      <div key="day">
+                        {!dayTimelineModel ? (
+                          <div className="flex h-64 items-center justify-center text-zinc-500">
+                            Loading schedule...
+                          </div>
+                        ) : (
+                          desktopMultiDayTimelineNode
+                        )}
+                        <FocusTimelineFab
+                          hidden={
+                            isNutritionQuickAddOverlayOpen ||
+                            isJumpToDateOpen ||
+                            isInlineJumpToDateOpen
+                          }
+                          editTarget={fabEditTarget}
+                          timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+                          onTimeBlockAdjustmentRequestConsumed={() =>
+                            setTimeBlockAdjustmentRequest(null)
+                          }
+                          onEditClose={handleCloseEditSheet}
+                        />
+                      </div>
+                    ) : view === "day" ? (
                       <ScheduleViewShell key="day">
                         {!dayTimelineModel ? (
                           <div className="flex h-64 items-center justify-center text-zinc-500">
                             Loading schedule...
                           </div>
-                        ) : isDesktopScheduleViewport ? (
-                          desktopMultiDayTimelineNode
                         ) : prefersReducedMotion ? (
                           dayTimelineNode
                         ) : isSwipingDayView ? (
@@ -18830,7 +19322,7 @@ export default function ScheduleTabContent({
                           onEditClose={handleCloseEditSheet}
                         />
                       </ScheduleViewShell>
-                    )}
+                    ) : null}
                     {view === "focus" && (
                       <ScheduleViewShell key="focus">
                         <FocusTimeline

@@ -26,6 +26,7 @@ import {
   LimitReachedError,
   isGoalCodeColumnMissingError,
 } from "@/lib/goals/persistGoalUpdate";
+import { ensureGoalGlobalPriorityOrder } from "@/lib/goals/globalPriorityOrder";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { getGoalStatusById } from "@/lib/queries/goals";
@@ -264,55 +265,6 @@ async function persistGoalWeights(
         supabase.from("goals").update({ weight }).eq("id", id)
       )
     );
-  }
-}
-
-// Goal global rank is derived from the computed goal weight (lower is better).
-async function persistGoalGlobalRanks(
-  supabase: SupabaseClient,
-  goals: Array<
-    | Goal
-    | { id: string; weight: number; createdAt?: string | null }
-  >
-) {
-  const normalizedGoals = goals
-    .map((goal) => {
-      const parsedCreatedAt =
-        typeof goal.createdAt === "string"
-          ? Date.parse(goal.createdAt)
-          : NaN;
-      return {
-        id: goal.id,
-        weight: goal.weight ?? 0,
-        createdAtMs: Number.isNaN(parsedCreatedAt)
-          ? null
-          : parsedCreatedAt,
-      };
-    })
-    .sort((a, b) => {
-      const weightDiff = a.weight - b.weight;
-      if (weightDiff !== 0) return weightDiff;
-      if (a.createdAtMs !== null && b.createdAtMs !== null) {
-        const createdDiff = a.createdAtMs - b.createdAtMs;
-        if (createdDiff !== 0) return createdDiff;
-      }
-      return a.id.localeCompare(b.id);
-    });
-
-  const rankUpdates = normalizedGoals.map((goal, index) => ({
-    id: goal.id,
-    global_rank: index + 1,
-  }));
-
-  for (const { id, global_rank } of rankUpdates) {
-    const { error } = await supabase
-      .from("goals")
-      .update({ global_rank })
-      .eq("id", id);
-
-    if (error) {
-      console.error(`Failed to update global_rank for goal ${id}`, error);
-    }
   }
 }
 
@@ -1435,7 +1387,19 @@ export default function GoalsPage() {
 
         try {
           await persistGoalWeights(supabase, weightUpdates);
-          await persistGoalGlobalRanks(supabase, recomputedGoals);
+          await ensureGoalGlobalPriorityOrder({
+            supabase,
+            goalId: newGoalId,
+          });
+          const { error: goalRankError } = await supabase.rpc(
+            "recalculate_goal_global_rank"
+          );
+          if (goalRankError) {
+            console.error(
+              "Failed to recalculate goal global rank",
+              goalRankError
+            );
+          }
           const { error: projectRankError } = await supabase.rpc(
             "recalculate_project_global_rank"
           );
@@ -1508,10 +1472,35 @@ export default function GoalsPage() {
     const status: Goal["status"] =
       currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
     const nextActive = status === "ACTIVE";
-    await supabase
+    const { error: updateError } = await supabase
       .from("goals")
       .update({ active: nextActive, status })
       .eq("id", goal.id);
+    if (updateError) {
+      console.error("Failed to update goal active status", updateError);
+      return;
+    }
+    if (nextActive) {
+      await ensureGoalGlobalPriorityOrder({
+        supabase,
+        goalId: goal.id,
+      });
+    }
+    const { error: goalRankError } = await supabase.rpc(
+      "recalculate_goal_global_rank"
+    );
+    if (goalRankError) {
+      console.error("Failed to recalculate goal global rank", goalRankError);
+    }
+    const { error: projectRankError } = await supabase.rpc(
+      "recalculate_project_global_rank"
+    );
+    if (projectRankError) {
+      console.error(
+        "Failed to recalculate project global rank",
+        projectRankError
+      );
+    }
     updateGoal({ ...goal, active: nextActive, status });
   };
 
