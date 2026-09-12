@@ -150,10 +150,10 @@ export function DayTimeline({
   return (
     <motion.div
       className={cn(
-        "relative isolate w-full overflow-hidden border border-white/10 backdrop-blur",
+        "relative isolate w-full overflow-hidden border border-white/10",
         isDesktopColumn
           ? "rounded-none border-x border-y-0 shadow-none"
-          : "rounded-[28px] shadow-[0_22px_48px_rgba(15,23,42,0.4)]",
+          : "rounded-[28px] backdrop-blur shadow-[0_22px_48px_rgba(15,23,42,0.4)]",
         className
       )}
       style={combinedStyle}
@@ -164,6 +164,59 @@ export function DayTimeline({
           height: heightExpression,
         }}
       >
+      {/* Desktop quarter-grid paint layers */}
+      {isDesktopColumn ? (
+        <>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+              right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              backgroundImage:
+                "linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.10) calc(100% - 1px))",
+              backgroundSize:
+                "100% calc(var(--timeline-minute-unit) * 15)",
+              backgroundRepeat: "repeat-y",
+              opacity: "calc(0.42 * var(--quarter-intensity))",
+            }}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+              right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              backgroundImage:
+                "linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.10) calc(100% - 1px))",
+              backgroundSize:
+                "100% calc(var(--timeline-minute-unit) * 30)",
+              backgroundRepeat: "repeat-y",
+              opacity:
+                "calc(0.16 * var(--quarter-intensity) + 0.35 * var(--half-hour-boost))",
+            }}
+          />
+        </>
+      ) : null}
+
+      {isDesktopColumn ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+            right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+            backgroundImage:
+              "linear-gradient(to bottom, transparent calc(100% - 1px), rgba(255,255,255,0.10) calc(100% - 1px))",
+            backgroundSize: "100% calc(var(--timeline-minute-unit) * 5)",
+            backgroundRepeat: "repeat-y",
+            opacity: "calc(0.25 * var(--five-minute-intensity))",
+          }}
+        />
+      ) : null}
+
       {hours.map(h => {
         const minutesFromStart = (h - startHour) * 60;
         const top = minutesToStyle(minutesFromStart);
@@ -204,15 +257,17 @@ export function DayTimeline({
                 : `calc(${labelBaseOpacity} * var(--quarter-label-intensity))`;
               return (
                 <Fragment key={`quarter-${h}-${minute}`}>
-                  <div
-                    className="pointer-events-none absolute border-t border-white/10"
-                    style={{
-                      top: minuteTop,
-                      left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
-                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
-                      opacity: markerOpacity,
-                    }}
-                  />
+                  {!isDesktopColumn ? (
+                    <div
+                      className="pointer-events-none absolute border-t border-white/10"
+                      style={{
+                        top: minuteTop,
+                        left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                        right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                        opacity: markerOpacity,
+                      }}
+                    />
+                  ) : null}
                   {effectiveShowTimeLabels ? (
                     <div
                       className={cn(
@@ -233,7 +288,9 @@ export function DayTimeline({
               );
             })}
 
-            {Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
+            {!isDesktopColumn
+              ? (
+                Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
               .filter(minute => minute % 15 !== 0)
               .map(minute => {
                 const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
@@ -252,7 +309,9 @@ export function DayTimeline({
                     }}
                   />
                 );
-              })}
+              })
+                )
+              : null}
           </Fragment>
         );
       })}

@@ -5324,6 +5324,58 @@ export default function ScheduleTabContent({
   const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
 
+  const schedulePerfHudRef = useRef<HTMLDivElement | null>(null);
+  const schedulePerfRenderCountRef = useRef(0);
+  schedulePerfRenderCountRef.current += 1;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let frameId = 0;
+    let lastFrameAt = performance.now();
+    let sampleStartedAt = lastFrameAt;
+    let frameCount = 0;
+    let slowFrames = 0;
+    let worstFrameMs = 0;
+
+    const tick = (now: number) => {
+      const delta = now - lastFrameAt;
+      lastFrameAt = now;
+      frameCount += 1;
+
+      if (delta > 20) slowFrames += 1;
+      worstFrameMs = Math.max(worstFrameMs, delta);
+
+      const elapsed = now - sampleStartedAt;
+      if (elapsed >= 1000) {
+        const fps = Math.round((frameCount * 1000) / elapsed);
+        const timelineRoot = document.querySelector(
+          "[data-desktop-multiday-schedule]"
+        );
+        const domNodes = timelineRoot
+          ? timelineRoot.querySelectorAll("*").length
+          : 0;
+
+        if (schedulePerfHudRef.current) {
+          schedulePerfHudRef.current.textContent =
+            `FPS ${fps} | slow ${slowFrames} | worst ${Math.round(
+              worstFrameMs
+            )}ms | renders ${schedulePerfRenderCountRef.current} | DOM ${domNodes}`;
+        }
+
+        sampleStartedAt = now;
+        frameCount = 0;
+        slowFrames = 0;
+        worstFrameMs = 0;
+      }
+
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+
   // 1. browser timezone detection
   const browserTimeZone = useMemo(() => {
     try {
@@ -13867,21 +13919,31 @@ export default function ScheduleTabContent({
         requireHit: activeSession?.candidate.requireTimelineHit === true,
       });
       const preview = next ? snapToFiveMinuteGrid(next) : null;
-      updateManualPlacementSession((prev) =>
-        prev
-          ? {
+        updateManualPlacementSession((prev) => {
+          if (!prev) return prev;
+
+          if (!preview) {
+            if (prev.pushPreview === null) return prev;
+            return {
               ...prev,
-              previewTime: preview ?? prev.previewTime,
-              pushPreview: preview
-                ? computeManualPlacementPushPreview(
-                    prev.candidate,
-                    preview,
-                    currentDayProjectInstances
-                  )
-                : null,
-            }
-          : prev
-      );
+              pushPreview: null,
+            };
+          }
+
+          if (prev.previewTime?.getTime() === preview.getTime()) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            previewTime: preview,
+            pushPreview: computeManualPlacementPushPreview(
+              prev.candidate,
+              preview,
+              currentDayProjectInstances
+            ),
+          };
+        });
 
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight ?? 0;
@@ -14002,18 +14064,16 @@ export default function ScheduleTabContent({
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
       const clientY = event.clientY;
-      updateManualPlacementSession((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          ghost: {
-            ...prev.ghost,
-            x: event.clientX,
-            y: event.clientY,
-            mode: "placing",
-          },
-        };
-      });
+        updateManualPlacementSession((prev) => {
+          if (!prev || prev.ghost.mode === "placing") return prev;
+          return {
+            ...prev,
+            ghost: {
+              ...prev.ghost,
+              mode: "placing",
+            },
+          };
+        });
       updatePreviewAndScrollIntent(clientY, event.clientX);
     };
 
@@ -14047,18 +14107,16 @@ export default function ScheduleTabContent({
         event.preventDefault();
       }
 
-      updateManualPlacementSession((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          ghost: {
-            ...prev.ghost,
-            x: touch.clientX,
-            y: touch.clientY,
-            mode: "placing",
-          },
-        };
-      });
+        updateManualPlacementSession((prev) => {
+          if (!prev || prev.ghost.mode === "placing") return prev;
+          return {
+            ...prev,
+            ghost: {
+              ...prev.ghost,
+              mode: "placing",
+            },
+          };
+        });
       lastPointerClientYRef.current = touch.clientY;
       updatePreviewAndScrollIntent(touch.clientY, touch.clientX);
     };
@@ -15404,6 +15462,7 @@ export default function ScheduleTabContent({
                 durationMinutes = placement.durationMinutes;
               }
 
+
               if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
                 hasLoggedInstance = true;
                 const diffMinutes =
@@ -15803,8 +15862,8 @@ export default function ScheduleTabContent({
                       ? `habit-${placement.instanceId}`
                       : `habit-${placement.habitId}-${dayViewDateKey}-${placement.startMinute}-${placement.endMinute}`
                   }
-                  layout="position"
-                  layoutId={habitLayoutTokens?.card}
+                  layout={isDesktopColumnPresentation ? false : "position"}
+                  layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.card}
                   className="absolute"
                   style={layeredCardStyle}
                   initial={prefersReducedMotion ? false : { y: 4 }}
@@ -15904,7 +15963,7 @@ export default function ScheduleTabContent({
                     ) : null}
                     {isFitnessPlanHabitCard ? (
                       <motion.span
-                        layoutId={habitLayoutTokens?.title}
+                        layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.title}
                         className={clsx(
                           "min-w-0 flex-1",
                           isCompletedGemCard && "relative z-[2]",
@@ -15923,7 +15982,7 @@ export default function ScheduleTabContent({
                       </motion.span>
                     ) : (
                       <motion.span
-                        layoutId={habitLayoutTokens?.title}
+                        layoutId={isDesktopColumnPresentation ? undefined : habitLayoutTokens?.title}
                         className={clsx(
                           habitTitleClass,
                           isCompletedGemCard && "relative z-[2]"
@@ -16385,6 +16444,7 @@ export default function ScheduleTabContent({
                 const detailText = detailParts.join(" · ");
                 const globalRank = project.globalRank;
                 const rankDisplay =
+                  layoutMode !== "paired-left" &&
                   typeof globalRank === "number" &&
                   Number.isFinite(globalRank) &&
                   globalRank > 0
@@ -16492,7 +16552,7 @@ export default function ScheduleTabContent({
                     }
                     className="absolute"
                     style={layeredPositionStyle}
-                    layout={!prefersReducedMotion}
+                    layout={!isDesktopColumnPresentation && !prefersReducedMotion}
                     transition={
                       prefersReducedMotion
                         ? undefined
@@ -16504,8 +16564,8 @@ export default function ScheduleTabContent({
                         hideForEdit ? null : (
                           <motion.div
                             key="project"
-                            layout="position"
-                            layoutId={layoutTokens.card}
+                            layout={isDesktopColumnPresentation ? false : "position"}
+                            layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.card}
                             ref={bindProjectTimelineNoSelectSurface}
                             aria-label={`Project ${project.name}`}
                             role="button"
@@ -16749,7 +16809,7 @@ export default function ScheduleTabContent({
                             <div className="flex min-w-0 flex-1 items-start gap-3">
                               <div className="min-w-0 space-y-1">
                                 <motion.span
-                                  layoutId={layoutTokens.title}
+                                  layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.title}
                                   className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                                 >
                                   <span className="flex min-w-0 items-center gap-2">
@@ -16771,7 +16831,7 @@ export default function ScheduleTabContent({
                                 </motion.span>
                                 {detailText ? (
                                   <motion.div
-                                    layoutId={layoutTokens.meta}
+                                    layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.meta}
                                     className="text-xs text-zinc-200/70"
                                   >
                                     {detailText}
@@ -16781,7 +16841,11 @@ export default function ScheduleTabContent({
                             </div>
                             <SkillEnergyBadge
                               energyLevel={cardEnergyLevel}
-                              skillIcon={project.skill_icon}
+                              skillIcon={
+                                layoutMode === "paired-left"
+                                  ? null
+                                  : project.skill_icon
+                              }
                               className="flex flex-shrink-0 items-center gap-2"
                               iconClassName="text-lg leading-none"
                               flameClassName="flex-shrink-0"
@@ -17067,8 +17131,16 @@ export default function ScheduleTabContent({
                                 return (
                                   <motion.div
                                     key={key}
-                                    layout={instanceId ? "position" : false}
-                                    layoutId={nestedLayoutTokens?.card}
+                                    layout={
+                                      !isDesktopColumnPresentation && instanceId
+                                        ? "position"
+                                        : false
+                                    }
+                                    layoutId={
+                                      isDesktopColumnPresentation
+                                        ? undefined
+                                        : nestedLayoutTokens?.card
+                                    }
                                     data-schedule-instance-id={
                                       kind === "scheduled" && instanceId
                                         ? instanceId
@@ -17241,7 +17313,7 @@ export default function ScheduleTabContent({
                                     ) : null}
                                     <div className="flex flex-col">
                                       <motion.span
-                                        layoutId={nestedLayoutTokens?.title}
+                                        layoutId={isDesktopColumnPresentation ? undefined : nestedLayoutTokens?.title}
                                         className={taskTitleClass}
                                       >
                                         {taskDisplayName}
@@ -17249,7 +17321,11 @@ export default function ScheduleTabContent({
                                     </div>
                                     <SkillEnergyBadge
                                       energyLevel={energyLevel}
-                                      skillIcon={task.skill_icon}
+                                      skillIcon={
+                                        layoutMode === "paired-left"
+                                          ? null
+                                          : task.skill_icon
+                                      }
                                       size="xs"
                                       className={clsx(
                                         "pointer-events-none absolute flex items-center gap-1 rounded-full bg-zinc-950/70",
@@ -17451,8 +17527,8 @@ export default function ScheduleTabContent({
                   return (
                     <motion.div
                       key={instance.id}
-                      layout="position"
-                      layoutId={layoutTokens.card}
+                      layout={isDesktopColumnPresentation ? false : "position"}
+                      layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.card}
                       data-schedule-instance-id={instance.id}
                       data-creator-xp-source="schedule-instance"
                       data-creator-xp-source-id={instance.id}
@@ -17561,7 +17637,7 @@ export default function ScheduleTabContent({
                         <div className="flex min-w-0 flex-1 items-start gap-3">
                           <div className="min-w-0 space-y-1">
                             <motion.span
-                              layoutId={layoutTokens.title}
+                              layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.title}
                               className="block font-medium text-[length:var(--schedule-instance-title-size,14px)]"
                             >
                               <span className="flex min-w-0 items-center gap-2">
@@ -17571,7 +17647,7 @@ export default function ScheduleTabContent({
                               </span>
                             </motion.span>
                             <motion.div
-                              layoutId={layoutTokens.meta}
+                              layoutId={isDesktopColumnPresentation ? undefined : layoutTokens.meta}
                               className="text-xs text-zinc-200/70"
                             >
                               {Math.round(
@@ -17583,7 +17659,11 @@ export default function ScheduleTabContent({
                         </div>
                         <SkillEnergyBadge
                           energyLevel={standaloneEnergyLevel}
-                          skillIcon={task.skill_icon}
+                          skillIcon={
+                            layoutMode === "paired-left"
+                              ? null
+                              : task.skill_icon
+                          }
                           className="flex flex-shrink-0 items-center gap-2"
                           iconClassName="text-lg leading-none"
                           flameClassName="flex-shrink-0"
@@ -17705,9 +17785,15 @@ export default function ScheduleTabContent({
 
     return (
       <div data-desktop-multiday-schedule>
+        <div
+          ref={schedulePerfHudRef}
+          className="fixed right-3 top-3 z-[99999] rounded-md border border-white/15 bg-black/90 px-2 py-1 font-mono text-[10px] text-white/80"
+        >
+          Measuring Schedule…
+        </div>
         <div className="overflow-hidden rounded-xl border border-white/10 bg-[#090a0b]/72 shadow-[0_22px_48px_rgba(15,23,42,0.28)]">
           <div
-            className="sticky z-30 grid border-b border-white/10 bg-[#090a0b]/94 backdrop-blur-xl"
+            className="sticky z-30 grid border-b border-white/10 bg-[#090a0b]"
             style={{
               gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
               top:

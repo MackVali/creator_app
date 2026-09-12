@@ -208,3 +208,39 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     inset 0 -1px 0 rgba(0, 0, 0, 0.16) !important;
 }
+
+/* Desktop multi-day Schedule performance */
+[data-desktop-multiday-schedule] .schedule-instance-size-container {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Desktop Schedule offscreen card containment */
+[data-desktop-multiday-schedule] .schedule-instance-size-container {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+/* Desktop Schedule compositor shimmer */
+@keyframes desktop-schedule-steel-shimmer {
+  0%,
+  100% {
+    transform: translate3d(-8%, 0, 0) scaleX(1.22);
+  }
+
+  50% {
+    transform: translate3d(8%, 0, 0) scaleX(1.22);
+  }
+}
+
+[data-desktop-multiday-schedule] .shimmer-border-complete::before {
+  animation: desktop-schedule-steel-shimmer 3s ease-in-out infinite !important;
+  animation-delay: var(--matrix-complete-shimmer-delay, 0ms) !important;
+
+  /*
+   * Keep the shimmer on its own composited layer so Safari can move it
+   * without repainting its gradient on every animation frame.
+   */
+  will-change: transform;
+  backface-visibility: hidden;
+}
