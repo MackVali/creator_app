@@ -140,6 +140,7 @@ import {
   getDefaultChefRecipeOptions,
   resolveChefRecipeIngredients,
   resolveChefRecipeName,
+  type ChefRecipeIngredient,
 } from "@/lib/nutrition/chefRecipes";
 import {
   calculateChefIngredientNutrition,
@@ -150,6 +151,7 @@ import {
   formatChefNutritionNumber,
   resolveChefDishTemplate,
   type ChefAvailabilityTier,
+  type ChefNutritionTotals,
   type ChefResolvedAvailabilityTier,
 } from "@/lib/nutrition/chefRecipeNutrition";
 import {
@@ -4004,9 +4006,17 @@ type NutritionMealBuilderItem = {
   servingUnit: NutritionServingUnit;
 };
 type NutritionSelectedRecipeItem = {
-  recipe: NutritionSavedRecipe;
+  recipe: NutritionRecipeSearchResult & { recipe_items?: readonly unknown[] | null };
   quantity: number;
   servingUnit: NutritionServingUnit;
+};
+type NutritionSelectedChefRecipeItem = {
+  id: string;
+  chefRecipeId: string;
+  name: string;
+  selectedOptions: Record<string, string>;
+  ingredients: ChefRecipeIngredient[];
+  nutrition: ChefNutritionTotals;
 };
 type NutritionSavedMeal = NutritionMealTotalsSource & {
   id: string;
@@ -4525,7 +4535,7 @@ function getNutritionSavedRecipeIcon(recipe: NutritionRecipeSearchResult) {
   return recipe.icon?.trim() || DEFAULT_NUTRITION_RECIPE_ICON;
 }
 
-function getNutritionSavedRecipeItemCount(recipe: NutritionSavedRecipe) {
+function getNutritionSavedRecipeItemCount(recipe: { recipe_items?: readonly unknown[] | null }) {
   return recipe.recipe_items?.length ?? 0;
 }
 
@@ -6277,20 +6287,6 @@ function getNutritionSelectedFoodNutrientSnapshot(
   };
 }
 
-function aggregateSelectedNutritionFoodSnapshots(items: NutritionSelectedFoodItem[]) {
-  return items.reduce<Record<NutritionDailyMetricKey, number>>(
-    (totals, item) => {
-      const snapshot = getNutritionSelectedFoodNutrientSnapshot(item);
-      totals.calories += snapshot.calories ?? 0;
-      totals.protein += snapshot.protein ?? 0;
-      totals.carbs += snapshot.carbohydrates ?? 0;
-      totals.fat += snapshot.fat ?? 0;
-      return totals;
-    },
-    { ...EMPTY_NUTRITION_TOTALS },
-  );
-}
-
 function formatOptionalFoodNutritionLineValue(
   item: NutritionSelectedFoodItem,
   key: NutritionMacroSourceKey,
@@ -6958,6 +6954,87 @@ function buildSelectedNutritionRecipeMealItem(
   };
 }
 
+function buildSelectedChefRecipeMealItem(
+  item: NutritionSelectedChefRecipeItem,
+): NutritionMealDraft["items"][number] {
+  return {
+    type: "custom",
+    name: item.name,
+    quantity: 1,
+    servingUnit: "recipe",
+    snapshot: {
+      name: item.name,
+      displayName: item.name,
+      servingUnit: "recipe",
+      serving_unit: "recipe",
+      calories: item.nutrition.calories,
+      carbs_g: item.nutrition.carbs_g,
+      protein_g: item.nutrition.protein_g,
+      fat_g: item.nutrition.fat_g,
+    },
+    metadata: {
+      source: "chef-recipe",
+      chefRecipeId: item.chefRecipeId,
+      selectedOptions: item.selectedOptions,
+      resolvedIngredients: item.ingredients,
+      nutritionEstimated: item.nutrition.estimated,
+      unknownNutritionCount: item.nutrition.unknownCount,
+    } as Json,
+  };
+}
+
+function getNutritionMealDraftItemTotals(items: NutritionMealDraft["items"]) {
+  return items.reduce<Record<NutritionDailyMetricKey, number>>(
+    (totals, item) => {
+      totals.calories += parseNutritionProgressNumber(item.snapshot.calories);
+      totals.carbs += parseNutritionProgressNumber(item.snapshot.carbs_g);
+      totals.protein += parseNutritionProgressNumber(item.snapshot.protein_g);
+      totals.fat += parseNutritionProgressNumber(item.snapshot.fat_g);
+      return totals;
+    },
+    { ...EMPTY_NUTRITION_TOTALS },
+  );
+}
+
+function getNutritionMealDraftItemName(item: NutritionMealDraft["items"][number]) {
+  const snapshot = item.snapshot;
+  const name =
+    typeof snapshot.displayName === "string" && snapshot.displayName.trim()
+      ? snapshot.displayName.trim()
+      : typeof snapshot.name === "string" && snapshot.name.trim()
+        ? snapshot.name.trim()
+        : item.type === "custom"
+          ? item.name
+          : "";
+
+  return name || "Nutrition item";
+}
+
+function getNutritionMealDraftName(items: NutritionMealDraft["items"]) {
+  const names = items.map(getNutritionMealDraftItemName).filter(Boolean);
+  if (names.length === 0) return "Nutrition entry";
+  if (names.length <= 2) return names.join(", ");
+  return `${names.slice(0, 2).join(", ")} + ${names.length - 2} more`;
+}
+
+function mapNutritionMealDraftToEntryValues(
+  items: NutritionMealDraft["items"],
+  databaseDefinition: NoteDatabaseDefinition | null | undefined,
+) {
+  const { foodField, caloriesField, carbsField, proteinField, fatField } =
+    findNutritionEntryFields(databaseDefinition);
+  const values: Record<string, string> = {};
+  const totals = getNutritionMealDraftItemTotals(items);
+
+  if (foodField) values[foodField.id] = getNutritionMealDraftName(items);
+  if (caloriesField) values[caloriesField.id] = formatFoodNutritionNumber(totals.calories) ?? "";
+  if (carbsField) values[carbsField.id] = formatFoodNutritionNumber(totals.carbs) ?? "";
+  if (proteinField) values[proteinField.id] = formatFoodNutritionNumber(totals.protein) ?? "";
+  if (fatField) values[fatField.id] = formatFoodNutritionNumber(totals.fat) ?? "";
+
+  return values;
+}
+
 function getNutritionMealName(values: Record<string, unknown>, fields: NutritionEntryFields) {
   const nameValue = fields.foodField ? values[fields.foodField.id] : null;
   if (typeof nameValue === "string" && nameValue.trim()) return nameValue.trim();
@@ -6969,7 +7046,8 @@ function buildNutritionMealDraft({
   databaseFields,
   selectedFoods,
   selectedMeal,
-  selectedRecipe,
+  selectedRecipes,
+  selectedChefRecipes,
   selectedAction,
   values,
   entryId,
@@ -6979,7 +7057,8 @@ function buildNutritionMealDraft({
   databaseFields: NoteDatabaseFieldDefinition[];
   selectedFoods: NutritionSelectedFoodItem[];
   selectedMeal: NutritionSavedMeal | null;
-  selectedRecipe: NutritionSelectedRecipeItem | null;
+  selectedRecipes: NutritionSelectedRecipeItem[];
+  selectedChefRecipes: NutritionSelectedChefRecipeItem[];
   selectedAction: NutritionFoodActionTabId;
   values: Record<string, unknown>;
   entryId: string;
@@ -6988,17 +7067,16 @@ function buildNutritionMealDraft({
   if (!isDefaultNutritionDatabaseDefinition(databaseDefinition)) return null;
 
   const fields = findNutritionEntryFields(databaseDefinition);
-  let items: NutritionMealDraft["items"] = [];
+  let items: NutritionMealDraft["items"] = [
+    ...(selectedMeal
+      ? getSortedNutritionMealItems(selectedMeal).map(buildCopiedNutritionMealItem)
+      : []),
+    ...selectedFoods.map(buildFoodNutritionMealItem),
+    ...selectedRecipes.map(buildSelectedNutritionRecipeMealItem),
+    ...selectedChefRecipes.map(buildSelectedChefRecipeMealItem),
+  ];
 
-  if (selectedAction === "search" || selectedAction === "grocery") {
-    items = selectedFoods.map(buildFoodNutritionMealItem);
-  } else if (selectedAction === "scan") {
-    items = selectedFoods.map(buildFoodNutritionMealItem);
-  } else if ((selectedAction === "meals" || selectedAction === "recent") && selectedMeal) {
-    items = getSortedNutritionMealItems(selectedMeal).map(buildCopiedNutritionMealItem);
-  } else if (selectedAction === "recipes" && selectedRecipe) {
-    items = [buildSelectedNutritionRecipeMealItem(selectedRecipe)];
-  } else if (selectedAction === "custom") {
+  if (items.length === 0 && selectedAction === "custom") {
     const name = getNutritionMealName(values, fields);
     items = [
       {
@@ -7025,20 +7103,22 @@ function buildNutritionMealDraft({
   }
 
   if (items.length === 0) return null;
+  const aggregateName = getNutritionMealDraftName(items);
 
   return {
     occurredAt: getNutritionMealOccurredAt(databaseFields, values, now),
     timezone: getLocalTimezone(),
-    name: getNutritionMealName(values, fields),
+    name: aggregateName,
     sourceNoteEntryId: entryId,
     metadata: {
       source: "note-database-entry",
       databaseId: databaseDefinition.id,
-      ...((selectedAction === "meals" || selectedAction === "recent") && selectedMeal
-        ? { reusedMealId: selectedMeal.id }
+      ...(selectedMeal ? { reusedMealId: selectedMeal.id } : {}),
+      ...(selectedRecipes.length > 0
+        ? { reusedRecipeIds: selectedRecipes.map((item) => item.recipe.id) }
         : {}),
-      ...(selectedAction === "recipes" && selectedRecipe
-        ? { reusedRecipeId: selectedRecipe.recipe.id }
+      ...(selectedChefRecipes.length > 0
+        ? { chefRecipeIds: selectedChefRecipes.map((item) => item.chefRecipeId) }
         : {}),
     },
     items,
@@ -9840,8 +9920,12 @@ export function NoteDatabaseEntrySheet({
   const [selectedNutritionMealSource, setSelectedNutritionMealSource] = useState<
     "meal_template" | "logged_meal" | null
   >(null);
-  const [selectedNutritionRecipe, setSelectedNutritionRecipe] =
-    useState<NutritionSelectedRecipeItem | null>(null);
+  const [selectedNutritionRecipes, setSelectedNutritionRecipes] = useState<
+    NutritionSelectedRecipeItem[]
+  >([]);
+  const [selectedNutritionChefRecipes, setSelectedNutritionChefRecipes] = useState<
+    NutritionSelectedChefRecipeItem[]
+  >([]);
   const [nutritionFavoriteKeys, setNutritionFavoriteKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -10156,6 +10240,30 @@ export function NoteDatabaseEntrySheet({
     () => new Set(selectedNutritionFoods.map((item) => getNutritionFoodSelectionKey(item.food))),
     [selectedNutritionFoods],
   );
+  const selectedNutritionRecipeIds = useMemo(
+    () => new Set(selectedNutritionRecipes.map((item) => item.recipe.id)),
+    [selectedNutritionRecipes],
+  );
+  const currentNutritionMealItems = useMemo<NutritionMealDraft["items"]>(
+    () => [
+      ...(selectedNutritionMeal
+        ? getSortedNutritionMealItems(selectedNutritionMeal).map(buildCopiedNutritionMealItem)
+        : []),
+      ...selectedNutritionFoods.map(buildFoodNutritionMealItem),
+      ...selectedNutritionRecipes.map(buildSelectedNutritionRecipeMealItem),
+      ...selectedNutritionChefRecipes.map(buildSelectedChefRecipeMealItem),
+    ],
+    [
+      selectedNutritionChefRecipes,
+      selectedNutritionFoods,
+      selectedNutritionMeal,
+      selectedNutritionRecipes,
+    ],
+  );
+  const currentNutritionMealTotals = useMemo(
+    () => getNutritionMealDraftItemTotals(currentNutritionMealItems),
+    [currentNutritionMealItems],
+  );
   const selectedNutritionFavoriteTargets = useMemo<NutritionFavoriteTarget[]>(() => {
     const targets: NutritionFavoriteTarget[] = [];
     const selectedFoodItems = selectedNutritionFoods;
@@ -10170,13 +10278,13 @@ export function NoteDatabaseEntrySheet({
       });
     });
 
-    if (selectedNutritionRecipe) {
+    selectedNutritionRecipes.forEach((selectedRecipe) => {
       targets.push({
         itemType: "recipe",
-        itemId: selectedNutritionRecipe.recipe.id,
-        label: selectedNutritionRecipe.recipe.name,
+        itemId: selectedRecipe.recipe.id,
+        label: selectedRecipe.recipe.name,
       });
-    }
+    });
 
     if (selectedNutritionMeal && selectedNutritionMealSource === "meal_template") {
       targets.push({
@@ -10191,7 +10299,7 @@ export function NoteDatabaseEntrySheet({
     selectedNutritionFoods,
     selectedNutritionMeal,
     selectedNutritionMealSource,
-    selectedNutritionRecipe,
+    selectedNutritionRecipes,
   ]);
   const selectedNutritionFavoriteTargetKey = useMemo(
     () =>
@@ -10248,8 +10356,8 @@ export function NoteDatabaseEntrySheet({
     ? nutritionDailySavedTotals
     : EMPTY_NUTRITION_TOTALS;
   const nutritionDailyPreviewTotals = shouldRenderNutritionDailyProgress
-    ? selectedNutritionFoods.length > 0
-      ? aggregateSelectedNutritionFoodSnapshots(selectedNutritionFoods)
+    ? currentNutritionMealItems.length > 0
+      ? currentNutritionMealTotals
       : aggregateNutritionDraftTotals({
           values: entryFormValues,
           caloriesField: nutritionCaloriesField,
@@ -12752,9 +12860,6 @@ export function NoteDatabaseEntrySheet({
     );
     setSelectedNutritionFoods(sanitizedFoods);
     setSelectedNutritionFood(null);
-    setSelectedNutritionMeal(null);
-    setSelectedNutritionMealSource(null);
-    setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
@@ -12785,7 +12890,6 @@ export function NoteDatabaseEntrySheet({
 
     if (selectedNutritionFood?.food.id === foodKey) {
       setSelectedNutritionFood(null);
-      setSelectedNutritionMealSource(null);
       setEntryFormValues((current) => ({
         ...current,
         ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
@@ -12916,9 +13020,6 @@ export function NoteDatabaseEntrySheet({
       ...mapSelectedNutritionFoodsToEntryValues(nextFoodsForEntry, databaseDefinition),
     }));
     setSelectedNutritionFood(null);
-    setSelectedNutritionMeal(null);
-    setSelectedNutritionMealSource(null);
-    setSelectedNutritionRecipe(null);
     setSubmitError(null);
     return true;
   }
@@ -12928,47 +13029,72 @@ export function NoteDatabaseEntrySheet({
     source: "meal_template" | "logged_meal",
   ) {
     const mappedValues = mapNutritionSavedMealToEntryValues(meal, databaseDefinition);
-    setSelectedNutritionFoods([]);
     setSelectedNutritionFood(null);
     setSelectedNutritionMeal(meal);
     setSelectedNutritionMealSource(source);
-    setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
 
-  function selectNutritionSavedRecipe(recipe: NutritionSavedRecipe) {
+  function selectNutritionSavedRecipe(recipe: NutritionRecipeSearchResult & { recipe_items?: readonly unknown[] | null }) {
     const nextItem: NutritionSelectedRecipeItem = {
       recipe,
       quantity: 1,
       servingUnit: "serving",
     };
     const mappedValues = mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition);
-    setSelectedNutritionFoods([]);
     setSelectedNutritionFood(null);
-    setSelectedNutritionMeal(null);
-    setSelectedNutritionMealSource(null);
-    setSelectedNutritionRecipe(nextItem);
+    setSelectedNutritionRecipes((current) => {
+      if (current.some((item) => item.recipe.id === recipe.id)) return current;
+      return [...current, nextItem];
+    });
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
 
   function updateNutritionSelectedRecipeServing(
+    recipeId: string,
     quantity: number,
-    servingUnit = selectedNutritionRecipe?.servingUnit ?? "serving",
+    servingUnit = "serving",
   ) {
-    if (!selectedNutritionRecipe) return;
-
-    const nextItem: NutritionSelectedRecipeItem = {
-      ...selectedNutritionRecipe,
-      quantity: normalizeNutritionQuantity(quantity),
-      servingUnit: normalizeNutritionServingUnit(servingUnit),
-    };
-    setSelectedNutritionRecipe(nextItem);
+    let nextItem: NutritionSelectedRecipeItem | null = null;
+    setSelectedNutritionRecipes((current) =>
+      current.map((item) => {
+        if (item.recipe.id !== recipeId) return item;
+        nextItem = {
+          ...item,
+          quantity: normalizeNutritionQuantity(quantity),
+          servingUnit: normalizeNutritionServingUnit(servingUnit),
+        };
+        return nextItem;
+      }),
+    );
     setEntryFormValues((current) => ({
       ...current,
-      ...mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition),
+      ...(nextItem ? mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition) : {}),
     }));
+    setSubmitError(null);
+  }
+
+  function addSelectedChefRecipe(input: {
+    chefRecipeId: string;
+    name: string;
+    selectedOptions: Record<string, string>;
+    ingredients: ChefRecipeIngredient[];
+    nutrition: ChefNutritionTotals;
+  }) {
+    setSelectedNutritionChefRecipes((current) => [
+      ...current,
+      {
+        id: `chef-${input.chefRecipeId}-${buildClientDatabaseEntryId()}`,
+        chefRecipeId: input.chefRecipeId,
+        name: input.name,
+        selectedOptions: input.selectedOptions,
+        ingredients: input.ingredients.map((ingredient) => ({ ...ingredient })),
+        nutrition: input.nutrition,
+      },
+    ]);
+    setSelectedNutritionFood(null);
     setSubmitError(null);
   }
 
@@ -13648,38 +13774,19 @@ export function NoteDatabaseEntrySheet({
   function renderCurrentNutritionMealSummary() {
     if (!isDefaultNutritionDatabase) return null;
 
-    let itemCount = 0;
-    let totals: Record<NutritionDailyMetricKey, number> | null = null;
-    let targetAction: NutritionFoodActionTabId = "grocery";
+    const itemCount = currentNutritionMealItems.length;
+    const targetAction: NutritionFoodActionTabId =
+      selectedNutritionFoodAction === "chef"
+        ? "chef"
+        : selectedNutritionRecipes.length > 0
+          ? "recipes"
+          : selectedNutritionMeal
+            ? "meals"
+            : NUTRITION_FOODS_MODE_IDS.has(selectedNutritionFoodAction)
+              ? selectedNutritionFoodAction
+              : "grocery";
 
-    if (selectedNutritionFoods.length > 0) {
-      itemCount = selectedNutritionFoods.length;
-      totals = aggregateSelectedNutritionFoodSnapshots(selectedNutritionFoods);
-      targetAction = NUTRITION_FOODS_MODE_IDS.has(selectedNutritionFoodAction)
-        ? selectedNutritionFoodAction
-        : "grocery";
-    } else if (selectedNutritionMeal) {
-      itemCount = selectedNutritionMeal.meal_items?.length ?? 0;
-      totals = {
-        calories: parseNutritionProgressNumber(selectedNutritionMeal.total_calories),
-        carbs: parseNutritionProgressNumber(selectedNutritionMeal.total_carbs_g),
-        protein: parseNutritionProgressNumber(selectedNutritionMeal.total_protein_g),
-        fat: parseNutritionProgressNumber(selectedNutritionMeal.total_fat_g),
-      };
-      targetAction = "meals";
-    } else if (selectedNutritionRecipe) {
-      itemCount = getNutritionSavedRecipeItemCount(selectedNutritionRecipe.recipe);
-      const multiplier = getRecipeServingMultiplier(selectedNutritionRecipe);
-      totals = {
-        calories: getNutritionLineValue(selectedNutritionRecipe.recipe.total_calories, multiplier),
-        carbs: getNutritionLineValue(selectedNutritionRecipe.recipe.total_carbs_g, multiplier),
-        protein: getNutritionLineValue(selectedNutritionRecipe.recipe.total_protein_g, multiplier),
-        fat: getNutritionLineValue(selectedNutritionRecipe.recipe.total_fat_g, multiplier),
-      };
-      targetAction = "recipes";
-    }
-
-    if (!totals || itemCount <= 0) return null;
+    if (itemCount <= 0) return null;
 
     return (
       <button
@@ -13693,8 +13800,8 @@ export function NoteDatabaseEntrySheet({
           </span>
           <span className="mt-0.5 block truncate text-xs font-semibold text-white/70">
             {itemCount} {itemCount === 1 ? "item" : "items"} ·{" "}
-            {formatFoodNutritionNumber(totals.calories) ?? "0"} cal ·{" "}
-            {formatFoodNutritionNumber(totals.protein) ?? "0"}g protein
+            {formatFoodNutritionNumber(currentNutritionMealTotals.calories) ?? "0"} cal ·{" "}
+            {formatFoodNutritionNumber(currentNutritionMealTotals.protein) ?? "0"}g protein
           </span>
         </span>
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/36" aria-hidden="true" />
@@ -19944,12 +20051,21 @@ export function NoteDatabaseEntrySheet({
     setSubmitError(null);
   }
 
-  function clearSelectedNutritionRecipe() {
-    setSelectedNutritionRecipe(null);
+  function removeSelectedNutritionRecipe(recipeId: string) {
+    setSelectedNutritionRecipes((current) =>
+      current.filter((item) => item.recipe.id !== recipeId),
+    );
     setEntryFormValues((current) => ({
       ...current,
       ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
     }));
+    setSubmitError(null);
+  }
+
+  function removeSelectedChefRecipe(itemId: string) {
+    setSelectedNutritionChefRecipes((current) =>
+      current.filter((item) => item.id !== itemId),
+    );
     setSubmitError(null);
   }
 
@@ -20000,61 +20116,94 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function renderSelectedNutritionRecipe() {
-    if (!selectedNutritionRecipe) return null;
-    const { recipe } = selectedNutritionRecipe;
-    const lineMeta = getNutritionSelectedRecipeLineMeta(selectedNutritionRecipe);
-    const favoriteTarget: NutritionFavoriteTarget = {
-      itemType: "recipe",
-      itemId: recipe.id,
-      label: recipe.name,
-    };
+  function renderSelectedNutritionRecipes() {
+    if (selectedNutritionRecipes.length === 0 && selectedNutritionChefRecipes.length === 0) {
+      return null;
+    }
 
     return (
       <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
         <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
-            Selected recipe
+            Selected recipes
           </span>
           <span className="shrink-0 text-[11px] font-semibold text-white/46">
-            {lineMeta}
+            {selectedNutritionRecipes.length + selectedNutritionChefRecipes.length}
           </span>
         </div>
-        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5">
-          {renderNutritionFavoriteButton(favoriteTarget)}
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <NutritionMealTemplateIcon
-              icon={getNutritionSavedRecipeIcon(recipe)}
-            />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-white/84">
-              {recipe.name}
-            </span>
-            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
-              {lineMeta} · {formatNutritionServingLabel(
-                selectedNutritionRecipe.quantity,
-                selectedNutritionRecipe.servingUnit,
-              )}
-            </span>
-          </span>
-          {renderNutritionServingSelector({
-            id: `selected-recipe-${recipe.id}`,
-            label: recipe.name,
-            amount: selectedNutritionRecipe.quantity,
-            unit: selectedNutritionRecipe.servingUnit,
-            options: getRecipeServingOptions(recipe),
-            onChange: updateNutritionSelectedRecipeServing,
-            compact: true,
+        <div className="space-y-1.5">
+          {selectedNutritionRecipes.map((selectedRecipe) => {
+            const { recipe } = selectedRecipe;
+            const lineMeta = getNutritionSelectedRecipeLineMeta(selectedRecipe);
+            const favoriteTarget: NutritionFavoriteTarget = {
+              itemType: "recipe",
+              itemId: recipe.id,
+              label: recipe.name,
+            };
+
+            return (
+              <div key={recipe.id} className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5">
+                {renderNutritionFavoriteButton(favoriteTarget)}
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <NutritionMealTemplateIcon
+                    icon={getNutritionSavedRecipeIcon(recipe)}
+                  />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-white/84">
+                    {recipe.name}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                    {lineMeta} · {formatNutritionServingLabel(
+                      selectedRecipe.quantity,
+                      selectedRecipe.servingUnit,
+                    )}
+                  </span>
+                </span>
+                {renderNutritionServingSelector({
+                  id: `selected-recipe-${recipe.id}`,
+                  label: recipe.name,
+                  amount: selectedRecipe.quantity,
+                  unit: selectedRecipe.servingUnit,
+                  options: getRecipeServingOptions(recipe),
+                  onChange: (quantity, servingUnit) =>
+                    updateNutritionSelectedRecipeServing(recipe.id, quantity, servingUnit),
+                  compact: true,
+                })}
+                <button
+                  type="button"
+                  aria-label={`Remove ${recipe.name}`}
+                  onClick={() => removeSelectedNutritionRecipe(recipe.id)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
+            );
           })}
-          <button
-            type="button"
-            aria-label="Remove selected recipe"
-            onClick={clearSelectedNutritionRecipe}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
-          >
-            <X className="h-3 w-3" aria-hidden="true" />
-          </button>
+          {selectedNutritionChefRecipes.map((chefRecipe) => (
+            <div key={chefRecipe.id} className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-1.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <ChefHat className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-white/84">
+                  {chefRecipe.name}
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                  {formatChefMacroSummary(chefRecipe.nutrition)}
+                </span>
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove ${chefRecipe.name}`}
+                onClick={() => removeSelectedChefRecipe(chefRecipe.id)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -20069,7 +20218,7 @@ export function NoteDatabaseEntrySheet({
     nutritionRecipesError,
     selectNutritionSavedRecipe,
     openNutritionRecipeBuilder,
-    renderSelectedNutritionRecipe,
+    renderSelectedNutritionRecipes,
   ];
 
   function renderNutritionMealBuilderSearchResults() {
@@ -20703,6 +20852,8 @@ export function NoteDatabaseEntrySheet({
       : "Use this as a meal idea.";
 
     return (
+      <>
+      {renderSelectedNutritionRecipes()}
       <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[0.07] bg-black/42">
         <div className="border-b border-white/[0.055] p-3">
           <div className="-mx-1 mt-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -20838,15 +20989,45 @@ export function NoteDatabaseEntrySheet({
                                   const availability = resolvedBuild?.availability ?? calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
                                   const tierInfo = chefAvailabilityCatalog.recipeTiers.get(recipe.id);
                                   const previousTier = recipeIndex > 0 ? chefAvailabilityCatalog.recipeTiers.get(recipes[recipeIndex - 1].id)?.tier : null;
+                                  const resolvedSelectedOptions = {
+                                    ...recipeOptions,
+                                    ...Object.fromEntries(
+                                      Object.entries(selectedChefOptions).filter(([key]) =>
+                                        key.startsWith(`${recipe.id}:`),
+                                      ),
+                                    ),
+                                  };
                                   return (
                                     <Fragment key={recipe.id}>
-                                    {showAvailableChefRecipesOnly && tierInfo?.tier !== "ready" && tierInfo?.tier !== previousTier ? <p className="px-1 pt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/36">{tierInfo.tier === "needs_one" ? "Need 1 ingredient" : "Need 2 ingredients"}</p> : null}
+                                    {showAvailableChefRecipesOnly && tierInfo?.tier !== "ready" && tierInfo?.tier !== previousTier ? <p className="px-1 pt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/36">{tierInfo?.tier === "needs_one" ? "Need 1 ingredient" : "Need 2 ingredients"}</p> : null}
                                     <article className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
-                                      <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left outline-none hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
-                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-px block text-[8.5px] font-medium text-white/32">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
+                                      <div className="flex w-full items-center gap-2 px-2.5 py-2.5 hover:bg-white/[0.035]">
+                                        <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:bg-white/[0.05]">
+                                          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-px block text-[8.5px] font-medium text-white/32">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
+                                        </button>
                                         <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
-                                        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
-                                      </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            addSelectedChefRecipe({
+                                              chefRecipeId: recipe.id,
+                                              name: resolvedName,
+                                              selectedOptions: resolvedSelectedOptions,
+                                              ingredients: resolvedIngredients,
+                                              nutrition,
+                                            });
+                                          }}
+                                          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.04] px-2 text-[10px] font-semibold text-white/62 outline-none transition hover:bg-white/[0.075] hover:text-white/84 focus-visible:ring-1 focus-visible:ring-white/14"
+                                          aria-label={`Add ${resolvedName} to meal`}
+                                        >
+                                          <Plus className="h-3 w-3" aria-hidden="true" />
+                                          Add
+                                        </button>
+                                        <button type="button" aria-label={isExpanded ? `Collapse ${resolvedName}` : `Expand ${resolvedName}`} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/30 outline-none transition hover:bg-white/[0.06] hover:text-white/58 focus-visible:ring-1 focus-visible:ring-white/14">
+                                          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+                                        </button>
+                                      </div>
                                       {isExpanded ? (
                                         <div className="border-t border-white/[0.045] px-2.5 pb-2.5 pt-2">
                                           <div className="flex flex-wrap gap-1">{recipe.tags.map((tag) => <span key={tag} className="rounded-full border border-white/[0.05] bg-black/25 px-2 py-0.5 text-[9px] font-semibold text-white/40">{tag}</span>)}</div>
@@ -20886,6 +21067,7 @@ export function NoteDatabaseEntrySheet({
           {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && chefAvailableRevealLevel === 1 && chefAvailabilityCatalog.tierCounts.needs_two > 0 ? <button type="button" onClick={() => setChefAvailableRevealLevel(2)} className="w-full px-4 py-3 text-left text-xs font-semibold text-white/62 hover:bg-white/[0.035]">See meals needing 2 ingredients · {chefAvailabilityCatalog.tierCounts.needs_two}</button> : null}
         </div>
       </div>
+      </>
     );
   }
 
@@ -21289,9 +21471,14 @@ export function NoteDatabaseEntrySheet({
         ) : selectedNutritionFoodAction === "recent" ? (
           renderNutritionSavedMealsContent()
         ) : selectedNutritionFoodAction === "recipes" ? (
-          <NutritionRecipesPanel
-            onEditorOpenChange={setIsNutritionRecipesEditorOpen}
-          />
+          <>
+            {renderSelectedNutritionRecipes()}
+            <NutritionRecipesPanel
+              onEditorOpenChange={setIsNutritionRecipesEditorOpen}
+              onAddRecipe={selectNutritionSavedRecipe}
+              selectedRecipeIds={selectedNutritionRecipeIds}
+            />
+          </>
         ) : selectedNutritionFoodAction === "chef" ? (
           renderChefCatalog()
         ) : selectedNutritionFoodAction === "meal-plan" ? (
@@ -21346,7 +21533,7 @@ export function NoteDatabaseEntrySheet({
     const formValues = formValuesOverride ?? entryFormValues;
     const now = new Date().toISOString();
     const entryId = options?.entryId ?? initialEntry?.id ?? buildClientDatabaseEntryId();
-    const values = databaseFields.reduce<Record<string, unknown>>(
+    let values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
         const rawFieldValue = formValues[field.id];
         const rawValue =
@@ -21417,23 +21604,33 @@ export function NoteDatabaseEntrySheet({
       values.metadata = formValues.metadata;
     }
 
+    const nutritionMealDraft = buildNutritionMealDraft({
+      databaseDefinition,
+      databaseFields,
+      selectedFoods: selectedNutritionFoods,
+      selectedMeal: selectedNutritionMeal,
+      selectedRecipes: selectedNutritionRecipes,
+      selectedChefRecipes: selectedNutritionChefRecipes,
+      selectedAction: selectedNutritionFoodAction,
+      values,
+      entryId,
+      now,
+    });
+    if (nutritionMealDraft) {
+      values = {
+        ...values,
+        ...mapNutritionMealDraftToEntryValues(nutritionMealDraft.items, databaseDefinition),
+      };
+      if (nutritionMealDraft.name) {
+        nutritionMealDraft.name = nutritionMealDraft.name.trim() || getNutritionMealDraftName(nutritionMealDraft.items);
+      }
+    }
     const nextEntry: NoteDatabaseEntry = {
       id: entryId,
       createdAt: options?.createdAt ?? initialEntry?.createdAt ?? now,
       updatedAt: now,
       values,
     };
-    const nutritionMealDraft = buildNutritionMealDraft({
-      databaseDefinition,
-      databaseFields,
-      selectedFoods: selectedNutritionFoods,
-      selectedMeal: selectedNutritionMeal,
-      selectedRecipe: selectedNutritionRecipe,
-      selectedAction: selectedNutritionFoodAction,
-      values,
-      entryId,
-      now,
-    });
 
     setIsSubmitting(true);
     setSubmitError(null);
