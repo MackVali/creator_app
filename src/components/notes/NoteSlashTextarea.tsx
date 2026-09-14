@@ -318,6 +318,12 @@ import {
   type FitnessProfileWeightUnit,
 } from "@/lib/fitness/profile";
 import { cn } from "@/lib/utils";
+import {
+  segmentedToggleActiveClassName,
+  segmentedToggleButtonClassName,
+  segmentedToggleContainerClassName,
+  segmentedToggleInactiveClassName,
+} from "@/components/ui/segmented-toggle-styles";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { NOTE_SOFT_OLED_CLASSES } from "@/lib/notes/softOled";
 
@@ -10046,6 +10052,8 @@ export function NoteDatabaseEntrySheet({
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
   const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(databaseDefinition);
   const isGroceryDatabase = isOnHandDatabaseDefinition(databaseDefinition);
+  const shouldUseFullscreenNutritionEntrySheet =
+    isDefaultNutritionDatabase && !isNutritionTargetSetupTakeoverOpen;
   const isFoodSearchDatabase = isDefaultNutritionDatabase || isGroceryDatabase;
   const shouldShowFitnessEntryFields = !isDefaultFitnessDatabase;
   const shouldShowEntryFooter =
@@ -13456,8 +13464,8 @@ export function NoteDatabaseEntrySheet({
         >
           <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
         </button>
-        <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex min-w-max items-center gap-1.5 pb-1">
+        <div className="min-w-0 flex-1 px-1">
+          <div className="grid w-full grid-cols-5 items-center pb-1">
             {visibleFoodActionTabs.map((tab) => {
               const Icon = tab.icon;
               const isSelected = selectedNutritionTopLevelAction === tab.id;
@@ -13471,7 +13479,7 @@ export function NoteDatabaseEntrySheet({
                   type="button"
                   aria-pressed={isSelected}
                   onClick={() => selectNutritionTopLevelAction(tab.id)}
-                  className={`flex h-11 w-[50px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
+                  className={`flex h-11 w-full min-w-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
                     isSelected
                       ? "text-white/88"
                       : "text-white/42 hover:text-white/68"
@@ -13499,9 +13507,117 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderNutritionFoodsModeControl() {
+    const isOnHandMode =
+      selectedNutritionFoodAction === "grocery" ||
+      selectedNutritionFoodAction === "scan" ||
+      selectedNutritionFoodAction === "custom";
+
+    const isAllFoodsMode =
+      selectedNutritionFoodAction === "search" ||
+      selectedNutritionFoodAction === "favs";
+
+    return (
+      <div className="mt-3 space-y-2">
+        <div
+          className={segmentedToggleContainerClassName}
+          aria-label="Foods view"
+        >
+          <button
+            type="button"
+            aria-pressed={isOnHandMode}
+            onClick={() => selectNutritionFoodAction("grocery")}
+            className={`${segmentedToggleButtonClassName} ${
+              isOnHandMode
+                ? segmentedToggleActiveClassName
+                : segmentedToggleInactiveClassName
+            }`}
+          >
+            ON HAND
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={isAllFoodsMode}
+            onClick={() => selectNutritionFoodAction("search")}
+            className={`${segmentedToggleButtonClassName} ${
+              isAllFoodsMode
+                ? segmentedToggleActiveClassName
+                : segmentedToggleInactiveClassName
+            }`}
+          >
+            ALL FOODS
+          </button>
+        </div>
+
+        {isOnHandMode && selectedNutritionFoodAction === "grocery" ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => selectNutritionFoodAction("scan")}
+              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.045] px-3 text-xs font-semibold text-white/66 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.07] hover:text-white/84"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add Food
+            </button>
+          </div>
+        ) : isAllFoodsMode ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              aria-pressed={selectedNutritionFoodAction === "favs"}
+              onClick={() => selectNutritionFoodAction("favs")}
+              className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold outline-none transition ${
+                selectedNutritionFoodAction === "favs"
+                  ? "border-white/[0.14] bg-white/[0.11] text-white/84"
+                  : "border-white/[0.055] bg-white/[0.035] text-white/48 hover:border-white/[0.09] hover:bg-white/[0.055] hover:text-white/70"
+              }`}
+            >
+              <Star className="h-3.5 w-3.5" aria-hidden="true" />
+              Favorites
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderNutritionSecondaryActionTabs(
     tabs: typeof NUTRITION_FOODS_MODE_TABS | typeof NUTRITION_RECIPES_MODE_TABS,
   ) {
+    const isRecipesModeToggle = tabs === NUTRITION_RECIPES_MODE_TABS;
+
+    if (isRecipesModeToggle) {
+      return (
+        <div className="mt-3">
+          <div
+            className={segmentedToggleContainerClassName}
+            aria-label="Recipe view"
+          >
+            {tabs.map((tab) => {
+              const isSelected = selectedNutritionFoodAction === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => selectNutritionFoodAction(tab.id)}
+                  className={`${segmentedToggleButtonClassName} ${
+                    isSelected
+                      ? segmentedToggleActiveClassName
+                      : segmentedToggleInactiveClassName
+                  }`}
+                >
+                  {tab.label.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mt-2 flex gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((tab) => {
@@ -13514,7 +13630,7 @@ export function NoteDatabaseEntrySheet({
               type="button"
               aria-pressed={isSelected}
               onClick={() => selectNutritionFoodAction(tab.id)}
-              className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold outline-none transition ${
+              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold outline-none transition ${
                 isSelected
                   ? "border-white/[0.14] bg-white/[0.11] text-white/84"
                   : "border-white/[0.055] bg-white/[0.035] text-white/44 hover:border-white/[0.09] hover:bg-white/[0.055] hover:text-white/66"
@@ -20589,18 +20705,7 @@ export function NoteDatabaseEntrySheet({
     return (
       <div className="mt-3 overflow-hidden rounded-[14px] border border-white/[0.07] bg-black/42">
         <div className="border-b border-white/[0.055] p-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/68">
-              <ChefHat className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white/86">Chef ideas</p>
-              <p className="truncate text-[11px] font-medium text-white/40">
-                Simple recipes for whatever sounds good
-              </p>
-            </div>
-          </div>
-          <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="-mx-1 mt-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {CHEF_FILTERS.map((filter) => {
               const isSelected = selectedChefFilter === filter.id;
               return (
@@ -21048,7 +21153,7 @@ export function NoteDatabaseEntrySheet({
             {isNutritionRecipesEditorOpen ? null : renderNutritionFoodActionTabs()}
             {isNutritionRecipesEditorOpen ? null : renderCurrentNutritionMealSummary()}
             {isNutritionRecipesEditorOpen || isGroceryMode ? null : selectedNutritionTopLevelAction === "grocery" ? (
-              renderNutritionSecondaryActionTabs(NUTRITION_FOODS_MODE_TABS)
+              renderNutritionFoodsModeControl()
             ) : selectedNutritionTopLevelAction === "recipes" ? (
               renderNutritionSecondaryActionTabs(NUTRITION_RECIPES_MODE_TABS)
             ) : null}
@@ -21074,6 +21179,29 @@ export function NoteDatabaseEntrySheet({
                   : "Scanning..."
                 : "Scan barcode"}
             </button>
+            {!nutritionBarcodeLookupStatus ? (
+              <>
+                <div className="my-3 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-white/[0.055]" />
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/28">
+                    or
+                  </span>
+                  <span className="h-px flex-1 bg-white/[0.055]" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNutritionFoodAction("custom");
+                    setNutritionBarcodeLookupStatus(null);
+                  }}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.06] hover:text-white/78"
+                >
+                  <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+                  Enter manually
+                </button>
+              </>
+            ) : null}
 
             <label className="mt-3 block">
               <span className="text-xs font-semibold text-white/46">Manual barcode</span>
@@ -21382,7 +21510,9 @@ export function NoteDatabaseEntrySheet({
       className={`fixed inset-0 z-[70] flex overflow-hidden overscroll-contain bg-black/58 backdrop-blur-sm ${
         isNutritionTargetSetupTakeoverOpen
           ? "items-stretch justify-center p-0 sm:items-center sm:p-6"
-          : "items-center justify-center p-3 sm:p-6"
+          : shouldUseFullscreenNutritionEntrySheet
+            ? "items-stretch justify-center p-0 sm:items-center sm:p-6"
+            : "items-center justify-center p-3 sm:p-6"
       } ${overlayClassName ?? ""}`}
       role="dialog"
       aria-modal="true"
@@ -21396,13 +21526,15 @@ export function NoteDatabaseEntrySheet({
       }}
     >
       <div
-        className={`animate-in fade-in-0 zoom-in-95 flex w-full max-w-xl flex-col overflow-hidden border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200 ${
+        className={`animate-in fade-in-0 zoom-in-95 flex w-full flex-col overflow-hidden bg-[#090909] duration-200 ${
           isNutritionTargetSetupTakeoverOpen
-            ? "h-full max-h-full min-h-0 rounded-none sm:h-[min(88dvh,720px)] sm:max-h-[88dvh] sm:rounded-[30px]"
-            : "max-h-[88vh] rounded-[30px]"
+            ? "h-full max-h-full min-h-0 rounded-none max-w-xl border border-white/[0.04] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] sm:h-[min(88dvh,720px)] sm:max-h-[88dvh] sm:rounded-[30px]"
+            : shouldUseFullscreenNutritionEntrySheet
+              ? "h-dvh max-h-dvh min-h-0 rounded-none border-0 shadow-none sm:h-auto sm:max-h-[88vh] sm:max-w-xl sm:rounded-[30px] sm:border sm:border-white/[0.04] sm:shadow-[0_24px_80px_-32px_rgba(0,0,0,1)]"
+              : "max-h-[88vh] max-w-xl rounded-[30px] border border-white/[0.04] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)]"
         }`}
       >
-        {!isNutritionTargetSetupTakeoverOpen ? <div className="relative border-b border-white/[0.04] px-4 py-4">
+        {!isNutritionTargetSetupTakeoverOpen ? <div className={shouldUseFullscreenNutritionEntrySheet ? "relative shrink-0 border-b border-white/[0.04] px-4 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:py-4" : "relative border-b border-white/[0.04] px-4 py-4"}>
           <h2
             id="note-database-entry-form-title"
             className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
@@ -21416,7 +21548,7 @@ export function NoteDatabaseEntrySheet({
               void hapticSnap();
               onClose();
             }}
-            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+            className={shouldUseFullscreenNutritionEntrySheet ? "absolute right-3 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white sm:top-3" : "absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"}
           >
             <X className="h-4 w-4" />
           </button>
@@ -21489,8 +21621,10 @@ export function NoteDatabaseEntrySheet({
         !isNutritionTargetSetupTakeoverOpen &&
         !(isGroceryDatabase && selectedNutritionFoodAction === "search") ? (
           <div
-            className={`border-t border-white/[0.04] p-3 sm:p-4 ${
-              isDefaultNutritionDatabase ? "flex" : "flex gap-2"
+            className={`border-t border-white/[0.04] ${
+              isDefaultNutritionDatabase
+                ? "flex shrink-0 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 sm:p-4"
+                : "flex gap-2 p-3 sm:p-4"
             }`}
           >
             {!isDefaultNutritionDatabase ? (

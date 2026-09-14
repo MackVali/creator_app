@@ -306,7 +306,7 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(foodsTabs).toContain('{ id: "scan", label: "Scan"');
     expect(foodsTabs).toContain('{ id: "custom", label: "Custom"');
     expect(noteSlashTextarea).toContain('useState<NutritionFoodActionTabId>("grocery")');
-    expect(noteSlashTextarea).toContain("renderNutritionSecondaryActionTabs(NUTRITION_FOODS_MODE_TABS)");
+    expect(noteSlashTextarea).toContain("renderNutritionFoodsModeControl()");
     expect(noteSlashTextarea).toContain("renderNutritionGroceryContent()");
     expect(noteSlashTextarea).toContain("renderNutritionFoodBrowseContent()");
     expect(noteSlashTextarea).toContain("scanAndLookupNutritionBarcode()");
