@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const panel = readFileSync("src/components/nutrition/NutritionTargetPanel.tsx", "utf8");
 const noteSlashTextarea = readFileSync("src/components/notes/NoteSlashTextarea.tsx", "utf8");
 const sharedMealPlanPanel = readFileSync("src/components/nutrition/SharedMealPlanPanel.tsx", "utf8");
+const nutritionDailyProgressBars = readFileSync("src/components/nutrition/NutritionDailyProgressBars.tsx", "utf8");
 const mealPlans = readFileSync("src/lib/nutrition/mealPlans.ts", "utf8");
 const mealPlanHook = readFileSync("src/hooks/useMealPlanDay.ts", "utf8");
 const activeTargetHook = readFileSync("src/hooks/useActiveNutritionTarget.ts", "utf8");
@@ -274,6 +275,67 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(reusableMeals).toContain("Create reusable meals for one-tap logging.");
   });
 
+  it("uses the approved Nutrition top-level navigation concepts", () => {
+    const topLevelTabs = noteSlashTextarea.slice(
+      noteSlashTextarea.indexOf("const NUTRITION_FOOD_ACTION_TABS"),
+      noteSlashTextarea.indexOf("const NUTRITION_FOODS_MODE_TABS"),
+    );
+
+    expect(topLevelTabs).toContain('{ id: "meals", label: "Meals"');
+    expect(topLevelTabs).toContain('{ id: "grocery", label: "Foods"');
+    expect(topLevelTabs).toContain('{ id: "recipes", label: "Recipes"');
+    expect(topLevelTabs).toContain('{ id: "recent", label: "Recent"');
+    expect(topLevelTabs).toContain('{ id: "meal-plan", label: "Plan"');
+    expect(topLevelTabs).not.toContain('label: "Search"');
+    expect(topLevelTabs).not.toContain('label: "Grocery"');
+    expect(topLevelTabs).not.toContain('label: "Scan"');
+    expect(topLevelTabs).not.toContain('label: "Favs"');
+    expect(topLevelTabs).not.toContain('label: "Custom"');
+    expect(topLevelTabs).not.toContain('label: "Chef"');
+  });
+
+  it("nests existing Foods actions under the Foods concept", () => {
+    const foodsTabs = noteSlashTextarea.slice(
+      noteSlashTextarea.indexOf("const NUTRITION_FOODS_MODE_TABS"),
+      noteSlashTextarea.indexOf("const NUTRITION_RECIPES_MODE_TABS"),
+    );
+
+    expect(foodsTabs).toContain('{ id: "grocery", label: "On Hand"');
+    expect(foodsTabs).toContain('{ id: "search", label: "All Foods"');
+    expect(foodsTabs).toContain('{ id: "favs", label: "Favs"');
+    expect(foodsTabs).toContain('{ id: "scan", label: "Scan"');
+    expect(foodsTabs).toContain('{ id: "custom", label: "Custom"');
+    expect(noteSlashTextarea).toContain('useState<NutritionFoodActionTabId>("grocery")');
+    expect(noteSlashTextarea).toContain("renderNutritionSecondaryActionTabs(NUTRITION_FOODS_MODE_TABS)");
+    expect(noteSlashTextarea).toContain("renderNutritionGroceryContent()");
+    expect(noteSlashTextarea).toContain("renderNutritionFoodBrowseContent()");
+    expect(noteSlashTextarea).toContain("scanAndLookupNutritionBarcode()");
+  });
+
+  it("nests Chef discovery and custom recipes under Recipes", () => {
+    const recipeTabs = noteSlashTextarea.slice(
+      noteSlashTextarea.indexOf("const NUTRITION_RECIPES_MODE_TABS"),
+      noteSlashTextarea.indexOf("const GROCERY_EXTRA_FOOD_ACTION_TABS"),
+    );
+
+    expect(recipeTabs).toContain('{ id: "chef", label: "Discover"');
+    expect(recipeTabs).toContain('{ id: "recipes", label: "My Recipes"');
+    expect(noteSlashTextarea).toContain("selectNutritionFoodAction(\"chef\")");
+    expect(noteSlashTextarea).toContain("renderNutritionSecondaryActionTabs(NUTRITION_RECIPES_MODE_TABS)");
+    expect(noteSlashTextarea).toContain("renderChefCatalog()");
+    expect(noteSlashTextarea).toContain("<NutritionRecipesPanel");
+    expect(noteSlashTextarea).toContain('selectedNutritionFoodAction === "chef"');
+  });
+
+  it("keeps reusable meals and Meal Plan wired in the new Nutrition hierarchy", () => {
+    expect(noteSlashTextarea).toContain("selectedNutritionTopLevelAction");
+    expect(noteSlashTextarea).toContain("renderCurrentNutritionMealSummary");
+    expect(noteSlashTextarea).toContain('selectedNutritionFoodAction === "meals"');
+    expect(noteSlashTextarea).toContain("renderNutritionReusableMealsContent()");
+    expect(noteSlashTextarea).toContain('selectedNutritionFoodAction === "meal-plan"');
+    expect(noteSlashTextarea).toContain("<SharedMealPlanPanel");
+  });
+
   it("renders result values from the server preview without default BMI details", () => {
     const result = functionBlock("ResultSurface");
     expect(result).toContain("preview.calorieTargetKcal");
@@ -340,14 +402,13 @@ describe("Nutrition target setup UI static contracts", () => {
   });
 
   it("uses the shared active daily target for Nutrition progress denominators", () => {
-    const progressBars = noteSlashTextarea.slice(noteSlashTextarea.indexOf("function NutritionDailyProgressBars"), noteSlashTextarea.indexOf("function getNutritionMealOccurredAt"));
     expect(noteSlashTextarea).toContain("useActiveNutritionTarget");
     expect(noteSlashTextarea).toContain("getNutritionProgressTargetsFromActiveTarget");
     expect(noteSlashTextarea).toContain("targetGoals={nutritionDailyTargetGoals}");
-    expect(progressBars).toContain("targetGoals.calories");
-    expect(progressBars).toContain("targetGoals[macroKey]");
-    expect(progressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS.calories");
-    expect(progressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey]");
+    expect(nutritionDailyProgressBars).toContain("targetGoals.calories");
+    expect(nutritionDailyProgressBars).toContain("targetGoals[macroKey]");
+    expect(nutritionDailyProgressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS.calories");
+    expect(nutritionDailyProgressBars).not.toContain("target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey]");
     expect(activeTargetHook).toContain('ACTIVE_NUTRITION_TARGET_QUERY_ROOT = ["nutrition", "active-target"]');
     expect(activeTargetHook).toContain('fetch(`/api/nutrition/targets?${params.toString()}`');
     expect(activeTargetHook).toContain("getCurrentNutritionTargetCreatorDayDate");

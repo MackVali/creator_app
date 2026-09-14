@@ -537,16 +537,30 @@ function resolveChefCatalogIcon(icon: unknown): string {
     : DEFAULT_CHEF_CATALOG_ICON;
 }
 const NUTRITION_FOOD_ACTION_TABS = [
-  { id: "search", label: "Search", icon: Search },
-  { id: "grocery", label: "Grocery", icon: ShoppingBasket },
-  { id: "scan", label: "Scan", icon: ScanLine },
-  { id: "favs", label: "Favs", icon: Star },
-  { id: "custom", label: "Custom", icon: PencilLine },
   { id: "meals", label: "Meals", icon: Utensils },
+  { id: "grocery", label: "Foods", icon: ShoppingBasket },
   { id: "recipes", label: "Recipes", icon: BookOpen },
   { id: "recent", label: "Recent", icon: Clock },
-  { id: "chef", label: "Chef", icon: ChefHat },
   { id: "meal-plan", label: "Plan", icon: Calendar },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}>;
+const NUTRITION_FOODS_MODE_TABS = [
+  { id: "grocery", label: "On Hand", icon: ShoppingBasket },
+  { id: "search", label: "All Foods", icon: Search },
+  { id: "favs", label: "Favs", icon: Star },
+  { id: "scan", label: "Scan", icon: ScanLine },
+  { id: "custom", label: "Custom", icon: PencilLine },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}>;
+const NUTRITION_RECIPES_MODE_TABS = [
+  { id: "chef", label: "Discover", icon: ChefHat },
+  { id: "recipes", label: "My Recipes", icon: BookOpen },
 ] as const satisfies ReadonlyArray<{
   id: string;
   label: string;
@@ -1949,6 +1963,12 @@ const GROCERY_FOOD_ACTION_TAB_IDS = new Set<NutritionFoodActionTabId>([
   "recipes",
   "chef",
 ]);
+const NUTRITION_FOODS_MODE_IDS = new Set<NutritionFoodActionTabId>(
+  NUTRITION_FOODS_MODE_TABS.map((tab) => tab.id),
+);
+const NUTRITION_RECIPES_MODE_IDS = new Set<NutritionFoodActionTabId>(
+  NUTRITION_RECIPES_MODE_TABS.map((tab) => tab.id),
+);
 const GROCERY_LOCATION_OPTIONS = [
   { value: "pantry", label: "Pantry" },
   { value: "fridge", label: "Fridge" },
@@ -3824,6 +3844,8 @@ type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId =
   | (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"]
+  | (typeof NUTRITION_FOODS_MODE_TABS)[number]["id"]
+  | (typeof NUTRITION_RECIPES_MODE_TABS)[number]["id"]
   | (typeof GROCERY_EXTRA_FOOD_ACTION_TABS)[number]["id"];
 type NutritionFavoriteItemType = "food" | "recipe" | "meal_template";
 type NutritionFavoriteTarget = {
@@ -9271,7 +9293,7 @@ export function NoteDatabaseEntrySheet({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
-    useState<NutritionFoodActionTabId>("search");
+    useState<NutritionFoodActionTabId>("grocery");
   const [isNutritionTargetSetupTakeoverOpen, setIsNutritionTargetSetupTakeoverOpen] =
     useState(false);
   const [openChefCuisineId, setOpenChefCuisineId] = useState<string | null>(null);
@@ -10030,6 +10052,13 @@ export function NoteDatabaseEntrySheet({
     !isDefaultFitnessDatabase && !isNutritionRecipesEditorOpen;
   const isNutritionSearchMode =
     isFoodSearchDatabase && selectedNutritionFoodAction === "search";
+  const selectedNutritionTopLevelAction = isDefaultNutritionDatabase
+    ? NUTRITION_RECIPES_MODE_IDS.has(selectedNutritionFoodAction)
+      ? "recipes"
+      : NUTRITION_FOODS_MODE_IDS.has(selectedNutritionFoodAction)
+        ? "grocery"
+        : selectedNutritionFoodAction
+    : selectedNutritionFoodAction;
   const shouldHideNutritionEntryFields =
     isDefaultNutritionDatabase && selectedNutritionFoodAction !== "custom";
   const hiddenGroceryFoodSearchFieldIds = new Set<string>(
@@ -10045,7 +10074,7 @@ export function NoteDatabaseEntrySheet({
   );
   const visibleFoodActionTabs = isGroceryDatabase
     ? [
-        ...NUTRITION_FOOD_ACTION_TABS.filter((tab) =>
+        ...NUTRITION_FOODS_MODE_TABS.filter((tab) =>
           GROCERY_FOOD_ACTION_TAB_IDS.has(tab.id),
         ),
         ...GROCERY_EXTRA_FOOD_ACTION_TABS,
@@ -10761,7 +10790,10 @@ export function NoteDatabaseEntrySheet({
   ]);
 
   function selectNutritionFoodAction(tabId: NutritionFoodActionTabId) {
-    if (!visibleFoodActionTabs.some((tab) => tab.id === tabId)) return;
+    const isVisibleTopLevelTab = visibleFoodActionTabs.some((tab) => tab.id === tabId);
+    const isVisibleNestedTab =
+      NUTRITION_FOODS_MODE_IDS.has(tabId) || NUTRITION_RECIPES_MODE_IDS.has(tabId);
+    if (!isVisibleTopLevelTab && !isVisibleNestedTab) return;
 
     setSelectedNutritionFoodAction(tabId);
     nutritionFoodActionTabRefs.current[tabId]?.scrollIntoView({
@@ -10769,6 +10801,15 @@ export function NoteDatabaseEntrySheet({
       block: "nearest",
       behavior: "smooth",
     });
+  }
+
+  function selectNutritionTopLevelAction(tabId: NutritionFoodActionTabId) {
+    if (tabId === "recipes") {
+      selectNutritionFoodAction("chef");
+      return;
+    }
+
+    selectNutritionFoodAction(tabId);
   }
 
   function selectNutritionFoodActionByOffset(offset: -1 | 1) {
@@ -10779,7 +10820,7 @@ export function NoteDatabaseEntrySheet({
     const nextIndex =
       (safeCurrentIndex + offset + visibleFoodActionTabs.length) %
       visibleFoodActionTabs.length;
-    selectNutritionFoodAction(visibleFoodActionTabs[nextIndex].id);
+    selectNutritionTopLevelAction(visibleFoodActionTabs[nextIndex].id);
   }
 
   function selectFitnessAction(tabId: FitnessActionTabId) {
@@ -13419,7 +13460,7 @@ export function NoteDatabaseEntrySheet({
           <div className="flex min-w-max items-center gap-1.5 pb-1">
             {visibleFoodActionTabs.map((tab) => {
               const Icon = tab.icon;
-              const isSelected = selectedNutritionFoodAction === tab.id;
+              const isSelected = selectedNutritionTopLevelAction === tab.id;
 
               return (
                 <button
@@ -13429,7 +13470,7 @@ export function NoteDatabaseEntrySheet({
                   }}
                   type="button"
                   aria-pressed={isSelected}
-                  onClick={() => selectNutritionFoodAction(tab.id)}
+                  onClick={() => selectNutritionTopLevelAction(tab.id)}
                   className={`flex h-11 w-[50px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
                     isSelected
                       ? "text-white/88"
@@ -13455,6 +13496,93 @@ export function NoteDatabaseEntrySheet({
           <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
         </button>
       </div>
+    );
+  }
+
+  function renderNutritionSecondaryActionTabs(
+    tabs: typeof NUTRITION_FOODS_MODE_TABS | typeof NUTRITION_RECIPES_MODE_TABS,
+  ) {
+    return (
+      <div className="mt-2 flex gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isSelected = selectedNutritionFoodAction === tab.id;
+
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => selectNutritionFoodAction(tab.id)}
+              className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold outline-none transition ${
+                isSelected
+                  ? "border-white/[0.14] bg-white/[0.11] text-white/84"
+                  : "border-white/[0.055] bg-white/[0.035] text-white/44 hover:border-white/[0.09] hover:bg-white/[0.055] hover:text-white/66"
+              } focus-visible:border-white/[0.16] focus-visible:bg-white/[0.08]`}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderCurrentNutritionMealSummary() {
+    if (!isDefaultNutritionDatabase) return null;
+
+    let itemCount = 0;
+    let totals: Record<NutritionDailyMetricKey, number> | null = null;
+    let targetAction: NutritionFoodActionTabId = "grocery";
+
+    if (selectedNutritionFoods.length > 0) {
+      itemCount = selectedNutritionFoods.length;
+      totals = aggregateSelectedNutritionFoodSnapshots(selectedNutritionFoods);
+      targetAction = NUTRITION_FOODS_MODE_IDS.has(selectedNutritionFoodAction)
+        ? selectedNutritionFoodAction
+        : "grocery";
+    } else if (selectedNutritionMeal) {
+      itemCount = selectedNutritionMeal.meal_items?.length ?? 0;
+      totals = {
+        calories: parseNutritionProgressNumber(selectedNutritionMeal.total_calories),
+        carbs: parseNutritionProgressNumber(selectedNutritionMeal.total_carbs_g),
+        protein: parseNutritionProgressNumber(selectedNutritionMeal.total_protein_g),
+        fat: parseNutritionProgressNumber(selectedNutritionMeal.total_fat_g),
+      };
+      targetAction = "meals";
+    } else if (selectedNutritionRecipe) {
+      itemCount = getNutritionSavedRecipeItemCount(selectedNutritionRecipe.recipe);
+      const multiplier = getRecipeServingMultiplier(selectedNutritionRecipe);
+      totals = {
+        calories: getNutritionLineValue(selectedNutritionRecipe.recipe.total_calories, multiplier),
+        carbs: getNutritionLineValue(selectedNutritionRecipe.recipe.total_carbs_g, multiplier),
+        protein: getNutritionLineValue(selectedNutritionRecipe.recipe.total_protein_g, multiplier),
+        fat: getNutritionLineValue(selectedNutritionRecipe.recipe.total_fat_g, multiplier),
+      };
+      targetAction = "recipes";
+    }
+
+    if (!totals || itemCount <= 0) return null;
+
+    return (
+      <button
+        type="button"
+        onClick={() => selectNutritionFoodAction(targetAction)}
+        className="mt-2 flex min-h-10 w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-white/[0.032] px-2.5 py-1.5 text-left outline-none transition hover:border-white/[0.09] hover:bg-white/[0.048] focus-visible:border-white/[0.16] focus-visible:bg-white/[0.06]"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-white/32">
+            Current meal
+          </span>
+          <span className="mt-0.5 block truncate text-xs font-semibold text-white/70">
+            {itemCount} {itemCount === 1 ? "item" : "items"} ·{" "}
+            {formatFoodNutritionNumber(totals.calories) ?? "0"} cal ·{" "}
+            {formatFoodNutritionNumber(totals.protein) ?? "0"}g protein
+          </span>
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/36" aria-hidden="true" />
+      </button>
     );
   }
 
@@ -20889,7 +21017,10 @@ export function NoteDatabaseEntrySheet({
               ) : isNutritionRecipeBuilderOpen ? (
                 renderNutritionRecipeBuilder()
               ) : (
-                renderNutritionFoodActionTabs()
+                <>
+                  {renderNutritionFoodActionTabs()}
+                  {renderCurrentNutritionMealSummary()}
+                </>
               )}
             </>
           ) : null}
@@ -20915,6 +21046,12 @@ export function NoteDatabaseEntrySheet({
         ) : (
           <>
             {isNutritionRecipesEditorOpen ? null : renderNutritionFoodActionTabs()}
+            {isNutritionRecipesEditorOpen ? null : renderCurrentNutritionMealSummary()}
+            {isNutritionRecipesEditorOpen || isGroceryMode ? null : selectedNutritionTopLevelAction === "grocery" ? (
+              renderNutritionSecondaryActionTabs(NUTRITION_FOODS_MODE_TABS)
+            ) : selectedNutritionTopLevelAction === "recipes" ? (
+              renderNutritionSecondaryActionTabs(NUTRITION_RECIPES_MODE_TABS)
+            ) : null}
 
             {selectedNutritionFoodAction === "custom" ? (
               isGroceryMode ? (
