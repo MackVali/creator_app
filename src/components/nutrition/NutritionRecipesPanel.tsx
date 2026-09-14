@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
+  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -718,8 +719,12 @@ function SortableIngredientRow({
 
 export function NutritionRecipesPanel({
   onEditorOpenChange,
+  onAddRecipe,
+  selectedRecipeIds,
 }: {
   onEditorOpenChange?: (isOpen: boolean) => void;
+  onAddRecipe?: (recipe: NutritionRecipeListItem) => void;
+  selectedRecipeIds?: ReadonlySet<string>;
 }) {
   const recipesQuery = useNutritionRecipes(50, true);
   const [librarySearch, setLibrarySearch] = useState("");
@@ -1393,6 +1398,7 @@ export function NutritionRecipesPanel({
             const servingsValue = getRecipeServings(recipe);
             const calories = getRecipeCaloriesPerServing(recipe);
             const menuOpen = openMenuRecipeId === recipe.id;
+            const isSelected = selectedRecipeIds?.has(recipe.id) ?? false;
             return (
               <div key={recipe.id} className="relative flex items-center gap-3 border-b border-white/[0.04] px-3 py-2.5 last:border-b-0">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-black/44 text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -1408,6 +1414,26 @@ export function NutritionRecipesPanel({
                     {formatRecipeNumber(calories) ?? "0"} cal/serving · {formatRecipeNumber(servingsValue) ?? "1"} servings
                   </span>
                 </button>
+                {onAddRecipe ? (
+                  <button
+                    type="button"
+                    onClick={() => onAddRecipe(recipe)}
+                    disabled={isSelected}
+                    className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-white/14 ${
+                      isSelected
+                        ? "border-emerald-300/15 bg-emerald-300/[0.08] text-emerald-100/72"
+                        : "border-white/[0.06] bg-white/[0.04] text-white/62 hover:bg-white/[0.075] hover:text-white/84"
+                    }`}
+                    aria-label={isSelected ? `${recipe.name} added` : `Add ${recipe.name} to meal`}
+                  >
+                    {isSelected ? (
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    <span>{isSelected ? "Added" : "Add"}</span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setOpenMenuRecipeId(menuOpen ? null : recipe.id)}
