@@ -5540,58 +5540,6 @@ export default function ScheduleTabContent({
   const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
 
-  const schedulePerfHudRef = useRef<HTMLDivElement | null>(null);
-  const schedulePerfRenderCountRef = useRef(0);
-  schedulePerfRenderCountRef.current += 1;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    let frameId = 0;
-    let lastFrameAt = performance.now();
-    let sampleStartedAt = lastFrameAt;
-    let frameCount = 0;
-    let slowFrames = 0;
-    let worstFrameMs = 0;
-
-    const tick = (now: number) => {
-      const delta = now - lastFrameAt;
-      lastFrameAt = now;
-      frameCount += 1;
-
-      if (delta > 20) slowFrames += 1;
-      worstFrameMs = Math.max(worstFrameMs, delta);
-
-      const elapsed = now - sampleStartedAt;
-      if (elapsed >= 1000) {
-        const fps = Math.round((frameCount * 1000) / elapsed);
-        const timelineRoot = document.querySelector(
-          "[data-desktop-multiday-schedule]"
-        );
-        const domNodes = timelineRoot
-          ? timelineRoot.querySelectorAll("*").length
-          : 0;
-
-        if (schedulePerfHudRef.current) {
-          schedulePerfHudRef.current.textContent =
-            `FPS ${fps} | slow ${slowFrames} | worst ${Math.round(
-              worstFrameMs
-            )}ms | renders ${schedulePerfRenderCountRef.current} | DOM ${domNodes}`;
-        }
-
-        sampleStartedAt = now;
-        frameCount = 0;
-        slowFrames = 0;
-        worstFrameMs = 0;
-      }
-
-      frameId = window.requestAnimationFrame(tick);
-    };
-
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
-  }, []);
-
   // 1. browser timezone detection
   const browserTimeZone = useMemo(() => {
     try {
@@ -15472,7 +15420,6 @@ export default function ScheduleTabContent({
                 return (
                   <div
                     key={`${report.key}-${index}`}
-                    data-schedule-perf-layer="time-block-report"
                     className="absolute"
                     style={{
                       ...TIMELINE_CARD_BOUNDS,
@@ -15507,7 +15454,6 @@ export default function ScheduleTabContent({
               return (
                 <div
                   key={`simple-time-block-${block.timeBlock.id}-${block.startOffsetMinutes}`}
-                  data-schedule-perf-layer="simple-time-block"
                   className="absolute"
                   style={{
                     ...TIMELINE_CARD_BOUNDS,
@@ -15521,7 +15467,6 @@ export default function ScheduleTabContent({
               );
             })}
             <div
-              data-schedule-perf-layer="overlays"
               className="pointer-events-none absolute inset-0"
             >
               {overlaySegments.map((segment) => {
@@ -18214,12 +18159,6 @@ export default function ScheduleTabContent({
 
     return (
       <div data-desktop-multiday-schedule>
-        <div
-          ref={schedulePerfHudRef}
-          className="fixed right-3 top-3 z-[99999] rounded-md border border-white/15 bg-black/90 px-2 py-1 font-mono text-[10px] text-white/80"
-        >
-          Measuring Schedule…
-        </div>
         <div
           ref={desktopMultiDayShellRef}
           className="rounded-xl border border-white/10 bg-[#090a0b]/72 shadow-[0_22px_48px_rgba(15,23,42,0.28)]"
