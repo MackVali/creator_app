@@ -15018,6 +15018,28 @@ export default function ScheduleTabContent({
         );
       };
 
+      const renderPassiveDesktopWindowReportContent = ({
+        energyLabel,
+        rangeLabel,
+        timeBlock,
+      }: {
+        energyLabel: FlameLevel;
+        rangeLabel: string;
+        timeBlock: RepoWindow;
+      }) => {
+        const timeBlockKind = normalizeTimeBlockConstraintKind(
+          timeBlock.window_kind
+        );
+
+        return (
+          <div className="flex h-full min-h-0 items-start overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/35 bg-zinc-950/10 px-2 py-1 text-[10px] font-semibold uppercase text-white/55">
+            <span className="min-w-0 truncate">
+              {energyLabel} / {rangeLabel} / {timeBlockKind}
+            </span>
+          </div>
+        );
+      };
+
       const { habitLayouts, projectLayouts, taskLayouts, syncHabitLaneLayouts } =
         computeTimelineLayoutForSyncHabits({
           habitPlacements: dayHabitPlacements,
@@ -15429,12 +15451,18 @@ export default function ScheduleTabContent({
               );
               if (visibleSegments.length === 0) return null;
 
-              const reportContent = renderTimeBlockSurfaceContent({
-                energyLabel: report.energyLabel,
-                rangeLabel: report.rangeLabel,
-                timeBlock: report.window,
-                windowLabel: report.windowLabel,
-              });
+              const reportContent = isDesktopColumnPresentation
+                ? renderPassiveDesktopWindowReportContent({
+                    energyLabel: report.energyLabel,
+                    rangeLabel: report.rangeLabel,
+                    timeBlock: report.window,
+                  })
+                : renderTimeBlockSurfaceContent({
+                    energyLabel: report.energyLabel,
+                    rangeLabel: report.rangeLabel,
+                    timeBlock: report.window,
+                    windowLabel: report.windowLabel,
+                  });
 
               return visibleSegments.map((segment, index) => {
                 const heightMinutes = segment.end - segment.start;
