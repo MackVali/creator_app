@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 
 const panel = readFileSync("src/components/nutrition/NutritionTargetPanel.tsx", "utf8");
 const noteSlashTextarea = readFileSync("src/components/notes/NoteSlashTextarea.tsx", "utf8");
+const nutritionRecipesPanel = readFileSync(
+  "src/components/nutrition/NutritionRecipesPanel.tsx",
+  "utf8",
+);
 const sharedMealPlanPanel = readFileSync("src/components/nutrition/SharedMealPlanPanel.tsx", "utf8");
 const nutritionDailyProgressBars = readFileSync("src/components/nutrition/NutritionDailyProgressBars.tsx", "utf8");
 const mealPlans = readFileSync("src/lib/nutrition/mealPlans.ts", "utf8");
@@ -327,6 +331,69 @@ describe("Nutrition target setup UI static contracts", () => {
     expect(noteSlashTextarea).toContain('selectedNutritionFoodAction === "chef"');
   });
 
+  it("keeps Current Meal composition additive across foods, meals, and recipes", () => {
+    const draftStart = noteSlashTextarea.indexOf("function buildNutritionMealDraft");
+    const draftEnd = noteSlashTextarea.indexOf("\nasync function createNutritionMeal", draftStart);
+    const draft = noteSlashTextarea.slice(draftStart, draftEnd);
+
+    expect(draftStart).toBeGreaterThanOrEqual(0);
+    expect(draft).toContain("getSortedNutritionMealItems(selectedMeal).map(buildCopiedNutritionMealItem)");
+    expect(draft).toContain("selectedFoods.map(buildFoodNutritionMealItem)");
+    expect(draft).toContain("selectedRecipes.map(buildSelectedNutritionRecipeMealItem)");
+    expect(draft).toContain("selectedChefRecipes.map(buildSelectedChefRecipeMealItem)");
+    expect(draft).not.toContain('selectedAction === "recipes" && selectedRecipe');
+    expect(draft).not.toContain('selectedAction === "meals" || selectedAction === "recent"');
+  });
+
+  it("does not clear other Current Meal sources when foods, meals, or recipes are selected", () => {
+    const foodStart = noteSlashTextarea.indexOf("function applyNutritionFoodSelection");
+    const foodEnd = noteSlashTextarea.indexOf("\n  function ", foodStart + 1);
+    const foodSelection = noteSlashTextarea.slice(foodStart, foodEnd);
+
+    const mealStart = noteSlashTextarea.indexOf("function selectNutritionSavedMeal");
+    const mealEnd = noteSlashTextarea.indexOf("\n  function ", mealStart + 1);
+    const mealSelection = noteSlashTextarea.slice(mealStart, mealEnd);
+
+    const recipeStart = noteSlashTextarea.indexOf("function selectNutritionSavedRecipe");
+    const recipeEnd = noteSlashTextarea.indexOf("\n  function ", recipeStart + 1);
+    const recipeSelection = noteSlashTextarea.slice(recipeStart, recipeEnd);
+
+    expect(foodSelection).not.toContain("setSelectedNutritionMeal(null)");
+    expect(foodSelection).not.toContain("setSelectedNutritionRecipes([])");
+
+    expect(mealSelection).not.toContain("setSelectedNutritionFoods([])");
+    expect(mealSelection).not.toContain("setSelectedNutritionRecipes([])");
+
+    expect(recipeSelection).not.toContain("setSelectedNutritionFoods([])");
+    expect(recipeSelection).not.toContain("setSelectedNutritionMeal(null)");
+    expect(recipeSelection).toContain("setSelectedNutritionRecipes((current)");
+    expect(recipeSelection).toContain("current.some((item) => item.recipe.id === recipe.id)");
+  });
+
+  it("derives Current Meal summary and entry values from the aggregate composition", () => {
+    expect(noteSlashTextarea).toContain("const currentNutritionMealItems = useMemo");
+    expect(noteSlashTextarea).toContain("const currentNutritionMealTotals = useMemo");
+    expect(noteSlashTextarea).toContain("getNutritionMealDraftItemTotals(currentNutritionMealItems)");
+    expect(noteSlashTextarea).toContain("const itemCount = currentNutritionMealItems.length");
+    expect(noteSlashTextarea).toContain(
+      "mapNutritionMealDraftToEntryValues(nutritionMealDraft.items, databaseDefinition)",
+    );
+  });
+
+  it("wires My Recipes and Discover recipes into Current Meal", () => {
+    expect(nutritionRecipesPanel).toContain("onAddRecipe?: (recipe: NutritionRecipeListItem) => void");
+    expect(nutritionRecipesPanel).toContain("selectedRecipeIds?: ReadonlySet<string>");
+    expect(nutritionRecipesPanel).toContain("onClick={() => onAddRecipe(recipe)}");
+    expect(nutritionRecipesPanel).toContain('"Added" : "Add"');
+
+    expect(noteSlashTextarea).toContain("onAddRecipe={selectNutritionSavedRecipe}");
+    expect(noteSlashTextarea).toContain("selectedRecipeIds={selectedNutritionRecipeIds}");
+    expect(noteSlashTextarea).toContain('source: "chef-recipe"');
+    expect(noteSlashTextarea).toContain("chefRecipeId: item.chefRecipeId");
+    expect(noteSlashTextarea).toContain('type: "custom"');
+    expect(noteSlashTextarea).toContain("addSelectedChefRecipe({");
+  });
+
   it("keeps reusable meals and Meal Plan wired in the new Nutrition hierarchy", () => {
     expect(noteSlashTextarea).toContain("selectedNutritionTopLevelAction");
     expect(noteSlashTextarea).toContain("renderCurrentNutritionMealSummary");
@@ -417,7 +484,7 @@ describe("Nutrition target setup UI static contracts", () => {
   it("keeps logged totals as progress numerators and does not count planned Meal Plan totals", () => {
     const entryProgress = noteSlashTextarea.slice(noteSlashTextarea.indexOf("const nutritionDailyProgress = shouldRenderNutritionDailyProgress"), noteSlashTextarea.indexOf("const refreshNutritionDailyTotals = useCallback", noteSlashTextarea.indexOf("const nutritionDailyProgress = shouldRenderNutritionDailyProgress")));
     expect(entryProgress).toContain("nutritionDailySavedTotals");
-    expect(entryProgress).toContain("aggregateSelectedNutritionFoodSnapshots");
+    expect(entryProgress).toContain("currentNutritionMealTotals");
     expect(entryProgress).toContain("aggregateNutritionDraftTotals");
     expect(entryProgress).not.toContain("calculateMealPlanPlannedTotals");
     expect(noteSlashTextarea).toContain('fetch(`/api/nutrition/meals?${params.toString()}`)');

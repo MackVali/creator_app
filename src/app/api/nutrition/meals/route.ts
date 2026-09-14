@@ -139,7 +139,9 @@ async function loadMeal(
 }
 
 export async function GET(request: NextRequest) {
+  const perfStartedAt = performance.now();
   const supabase = await createSupabaseServerClient();
+  const perfClientReadyAt = performance.now();
 
   if (!supabase) {
     return NextResponse.json(
@@ -152,6 +154,7 @@ export async function GET(request: NextRequest) {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
+  const perfAuthReadyAt = performance.now();
 
   if (authError || !user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -189,6 +192,15 @@ export async function GET(request: NextRequest) {
   }
 
   const { data, error } = await query;
+  const perfQueryReadyAt = performance.now();
+
+  console.log("[nutrition-perf] meals", {
+    clientMs: Math.round(perfClientReadyAt - perfStartedAt),
+    authMs: Math.round(perfAuthReadyAt - perfClientReadyAt),
+    queryMs: Math.round(perfQueryReadyAt - perfAuthReadyAt),
+    totalMs: Math.round(perfQueryReadyAt - perfStartedAt),
+    rows: data?.length ?? 0,
+  });
 
   if (error) {
     return databaseErrorResponse("Unable to load nutrition meals", error);

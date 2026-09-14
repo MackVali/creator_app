@@ -27,7 +27,7 @@ const FOOD_ICON_DEFINITIONS = {
   bagel: { assetName: "bagel_3d.png", emoji: "🥯", label: "Bagel" },
   banana: { assetName: "banana_3d.png", emoji: "🍌", label: "Banana" },
   basil: { assetName: "herb_3d.png", emoji: "🌿", label: "Herb" },
-  beans: { assetName: "beans_3d.png", emoji: "🫘", label: "Beans" },
+  beans: { assetName: null, emoji: "🫘", label: "Beans" },
   beef: { assetName: "cut_of_meat_3d.png", emoji: "🥩", label: "Cut of meat" },
   bread: { assetName: "bread_3d.png", emoji: "🍞", label: "Bread" },
   broccoli: { assetName: "broccoli_3d.png", emoji: "🥦", label: "Broccoli" },

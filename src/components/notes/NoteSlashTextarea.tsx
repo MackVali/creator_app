@@ -93,6 +93,7 @@ import {
   useActiveNutritionTarget,
 } from "@/hooks/useActiveNutritionTarget";
 import { useNutritionMealTemplates } from "@/hooks/useNutritionMealTemplates";
+import { useFoodResources } from "@/hooks/useFoodResources";
 import {
   getDatabaseCreatedAtInitialFormValues,
   isDefaultFitnessDatabaseDefinition,
@@ -9954,13 +9955,6 @@ export function NoteDatabaseEntrySheet({
   const [nutritionFoodBrowseError, setNutritionFoodBrowseError] = useState<string | null>(
     null,
   );
-  const [nutritionGroceryFoods, setNutritionGroceryFoods] = useState<FoodSearchResult[]>(
-    [],
-  );
-  const [isNutritionGroceryLoading, setIsNutritionGroceryLoading] = useState(false);
-  const [nutritionGroceryError, setNutritionGroceryError] = useState<string | null>(
-    null,
-  );
   const [groceryResourceItems, setGroceryResourceItems] = useState<FoodResource[]>([]);
   const [isGroceryResourcesLoading, setIsGroceryResourcesLoading] = useState(false);
   const [groceryResourcesError, setGroceryResourcesError] = useState<string | null>(
@@ -10135,6 +10129,25 @@ export function NoteDatabaseEntrySheet({
     : getDatabaseFormTitle(databaseDefinition.title);
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
   const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(databaseDefinition);
+
+  const nutritionGroceryQuery = useFoodResources({
+    status: "active",
+    limit: 200,
+    enabled:
+      isDefaultNutritionDatabase &&
+      selectedNutritionFoodAction === "grocery",
+  });
+
+  const nutritionGroceryFoods = useMemo(
+    () =>
+      nutritionGroceryQuery.resources
+        .map((resource, index) => normalizeFoodResource(resource, index))
+        .map(mapFoodResourceToFoodSearchResult),
+    [nutritionGroceryQuery.resources],
+  );
+
+  const isNutritionGroceryLoading = nutritionGroceryQuery.isLoading;
+  const nutritionGroceryError = nutritionGroceryQuery.error;
   const isGroceryDatabase = isOnHandDatabaseDefinition(databaseDefinition);
   const shouldUseFullscreenNutritionEntrySheet =
     isDefaultNutritionDatabase && !isNutritionTargetSetupTakeoverOpen;
@@ -10600,49 +10613,6 @@ export function NoteDatabaseEntrySheet({
     openNutritionBrowseAisle,
     openNutritionBrowseDepartment,
   ]);
-
-  useEffect(() => {
-    if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "grocery") {
-      setNutritionGroceryFoods([]);
-      setIsNutritionGroceryLoading(false);
-      setNutritionGroceryError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsNutritionGroceryLoading(true);
-    setNutritionGroceryError(null);
-
-    fetch("/api/food-resources?status=active&limit=200", {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as FoodResourcesResponse;
-
-        if (!response.ok) {
-          throw new Error(payload.error || "Unable to load Grocery.");
-        }
-
-        setNutritionGroceryFoods(
-          getFoodResourcesFromResponse(payload).map(mapFoodResourceToFoodSearchResult),
-        );
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        console.error("Failed to load nutrition Grocery foods", { error });
-        setNutritionGroceryFoods([]);
-        setNutritionGroceryError("Grocery is unavailable right now.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsNutritionGroceryLoading(false);
-        }
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [isDefaultNutritionDatabase, selectedNutritionFoodAction]);
 
   useEffect(() => {
     const shouldLoadChefResources = selectedNutritionFoodAction === "chef" &&
@@ -13057,21 +13027,23 @@ export function NoteDatabaseEntrySheet({
     quantity: number,
     servingUnit = "serving",
   ) {
-    let nextItem: NutritionSelectedRecipeItem | null = null;
+    const currentItem = selectedNutritionRecipes.find(
+      (item) => item.recipe.id === recipeId,
+    );
+    if (!currentItem) return;
+
+    const nextItem: NutritionSelectedRecipeItem = {
+      ...currentItem,
+      quantity: normalizeNutritionQuantity(quantity),
+      servingUnit: normalizeNutritionServingUnit(servingUnit),
+    };
+
     setSelectedNutritionRecipes((current) =>
-      current.map((item) => {
-        if (item.recipe.id !== recipeId) return item;
-        nextItem = {
-          ...item,
-          quantity: normalizeNutritionQuantity(quantity),
-          servingUnit: normalizeNutritionServingUnit(servingUnit),
-        };
-        return nextItem;
-      }),
+      current.map((item) => (item.recipe.id === recipeId ? nextItem : item)),
     );
     setEntryFormValues((current) => ({
       ...current,
-      ...(nextItem ? mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition) : {}),
+      ...mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition),
     }));
     setSubmitError(null);
   }
