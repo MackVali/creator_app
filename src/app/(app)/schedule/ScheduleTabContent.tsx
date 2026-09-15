@@ -14795,16 +14795,26 @@ export default function ScheduleTabContent({
                 0,
                 durationMinutes * modelPxPerMin
               );
+              const fullWindowHeightPx = Math.max(
+                0,
+                heightMinutes * modelPxPerMin
+              );
+
               return {
                 key: `${w.id}-${index}`,
                 ariaLabel: index === 0 ? w.label : undefined,
-                startMinutes: segment.start,
-                durationMinutes,
-                heightPx: segmentHeightPx,
+                startMinutes: index === 0 ? topMinutes : segment.start,
+                durationMinutes:
+                  index === 0 ? heightMinutes : durationMinutes,
+                heightPx:
+                  index === 0 ? fullWindowHeightPx : segmentHeightPx,
                 label,
                 window: w,
                 isAdjustable: Boolean(w.dayTypeTimeBlockId),
-                showLabel: index === 0 && label.length > 0 && segmentHeightPx >= 24,
+                showLabel:
+                  index === 0 &&
+                  label.length > 0 &&
+                  fullWindowHeightPx >= 24,
               };
             });
           })
