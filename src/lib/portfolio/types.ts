@@ -21,6 +21,7 @@ export interface PortfolioProject {
   description: string;
   category: PortfolioCategory;
   visual: PortfolioVisualKey;
+  imageSrc?: string;
   year?: string;
   role?: string;
   stack?: string[];

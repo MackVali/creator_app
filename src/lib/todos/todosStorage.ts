@@ -265,9 +265,24 @@ export async function loadTodos(input: {
 
   if (!input.includeDeleted) query = query.is("deleted_at", null);
   if (input.ownerType) query = query.eq("owner_type", input.ownerType);
-  if (input.ownerId !== undefined) query = query.eq("owner_id", input.ownerId);
-  if (input.listId !== undefined) query = query.eq("list_id", input.listId);
-  if (input.noteId !== undefined) query = query.eq("note_id", input.noteId);
+  if (input.ownerId !== undefined) {
+    query =
+      input.ownerId === null
+        ? query.is("owner_id", null)
+        : query.eq("owner_id", input.ownerId);
+  }
+  if (input.listId !== undefined) {
+    query =
+      input.listId === null
+        ? query.is("list_id", null)
+        : query.eq("list_id", input.listId);
+  }
+  if (input.noteId !== undefined) {
+    query =
+      input.noteId === null
+        ? query.is("note_id", null)
+        : query.eq("note_id", input.noteId);
+  }
 
   const { data, error } = await query;
   throwIfError(error);

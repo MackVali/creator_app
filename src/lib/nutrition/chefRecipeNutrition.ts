@@ -75,6 +75,43 @@ function servingMultiplier(ingredient: ChefRecipeIngredient, nutrition: ChefPant
 }
 
 export function calculateChefIngredientNutrition(ingredient: ChefRecipeIngredient): ChefIngredientNutrition {
+  if (ingredient.nutrition) {
+    const multiplier = servingMultiplier(
+      ingredient,
+      {
+        foodKey: ingredient.foodKey,
+        displayName: ingredient.name,
+        icon: ingredient.icon,
+        aliases: ingredient.aliases ?? [],
+        baseAmount: ingredient.nutrition.baseQuantity,
+        baseUnit: ingredient.nutrition.baseUnit,
+        calories: ingredient.nutrition.calories,
+        protein_g: ingredient.nutrition.protein_g,
+        carbs_g: ingredient.nutrition.carbs_g,
+        fat_g: ingredient.nutrition.fat_g,
+      },
+    );
+    if (multiplier === null) {
+      return {
+        calories: ingredient.nutrition.calories,
+        protein_g: ingredient.nutrition.protein_g,
+        carbs_g: ingredient.nutrition.carbs_g,
+        fat_g: ingredient.nutrition.fat_g,
+        estimated: true,
+        unknownCount: 0,
+        unknownNutrition: false,
+      };
+    }
+    return {
+      calories: ingredient.nutrition.calories * multiplier,
+      protein_g: ingredient.nutrition.protein_g * multiplier,
+      carbs_g: ingredient.nutrition.carbs_g * multiplier,
+      fat_g: ingredient.nutrition.fat_g * multiplier,
+      estimated: false,
+      unknownCount: 0,
+      unknownNutrition: false,
+    };
+  }
   const nutrition = nutritionByKey.get(ingredient.foodKey);
   if (!nutrition) return { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, estimated: true, unknownCount: 1, unknownNutrition: true };
   const multiplier = servingMultiplier(ingredient, nutrition);
@@ -239,7 +276,7 @@ export function resolveChefDishTemplate(recipe: ChefRecipe, selectedOptions: Che
   return { templateId: template.templateId, title: template.permanentTitle, slots, ingredients, availability, state, isAvailable, missingRequiredSlots, missingExtras, compactSummary: summaryNames.join(" · "), nutrition: totalIngredientNutrition(ingredients), steps };
 }
 
-function totalIngredientNutrition(ingredients: readonly ChefRecipeIngredient[]): ChefNutritionTotals {
+export function totalIngredientNutrition(ingredients: readonly ChefRecipeIngredient[]): ChefNutritionTotals {
   return ingredients.reduce<ChefNutritionTotals>((total, ingredient) => { const value = calculateChefIngredientNutrition(ingredient); return { calories: total.calories + value.calories, protein_g: total.protein_g + value.protein_g, carbs_g: total.carbs_g + value.carbs_g, fat_g: total.fat_g + value.fat_g, estimated: total.estimated || value.estimated, unknownCount: total.unknownCount + value.unknownCount }; }, { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, estimated: false, unknownCount: 0 });
 }
 

@@ -13,7 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 
-import { AREAS, type AreaConfig } from "@/config/areas";
+import { AREAS, isAreaId, type AreaConfig } from "@/config/areas";
 import { AreaDetail } from "@/components/areas/AreaDetail";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { CLOSE_ACTIVE_AREA_DETAIL_EVENT } from "@/components/areas/events";
@@ -333,7 +333,7 @@ function AreasGrid() {
         ? goal.monument?.area_id
         : goal.area_id;
 
-      if (resolvedAreaId && validAreaIds.has(resolvedAreaId)) {
+      if (isAreaId(resolvedAreaId) && validAreaIds.has(resolvedAreaId)) {
         counts[resolvedAreaId] =
           (counts[resolvedAreaId] ?? 0) + 1;
       }
@@ -743,21 +743,159 @@ function AreasGrid() {
 }
 
 export function AreasContainer() {
+  const pagerViewportRef = useRef<HTMLDivElement | null>(null);
+  const areasSlideRef = useRef<HTMLDivElement | null>(null);
+  const pagerSlideRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [activePagerPage, setActivePagerPage] = useState(0);
+  const [pagerHeight, setPagerHeight] = useState<number | null>(null);
+  const [slideRegistryVersion, setSlideRegistryVersion] = useState(0);
+
+  const setPagerSlideRef = useCallback(
+    (pageIndex: number, node: HTMLDivElement | null) => {
+      if (node) {
+        if (pagerSlideRefs.current.get(pageIndex) === node) {
+          return;
+        }
+
+        pagerSlideRefs.current.set(pageIndex, node);
+      } else {
+        if (!pagerSlideRefs.current.has(pageIndex)) {
+          return;
+        }
+
+        pagerSlideRefs.current.delete(pageIndex);
+      }
+
+      setSlideRegistryVersion((version) => version + 1);
+    },
+    []
+  );
+
+  const setMonumentPageRef = useCallback(
+    (pageIndex: number, node: HTMLDivElement | null) => {
+      setPagerSlideRef(pageIndex + 1, node);
+    },
+    [setPagerSlideRef]
+  );
+
+  const measurePagerSlide = useCallback((pageIndex = activePagerPage) => {
+    const activeSlide =
+      pageIndex === 0 ? areasSlideRef.current : pagerSlideRefs.current.get(pageIndex);
+    const fallbackSlide = areasSlideRef.current;
+    const slide = activeSlide ?? fallbackSlide;
+
+    if (!slide) {
+      return;
+    }
+
+    let nextHeight = slide.getBoundingClientRect().height;
+
+    if (nextHeight <= 0 && slide !== fallbackSlide) {
+      nextHeight = fallbackSlide?.getBoundingClientRect().height ?? 0;
+    }
+
+    if (nextHeight <= 0) {
+      return;
+    }
+
+    setPagerHeight(Math.ceil(nextHeight));
+  }, [activePagerPage]);
+
+  useLayoutEffect(() => {
+    measurePagerSlide(activePagerPage);
+  }, [activePagerPage, measurePagerSlide]);
+
+  useEffect(() => {
+    const areasSlide = areasSlideRef.current;
+    const pagerSlides = Array.from(pagerSlideRefs.current.values());
+
+    if (!areasSlide && pagerSlides.length === 0) {
+      return;
+    }
+
+    if (typeof ResizeObserver === "undefined") {
+      const handleResize = () => {
+        measurePagerSlide(activePagerPage);
+      };
+
+      measurePagerSlide(activePagerPage);
+      window.addEventListener("resize", handleResize);
+
+      return () => {
+        window.removeEventListener("resize", handleResize);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      measurePagerSlide(activePagerPage);
+    });
+
+    if (areasSlide) {
+      observer.observe(areasSlide);
+    }
+
+    pagerSlides.forEach((slide) => {
+      observer.observe(slide);
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activePagerPage, measurePagerSlide, slideRegistryVersion]);
+
+  const handlePagerScroll = useCallback(() => {
+    const viewport = pagerViewportRef.current;
+
+    if (!viewport || viewport.clientWidth <= 0) {
+      return;
+    }
+
+    const maxPage = Math.max(
+      0,
+      Math.round(viewport.scrollWidth / viewport.clientWidth) - 1
+    );
+    const nearestPage = Math.min(
+      maxPage,
+      Math.max(0, Math.round(viewport.scrollLeft / viewport.clientWidth))
+    );
+
+    if (activePagerPage !== nearestPage) {
+      measurePagerSlide(nearestPage);
+      setActivePagerPage(nearestPage);
+    }
+  }, [activePagerPage, measurePagerSlide]);
+
+  useEffect(() => {
+    window.addEventListener("resize", handlePagerScroll);
+
+    return () => {
+      window.removeEventListener("resize", handlePagerScroll);
+    };
+  }, [handlePagerScroll]);
+
   return (
     <section className="section app-dashboard-section mt-2">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="h-label block">Areas</h2>
       </div>
 
-      <div className="w-full overflow-x-auto overscroll-x-contain snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex w-full">
-          <div className="w-full shrink-0 snap-start">
+      <div
+        ref={pagerViewportRef}
+        onScroll={handlePagerScroll}
+        className="w-full overflow-x-auto overflow-y-hidden overscroll-x-contain snap-x snap-mandatory transition-[height] duration-150 ease-out [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={pagerHeight === null ? undefined : { height: pagerHeight }}
+      >
+        <div className="flex w-full items-start">
+          <div ref={areasSlideRef} className="w-full shrink-0 snap-start">
             <AreasGrid />
           </div>
 
-          <div className="w-full shrink-0 snap-start lg:hidden">
-            <MonumentContainer embedded paginated pageSize={8} />
-          </div>
+          <MonumentContainer
+            embedded
+            paginated
+            pageSize={8}
+            onEmbeddedPageRef={setMonumentPageRef}
+          />
         </div>
       </div>
     </section>

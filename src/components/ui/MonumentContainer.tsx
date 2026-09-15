@@ -9,6 +9,8 @@ import {
   type MonumentsListHandle,
 } from "@/components/monuments/MonumentsList";
 import { AddMonumentDialog } from "@/components/monuments/AddMonumentDialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { buildEmbeddedMonumentPages } from "@/components/ui/monumentPagination";
 
 export type MonumentContainerHandle = {
   refresh: () => Promise<void>;
@@ -18,6 +20,7 @@ type MonumentContainerProps = {
   embedded?: boolean;
   paginated?: boolean;
   pageSize?: number;
+  onEmbeddedPageRef?: (pageIndex: number, node: HTMLDivElement | null) => void;
 };
 
 export const MonumentContainer = forwardRef<
@@ -28,10 +31,33 @@ export const MonumentContainer = forwardRef<
     embedded = false,
     paginated = false,
     pageSize = 8,
+    onEmbeddedPageRef,
   },
   ref
 ) {
   const monumentsListRef = useRef<MonumentsListHandle | null>(null);
+  const onEmbeddedPageRefRef = useRef(onEmbeddedPageRef);
+  const embeddedPageRefCallbacks = useRef<
+    Map<number, (node: HTMLDivElement | null) => void>
+  >(new Map());
+
+  onEmbeddedPageRefRef.current = onEmbeddedPageRef;
+
+  const getEmbeddedPageRef = (pageIndex: number) => {
+    const existingCallback = embeddedPageRefCallbacks.current.get(pageIndex);
+
+    if (existingCallback) {
+      return existingCallback;
+    }
+
+    const nextCallback = (node: HTMLDivElement | null) => {
+      onEmbeddedPageRefRef.current?.(pageIndex, node);
+    };
+
+    embeddedPageRefCallbacks.current.set(pageIndex, nextCallback);
+
+    return nextCallback;
+  };
 
   useImperativeHandle(
     ref,
@@ -48,6 +74,25 @@ export const MonumentContainer = forwardRef<
       ref={monumentsListRef}
       createHref="/monuments/new"
       renderEmptyChildren
+      loadingChildren={
+        embedded && paginated ? (
+          <div
+            ref={getEmbeddedPageRef(0)}
+            className="w-full shrink-0 snap-start lg:hidden"
+          >
+            <div className="app-dashboard-monuments-panel px-4">
+              <div className="grid grid-cols-4 gap-1">
+                {Array.from({ length: Math.max(1, pageSize) }).map((_, i) => (
+                  <Skeleton
+                    key={i}
+                    className="app-dashboard-monument-skeleton aspect-square w-full rounded-2xl bg-white/[0.06]"
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : undefined
+      }
     >
       {(monuments, saveMonumentOrder) => {
         const monumentCards = monuments.map<MonumentCard>((m) => ({
@@ -58,34 +103,17 @@ export const MonumentContainer = forwardRef<
         }));
 
         if (embedded && paginated) {
-          const safePageSize = Math.max(1, pageSize);
-          const pages: MonumentCard[][] = [];
-
-          for (
-            let start = 0;
-            start < monumentCards.length;
-            start += safePageSize
-          ) {
-            pages.push(monumentCards.slice(start, start + safePageSize));
-          }
-
-          if (pages.length === 0) {
-            pages.push([]);
-          }
+          const pages = buildEmbeddedMonumentPages(monumentCards, pageSize);
 
           return (
             <>
-              {pages.map((pageMonuments, pageIndex) => {
-                const pageStartIndex = pageIndex * safePageSize;
-                const isLastPage = pageIndex === pages.length - 1;
-                const canShowNewCard = isLastPage;
-
+              {pages.map((page, pageIndex) => {
                 const handlePageReorder = async (pageIds: string[]) => {
                   const fullIds = monuments.map((monument) => monument.id);
 
                   fullIds.splice(
-                    pageStartIndex,
-                    pageMonuments.length,
+                    page.pageStartIndex,
+                    page.monuments.length,
                     ...pageIds
                   );
 
@@ -95,13 +123,15 @@ export const MonumentContainer = forwardRef<
                 return (
                   <div
                     key={`monument-page-${pageIndex}`}
-                    className="w-full shrink-0 snap-start"
+                    ref={getEmbeddedPageRef(pageIndex)}
+                    className="w-full shrink-0 snap-start lg:hidden"
                   >
                     <div className="app-dashboard-monuments-panel px-4">
                       <MonumentGridWithSharedTransition
-                        monuments={pageMonuments}
-                        showNewCard={canShowNewCard}
+                        monuments={page.monuments}
+                        showNewCard={page.showNewCard}
                         onReorder={handlePageReorder}
+                        emptyPlaceholderCount={0}
                       />
                     </div>
                   </div>

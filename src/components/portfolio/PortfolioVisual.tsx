@@ -68,16 +68,11 @@ export default function PortfolioVisual({
 
   if (kind === "yump") {
     return (
-      <div className={`${shell} ${className} flex items-center justify-center`}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.13),transparent_46%)]" />
-        <div className="relative flex h-[78%] w-[54%] flex-col items-center justify-center rounded-t-[38%] bg-[#111] shadow-2xl">
-          <span className="text-2xl font-semibold tracking-tight text-white/75">
-            Yump.
-          </span>
-          <span className="mt-3 text-[6px] uppercase tracking-[0.34em] text-white/25">
-            A brighter everyday
-          </span>
-        </div>
+      <div className={`${shell} ${className}`}>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_110%,rgba(255,255,255,0.10),transparent_48%)]" />
+        <div className="absolute left-[14%] top-[11%] h-[78%] w-[48%] rounded-t-[34%] bg-[linear-gradient(145deg,#181818,#0d0d0d)] shadow-[0_22px_45px_rgba(0,0,0,.6)]" />
+        <div className="absolute right-[12%] top-[15%] h-[32%] w-[22%] rounded-sm border border-white/[0.06] bg-[#151515]" />
+        <div className="absolute right-[12%] bottom-[13%] h-[29%] w-[31%] rotate-[-5deg] rounded-sm border border-white/[0.05] bg-[#111]" />
       </div>
     );
   }
@@ -85,13 +80,9 @@ export default function PortfolioVisual({
   if (kind === "abyssal") {
     return (
       <div className={`${shell} ${className} flex items-center justify-center`}>
-        <div className="absolute h-32 w-32 rounded-full border border-white/20 bg-[radial-gradient(circle_at_40%_35%,rgba(255,255,255,0.18),rgba(255,255,255,0.02)_45%,transparent_70%)] shadow-[0_0_80px_rgba(255,255,255,0.08)]" />
-        <div className="relative text-center">
-          <p className="text-lg font-medium text-white/80">Abyssal Insight</p>
-          <p className="mt-14 text-[7px] uppercase tracking-[0.36em] text-white/25">
-            See deeper
-          </p>
-        </div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_58%,rgba(255,255,255,0.055),transparent_42%)]" />
+        <div className="relative h-[62%] aspect-square rounded-full border border-white/[0.11] bg-[radial-gradient(circle_at_37%_31%,rgba(255,255,255,0.16),rgba(255,255,255,0.035)_27%,#090909_68%)] shadow-[0_0_65px_rgba(255,255,255,0.035)]" />
+        <div className="absolute bottom-[15%] h-px w-[22%] bg-white/[0.12]" />
       </div>
     );
   }
@@ -99,17 +90,11 @@ export default function PortfolioVisual({
   if (kind === "studio") {
     return (
       <div className={`${shell} ${className}`}>
-        <div className="absolute inset-x-[8%] bottom-[15%] h-[7%] bg-white/[0.08]" />
-        <div className="absolute bottom-[22%] left-[15%] h-[34%] w-[12%] rounded-md border border-white/10 bg-[#151515]">
-          <div className="absolute left-1/2 top-[30%] h-7 w-7 -translate-x-1/2 rounded-full border border-white/15" />
-        </div>
-        <div className="absolute bottom-[24%] left-[31%] h-[45%] w-[40%] rounded-md border border-white/10 bg-[#090909] p-3">
-          <div className="h-full w-full bg-[linear-gradient(145deg,transparent_35%,rgba(255,255,255,0.08)_36%,transparent_38%),linear-gradient(25deg,transparent_55%,rgba(255,255,255,0.05)_56%,transparent_58%)]" />
-        </div>
-        <div className="absolute bottom-[22%] right-[14%] h-[34%] w-[12%] rounded-md border border-white/10 bg-[#151515]">
-          <div className="absolute left-1/2 top-[30%] h-7 w-7 -translate-x-1/2 rounded-full border border-white/15" />
-        </div>
-        <div className="absolute bottom-[19%] left-[39%] h-[5%] w-[25%] rounded-sm border border-white/10 bg-white/[0.04]" />
+        <div className="absolute inset-0 bg-[linear-gradient(145deg,#0b0b0b,#121212_48%,#090909)]" />
+        <div className="absolute inset-x-[12%] bottom-[18%] h-px bg-white/[0.08]" />
+        <div className="absolute bottom-[22%] left-[18%] h-[34%] w-[17%] rounded-sm border border-white/[0.06] bg-white/[0.025]" />
+        <div className="absolute bottom-[22%] left-[42%] h-[47%] w-[39%] rounded-sm border border-white/[0.07] bg-[#0a0a0a]" />
+        <div className="absolute bottom-[17%] left-[48%] h-[4%] w-[27%] rounded-sm bg-white/[0.035]" />
       </div>
     );
   }
@@ -139,7 +124,7 @@ export default function PortfolioVisual({
 
   const visualClasses: Record<string, string> = {
     "visual-one":
-      "bg-[linear-gradient(145deg,#0a0a0a_20%,#282828_21%,#0d0d0d_45%,#333_46%,#090909_70%)]",
+      "bg-[radial-gradient(circle_at_68%_32%,rgba(255,255,255,0.09),transparent_18%),linear-gradient(145deg,#090909_18%,#151515_48%,#080808_78%)]",
     "visual-two":
       "bg-[linear-gradient(90deg,transparent_49%,rgba(255,255,255,.14)_50%,transparent_51%),linear-gradient(35deg,#090909,#242424,#080808)]",
     "visual-three":

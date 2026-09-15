@@ -3,9 +3,9 @@ import type { PortfolioSiteData } from "./types";
 export const mackValiPortfolio: PortfolioSiteData = {
   handle: "mackvali",
   name: "MACK VALI",
-  headline: "Designing useful things.",
+  headline: "Designing\nuseful things.",
   intro:
-    "I build software, brands, visual work, clothing, and creative systems.",
+    "I’m Mack Vali — a product designer and creator building software, brands, visual work, clothing, and creative systems that make life a little better.",
   note: "Design · Build · Refine · Repeat",
 
   software: [
@@ -17,6 +17,7 @@ export const mackValiPortfolio: PortfolioSiteData = {
         "A personal operating system for goals, scheduling, health, money, focus, and the systems around everyday life.",
       category: "software",
       visual: "creator",
+      imageSrc: "/images/portfolio/mackvali/software/creator-dashboard.webp",
       year: "2026",
       role: "Product design · Engineering · UX",
       stack: ["Next.js", "React", "TypeScript", "Supabase", "Capacitor"],
@@ -55,12 +56,13 @@ export const mackValiPortfolio: PortfolioSiteData = {
     },
     {
       slug: "small-business-sites",
-      title: "Small Business Sites",
+      title: "Iron Prairie Logistics",
       eyebrow: "Client work",
       description:
-        "Focused websites and digital tools for small businesses and real-world services.",
+        "A customer-facing website and internal operations software for a real local logistics company.",
       category: "software",
       visual: "business",
+      imageSrc: "/images/portfolio/mackvali/software/iron-prairie-site.webp",
       detail: {
         intro:
           "I build focused websites and digital tools for small businesses that need something useful, clear, and easy for customers to understand.",
@@ -84,11 +86,12 @@ export const mackValiPortfolio: PortfolioSiteData = {
     {
       slug: "apps-tools",
       title: "Apps & Tools",
-      eyebrow: "Selected builds",
+      eyebrow: "Inside CREATOR",
       description:
-        "Useful software experiments, internal tools, and focused digital products.",
+        "Modular tools for nutrition, fitness, money, habits, and everyday execution.",
       category: "software",
       visual: "business",
+      imageSrc: "/images/portfolio/mackvali/software/creator-nutrition.webp",
     },
   ],
 

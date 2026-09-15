@@ -191,6 +191,26 @@ describe("todosStorage", () => {
     ]);
   });
 
+  it("uses IS NULL for explicitly null nullable filters", async () => {
+    const { calls, client } = createClient([row]);
+
+    await loadTodos({
+      client: client as never,
+      userId: "user-1",
+      ownerId: null,
+      listId: null,
+      noteId: null,
+    });
+
+    expect(calls[0]?.filters).toEqual([
+      { column: "user_id", value: "user-1", operator: "eq" },
+      { column: "deleted_at", value: null, operator: "is" },
+      { column: "owner_id", value: null, operator: "is" },
+      { column: "list_id", value: null, operator: "is" },
+      { column: "note_id", value: null, operator: "is" },
+    ]);
+  });
+
   it("completion is a guarded row-level update", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-15T05:30:00.000Z"));
