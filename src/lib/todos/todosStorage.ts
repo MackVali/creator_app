@@ -95,6 +95,7 @@ export type CreateTodoInput = {
 };
 
 export type UpdateTodoInput = {
+  listId?: string | null;
   title?: string;
   completed?: boolean;
   completedAt?: string | null;
@@ -110,6 +111,7 @@ export type UpdateTodoInput = {
 type TodoUpdate = Partial<
   Pick<
     TodoRow,
+    | "list_id"
     | "title"
     | "completed"
     | "completed_at"
@@ -227,6 +229,7 @@ function updateInputToRow(input: UpdateTodoInput): TodoUpdate {
     updated_at: nowIso(),
   };
 
+  if (input.listId !== undefined) update.list_id = input.listId;
   if (input.title !== undefined) update.title = input.title;
   if (input.completed !== undefined) update.completed = input.completed;
   if (input.completedAt !== undefined) update.completed_at = input.completedAt;

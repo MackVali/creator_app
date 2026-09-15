@@ -64,14 +64,19 @@ import {
   type MyListPinnableSourceType,
 } from "@/lib/my-list/pinnedSourceItems";
 import {
-  deleteManualMyListItem,
-  loadManualMyListItems,
   MY_LIST_MANUAL_ITEM_CREATED_EVENT,
   MY_LIST_MANUAL_ITEM_CONSUMED_EVENT,
-  replaceManualMyListItems,
   type MyListManualItemCreatedDetail,
   type MyListManualItemConsumedDetail,
 } from "@/lib/my-list/myListItemsStorage";
+import {
+  createTodo,
+  loadTodos,
+  setTodoCompleted,
+  softDeleteTodo,
+  updateTodo,
+  type Todo,
+} from "@/lib/todos/todosStorage";
 import {
   createMyListList,
   getMyListAreaSystemKey,
@@ -591,6 +596,37 @@ function sanitizeMyListManualRow(
         ? (record.insertAfterRowKey as MyListRowKey)
         : null,
   };
+}
+
+function canonicalTodoToMyListManualRow(
+  todo: Todo,
+  fallbackPriorityId: PriorityBucketId,
+): MyListManualRow | null {
+  const metadata =
+    todo.metadata &&
+    typeof todo.metadata === "object" &&
+    !Array.isArray(todo.metadata)
+      ? (todo.metadata as Record<string, unknown>)
+      : {};
+
+  return sanitizeMyListManualRow(
+    {
+      id: todo.id,
+      listId: todo.listId,
+      done: todo.completed,
+      completedAt: todo.completedAt,
+      skillId: todo.skillId,
+      skillName:
+        typeof metadata.skillName === "string" ? metadata.skillName : null,
+      skillIcon:
+        typeof metadata.skillIcon === "string" ? metadata.skillIcon : "",
+      priorityId: todo.priorityId,
+      dayBucketId: todo.dayBucketId,
+      text: todo.title,
+      insertAfterRowKey: todo.insertAfterRowKey,
+    },
+    fallbackPriorityId,
+  );
 }
 
 function sanitizeMyListManualRows(
@@ -2613,27 +2649,114 @@ export function MyListSheet({
     [projectGoalIdsById],
   );
   const persistManualRows = useCallback(
-    (rows: MyListManualRow[]) => {
+    (
+      previousRows: MyListManualRow[],
+      rows: MyListManualRow[],
+    ) => {
       writeStoredMyListManualRows(rows, defaultPriority.id);
-      if (userId) {
-        const nextPersistence = manualRowsPersistenceRef.current
-          .catch(() => undefined)
-          .then(() => {
-            const rowsToPersist = rows.filter(
-              (row) => !deletingManualRowIdsRef.current.has(row.id),
-            );
-            return replaceManualMyListItems({
-              userId,
-              rows: rowsToPersist,
-            });
-          });
-        manualRowsPersistenceRef.current = nextPersistence;
-        void nextPersistence.catch((error) => {
-          console.error("Failed to persist My List manual rows", error);
-        });
-        return nextPersistence;
+
+      if (!userId) {
+        return Promise.resolve();
       }
-      return Promise.resolve();
+
+      const nextPersistence = manualRowsPersistenceRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const previousById = new Map(
+            previousRows.map((row, index) => [row.id, { row, index }] as const),
+          );
+          const nextById = new Map(
+            rows.map((row, index) => [row.id, { row, index }] as const),
+          );
+
+          for (const [rowId] of previousById) {
+            if (
+              nextById.has(rowId) ||
+              deletingManualRowIdsRef.current.has(rowId)
+            ) {
+              continue;
+            }
+
+            await softDeleteTodo({
+              userId,
+              id: rowId,
+            });
+          }
+
+          for (const [rowId, nextEntry] of nextById) {
+            if (
+              rowId === EMPTY_DRAFT_MANUAL_ROW_ID ||
+              deletingManualRowIdsRef.current.has(rowId)
+            ) {
+              continue;
+            }
+
+            const previousEntry = previousById.get(rowId);
+            const row = nextEntry.row;
+
+            if (!previousEntry) {
+              await createTodo({
+                id: row.id,
+                userId,
+                ownerType: "MY_LIST",
+                ownerId: null,
+                listId: row.listId,
+                title: row.text,
+                completed: row.done,
+                completedAt: row.completedAt,
+                priorityId: row.priorityId,
+                dayBucketId: row.dayBucketId,
+                skillId: row.skillId,
+                energyId: "MEDIUM",
+                sortOrder: nextEntry.index,
+                insertAfterRowKey: row.insertAfterRowKey,
+                metadata: {
+                  skillName: row.skillName,
+                  skillIcon: row.skillIcon,
+                },
+              });
+              continue;
+            }
+
+            const previous = previousEntry.row;
+            const changed =
+              previous.listId !== row.listId ||
+              previous.text !== row.text ||
+              previous.done !== row.done ||
+              previous.completedAt !== row.completedAt ||
+              previous.priorityId !== row.priorityId ||
+              previous.dayBucketId !== row.dayBucketId ||
+              previous.skillId !== row.skillId ||
+              previous.insertAfterRowKey !== row.insertAfterRowKey ||
+              previousEntry.index !== nextEntry.index;
+
+            if (!changed) continue;
+
+            await updateTodo({
+              userId,
+              id: row.id,
+              updates: {
+                listId: row.listId,
+                title: row.text,
+                completed: row.done,
+                completedAt: row.completedAt,
+                priorityId: row.priorityId,
+                dayBucketId: row.dayBucketId,
+                skillId: row.skillId,
+                sortOrder: nextEntry.index,
+                insertAfterRowKey: row.insertAfterRowKey,
+              },
+            });
+          }
+        });
+
+      manualRowsPersistenceRef.current = nextPersistence;
+
+      void nextPersistence.catch((error) => {
+        console.error("Failed to persist canonical My List todos", error);
+      });
+
+      return nextPersistence;
     },
     [defaultPriority.id, userId],
   );
@@ -2641,7 +2764,7 @@ export function MyListSheet({
     (updater: (currentRows: MyListManualRow[]) => MyListManualRow[]) => {
       setManualRows((currentRows) => {
         const nextRows = updater(currentRows);
-        persistManualRows(nextRows);
+        persistManualRows(currentRows, nextRows);
         return nextRows;
       });
     },
@@ -2660,7 +2783,7 @@ export function MyListSheet({
         const nextRows = currentRows.filter(
           (row) => row.id !== normalizedRowId,
         );
-        persistManualRows(nextRows);
+        persistManualRows(currentRows, nextRows);
         return nextRows;
       });
       setActiveSkillPickerRowKey((currentRowKey) =>
@@ -2727,7 +2850,7 @@ export function MyListSheet({
           return currentRows;
         }
         const nextRows = [...currentRows, nextRow];
-        persistManualRows(nextRows);
+        writeStoredMyListManualRows(nextRows, defaultPriority.id);
         return nextRows;
       });
     };
@@ -2742,7 +2865,7 @@ export function MyListSheet({
         handleManualItemCreated,
       );
     };
-  }, [defaultPriority.id, persistManualRows, userId]);
+  }, [defaultPriority.id, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2777,6 +2900,9 @@ export function MyListSheet({
 
   useEffect(() => {
     let active = true;
+    let hasLoadedCanonical = false;
+    let refreshGeneration = 0;
+
     const localRows = readStoredMyListManualRows(defaultPriority.id);
 
     if (!userId) {
@@ -2786,28 +2912,73 @@ export function MyListSheet({
       };
     }
 
-    void loadManualMyListItems({
-      userId,
-      localRows,
-      fallbackPriorityId: defaultPriority.id,
-    })
-      .then((rows) => {
-        if (!active) return;
-        const sanitizedRows = sanitizeMyListManualRows(
-          rows,
-          defaultPriority.id,
-        );
-        setManualRows(sanitizedRows);
-        writeStoredMyListManualRows(sanitizedRows, defaultPriority.id);
-      })
-      .catch((error) => {
-        console.error("Failed to load Supabase My List manual rows", error);
-        if (!active) return;
-        setManualRows(localRows);
-      });
+    const refreshCanonicalManualRows = async () => {
+      const generation = ++refreshGeneration;
+
+      try {
+        await manualRowsPersistenceRef.current.catch(() => undefined);
+
+        const todos = await loadTodos({
+          userId,
+          ownerType: "MY_LIST",
+        });
+
+        if (!active || generation !== refreshGeneration) return;
+
+        const canonicalRows = todos
+          .map((todo) =>
+            canonicalTodoToMyListManualRow(todo, defaultPriority.id),
+          )
+          .filter((row): row is MyListManualRow => row !== null);
+
+        hasLoadedCanonical = true;
+        setManualRows(canonicalRows);
+        writeStoredMyListManualRows(canonicalRows, defaultPriority.id);
+      } catch (error) {
+        console.error("Failed to load canonical My List todos", error);
+
+        if (
+          active &&
+          generation === refreshGeneration &&
+          !hasLoadedCanonical
+        ) {
+          setManualRows(localRows);
+        }
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void refreshCanonicalManualRows();
+    };
+
+    const handleWindowOnline = () => {
+      void refreshCanonicalManualRows();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCanonicalManualRows();
+      }
+    };
+
+    void refreshCanonicalManualRows();
+
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("online", handleWindowOnline);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
 
     return () => {
       active = false;
+      refreshGeneration += 1;
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("online", handleWindowOnline);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
     };
   }, [defaultPriority.id, userId]);
 
@@ -4242,7 +4413,7 @@ export function MyListSheet({
               destination,
             )
           : currentRows;
-        persistManualRows(nextRows);
+        persistManualRows(currentRows, nextRows);
         return nextRows;
       });
     },
@@ -4833,14 +5004,67 @@ export function MyListSheet({
     ) => {
       const row = manualRows.find((candidate) => candidate.id === rowId);
       if (!row) return;
+
       const previousDone = row.done;
       const previousCompletedAt = row.completedAt;
       const completedAt = checked ? new Date().toISOString() : null;
-      updateManualRow(rowId, {
-        done: checked,
-        completedAt,
-      });
+
+      const setCompletionLocally = (
+        done: boolean,
+        nextCompletedAt: string | null,
+      ) => {
+        setManualRows((currentRows) => {
+          const nextRows = currentRows.map((candidate) =>
+            candidate.id === rowId
+              ? {
+                  ...candidate,
+                  done,
+                  completedAt: nextCompletedAt,
+                }
+              : candidate,
+          );
+          writeStoredMyListManualRows(nextRows, defaultPriority.id);
+          return nextRows;
+        });
+      };
+
+      const persistCanonicalCompletion = async (
+        done: boolean,
+        nextCompletedAt: string | null,
+      ) => {
+        if (!userId) return;
+
+        const nextPersistence = manualRowsPersistenceRef.current
+          .catch(() => undefined)
+          .then(async () => {
+            const persisted = await setTodoCompleted({
+              userId,
+              id: rowId,
+              completed: done,
+              completedAt: nextCompletedAt,
+            });
+
+            if (!persisted) {
+              throw new Error(
+                `Canonical My List todo ${rowId} was unavailable for completion`,
+              );
+            }
+          });
+
+        manualRowsPersistenceRef.current = nextPersistence;
+        await nextPersistence;
+      };
+
+      setCompletionLocally(checked, completedAt);
+
+      let canonicalCompletionPersisted = false;
+
       try {
+        if (userId) {
+          await persistCanonicalCompletion(checked, completedAt);
+          canonicalCompletionPersisted = true;
+        }
+
         const didPersist = await onToggleManualTodoCompletion?.(
           row,
           checked,
@@ -4850,16 +5074,34 @@ export function MyListSheet({
         if (didPersist === false) {
           throw new Error("Manual todo completion was rejected");
         }
+
         dispatchAreaCardStatusRefresh();
       } catch (error) {
         console.error("Failed to toggle manual My List todo", error);
-        updateManualRow(rowId, {
-          done: previousDone,
-          completedAt: previousCompletedAt,
-        });
+
+        setCompletionLocally(previousDone, previousCompletedAt);
+
+        if (canonicalCompletionPersisted) {
+          try {
+            await persistCanonicalCompletion(
+              previousDone,
+              previousCompletedAt,
+            );
+          } catch (rollbackError) {
+            console.error(
+              "Failed to roll back canonical My List todo completion",
+              rollbackError,
+            );
+          }
+        }
       }
     },
-    [manualRows, onToggleManualTodoCompletion, updateManualRow],
+    [
+      defaultPriority.id,
+      manualRows,
+      onToggleManualTodoCompletion,
+      userId,
+    ],
   );
 
   const handlePrioritySelect = useCallback(
@@ -4959,7 +5201,12 @@ export function MyListSheet({
                   error,
                 );
               })
-              .then(() => deleteManualMyListItem({ userId, itemId: rowId }));
+              .then(() =>
+                softDeleteTodo({
+                  userId,
+                  id: rowId,
+                }),
+              );
             manualRowsPersistenceRef.current = nextPersistence;
             await nextPersistence;
           }

@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
   Globe2,
   Loader2,
   Monitor,
+  MoreHorizontal,
   Package,
   Plus,
   Trash2,
@@ -32,20 +34,20 @@ import type {
 import type { ListingsResponse, SourceListing } from "@/types/source";
 
 type PreviewMode = "desktop" | "tablet" | "mobile";
-type InspectorTab = "content" | "layout" | "data" | "style" | "visibility";
+type InspectorMode = "content" | "design";
 
-const previewModes: Record<PreviewMode, { label: string; width: number }> = {
-  desktop: { label: "Desktop", width: 1440 },
-  tablet: { label: "Tablet", width: 768 },
-  mobile: { label: "Mobile", width: 390 },
+const previewModes: Record<
+  PreviewMode,
+  { label: string; width: number; viewportHeight: number | null }
+> = {
+  desktop: { label: "Desktop", width: 1440, viewportHeight: null },
+  tablet: { label: "Tablet", width: 768, viewportHeight: 1024 },
+  mobile: { label: "Mobile", width: 390, viewportHeight: 844 },
 };
 
-const inspectorTabs: Array<{ id: InspectorTab; label: string }> = [
+const inspectorModes: Array<{ id: InspectorMode; label: string }> = [
   { id: "content", label: "Content" },
-  { id: "layout", label: "Layout" },
-  { id: "data", label: "Data" },
-  { id: "style", label: "Style" },
-  { id: "visibility", label: "Visibility" },
+  { id: "design", label: "Design" },
 ];
 
 function cloneInitialSite(): SiteDocument {
@@ -56,14 +58,14 @@ function cloneInitialSite(): SiteDocument {
 
 function sectionSourceLabel(section: SiteSection) {
   if (section.source.kind === "manual") {
-    return "Manual content";
+    return "Manual";
   }
 
   if (section.source.kind === "source") {
-    return `Source · ${section.source.listingType}`;
+    return `Source ${section.source.listingType}s`;
   }
 
-  return `CREATOR · ${section.source.entity}`;
+  return `CREATOR ${section.source.entity}s`;
 }
 
 const addableSections: Array<{
@@ -172,76 +174,144 @@ function createSectionId(pageId: string, type: SiteSectionType) {
   return `${pageId}-${type}-${Date.now().toString(36)}`;
 }
 
-function SectionActions({
+function createDuplicateSectionId(sectionId: string) {
+  return `${sectionId}-copy-${Date.now().toString(36)}`;
+}
+
+function sectionHasDesignControls(section: SiteSection) {
+  return (
+    section.type === "hero" ||
+    section.type === "content" ||
+    section.type === "products" ||
+    section.type === "services" ||
+    section.type === "gallery" ||
+    section.type === "cta"
+  );
+}
+
+function InspectorHeader({
+  pageTitle,
+  section,
   canMoveUp,
   canMoveDown,
   canDelete,
-  visible,
+  onDuplicate,
   onToggleVisible,
   onMoveUp,
   onMoveDown,
   onDelete,
 }: {
+  pageTitle: string;
+  section: SiteSection;
   canMoveUp: boolean;
   canMoveDown: boolean;
   canDelete: boolean;
-  visible: boolean;
+  onDuplicate: () => void;
   onToggleVisible: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDelete: () => void;
 }) {
   return (
-    <div>
-      <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-600">
-        Section
-      </p>
+    <div className="border-b border-white/[0.07] px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-medium text-zinc-100">
+            {section.label}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+            {pageTitle} / {section.label}
+          </p>
+          {section.source.kind !== "manual" ? (
+            <p className="mt-1 text-[10px] text-zinc-600">
+              {sectionSourceLabel(section)}
+            </p>
+          ) : null}
+        </div>
 
-      <div className="mt-2 grid grid-cols-4 gap-2">
         <button
           type="button"
           onClick={onToggleVisible}
-          className="flex h-8 items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
-          title={visible ? "Hide section" : "Show section"}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+          title={section.visible ? "Hide section" : "Show section"}
         >
-          {visible ? (
+          {section.visible ? (
             <Eye className="h-3.5 w-3.5" />
           ) : (
             <EyeOff className="h-3.5 w-3.5" />
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={!canMoveUp}
-          className="flex h-8 items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:text-zinc-700"
-          title="Move section up"
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={!canMoveDown}
-          className="flex h-8 items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:text-zinc-700"
-          title="Move section down"
-        >
-          <ArrowDown className="h-3.5 w-3.5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={!canDelete}
-          className="flex h-8 items-center justify-center rounded-md border border-white/[0.09] text-zinc-500 transition hover:border-red-300/30 hover:text-red-200 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:text-zinc-800"
-          title="Delete section"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <details className="group relative shrink-0">
+          <summary
+            className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 [&::-webkit-details-marker]:hidden"
+            title="Section actions"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </summary>
+          <div className="absolute right-0 top-8 z-20 w-40 rounded-md border border-white/[0.1] bg-[#111214] p-1 shadow-2xl">
+            <InspectorMenuButton icon={Copy} label="Duplicate" onClick={onDuplicate} />
+            <InspectorMenuButton
+              icon={ArrowUp}
+              label="Move up"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+            />
+            <InspectorMenuButton
+              icon={ArrowDown}
+              label="Move down"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+            />
+            <InspectorMenuButton
+              icon={section.visible ? EyeOff : Eye}
+              label={section.visible ? "Hide" : "Show"}
+              onClick={onToggleVisible}
+            />
+            <InspectorMenuButton
+              icon={Trash2}
+              label="Delete"
+              onClick={onDelete}
+              disabled={!canDelete}
+              danger
+            />
+          </div>
+        </details>
       </div>
     </div>
+  );
+}
+
+function InspectorMenuButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled = false,
+  danger = false,
+}: {
+  icon: typeof Eye;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.currentTarget.closest("details")?.removeAttribute("open");
+        onClick();
+      }}
+      disabled={disabled}
+      className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[11px] transition disabled:cursor-not-allowed disabled:text-zinc-700 ${
+        danger
+          ? "text-zinc-500 hover:bg-red-400/[0.08] hover:text-red-200"
+          : "text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 
@@ -260,7 +330,7 @@ function FieldLabel({
   return (
     <label
       htmlFor={htmlFor}
-      className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-600"
+      className="text-[11px] font-medium text-zinc-500"
     >
       {children}
     </label>
@@ -288,7 +358,7 @@ function TextInput({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-9 w-full rounded-md border border-white/[0.09] bg-black/30 px-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-white/[0.18]"
+        className="mt-1.5 h-8 w-full rounded-md border border-white/[0.09] bg-black/30 px-2.5 text-[12px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-white/[0.18]"
       />
     </div>
   );
@@ -315,7 +385,7 @@ function TextAreaInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
-        className="mt-2 w-full resize-none rounded-md border border-white/[0.09] bg-black/30 px-3 py-2.5 text-[13px] leading-5 text-zinc-100 outline-none transition focus:border-white/[0.18]"
+        className="mt-1.5 w-full resize-none rounded-md border border-white/[0.09] bg-black/30 px-2.5 py-2 text-[12px] leading-5 text-zinc-100 outline-none transition focus:border-white/[0.18]"
       />
     </div>
   );
@@ -334,16 +404,16 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-600">
+      <p className="text-[11px] font-medium text-zinc-500">
         {label}
       </p>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
+      <div className="mt-1.5 grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`h-7 rounded text-[11px] transition ${
+            className={`h-6 rounded text-[11px] transition ${
               value === option.value
                 ? "bg-white/[0.1] text-zinc-100"
                 : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
@@ -369,7 +439,7 @@ function ToggleRow({
   description?: string;
 }) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-3 rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
+    <label className="flex cursor-pointer items-start justify-between gap-3 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2">
       <span>
         <span className="block text-[12px] font-medium text-zinc-300">
           {label}
@@ -390,102 +460,212 @@ function ToggleRow({
   );
 }
 
-function InspectorContentTab({
+function InspectorGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 border-b border-white/[0.06] pb-4 last:border-b-0 last:pb-0">
+      <h3 className="text-[12px] font-medium text-zinc-300">{title}</h3>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function CtaFields({
+  labelId,
+  hrefId,
+  label,
+  href,
+  labelKey,
+  hrefKey,
+  onContentChange,
+}: {
+  labelId: string;
+  hrefId: string;
+  label: string;
+  href: string;
+  labelKey: string;
+  hrefKey: string;
+  onContentChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[0.9fr_1.1fr] gap-2">
+      <TextInput
+        id={labelId}
+        label="Label"
+        value={label}
+        onChange={(value) => onContentChange(labelKey, value)}
+      />
+      <TextInput
+        id={hrefId}
+        label="Link"
+        value={href}
+        onChange={(value) => onContentChange(hrefKey, value)}
+      />
+    </div>
+  );
+}
+
+function MediaSummary({ section }: { section: SiteSection }) {
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
+      <p className="text-[11px] font-medium text-zinc-300">
+        {section.type === "hero" ? "Template media" : "Media"}
+      </p>
+      <p className="mt-1 text-[11px] leading-5 text-zinc-600">
+        Media replacement is not connected in this builder slice yet.
+      </p>
+    </div>
+  );
+}
+
+function InspectorContentPanel({
   section,
   onContentChange,
+  sourceStatus,
+  sourceError,
+  sourceProducts,
+  sourceServices,
+  selectedProductIds,
+  selectedServiceIds,
+  onLoadSourceListings,
+  onToggleSourceListing,
 }: {
   section: SiteSection;
   onContentChange: (key: string, value: string) => void;
+  sourceStatus: "idle" | "loading" | "loaded" | "error";
+  sourceError: string | null;
+  sourceProducts: SourceListing[];
+  sourceServices: SourceListing[];
+  selectedProductIds: string[];
+  selectedServiceIds: string[];
+  onLoadSourceListings: () => void;
+  onToggleSourceListing: (
+    listingId: string,
+    listingType: "product" | "service",
+  ) => void;
 }) {
   if (section.type === "hero") {
     return (
-      <>
-        <TextInput
-          id="site-hero-eyebrow"
-          label="Eyebrow"
-          value={getContentString(section, "eyebrow")}
-          onChange={(value) => onContentChange("eyebrow", value)}
-        />
-        <TextAreaInput
-          id="site-hero-headline"
-          label="Headline"
-          value={getContentString(section, "headline")}
-          onChange={(value) => onContentChange("headline", value)}
-          rows={3}
-        />
-        <TextAreaInput
-          id="site-hero-intro"
-          label="Intro"
-          value={getContentString(section, "intro")}
-          onChange={(value) => onContentChange("intro", value)}
-          rows={5}
-        />
-        <TextInput
-          id="site-hero-cta-label"
-          label="Primary CTA label"
-          value={getContentString(section, "primaryCtaLabel")}
-          onChange={(value) => onContentChange("primaryCtaLabel", value)}
-        />
-        <TextInput
-          id="site-hero-cta-href"
-          label="Primary CTA href"
-          value={getContentString(section, "primaryCtaHref")}
-          onChange={(value) => onContentChange("primaryCtaHref", value)}
-        />
-      </>
+      <div className="space-y-4">
+        <InspectorGroup title="Text">
+          <TextInput
+            id="site-hero-eyebrow"
+            label="Eyebrow"
+            value={getContentString(section, "eyebrow")}
+            onChange={(value) => onContentChange("eyebrow", value)}
+          />
+          <TextAreaInput
+            id="site-hero-headline"
+            label="Heading"
+            value={getContentString(section, "headline")}
+            onChange={(value) => onContentChange("headline", value)}
+            rows={3}
+          />
+          <TextAreaInput
+            id="site-hero-intro"
+            label="Description"
+            value={getContentString(section, "intro")}
+            onChange={(value) => onContentChange("intro", value)}
+            rows={4}
+          />
+        </InspectorGroup>
+        <InspectorGroup title="Action">
+          <CtaFields
+            labelId="site-hero-cta-label"
+            hrefId="site-hero-cta-href"
+            label={getContentString(section, "primaryCtaLabel")}
+            href={getContentString(section, "primaryCtaHref")}
+            labelKey="primaryCtaLabel"
+            hrefKey="primaryCtaHref"
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+        <InspectorGroup title="Media">
+          <MediaSummary section={section} />
+        </InspectorGroup>
+      </div>
     );
   }
 
-  if (
-    section.type === "content" ||
-    section.type === "products" ||
-    section.type === "services"
-  ) {
+  if (section.type === "products" || section.type === "services") {
     return (
-      <>
+      <div className="space-y-4">
+        <InspectorGroup title="Content">
+          <TextInput
+            id="site-section-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) => onContentChange("heading", value)}
+          />
+          <TextAreaInput
+            id="site-section-intro"
+            label="Intro"
+            value={getContentString(section, "intro")}
+            onChange={(value) => onContentChange("intro", value)}
+            rows={3}
+          />
+        </InspectorGroup>
+        <SourceListingSelector
+          section={section}
+          sourceStatus={sourceStatus}
+          sourceError={sourceError}
+          sourceProducts={sourceProducts}
+          sourceServices={sourceServices}
+          selectedProductIds={selectedProductIds}
+          selectedServiceIds={selectedServiceIds}
+          onLoadSourceListings={onLoadSourceListings}
+          onToggleSourceListing={onToggleSourceListing}
+        />
+      </div>
+    );
+  }
+
+  if (section.type === "content") {
+    return (
+      <InspectorGroup title="Content">
         <TextInput
           id="site-section-heading"
-          label="Section heading"
+          label="Heading"
           value={getContentString(section, "heading")}
           onChange={(value) => onContentChange("heading", value)}
         />
         <TextAreaInput
-          id="site-section-intro"
-          label={section.type === "content" ? "Body" : "Intro"}
-          value={
-            section.type === "content"
-              ? getContentString(section, "body")
-              : getContentString(section, "intro")
-          }
-          onChange={(value) =>
-            onContentChange(section.type === "content" ? "body" : "intro", value)
-          }
-          rows={5}
+          id="site-section-body"
+          label="Body"
+          value={getContentString(section, "body")}
+          onChange={(value) => onContentChange("body", value)}
+          rows={4}
         />
-      </>
+      </InspectorGroup>
     );
   }
 
   if (section.type === "gallery") {
     return (
-      <>
+      <div className="space-y-4">
+        <InspectorGroup title="Content">
         <TextInput
           id="site-gallery-heading"
-          label="Section heading"
+          label="Heading"
           value={getContentString(section, "heading")}
           onChange={(value) => onContentChange("heading", value)}
         />
-        <p className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-3 text-[11px] leading-5 text-zinc-500">
-          Media selection will connect to a future media library. This slice only
-          previews the section state.
-        </p>
-      </>
+        </InspectorGroup>
+        <InspectorGroup title="Media">
+          <MediaSummary section={section} />
+        </InspectorGroup>
+      </div>
     );
   }
 
   if (section.type === "cta" || section.type === "contact") {
     return (
-      <>
+      <InspectorGroup title={section.type === "contact" ? "Contact" : "Content"}>
         <TextInput
           id="site-action-heading"
           label="Heading"
@@ -497,21 +677,18 @@ function InspectorContentTab({
           label="Body"
           value={getContentString(section, "body")}
           onChange={(value) => onContentChange("body", value)}
-          rows={4}
+          rows={3}
         />
-        <TextInput
-          id="site-action-button-label"
-          label="Button label"
-          value={getContentString(section, "buttonLabel")}
-          onChange={(value) => onContentChange("buttonLabel", value)}
+        <CtaFields
+          labelId="site-action-button-label"
+          hrefId="site-action-button-href"
+          label={getContentString(section, "buttonLabel")}
+          href={getContentString(section, "buttonHref")}
+          labelKey="buttonLabel"
+          hrefKey="buttonHref"
+          onContentChange={onContentChange}
         />
-        <TextInput
-          id="site-action-button-href"
-          label="Button href"
-          value={getContentString(section, "buttonHref")}
-          onChange={(value) => onContentChange("buttonHref", value)}
-        />
-      </>
+      </InspectorGroup>
     );
   }
 
@@ -522,109 +699,7 @@ function InspectorContentTab({
   );
 }
 
-function InspectorLayoutTab({
-  section,
-  onLayoutChange,
-}: {
-  section: SiteSection;
-  onLayoutChange: (
-    key: keyof SiteSectionLayoutConfig,
-    value: SiteSectionLayoutConfig[keyof SiteSectionLayoutConfig],
-  ) => void;
-}) {
-  const supportsAlignment =
-    section.type === "hero" ||
-    section.type === "content" ||
-    section.type === "cta";
-  const supportsVariant =
-    section.type === "hero" ||
-    section.type === "products" ||
-    section.type === "services" ||
-    section.type === "gallery";
-  const supportsColumns =
-    section.type === "products" ||
-    section.type === "services" ||
-    section.type === "gallery";
-  const supportsWidth = section.type === "content";
-
-  if (!supportsAlignment && !supportsVariant && !supportsColumns && !supportsWidth) {
-    return (
-      <p className="text-[12px] leading-5 text-zinc-500">
-        This section keeps the Mack template layout.
-      </p>
-    );
-  }
-
-  return (
-    <>
-      {supportsAlignment ? (
-        <SegmentedControl
-          label="Alignment"
-          value={section.layout?.alignment ?? "left"}
-          options={[
-            { label: "Left", value: "left" },
-            { label: "Center", value: "center" },
-          ]}
-          onChange={(value) => onLayoutChange("alignment", value)}
-        />
-      ) : null}
-
-      {supportsVariant ? (
-        <SegmentedControl
-          label="Variant"
-          value={section.layout?.variant ?? (section.type === "hero" ? "split" : "grid")}
-          options={
-            section.type === "hero"
-              ? [
-                  { label: "Split", value: "split" },
-                  { label: "Centered", value: "centered" },
-                ]
-              : section.type === "services"
-              ? [
-                  { label: "Grid", value: "grid" },
-                  { label: "List", value: "row" },
-                ]
-              : [
-                  { label: "Grid", value: "grid" },
-                  { label: "Row", value: "row" },
-                ]
-          }
-          onChange={(value) => onLayoutChange("variant", value)}
-        />
-      ) : null}
-
-      {supportsColumns ? (
-        <SegmentedControl
-          label="Columns"
-          value={String(section.layout?.columns ?? 3)}
-          options={[
-            { label: "2", value: "2" },
-            { label: "3", value: "3" },
-            { label: "4", value: "4" },
-          ]}
-          onChange={(value) =>
-            onLayoutChange("columns", Number(value) as 2 | 3 | 4)
-          }
-        />
-      ) : null}
-
-      {supportsWidth ? (
-        <SegmentedControl
-          label="Content width"
-          value={section.layout?.width ?? "normal"}
-          options={[
-            { label: "Narrow", value: "narrow" },
-            { label: "Normal", value: "normal" },
-            { label: "Wide", value: "wide" },
-          ]}
-          onChange={(value) => onLayoutChange("width", value)}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function InspectorDataTab({
+function SourceListingSelector({
   section,
   sourceStatus,
   sourceError,
@@ -649,16 +724,7 @@ function InspectorDataTab({
   ) => void;
 }) {
   if (section.source.kind !== "source") {
-    return (
-      <div>
-        <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-600">
-          Data source
-        </p>
-        <p className="mt-2 text-[12px] text-zinc-400">
-          {sectionSourceLabel(section)}
-        </p>
-      </div>
-    );
+    return null;
   }
 
   const listingType = section.source.listingType;
@@ -675,11 +741,11 @@ function InspectorDataTab({
   }
 
   return (
-    <div className="border-t border-white/[0.07] pt-4">
+    <InspectorGroup title={listingType === "service" ? "Services" : "Products"}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-600">
-            Source {listingType}s
+          <p className="text-[11px] text-zinc-500">
+            Source
           </p>
           <p className="mt-1 text-[11px] text-zinc-500">
             {selectedIds.length} selected · {listings.length} loaded
@@ -690,7 +756,7 @@ function InspectorDataTab({
           type="button"
           onClick={onLoadSourceListings}
           disabled={sourceStatus === "loading"}
-          className="inline-flex h-8 items-center gap-2 rounded-md border border-white/[0.1] px-3 text-[11px] text-zinc-300 transition hover:border-white/[0.2] disabled:cursor-not-allowed disabled:text-zinc-600"
+          className="inline-flex h-7 items-center gap-2 rounded-md border border-white/[0.1] px-2.5 text-[11px] text-zinc-300 transition hover:border-white/[0.2] disabled:cursor-not-allowed disabled:text-zinc-600"
         >
           {sourceStatus === "loading" ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -723,14 +789,22 @@ function InspectorDataTab({
               key={listing.id}
               type="button"
               onClick={() => onToggleSourceListing(listing.id, listingType)}
-              className={`flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left transition ${
+              className={`flex w-full items-center gap-3 rounded-md border px-2.5 py-2 text-left transition ${
                 selected
                   ? "border-white/25 bg-white/[0.07]"
                   : "border-white/[0.08] bg-black/20 hover:border-white/[0.16]"
               }`}
             >
               <span
-                className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+                className="h-9 w-9 shrink-0 rounded-sm border border-white/[0.07] bg-white/[0.03] bg-cover bg-center"
+                style={
+                  card.image
+                    ? { backgroundImage: `url(${card.image})` }
+                    : undefined
+                }
+              />
+              <span
+                className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
                   selected ? "border-white/60 bg-white" : "border-white/20"
                 }`}
               >
@@ -739,7 +813,7 @@ function InspectorDataTab({
                 ) : null}
               </span>
 
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block truncate text-[12px] font-medium text-zinc-200">
                   {listing.title}
                 </span>
@@ -758,20 +832,39 @@ function InspectorDataTab({
           Load Source listings to choose {listingType}s for this section.
         </p>
       ) : null}
-    </div>
+    </InspectorGroup>
   );
 }
 
-function InspectorStyleTab({
+function InspectorDesignPanel({
   section,
+  onLayoutChange,
   onStyleChange,
 }: {
   section: SiteSection;
+  onLayoutChange: (
+    key: keyof SiteSectionLayoutConfig,
+    value: SiteSectionLayoutConfig[keyof SiteSectionLayoutConfig],
+  ) => void;
   onStyleChange: (
     key: keyof SiteSectionStyleConfig,
     value: SiteSectionStyleConfig[keyof SiteSectionStyleConfig],
   ) => void;
 }) {
+  const supportsAlignment =
+    section.type === "hero" ||
+    section.type === "content" ||
+    section.type === "cta";
+  const supportsVariant =
+    section.type === "hero" ||
+    section.type === "products" ||
+    section.type === "services";
+  const supportsColumns =
+    section.type === "products" ||
+    section.type === "services" ||
+    section.type === "gallery";
+  const supportsWidth = section.type === "content";
+  const supportsSpacing = section.type === "content" || section.type === "cta";
   const supportsBackground =
     section.type === "hero" ||
     section.type === "content" ||
@@ -781,31 +874,122 @@ function InspectorStyleTab({
     section.type === "cta";
   const supportsListingDisplay = section.type === "products";
 
-  if (!supportsBackground && !supportsListingDisplay) {
+  if (
+    !supportsAlignment &&
+    !supportsVariant &&
+    !supportsColumns &&
+    !supportsWidth &&
+    !supportsSpacing &&
+    !supportsBackground &&
+    !supportsListingDisplay
+  ) {
     return (
       <p className="text-[12px] leading-5 text-zinc-500">
-        This section keeps the Mack template style.
+        This section keeps the Mack template design.
       </p>
     );
   }
 
   return (
-    <>
+    <div className="space-y-4">
+      {supportsAlignment || supportsVariant || supportsColumns || supportsWidth ? (
+        <InspectorGroup title="Layout">
+          {supportsVariant ? (
+            <SegmentedControl
+              label="Variant"
+              value={section.layout?.variant ?? (section.type === "hero" ? "split" : "grid")}
+              options={
+                section.type === "hero"
+                  ? [
+                      { label: "Split", value: "split" },
+                      { label: "Centered", value: "centered" },
+                    ]
+                  : section.type === "services"
+                  ? [
+                      { label: "Grid", value: "grid" },
+                      { label: "List", value: "row" },
+                    ]
+                  : [
+                      { label: "Grid", value: "grid" },
+                      { label: "Row", value: "row" },
+                    ]
+              }
+              onChange={(value) => onLayoutChange("variant", value)}
+            />
+          ) : null}
+          {supportsAlignment ? (
+            <SegmentedControl
+              label="Alignment"
+              value={section.layout?.alignment ?? "left"}
+              options={[
+                { label: "Left", value: "left" },
+                { label: "Center", value: "center" },
+              ]}
+              onChange={(value) => onLayoutChange("alignment", value)}
+            />
+          ) : null}
+          {supportsColumns ? (
+            <SegmentedControl
+              label="Columns"
+              value={String(section.layout?.columns ?? 3)}
+              options={[
+                { label: "2", value: "2" },
+                { label: "3", value: "3" },
+                { label: "4", value: "4" },
+              ]}
+              onChange={(value) =>
+                onLayoutChange("columns", Number(value) as 2 | 3 | 4)
+              }
+            />
+          ) : null}
+          {supportsWidth ? (
+            <SegmentedControl
+              label="Content width"
+              value={section.layout?.width ?? "normal"}
+              options={[
+                { label: "Narrow", value: "narrow" },
+                { label: "Normal", value: "normal" },
+                { label: "Wide", value: "wide" },
+              ]}
+              onChange={(value) => onLayoutChange("width", value)}
+            />
+          ) : null}
+        </InspectorGroup>
+      ) : null}
+
       {supportsBackground ? (
-        <SegmentedControl
-          label="Background"
-          value={section.style?.background ?? "default"}
-          options={[
-            { label: "Default", value: "default" },
-            { label: "Plain", value: "plain" },
-            { label: "Dark", value: "dark" },
-          ]}
-          onChange={(value) => onStyleChange("background", value)}
-        />
+        <InspectorGroup title="Appearance">
+          <SegmentedControl
+            label="Background"
+            value={section.style?.background ?? "default"}
+            options={[
+              { label: "Default", value: "default" },
+              { label: "Plain", value: "plain" },
+              { label: "Dark", value: "dark" },
+              { label: "Muted", value: "muted" },
+            ]}
+            onChange={(value) => onStyleChange("background", value)}
+          />
+        </InspectorGroup>
+      ) : null}
+
+      {supportsSpacing ? (
+        <InspectorGroup title="Spacing">
+          <SegmentedControl
+            label="Padding"
+            value={section.layout?.spacing ?? "normal"}
+            options={[
+              { label: "Small", value: "compact" },
+              { label: "Medium", value: "normal" },
+              { label: "Large", value: "spacious" },
+            ]}
+            onChange={(value) => onLayoutChange("spacing", value)}
+          />
+        </InspectorGroup>
       ) : null}
 
       {supportsListingDisplay ? (
-        <>
+        <InspectorGroup title="Cards">
           <ToggleRow
             label="Show price"
             checked={section.style?.showPrice !== false}
@@ -816,9 +1000,9 @@ function InspectorStyleTab({
             checked={section.style?.showDescription !== false}
             onChange={(checked) => onStyleChange("showDescription", checked)}
           />
-        </>
+        </InspectorGroup>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -829,8 +1013,8 @@ export default function SiteBuilder() {
     useState("home-hero");
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
-  const [activeInspectorTab, setActiveInspectorTab] =
-    useState<InspectorTab>("content");
+  const [activeInspectorMode, setActiveInspectorMode] =
+    useState<InspectorMode>("content");
   const [sourceListings, setSourceListings] = useState<SourceListing[]>([]);
   const [sourceStatus, setSourceStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -982,6 +1166,37 @@ export default function SiteBuilder() {
       ),
     }));
     setSelectedSectionId(nextSelection);
+  }
+
+  function duplicateSelectedSection() {
+    if (!selectedPage || !selectedSection) return;
+
+    const duplicate: SiteSection = JSON.parse(
+      JSON.stringify(selectedSection),
+    ) as SiteSection;
+    duplicate.id = createDuplicateSectionId(selectedSection.id);
+    duplicate.label = `${selectedSection.label} copy`;
+    duplicate.visible = true;
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) => {
+        if (page.id !== selectedPage.id) return page;
+
+        const insertIndex =
+          selectedSectionIndex === undefined || selectedSectionIndex < 0
+            ? page.sections.length
+            : selectedSectionIndex + 1;
+        const sections = [...page.sections];
+        sections.splice(insertIndex, 0, duplicate);
+
+        return {
+          ...page,
+          sections,
+        };
+      }),
+    }));
+    setSelectedSectionId(duplicate.id);
   }
 
   function addSection(template: (typeof addableSections)[number]) {
@@ -1147,12 +1362,14 @@ export default function SiteBuilder() {
   }, []);
 
   const previewLogicalWidth = previewModes[previewMode].width;
+  const previewLogicalHeight =
+    previewModes[previewMode].viewportHeight ?? previewContentHeight;
   const previewScale =
     previewAvailableWidth > 0
       ? Math.min(1, previewAvailableWidth / previewLogicalWidth)
       : 1;
   const previewFrameWidth = Math.ceil(previewLogicalWidth * previewScale);
-  const previewFrameHeight = Math.ceil(previewContentHeight * previewScale);
+  const previewFrameHeight = Math.ceil(previewLogicalHeight * previewScale);
 
   const selectedProductIds =
     selectedSection?.source.kind === "source" &&
@@ -1164,6 +1381,16 @@ export default function SiteBuilder() {
     selectedSection.source.listingType === "service"
       ? selectedSection.source.listingIds ?? []
       : [];
+
+  useEffect(() => {
+    if (
+      selectedSection &&
+      activeInspectorMode === "design" &&
+      !sectionHasDesignControls(selectedSection)
+    ) {
+      setActiveInspectorMode("content");
+    }
+  }, [activeInspectorMode, selectedSection]);
 
   return (
     <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-screen lg:overflow-hidden">
@@ -1335,7 +1562,7 @@ export default function SiteBuilder() {
                     className="absolute left-0 top-0 block origin-top-left border-0 bg-black"
                     style={{
                       width: previewLogicalWidth,
-                      height: previewContentHeight,
+                      height: previewLogicalHeight,
                       transform: `scale(${previewScale})`,
                     }}
                   />
@@ -1362,101 +1589,82 @@ export default function SiteBuilder() {
 
         {/* RIGHT: selected section inspector */}
         <aside className="min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#090a0b]">
-          <div className="border-b border-white/[0.07] px-4 py-4">
-            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-600">
-              Inspector
-            </p>
-
-            <p className="mt-2 text-[15px] font-medium">
-              {selectedSection?.label ?? "Section"}
-            </p>
-
-            {selectedSection ? (
-              <p className="mt-1 text-[11px] text-zinc-600">
-                {selectedSection.type} · {sectionSourceLabel(selectedSection)}
-              </p>
-            ) : null}
-          </div>
-
           {selectedSection ? (
-            <div className="p-4">
-              <div className="grid grid-cols-5 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
-                {inspectorTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveInspectorTab(tab.id)}
-                    className={`h-7 rounded text-[10px] transition ${
-                      activeInspectorTab === tab.id
-                        ? "bg-white/[0.1] text-zinc-100"
-                        : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+            <>
+              <InspectorHeader
+                pageTitle={selectedPage?.title ?? "Page"}
+                section={selectedSection}
+                canMoveUp={(selectedSectionIndex ?? 0) > 0}
+                canMoveDown={
+                  selectedPage
+                    ? (selectedSectionIndex ?? -1) <
+                      selectedPage.sections.length - 1
+                    : false
+                }
+                canDelete={
+                  selectedSection.type !== "hero" &&
+                  Boolean(selectedPage && selectedPage.sections.length > 1)
+                }
+                onDuplicate={duplicateSelectedSection}
+                onToggleVisible={toggleSelectedSectionVisibility}
+                onMoveUp={() => moveSelectedSection("up")}
+                onMoveDown={() => moveSelectedSection("down")}
+                onDelete={deleteSelectedSection}
+              />
+
+              <div className="p-4">
+                <div className="grid grid-cols-2 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
+                  {inspectorModes.map((mode) => {
+                    const disabled =
+                      mode.id === "design" &&
+                      !sectionHasDesignControls(selectedSection);
+
+                    return (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => {
+                          if (!disabled) setActiveInspectorMode(mode.id);
+                        }}
+                        disabled={disabled}
+                        className={`h-7 rounded text-[11px] transition disabled:cursor-not-allowed disabled:text-zinc-700 ${
+                          activeInspectorMode === mode.id
+                            ? "bg-white/[0.1] text-zinc-100"
+                            : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4">
+                  {activeInspectorMode === "content" ? (
+                    <InspectorContentPanel
+                      section={selectedSection}
+                      onContentChange={updateSelectedSectionContent}
+                      sourceStatus={sourceStatus}
+                      sourceError={sourceError}
+                      sourceProducts={sourceProducts}
+                      sourceServices={sourceServices}
+                      selectedProductIds={selectedProductIds}
+                      selectedServiceIds={selectedServiceIds}
+                      onLoadSourceListings={loadSourceListings}
+                      onToggleSourceListing={toggleSourceListing}
+                    />
+                  ) : null}
+
+                  {activeInspectorMode === "design" ? (
+                    <InspectorDesignPanel
+                      section={selectedSection}
+                      onLayoutChange={updateSelectedSectionLayout}
+                      onStyleChange={updateSelectedSectionStyle}
+                    />
+                  ) : null}
+                </div>
               </div>
-
-              <div className="mt-5 space-y-5">
-                {activeInspectorTab === "content" ? (
-                  <InspectorContentTab
-                    section={selectedSection}
-                    onContentChange={updateSelectedSectionContent}
-                  />
-                ) : null}
-
-                {activeInspectorTab === "layout" ? (
-                  <InspectorLayoutTab
-                    section={selectedSection}
-                    onLayoutChange={updateSelectedSectionLayout}
-                  />
-                ) : null}
-
-                {activeInspectorTab === "data" ? (
-                  <InspectorDataTab
-                    section={selectedSection}
-                    sourceStatus={sourceStatus}
-                    sourceError={sourceError}
-                    sourceProducts={sourceProducts}
-                    sourceServices={sourceServices}
-                    selectedProductIds={selectedProductIds}
-                    selectedServiceIds={selectedServiceIds}
-                    onLoadSourceListings={loadSourceListings}
-                    onToggleSourceListing={toggleSourceListing}
-                  />
-                ) : null}
-
-                {activeInspectorTab === "style" ? (
-                  <InspectorStyleTab
-                    section={selectedSection}
-                    onStyleChange={updateSelectedSectionStyle}
-                  />
-                ) : null}
-
-                {activeInspectorTab === "visibility" ? (
-                  <SectionActions
-                    canMoveUp={(selectedSectionIndex ?? 0) > 0}
-                    canMoveDown={
-                      selectedPage
-                        ? (selectedSectionIndex ?? -1) <
-                          selectedPage.sections.length - 1
-                        : false
-                    }
-                    canDelete={
-                      selectedSection.type !== "hero" &&
-                      Boolean(
-                        selectedPage && selectedPage.sections.length > 1,
-                      )
-                    }
-                    visible={selectedSection.visible}
-                    onToggleVisible={toggleSelectedSectionVisibility}
-                    onMoveUp={() => moveSelectedSection("up")}
-                    onMoveDown={() => moveSelectedSection("down")}
-                    onDelete={deleteSelectedSection}
-                  />
-                ) : null}
-              </div>
-            </div>
+            </>
           ) : (
             <div className="p-4">
               <p className="text-[12px] leading-5 text-zinc-500">

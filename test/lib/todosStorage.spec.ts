@@ -149,6 +149,33 @@ describe("todosStorage", () => {
     ]);
   });
 
+  it("does not revive a todo when a stale device updates an already-deleted row", async () => {
+    const { builder, calls, client } = createClient(null);
+
+    const result = await updateTodo({
+      client: client as never,
+      userId: "user-1",
+      id: row.id,
+      updates: {
+        title: "Stale device edit",
+        priorityId: "HIGH",
+      },
+    });
+
+    expect(result).toBeNull();
+    expect(builder.update).toHaveBeenCalledTimes(1);
+    expect("insert" in builder && builder.insert).toBeTruthy();
+    expect(calls[0]?.update).toMatchObject({
+      title: "Stale device edit",
+      priority_id: "HIGH",
+    });
+    expect(calls[0]?.filters).toEqual([
+      { column: "user_id", value: "user-1", operator: "eq" },
+      { column: "id", value: row.id, operator: "eq" },
+      { column: "deleted_at", value: null, operator: "is" },
+    ]);
+  });
+
   it("getTodo and default loading exclude deleted rows", async () => {
     const getClient = createClient(row);
     await getTodo({

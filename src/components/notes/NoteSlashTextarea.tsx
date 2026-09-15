@@ -163,9 +163,12 @@ import {
   loadMyListLists,
 } from "@/lib/my-list/myListListsStorage";
 import {
-  createManualMyListItem,
-  loadManualMyListItems,
+  MY_LIST_MANUAL_ITEM_CREATED_EVENT,
 } from "@/lib/my-list/myListItemsStorage";
+import {
+  createTodo,
+  loadTodos,
+} from "@/lib/todos/todosStorage";
 import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
   DEFAULT_NUTRITION_RECIPE_ICON,
@@ -13139,15 +13142,18 @@ export function NoteDatabaseEntrySheet({
       throw new Error("Grocery List is unavailable.");
     }
 
-    const existingItems = await loadManualMyListItems({
+    const existingItems = await loadTodos({
       userId: user.id,
-      localRows: [],
-      fallbackPriorityId: "MEDIUM",
+      ownerType: "MY_LIST",
     });
     const activeGroceryTexts = new Set(
       existingItems
-        .filter((item) => item.listId === groceryList.id && !item.done)
-        .map((item) => normalizeChefGroceryDuplicateText(item.text))
+        .filter(
+          (item) =>
+            item.listId === groceryList.id &&
+            !item.completed,
+        )
+        .map((item) => normalizeChefGroceryDuplicateText(item.title))
         .filter(Boolean),
     );
     let addedCount = 0;
@@ -13160,12 +13166,40 @@ export function NoteDatabaseEntrySheet({
         continue;
       }
 
-      await createManualMyListItem({
+      const createdTodo = await createTodo({
         userId: user.id,
+        ownerType: "MY_LIST",
+        ownerId: null,
         listId: groceryList.id,
-        text: item.text,
+        title: item.text,
         priorityId: "MEDIUM",
+        sortOrder: existingItems.length + addedCount,
       });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(MY_LIST_MANUAL_ITEM_CREATED_EVENT, {
+            detail: {
+              origin: "manual-my-list-create",
+              userId: user.id,
+              item: {
+                id: createdTodo.id,
+                listId: createdTodo.listId,
+                done: createdTodo.completed,
+                completedAt: createdTodo.completedAt,
+                skillId: createdTodo.skillId,
+                skillName: null,
+                skillIcon: "",
+                priorityId: createdTodo.priorityId,
+                dayBucketId: createdTodo.dayBucketId,
+                text: createdTodo.title,
+                insertAfterRowKey: createdTodo.insertAfterRowKey,
+              },
+            },
+          }),
+        );
+      }
+
       activeGroceryTexts.add(duplicateKey);
       addedCount += 1;
     }
