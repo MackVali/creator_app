@@ -40,6 +40,7 @@ interface MonumentsListProps {
   areaId?: string;
   createHref?: string;
   renderEmptyChildren?: boolean;
+  loadingChildren?: ReactNode;
   children: (
     monuments: Monument[],
     saveMonumentOrder: (monumentIds: string[]) => Promise<void>
@@ -57,6 +58,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
       areaId,
       createHref = "/monuments/new",
       renderEmptyChildren = false,
+      loadingChildren,
       children,
     },
     ref,
@@ -187,6 +189,10 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
     }, [load]);
 
     if (loading) {
+      if (loadingChildren) {
+        return <>{loadingChildren}</>;
+      }
+
       return (
         <div className="app-dashboard-monuments-panel px-4">
           <div className="grid grid-cols-4 gap-1">

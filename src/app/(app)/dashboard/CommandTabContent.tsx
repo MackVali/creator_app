@@ -44,7 +44,7 @@ export default function CommandTabContent() {
 
             <AreasContainer />
 
-            <Section title="Skills" className="mt-1 px-4">
+            <Section title="Skills" className="mt-1 px-4 lg:!mt-0 lg:!pt-2">
               <SkillsCarousel ref={skillsCarouselRef} />
             </Section>
 

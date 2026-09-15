@@ -2,7 +2,14 @@
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import type { TaskLite } from "../../src/lib/scheduler/weight";
 import type {
@@ -10,6 +17,15 @@ import type {
   MyListPinnedSourceRow,
 } from "../../src/components/my-list/MyListSheet";
 import { MY_LIST_MANUAL_ITEM_CONSUMED_EVENT } from "../../src/lib/my-list/myListItemsStorage";
+import type { Todo } from "../../src/lib/todos/todosStorage";
+
+const todoStorageMocks = vi.hoisted(() => ({
+  createTodo: vi.fn(),
+  loadTodos: vi.fn(),
+  setTodoCompleted: vi.fn(),
+  softDeleteTodo: vi.fn(),
+  updateTodo: vi.fn(),
+}));
 
 vi.mock("@/app/(app)/schedule/matrix/MatrixContent", () => ({
   MatrixContent: () => React.createElement("div", null),
@@ -17,6 +33,14 @@ vi.mock("@/app/(app)/schedule/matrix/MatrixContent", () => ({
 vi.mock("../../src/app/(app)/schedule/matrix/MatrixContent", () => ({
   MatrixContent: () => React.createElement("div", null),
 }));
+vi.mock("@/lib/todos/todosStorage", () => ({
+  createTodo: todoStorageMocks.createTodo,
+  loadTodos: todoStorageMocks.loadTodos,
+  setTodoCompleted: todoStorageMocks.setTodoCompleted,
+  softDeleteTodo: todoStorageMocks.softDeleteTodo,
+  updateTodo: todoStorageMocks.updateTodo,
+}));
+
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -65,11 +89,39 @@ const taskRow = (id: string, name: string): TaskLite => ({
   energy: "MEDIUM",
 });
 
+const manualTodo = (
+  id: string,
+  title: string,
+  overrides: Partial<Todo> = {},
+): Todo => ({
+  id,
+  userId: "user-1",
+  ownerType: "MY_LIST",
+  ownerId: null,
+  noteId: null,
+  listId: null,
+  title,
+  completed: false,
+  completedAt: null,
+  priorityId: "MEDIUM",
+  dayBucketId: null,
+  skillId: null,
+  energyId: "MEDIUM",
+  sortOrder: 0,
+  insertAfterRowKey: null,
+  deletedAt: null,
+  metadata: {},
+  createdAt: "2026-09-15T00:00:00.000Z",
+  updatedAt: "2026-09-15T00:00:00.000Z",
+  ...overrides,
+});
+
 const renderSheet = async (options?: {
   tasks?: TaskLite[];
   onOpenChange?: ReturnType<typeof vi.fn>;
   onTogglePinnedSourceCompletion?: ReturnType<typeof vi.fn>;
   onToggleTask?: ReturnType<typeof vi.fn>;
+  onToggleManualTodoCompletion?: ReturnType<typeof vi.fn>;
   userId?: string | null;
   enableScheduleTimelineDrag?: boolean;
 }) => {
@@ -99,10 +151,14 @@ const renderSheet = async (options?: {
   const onToggleTaskMock = options?.onToggleTask ?? vi.fn();
   const onTogglePinnedSourceCompletionMock =
     options?.onTogglePinnedSourceCompletion ?? vi.fn();
+  const onToggleManualTodoCompletionMock =
+    options?.onToggleManualTodoCompletion ?? vi.fn();
   const onToggleTask =
     onToggleTaskMock as MyListSheetProps["onToggleTask"];
   const onTogglePinnedSourceCompletion =
     onTogglePinnedSourceCompletionMock as MyListSheetProps["onTogglePinnedSourceCompletion"];
+  const onToggleManualTodoCompletion =
+    onToggleManualTodoCompletionMock as MyListSheetProps["onToggleManualTodoCompletion"];
 
   await act(async () => {
     root.render(
@@ -123,6 +179,7 @@ const renderSheet = async (options?: {
         enableScheduleTimelineDrag: options?.enableScheduleTimelineDrag === true,
         onTogglePinnedSourceCompletion,
         onToggleTask,
+        onToggleManualTodoCompletion,
         onTaskSkillSelect: vi.fn(),
       })
     );
@@ -317,6 +374,53 @@ const clickCheckbox = async (row: HTMLElement) => {
   });
 };
 
+const flushAsyncWork = async () => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
+
+beforeEach(() => {
+  todoStorageMocks.createTodo.mockReset();
+  todoStorageMocks.loadTodos.mockReset();
+  todoStorageMocks.setTodoCompleted.mockReset();
+  todoStorageMocks.softDeleteTodo.mockReset();
+  todoStorageMocks.updateTodo.mockReset();
+
+  todoStorageMocks.loadTodos.mockImplementation(
+    async ({ userId }: { userId: string }) => {
+      const stored = JSON.parse(
+        window.localStorage.getItem("creator:my-list:manual-rows") ?? "[]",
+      ) as Array<{
+        id: string;
+        listId?: string | null;
+        done?: boolean;
+        completedAt?: string | null;
+        skillId?: string | null;
+        priorityId?: string | null;
+        dayBucketId?: string | null;
+        text?: string;
+        insertAfterRowKey?: string | null;
+      }>;
+
+      return stored.map((row, index) =>
+        manualTodo(row.id, row.text ?? "", {
+          userId,
+          listId: row.listId ?? null,
+          completed: row.done === true,
+          completedAt: row.completedAt ?? null,
+          skillId: row.skillId ?? null,
+          priorityId: row.priorityId ?? "MEDIUM",
+          dayBucketId: row.dayBucketId ?? null,
+          sortOrder: index,
+          insertAfterRowKey: row.insertAfterRowKey ?? null,
+        }),
+      );
+    },
+  );
+});
+
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = "";
@@ -325,6 +429,121 @@ afterEach(() => {
 });
 
 describe("MyListSheet checkbox interactions", () => {
+  it("waits for canonical todo completion before running the XP callback", async () => {
+    let resolvePersistence: ((todo: Todo) => void) | null = null;
+
+    todoStorageMocks.loadTodos.mockResolvedValue([
+      manualTodo("manual-auth-1", "Persist before XP"),
+    ]);
+
+    todoStorageMocks.setTodoCompleted.mockImplementation(
+      () =>
+        new Promise<Todo>((resolve) => {
+          resolvePersistence = resolve;
+        }),
+    );
+
+    const onToggleManualTodoCompletion = vi.fn().mockResolvedValue(true);
+
+    const { container, root } = await renderSheet({
+      userId: "user-1",
+      onToggleManualTodoCompletion,
+    });
+    await flushAsyncWork();
+
+    const row = getTodoRowByText(container, "Persist before XP");
+    await clickCheckbox(row);
+
+    expect(todoStorageMocks.setTodoCompleted).toHaveBeenCalledWith({
+      userId: "user-1",
+      id: "manual-auth-1",
+      completed: true,
+      completedAt: expect.any(String),
+    });
+    expect(onToggleManualTodoCompletion).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvePersistence?.(
+        manualTodo("manual-auth-1", "Persist before XP", {
+          completed: true,
+          completedAt: "2026-09-15T01:00:00.000Z",
+        }),
+      );
+      await Promise.resolve();
+    });
+    await flushAsyncWork();
+
+    expect(onToggleManualTodoCompletion).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("rolls canonical completion back when the XP callback fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    todoStorageMocks.loadTodos.mockResolvedValue([
+      manualTodo("manual-auth-2", "Rollback XP failure"),
+    ]);
+
+    todoStorageMocks.setTodoCompleted.mockImplementation(
+      async ({
+        completed,
+        completedAt,
+      }: {
+        completed: boolean;
+        completedAt?: string | null;
+      }) =>
+        manualTodo("manual-auth-2", "Rollback XP failure", {
+          completed,
+          completedAt: completedAt ?? null,
+        }),
+    );
+
+    const onToggleManualTodoCompletion = vi
+      .fn()
+      .mockRejectedValue(new Error("XP failed"));
+
+    const { container, root } = await renderSheet({
+      userId: "user-1",
+      onToggleManualTodoCompletion,
+    });
+    await flushAsyncWork();
+
+    await clickCheckbox(
+      getTodoRowByText(container, "Rollback XP failure"),
+    );
+    await flushAsyncWork();
+
+    expect(todoStorageMocks.setTodoCompleted).toHaveBeenCalledTimes(2);
+
+    expect(todoStorageMocks.setTodoCompleted.mock.calls[0]?.[0]).toEqual({
+      userId: "user-1",
+      id: "manual-auth-2",
+      completed: true,
+      completedAt: expect.any(String),
+    });
+
+    expect(todoStorageMocks.setTodoCompleted.mock.calls[1]?.[0]).toEqual({
+      userId: "user-1",
+      id: "manual-auth-2",
+      completed: false,
+      completedAt: null,
+    });
+
+    expect(consoleError).toHaveBeenCalledWith(
+      "Failed to toggle manual My List todo",
+      expect.any(Error),
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("toggles a manual todo checkbox without activating row controls first", async () => {
     window.localStorage.setItem(
       "creator:my-list:manual-rows",

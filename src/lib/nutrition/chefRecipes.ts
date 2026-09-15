@@ -37,6 +37,14 @@ export type ChefRecipeIngredient = {
   optional?: boolean;
   notes?: string;
   aliases?: string[];
+  nutrition?: {
+    baseQuantity: number;
+    baseUnit: string;
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+  };
 };
 
 export type ChefRecipeOptionKind = "protein" | "filling" | "sauce" | "base" | "topping" | "style";

@@ -4,15 +4,13 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  MyListManualStorageItem,
-  MyListStorageDayBucketId,
-} from "../../src/lib/my-list/myListItemsStorage";
+import type { Todo } from "../../src/lib/todos/todosStorage";
 
-const storageMocks = vi.hoisted(() => ({
-  deleteManualMyListItem: vi.fn(),
-  loadManualMyListItems: vi.fn(),
-  replaceManualMyListItems: vi.fn(),
+const todoStorageMocks = vi.hoisted(() => ({
+  createTodo: vi.fn(),
+  loadTodos: vi.fn(),
+  softDeleteTodo: vi.fn(),
+  updateTodo: vi.fn(),
 }));
 
 vi.mock("@/app/(app)/schedule/matrix/MatrixContent", () => ({
@@ -22,12 +20,16 @@ vi.mock("../../src/app/(app)/schedule/matrix/MatrixContent", () => ({
   MatrixContent: () => React.createElement("div", null),
 }));
 vi.mock("@/lib/my-list/myListItemsStorage", () => ({
-  deleteManualMyListItem: storageMocks.deleteManualMyListItem,
-  loadManualMyListItems: storageMocks.loadManualMyListItems,
   MY_LIST_MANUAL_ITEM_CONSUMED_EVENT:
     "creator:my-list:manual-item-consumed",
   MY_LIST_MANUAL_ITEM_CREATED_EVENT: "creator:my-list:manual-item-created",
-  replaceManualMyListItems: storageMocks.replaceManualMyListItems,
+}));
+
+vi.mock("@/lib/todos/todosStorage", () => ({
+  createTodo: todoStorageMocks.createTodo,
+  loadTodos: todoStorageMocks.loadTodos,
+  softDeleteTodo: todoStorageMocks.softDeleteTodo,
+  updateTodo: todoStorageMocks.updateTodo,
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -37,21 +39,30 @@ Object.defineProperty(window, "scrollTo", {
   value: vi.fn(),
 });
 
-const manualRow = (
+const manualTodo = (
   id: string,
-  text: string,
-  overrides: Partial<MyListManualStorageItem> = {}
-): MyListManualStorageItem => ({
+  title: string,
+  overrides: Partial<Todo> = {},
+): Todo => ({
   id,
-  done: false,
+  userId: "user-1",
+  ownerType: "MY_LIST",
+  ownerId: null,
+  noteId: null,
+  listId: null,
+  title,
+  completed: false,
   completedAt: null,
-  skillId: null,
-  skillName: null,
-  skillIcon: "",
   priorityId: "MEDIUM",
-  dayBucketId: null as MyListStorageDayBucketId | null,
-  text,
+  dayBucketId: null,
+  skillId: null,
+  energyId: "MEDIUM",
+  sortOrder: 0,
   insertAfterRowKey: null,
+  deletedAt: null,
+  metadata: {},
+  createdAt: "2026-09-15T00:00:00.000Z",
+  updatedAt: "2026-09-15T00:00:00.000Z",
   ...overrides,
 });
 
@@ -130,10 +141,10 @@ async function unmount(root: Root) {
 }
 
 beforeEach(() => {
-  storageMocks.deleteManualMyListItem.mockReset();
-  storageMocks.loadManualMyListItems.mockReset();
-  storageMocks.replaceManualMyListItems.mockReset();
-  storageMocks.replaceManualMyListItems.mockResolvedValue(undefined);
+  todoStorageMocks.createTodo.mockReset();
+  todoStorageMocks.loadTodos.mockReset();
+  todoStorageMocks.softDeleteTodo.mockReset();
+  todoStorageMocks.updateTodo.mockReset();
   window.localStorage.clear();
 });
 
@@ -148,15 +159,16 @@ describe("MyListSheet manual todo delete confirmation", () => {
     const deletedId = "manual-local-1";
     const remainingId = "manual-local-2";
     let persistedRows = [
-      manualRow(deletedId, "Duplicate title"),
-      manualRow(remainingId, "Duplicate title"),
+      manualTodo(deletedId, "Duplicate title"),
+      manualTodo(remainingId, "Duplicate title"),
     ];
-    storageMocks.loadManualMyListItems.mockImplementation(async () => [
+    todoStorageMocks.loadTodos.mockImplementation(async () => [
       ...persistedRows,
     ]);
-    storageMocks.deleteManualMyListItem.mockImplementation(
-      async ({ itemId }: { itemId: string }) => {
-        persistedRows = persistedRows.filter((row) => row.id !== itemId);
+    todoStorageMocks.softDeleteTodo.mockImplementation(
+      async ({ id }: { id: string }) => {
+        persistedRows = persistedRows.filter((row) => row.id !== id);
+        return null;
       }
     );
 
@@ -178,10 +190,10 @@ describe("MyListSheet manual todo delete confirmation", () => {
     await clickDeleteButton(duplicateRows[0] as HTMLElement);
     await clickDeleteButton(duplicateRows[0] as HTMLElement, "Confirm remove to-do");
 
-    expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledTimes(1);
-    expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledWith({
+    expect(todoStorageMocks.softDeleteTodo).toHaveBeenCalledTimes(1);
+    expect(todoStorageMocks.softDeleteTodo).toHaveBeenCalledWith({
       userId: "user-1",
-      itemId: deletedId,
+      id: deletedId,
     });
     expect(
       firstRender.container.querySelectorAll(
@@ -206,17 +218,21 @@ describe("MyListSheet manual todo delete confirmation", () => {
     ).toHaveLength(2);
     expect(getTodoRowByTitle(secondRender.container, "Duplicate title"))
       .toBeTruthy();
-    expect(storageMocks.loadManualMyListItems).toHaveBeenCalledTimes(2);
+    expect(todoStorageMocks.loadTodos).toHaveBeenCalledTimes(2);
+    expect(todoStorageMocks.loadTodos).toHaveBeenLastCalledWith({
+      userId: "user-1",
+      ownerType: "MY_LIST",
+    });
 
     await unmount(secondRender.root);
   });
 
   it("keeps the row when persisted manual deletion fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    storageMocks.loadManualMyListItems.mockResolvedValue([
-      manualRow("manual-local-1", "Do not remove"),
+    todoStorageMocks.loadTodos.mockResolvedValue([
+      manualTodo("manual-local-1", "Do not remove"),
     ]);
-    storageMocks.deleteManualMyListItem.mockRejectedValue(
+    todoStorageMocks.softDeleteTodo.mockRejectedValue(
       new Error("delete failed")
     );
 
@@ -226,7 +242,7 @@ describe("MyListSheet manual todo delete confirmation", () => {
     await clickDeleteButton(row);
     await clickDeleteButton(row, "Confirm remove to-do");
 
-    expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledTimes(1);
+    expect(todoStorageMocks.softDeleteTodo).toHaveBeenCalledTimes(1);
     expect(getTodoRowByTitle(container, "Do not remove")).toBeTruthy();
     expect(consoleError).toHaveBeenCalledWith(
       "Failed to delete My List manual todo",
@@ -238,10 +254,10 @@ describe("MyListSheet manual todo delete confirmation", () => {
 
   it("does not run duplicate manual deletions while confirmation is already persisting", async () => {
     let resolveDelete: (() => void) | null = null;
-    storageMocks.loadManualMyListItems.mockResolvedValue([
-      manualRow("manual-local-1", "Delete once"),
+    todoStorageMocks.loadTodos.mockResolvedValue([
+      manualTodo("manual-local-1", "Delete once"),
     ]);
-    storageMocks.deleteManualMyListItem.mockImplementation(
+    todoStorageMocks.softDeleteTodo.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
           resolveDelete = resolve;
@@ -256,13 +272,13 @@ describe("MyListSheet manual todo delete confirmation", () => {
       getDeleteButton(row, "Confirm remove to-do").click();
     });
     await flushEffects();
-    expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledTimes(1);
+    expect(todoStorageMocks.softDeleteTodo).toHaveBeenCalledTimes(1);
     expect(getDeleteButton(row, "Confirm remove to-do").disabled).toBe(true);
 
     await act(async () => {
       getDeleteButton(row, "Confirm remove to-do").click();
     });
-    expect(storageMocks.deleteManualMyListItem).toHaveBeenCalledTimes(1);
+    expect(todoStorageMocks.softDeleteTodo).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveDelete?.();

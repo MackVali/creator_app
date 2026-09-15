@@ -86,6 +86,11 @@ import { createPortal } from "react-dom";
 import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 import { NutritionDailyProgressBars } from "@/components/nutrition/NutritionDailyProgressBars";
+import {
+  NutritionDiscoverRecipeDetail,
+  normalizeNutritionDiscoverGroceryText,
+  type NutritionDiscoverRecipeDetailIngredientReviewItem,
+} from "@/components/nutrition/NutritionDiscoverRecipeDetail";
 import { NutritionRecipesPanel } from "@/components/nutrition/NutritionRecipesPanel";
 import { SharedMealPlanPanel } from "@/components/nutrition/SharedMealPlanPanel";
 import {
@@ -144,17 +149,26 @@ import {
   type ChefRecipeIngredient,
 } from "@/lib/nutrition/chefRecipes";
 import {
-  calculateChefIngredientNutrition,
   calculateResolvedChefRecipeAvailability,
   calculateResolvedChefRecipeNutrition,
   classifyResolvedChefRecipeAvailability,
   formatChefMacroSummary,
-  formatChefNutritionNumber,
   resolveChefDishTemplate,
   type ChefAvailabilityTier,
   type ChefNutritionTotals,
   type ChefResolvedAvailabilityTier,
 } from "@/lib/nutrition/chefRecipeNutrition";
+import {
+  MY_LIST_GROCERY_SYSTEM_KEY,
+  loadMyListLists,
+} from "@/lib/my-list/myListListsStorage";
+import {
+  MY_LIST_MANUAL_ITEM_CREATED_EVENT,
+} from "@/lib/my-list/myListItemsStorage";
+import {
+  createTodo,
+  loadTodos,
+} from "@/lib/todos/todosStorage";
 import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
   DEFAULT_NUTRITION_RECIPE_ICON,
@@ -4018,6 +4032,13 @@ type NutritionSelectedChefRecipeItem = {
   selectedOptions: Record<string, string>;
   ingredients: ChefRecipeIngredient[];
   nutrition: ChefNutritionTotals;
+};
+
+type OpenNutritionDiscoverRecipeState = {
+  recipeId: string;
+  cuisineId: string;
+  dishFamilyId: string;
+  styleId?: string;
 };
 type NutritionSavedMeal = NutritionMealTotalsSource & {
   id: string;
@@ -9389,7 +9410,8 @@ export function NoteDatabaseEntrySheet({
   const [selectedChefOptions, setSelectedChefOptions] = useState<Record<string, string>>({});
   const [selectedChefFilter, setSelectedChefFilter] = useState<ChefFilterId>("all");
   const [chefAvailableRevealLevel, setChefAvailableRevealLevel] = useState<0 | 1 | 2>(0);
-  const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
+  const [openNutritionDiscoverRecipe, setOpenNutritionDiscoverRecipe] =
+    useState<OpenNutritionDiscoverRecipeState | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>(DEFAULT_FITNESS_ACTION_TAB_ID);
   const [fitnessCustomFlow, setFitnessCustomFlow] = useState<FitnessCustomFlow>("hub");
@@ -13068,6 +13090,121 @@ export function NoteDatabaseEntrySheet({
     ]);
     setSelectedNutritionFood(null);
     setSubmitError(null);
+  }
+
+  function getChefIngredientGroceryText(ingredient: ChefRecipeIngredient) {
+    const quantity =
+      Number.isFinite(ingredient.quantity) && ingredient.quantity > 0
+        ? `${ingredient.quantity} `
+        : "";
+    const unit = ingredient.unit.trim() ? `${ingredient.unit.trim()} ` : "";
+    return normalizeNutritionDiscoverGroceryText(
+      `${quantity}${unit}${ingredient.name}`,
+    );
+  }
+
+  function normalizeChefGroceryDuplicateText(value: string) {
+    return normalizeNutritionDiscoverGroceryText(value).toLowerCase();
+  }
+
+  async function addChefIngredientsToGroceryList(
+    reviewItems: NutritionDiscoverRecipeDetailIngredientReviewItem[],
+  ) {
+    const selectedItems = reviewItems
+      .filter((item) => item.selected)
+      .map((item) => ({
+        ...item,
+        text: getChefIngredientGroceryText(item.ingredient),
+      }))
+      .filter((item) => item.text);
+    if (selectedItems.length === 0) {
+      return { addedCount: 0, skippedDuplicateCount: 0 };
+    }
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      throw new Error("Sign in to add ingredients to Grocery List.");
+    }
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+    if (error) throw error;
+    if (!user) {
+      throw new Error("Sign in to add ingredients to Grocery List.");
+    }
+
+    const lists = await loadMyListLists(user.id);
+    const groceryList = lists.find(
+      (list) => list.systemKey === MY_LIST_GROCERY_SYSTEM_KEY,
+    );
+    if (!groceryList) {
+      throw new Error("Grocery List is unavailable.");
+    }
+
+    const existingItems = await loadTodos({
+      userId: user.id,
+      ownerType: "MY_LIST",
+    });
+    const activeGroceryTexts = new Set(
+      existingItems
+        .filter(
+          (item) =>
+            item.listId === groceryList.id &&
+            !item.completed,
+        )
+        .map((item) => normalizeChefGroceryDuplicateText(item.title))
+        .filter(Boolean),
+    );
+    let addedCount = 0;
+    let skippedDuplicateCount = 0;
+
+    for (const item of selectedItems) {
+      const duplicateKey = normalizeChefGroceryDuplicateText(item.text);
+      if (activeGroceryTexts.has(duplicateKey)) {
+        skippedDuplicateCount += 1;
+        continue;
+      }
+
+      const createdTodo = await createTodo({
+        userId: user.id,
+        ownerType: "MY_LIST",
+        ownerId: null,
+        listId: groceryList.id,
+        title: item.text,
+        priorityId: "MEDIUM",
+        sortOrder: existingItems.length + addedCount,
+      });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(MY_LIST_MANUAL_ITEM_CREATED_EVENT, {
+            detail: {
+              origin: "manual-my-list-create",
+              userId: user.id,
+              item: {
+                id: createdTodo.id,
+                listId: createdTodo.listId,
+                done: createdTodo.completed,
+                completedAt: createdTodo.completedAt,
+                skillId: createdTodo.skillId,
+                skillName: null,
+                skillIcon: "",
+                priorityId: createdTodo.priorityId,
+                dayBucketId: createdTodo.dayBucketId,
+                text: createdTodo.title,
+                insertAfterRowKey: createdTodo.insertAfterRowKey,
+              },
+            },
+          }),
+        );
+      }
+
+      activeGroceryTexts.add(duplicateKey);
+      addedCount += 1;
+    }
+
+    return { addedCount, skippedDuplicateCount };
   }
 
   function openNutritionMealBuilder() {
@@ -20822,6 +20959,81 @@ export function NoteDatabaseEntrySheet({
     const contextLabel = isGroceryDatabase
       ? "Use this as a grocery idea."
       : "Use this as a meal idea.";
+    const openRecipe = openNutritionDiscoverRecipe
+      ? getChefRecipesForNode({
+          cuisineId: openNutritionDiscoverRecipe.cuisineId,
+          dishFamilyId: openNutritionDiscoverRecipe.dishFamilyId,
+          styleId: openNutritionDiscoverRecipe.styleId,
+        }).find((recipe) => recipe.id === openNutritionDiscoverRecipe.recipeId) ?? null
+      : null;
+
+    if (openRecipe) {
+      const optionGroups = getChefOptionGroupsForDishFamily(
+        openRecipe.cuisineId,
+        openRecipe.dishFamilyId,
+      );
+      const familyOptions = Object.fromEntries(
+        optionGroups.map((group) => [
+          group.id,
+          selectedChefOptions[group.id] ?? group.defaultOptionId,
+        ]),
+      );
+      const recipeOptions = {
+        ...getDefaultChefRecipeOptions(openRecipe),
+        ...familyOptions,
+      };
+      const resolvedBuild = openRecipe.dishTemplate
+        ? resolveChefDishTemplate(openRecipe, selectedChefOptions, groceryResourceItems)
+        : null;
+      const resolvedIngredients =
+        resolvedBuild?.ingredients ??
+        resolveChefRecipeIngredients(openRecipe, recipeOptions);
+      const resolvedName =
+        resolvedBuild?.title ?? resolveChefRecipeName(openRecipe, recipeOptions);
+      const availability =
+        resolvedBuild?.availability ??
+        calculateResolvedChefRecipeAvailability(
+          openRecipe,
+          recipeOptions,
+          groceryResourceItems,
+        );
+      const resolvedSelectedOptions = {
+        ...recipeOptions,
+        ...Object.fromEntries(
+          Object.entries(selectedChefOptions).filter(([key]) =>
+            key.startsWith(`${openRecipe.id}:`),
+          ),
+        ),
+      };
+
+      return (
+        <>
+          {renderSelectedNutritionRecipes()}
+          <NutritionDiscoverRecipeDetail
+            recipe={openRecipe}
+            resolvedName={resolvedName}
+            resolvedIngredients={resolvedIngredients}
+            availability={availability}
+            resolvedBuild={resolvedBuild}
+            contextLabel={contextLabel}
+            selectedChefOptions={selectedChefOptions}
+            onBack={() => setOpenNutritionDiscoverRecipe(null)}
+            onChangeSelectedChefOptions={setSelectedChefOptions}
+            onAddToMeal={(mealSnapshot) =>
+              addSelectedChefRecipe({
+                chefRecipeId: openRecipe.id,
+                name: resolvedName,
+                selectedOptions: resolvedSelectedOptions,
+                ingredients: mealSnapshot.ingredients,
+                nutrition: mealSnapshot.nutrition,
+              })
+            }
+            onAddIngredientsToGroceryList={addChefIngredientsToGroceryList}
+            onHandFoods={groceryResourceItems.map(mapFoodResourceToFoodSearchResult)}
+          />
+        </>
+      );
+    }
 
     return (
       <>
@@ -20839,7 +21051,7 @@ export function NoteDatabaseEntrySheet({
                 onClick={() => {
                   setSelectedChefFilter(filter.id);
                   if (filter.id === "available" && selectedChefFilter !== "available") setChefAvailableRevealLevel(0);
-                  setExpandedChefRecipeId(null);
+                  setOpenNutritionDiscoverRecipe(null);
                 }}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold outline-none transition ${
                   isSelected
@@ -20876,7 +21088,7 @@ export function NoteDatabaseEntrySheet({
                     setOpenChefCuisineId(isCuisineOpen ? null : cuisine.id);
                     setOpenChefDishFamilyKey(null);
                     setSelectedChefStyleId(null);
-                    setExpandedChefRecipeId(null);
+                    setOpenNutritionDiscoverRecipe(null);
                   }}
                   className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.05]"
                 >
@@ -20919,7 +21131,7 @@ export function NoteDatabaseEntrySheet({
                           <button type="button" aria-expanded={isFamilyOpen} onClick={() => {
                             setOpenChefDishFamilyKey(isFamilyOpen ? null : familyKey);
                             setSelectedChefStyleId(null);
-                            setExpandedChefRecipeId(null);
+                            setOpenNutritionDiscoverRecipe(null);
                           }} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.03] text-[13px] leading-none" aria-hidden="true">
                               {resolveChefCatalogIcon(dishFamily.icon)}
@@ -20938,88 +21150,39 @@ export function NoteDatabaseEntrySheet({
                                       const selectedOptionId = selectedChefOptions[optionGroup.id] ?? optionGroup.defaultOptionId;
                                       const isSelected = selectedOptionId === chefOption.id;
                                       const isOptionAvailable = chefAvailabilityCatalog.availableOptionIdsByGroup.get(optionGroup.id)?.has(chefOption.id) ?? false;
-                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : showAvailableChefRecipesOnly && !isOptionAvailable ? "border-white/[0.035] text-white/20" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
+                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setOpenNutritionDiscoverRecipe(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : showAvailableChefRecipesOnly && !isOptionAvailable ? "border-white/[0.035] text-white/20" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
                                     })}
                                   </div>
                                 </div>
                               ))}
                               {styles.length > 0 ? (
                                 <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                  <button type="button" aria-pressed={!selectedChefStyleId} onClick={() => { setSelectedChefStyleId(null); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${!selectedChefStyleId ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>All</button>
-                                  {styles.map((chefStyle) => <button key={chefStyle.id} type="button" aria-pressed={selectedChefStyleId === chefStyle.id} onClick={() => { setSelectedChefStyleId(chefStyle.id); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${selectedChefStyleId === chefStyle.id ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefStyle.label}</button>)}
+                                  <button type="button" aria-pressed={!selectedChefStyleId} onClick={() => { setSelectedChefStyleId(null); setOpenNutritionDiscoverRecipe(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${!selectedChefStyleId ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>All</button>
+                                  {styles.map((chefStyle) => <button key={chefStyle.id} type="button" aria-pressed={selectedChefStyleId === chefStyle.id} onClick={() => { setSelectedChefStyleId(chefStyle.id); setOpenNutritionDiscoverRecipe(null); }} className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold ${selectedChefStyleId === chefStyle.id ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefStyle.label}</button>)}
                                 </div>
                               ) : null}
                               <div className="space-y-1.5">
                                 {recipes.length > 0 ? recipes.map((recipe, recipeIndex) => {
-                                  const isExpanded = expandedChefRecipeId === recipe.id;
                                   const familyOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
                                   const recipeOptions = { ...getDefaultChefRecipeOptions(recipe), ...familyOptions };
                                   const resolvedBuild = recipe.dishTemplate ? resolveChefDishTemplate(recipe, selectedChefOptions, groceryResourceItems) : null;
-                                  const resolvedIngredients = resolvedBuild?.ingredients ?? resolveChefRecipeIngredients(recipe, recipeOptions);
                                   const resolvedName = resolvedBuild?.title ?? resolveChefRecipeName(recipe, recipeOptions);
                                   const nutrition = resolvedBuild?.nutrition ?? calculateResolvedChefRecipeNutrition(recipe, recipeOptions);
-                                  const availability = resolvedBuild?.availability ?? calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
                                   const tierInfo = chefAvailabilityCatalog.recipeTiers.get(recipe.id);
                                   const previousTier = recipeIndex > 0 ? chefAvailabilityCatalog.recipeTiers.get(recipes[recipeIndex - 1].id)?.tier : null;
-                                  const resolvedSelectedOptions = {
-                                    ...recipeOptions,
-                                    ...Object.fromEntries(
-                                      Object.entries(selectedChefOptions).filter(([key]) =>
-                                        key.startsWith(`${recipe.id}:`),
-                                      ),
-                                    ),
-                                  };
                                   return (
                                     <Fragment key={recipe.id}>
                                     {showAvailableChefRecipesOnly && tierInfo?.tier !== "ready" && tierInfo?.tier !== previousTier ? <p className="px-1 pt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/36">{tierInfo?.tier === "needs_one" ? "Need 1 ingredient" : "Need 2 ingredients"}</p> : null}
                                     <article className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
                                       <div className="flex w-full items-center gap-2 px-2.5 py-2.5 hover:bg-white/[0.035]">
-                                        <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:bg-white/[0.05]">
+                                        <button type="button" onClick={() => setOpenNutritionDiscoverRecipe({ recipeId: recipe.id, cuisineId: recipe.cuisineId, dishFamilyId: recipe.dishFamilyId, ...(recipe.styleId ? { styleId: recipe.styleId } : {}) })} className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:bg-white/[0.05]">
                                           <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-px block text-[8.5px] font-medium text-white/32">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
                                         </button>
                                         <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            addSelectedChefRecipe({
-                                              chefRecipeId: recipe.id,
-                                              name: resolvedName,
-                                              selectedOptions: resolvedSelectedOptions,
-                                              ingredients: resolvedIngredients,
-                                              nutrition,
-                                            });
-                                          }}
-                                          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.04] px-2 text-[10px] font-semibold text-white/62 outline-none transition hover:bg-white/[0.075] hover:text-white/84 focus-visible:ring-1 focus-visible:ring-white/14"
-                                          aria-label={`Add ${resolvedName} to meal`}
-                                        >
-                                          <Plus className="h-3 w-3" aria-hidden="true" />
-                                          Add
-                                        </button>
-                                        <button type="button" aria-label={isExpanded ? `Collapse ${resolvedName}` : `Expand ${resolvedName}`} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/30 outline-none transition hover:bg-white/[0.06] hover:text-white/58 focus-visible:ring-1 focus-visible:ring-white/14">
-                                          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+                                        <button type="button" aria-label={`Open ${resolvedName}`} onClick={() => setOpenNutritionDiscoverRecipe({ recipeId: recipe.id, cuisineId: recipe.cuisineId, dishFamilyId: recipe.dishFamilyId, ...(recipe.styleId ? { styleId: recipe.styleId } : {}) })} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/30 outline-none transition hover:bg-white/[0.06] hover:text-white/58 focus-visible:ring-1 focus-visible:ring-white/14">
+                                          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                                         </button>
                                       </div>
-                                      {isExpanded ? (
-                                        <div className="border-t border-white/[0.045] px-2.5 pb-2.5 pt-2">
-                                          <div className="flex flex-wrap gap-1">{recipe.tags.map((tag) => <span key={tag} className="rounded-full border border-white/[0.05] bg-black/25 px-2 py-0.5 text-[9px] font-semibold text-white/40">{tag}</span>)}</div>
-                                          <p className="mt-2 text-xs leading-5 text-white/48">{recipe.shortDescription}</p>
-                                          {resolvedBuild ? <div className="mt-2.5 space-y-2">{resolvedBuild.slots.map((slot) => <div key={slot.slotId}><p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">{slot.label}{slot.role === "structural" ? " · required" : ""}</p><div className="flex flex-wrap gap-1">{slot.availableCandidates.map((candidate) => { const optionKey = `${recipe.id}:${slot.slotId}`; const selectedIds = (selectedChefOptions[optionKey] ?? slot.selected.map((item) => item.id).join(",")).split(",").filter(Boolean); const isSelected = selectedIds.includes(candidate.id); return <button key={candidate.id} type="button" aria-pressed={isSelected} onClick={() => setSelectedChefOptions((current) => { const currentIds = (current[optionKey] ?? slot.selected.map((item) => item.id).join(",")).split(",").filter(Boolean); const nextIds = slot.role === "structural" || slot.availableCandidates.length === 1 ? [candidate.id] : currentIds.includes(candidate.id) ? currentIds.filter((id) => id !== candidate.id) : [...currentIds, candidate.id]; return { ...current, [optionKey]: nextIds.join(",") }; })} className={`rounded-full border px-2 py-1 text-[9px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/78" : "border-white/[0.05] text-white/38"}`}>{candidate.label}</button>; })}{slot.availableCandidates.length === 0 ? <span className="text-[10px] text-white/28">No matching groceries</span> : null}</div></div>)}</div> : null}
-                                          <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.055] bg-black/30 p-1.5">
-                                            {[{ label: "Calories", value: formatChefNutritionNumber(nutrition.calories) }, { label: "Protein", value: `${formatChefNutritionNumber(nutrition.protein_g)}g` }, { label: "Carbs", value: `${formatChefNutritionNumber(nutrition.carbs_g)}g` }, { label: "Fat", value: `${formatChefNutritionNumber(nutrition.fat_g)}g` }].map((macro) => <div key={macro.label} className="rounded-lg bg-white/[0.035] px-1 py-2 text-center"><span className="block text-xs font-bold tabular-nums text-white/78">{macro.value}</span><span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-white/28">{macro.label}</span></div>)}
-                                          </div>
-                                          <div className="mt-2 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[10px] font-medium text-white/46">
-                                            <p>{resolvedBuild ? resolvedBuild.state.replaceAll("-", " ").replace(/^./, (letter) => letter.toUpperCase()) : availability.summary}</p>
-                                            {(resolvedBuild?.missingRequiredSlots ?? availability.missingIngredientNames).length > 0 ? <p className="mt-0.5 text-white/34">Missing required: {(resolvedBuild?.missingRequiredSlots ?? availability.missingIngredientNames).join(", ")}</p> : null}
-                                          </div>
-                                          {resolvedBuild && resolvedBuild.missingExtras.length > 0 ? <div className="mt-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2.5 py-2"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">Missing extras</p><p className="mt-0.5 text-[11px] text-white/42">{resolvedBuild.missingExtras.join(", ")}</p></div> : null}
-                                          <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Ingredients</p>
-                                          <ul className="mt-1 space-y-1">{resolvedIngredients.map((item) => { const itemNutrition = calculateChefIngredientNutrition(item); const itemAvailability = availability.ingredients[item.id]; const availabilityLabel = itemAvailability?.availability === "have" ? "Have" : itemAvailability?.availability === "partial" ? "Partial" : itemAvailability?.availability === "unknown" ? "Unknown" : "Missing"; return <li key={`${recipe.id}-${item.id}`} className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2 py-1.5"><span className="text-sm" aria-hidden="true">{item.icon}</span><span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-semibold text-white/62">{item.quantity} {item.unit} {item.name}</span>{!itemNutrition.unknownNutrition ? <span className="block text-[9px] font-medium text-white/28">{formatChefNutritionNumber(itemNutrition.calories)} cal · {formatChefNutritionNumber(itemNutrition.protein_g)}g protein{itemNutrition.estimated ? " · est." : ""}</span> : <span className="block text-[9px] font-medium text-white/24">Nutrition unknown</span>}</span><span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${availabilityLabel === "Have" ? "border-emerald-300/15 bg-emerald-300/[0.07] text-emerald-100/65" : "border-white/[0.055] bg-black/25 text-white/38"}`}>{availabilityLabel}</span></li>; })}</ul>
-                                          <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Steps</p>
-                                          <ol className="mt-1 space-y-1 text-xs leading-5 text-white/50">{(resolvedBuild?.steps ?? recipe.steps).map((step, index) => <li key={`${recipe.id}-step-${index}`} className="flex gap-2"><span className="text-white/25">{index + 1}.</span><span>{step}</span></li>)}</ol>
-                                          <p className="mt-2.5 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[11px] font-medium text-white/42">{contextLabel}</p>
-                                        </div>
-                                      ) : null}
                                     </article></Fragment>
                                   );
                                 }) : <p className="px-2 py-3 text-xs font-medium text-white/36">{showAvailableChefRecipesOnly && optionGroups.length > 0 ? "Nothing available for this build." : "No meals match this filter yet."}</p>}

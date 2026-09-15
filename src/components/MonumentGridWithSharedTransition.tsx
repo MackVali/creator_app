@@ -54,6 +54,7 @@ interface MonumentGridProps {
   showNewCard?: boolean;
   onReorder?: (monumentIds: string[]) => void | Promise<void>;
   density?: "default" | "compact";
+  emptyPlaceholderCount?: number;
 }
 
 type MeasuredMonumentRect = {
@@ -380,6 +381,7 @@ export function MonumentGridWithSharedTransition({
   showNewCard = true,
   onReorder,
   density = "default",
+  emptyPlaceholderCount = 3,
 }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -874,7 +876,7 @@ export function MonumentGridWithSharedTransition({
     <div>
       <div className={density === "compact" ? "grid gap-1" : "grid grid-cols-4 gap-1"}>
         {isEmpty
-          ? Array.from({ length: 3 }, (_, index) => (
+          ? Array.from({ length: emptyPlaceholderCount }, (_, index) => (
               <button
                 key={`empty-${index}`}
                 data-tour="new-monument"

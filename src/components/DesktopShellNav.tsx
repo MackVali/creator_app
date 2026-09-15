@@ -4,6 +4,7 @@ import {
   BarChart3,
   Blocks,
   Calendar,
+  Globe2,
   Grid2X2,
   ListOrdered,
   Settings,
@@ -37,6 +38,12 @@ const primaryItems = [
     href: "/source",
     Icon: Blocks,
     matches: ["/source"],
+  },
+  {
+    label: "Site",
+    href: "/site",
+    Icon: Globe2,
+    matches: ["/site"],
   },
 ] as const;
 
@@ -109,6 +116,13 @@ function getWorkspaceMeta(pathname: string) {
     return {
       title: "Source",
       subtitle: "Your systems, tools, and resources.",
+    };
+  }
+
+  if (pathname.startsWith("/site")) {
+    return {
+      title: "Site",
+      subtitle: "Build your presence.",
     };
   }
 
