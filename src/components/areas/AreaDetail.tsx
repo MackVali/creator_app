@@ -7,7 +7,7 @@ import { AreaSkillRelations } from "@/components/areas/AreaSkillRelations";
 import { AreaMonuments } from "@/components/areas/AreaMonuments";
 import { BodyAreaDashboard } from "@/components/areas/BodyAreaDashboard";
 import { MindAreaDashboard } from "@/components/areas/MindAreaDashboard";
-import { MoneyAreaDashboard } from "@/components/areas/MoneyAreaDashboard";
+import { MoneyAreaDashboardV2 } from "@/components/areas/MoneyAreaDashboardV2";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import {
   AreaFeaturedGoal,
@@ -228,7 +228,7 @@ export function AreaDetail({
 
         {area.id === "money" ? (
           <section className="min-w-0">
-            <MoneyAreaDashboard />
+            <MoneyAreaDashboardV2 />
           </section>
         ) : null}
 
