@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, User } from "lucide-react";
+import { MapPin, User } from "lucide-react";
 import { getProfileByUsername } from "@/lib/db";
 import { Profile } from "@/lib/types";
 import LinkedAccountsBar from "@/components/profile/LinkedAccountsBar";
@@ -144,18 +144,6 @@ export default function PublicProfileContent({
                   <p className="font-medium">{profile.username}</p>
                 </div>
               </div>
-
-              {profile.dob && (
-                <div className="flex items-center space-x-3">
-                  <Calendar className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Date of Birth</p>
-                    <p className="font-medium">
-                      {new Date(profile.dob).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {profile.city && (
                 <div className="flex items-center space-x-3">
