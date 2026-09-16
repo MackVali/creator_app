@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePlus } from "@/lib/entitlements/requirePlus";
 import type { ProductCheckoutLineItem, ProductCheckoutStatus } from "@/types/checkout";
 import {
@@ -88,7 +89,13 @@ export async function GET() {
     return NextResponse.json({ orders: [] } satisfies OrdersResponse, { status: 200 });
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  if (!admin) {
+    console.error("Failed to initialize admin client for product checkouts");
+    return NextResponse.json({ orders: [] } satisfies OrdersResponse, { status: 200 });
+  }
+
+  const { data, error } = await admin
     .from("product_checkouts")
     .select(
       "id, checkout_id, currency, total_amount, items, stripe_session_id, status, fulfillment_status, tracking_number, carrier, shipped_at, created_at, updated_at"
@@ -136,6 +143,11 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json({ error: "Source orders unavailable." }, { status: 503 });
+  }
+
   const payload = (await request.json().catch(() => null)) as UpdateOrderPayload | null;
   const orderId = typeof payload?.orderId === "string" ? payload.orderId.trim() : "";
   const requestedFulfillmentStatus =
@@ -166,7 +178,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "No order updates were provided." }, { status: 400 });
   }
 
-  const { data: existingOrder, error: existingOrderError } = await supabase
+  const { data: existingOrder, error: existingOrderError } = await admin
     .from("product_checkouts")
     .select(
       "id, checkout_id, currency, total_amount, items, stripe_session_id, status, fulfillment_status, tracking_number, carrier, shipped_at, created_at, updated_at",
@@ -233,7 +245,7 @@ export async function PATCH(request: Request) {
     updatePayload.shipped_at = shippedAt;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("product_checkouts")
     .update(updatePayload, { returning: "representation" })
     .eq("id", orderId)
