@@ -18,12 +18,6 @@ export type SiteDataSource =
       listingType: "product" | "service" | "post";
       mode: "latest" | "selected";
       listingIds?: string[];
-    }
-  | {
-      kind: "creator";
-      entity: "project";
-      mode: "latest" | "selected";
-      entityIds?: string[];
     };
 
 export type SiteSectionLayoutConfig = {
@@ -52,6 +46,21 @@ export type SiteSection = {
   style?: SiteSectionStyleConfig;
 };
 
+export type SiteContentNodeId = "text" | "button" | "media";
+
+export type SiteEditorSelection =
+  | {
+      kind: "section";
+      pageId: string;
+      sectionId: string;
+    }
+  | {
+      kind: "content";
+      pageId: string;
+      sectionId: string;
+      node: SiteContentNodeId;
+    };
+
 export type SitePage = {
   id: string;
   title: string;
@@ -64,5 +73,6 @@ export type SiteDocument = {
   id: string;
   name: string;
   handle: string;
+  homePageId: string;
   pages: SitePage[];
 };

@@ -5,36 +5,65 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronRight,
+  ChevronDown,
+  CheckCircle2,
   Copy,
   Eye,
   EyeOff,
+  FileText,
   Globe2,
+  Home,
   Loader2,
+  MousePointerClick,
   Monitor,
   MoreHorizontal,
   Package,
+  Pencil,
   Plus,
   Trash2,
+  Type,
+  AlertTriangle,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
+import { SectionLibrary } from "@/components/site-builder/SectionLibrary";
+import { SectionVariantPicker } from "@/components/site-builder/SectionVariantPicker";
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
 import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
 import {
+  createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
+  isSitePreviewContentEditRequestMessage,
   isSitePreviewHeightMessage,
+  isSitePreviewSelectionRequestMessage,
+  sectionTypeSupportsInlineEditField,
 } from "@/lib/site-builder/previewMessages";
+import {
+  changeSectionVariant,
+  createSiteSection,
+  getDefaultSectionVariant,
+  getSectionDefinition,
+  type AddableSiteSectionType,
+} from "@/lib/site-builder/sectionRegistry";
 import type {
-  SiteDataSource,
+  SiteContentNodeId,
   SiteDocument,
+  SiteEditorSelection,
   SiteSection,
   SiteSectionLayoutConfig,
   SiteSectionStyleConfig,
-  SiteSectionType,
 } from "@/lib/site-builder/types";
 import type { ListingsResponse, SourceListing } from "@/types/source";
 
 type PreviewMode = "desktop" | "tablet" | "mobile";
 type InspectorMode = "content" | "design";
+type DraftLoadStatus = "loading" | "ready" | "error";
+type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+type SectionNavigationChild = {
+  id: SiteContentNodeId;
+  label: string;
+  icon: LucideIcon;
+};
 
 const previewModes: Record<
   PreviewMode,
@@ -56,122 +85,90 @@ function cloneInitialSite(): SiteDocument {
   ) as SiteDocument;
 }
 
+function getInitialEditorSelection(site: SiteDocument): SiteEditorSelection | null {
+  const page =
+    site.pages.find((candidate) => candidate.id === site.homePageId) ??
+    site.pages[0];
+  const section = page?.sections[0];
+
+  if (!page || !section) return null;
+
+  return {
+    kind: "section",
+    pageId: page.id,
+    sectionId: section.id,
+  };
+}
+
+function slugifyPageTitle(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function sanitizeSlug(value: string) {
+  return slugifyPageTitle(value);
+}
+
+function createPageId(title: string) {
+  const base = slugifyPageTitle(title) || "page";
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+function createDuplicatePageId(pageId: string) {
+  return `${pageId}-copy-${Date.now().toString(36)}`;
+}
+
+function uniqueSlug(
+  desiredSlug: string,
+  pages: SiteDocument["pages"],
+  ignoredPageId?: string,
+) {
+  const base = sanitizeSlug(desiredSlug) || "page";
+  const existing = new Set(
+    pages
+      .filter((page) => page.id !== ignoredPageId)
+      .map((page) => page.slug),
+  );
+
+  if (!existing.has(base)) return base;
+
+  let index = 2;
+  let candidate = `${base}-copy`;
+  while (existing.has(candidate)) {
+    candidate = `${base}-copy-${index}`;
+    index += 1;
+  }
+
+  return candidate;
+}
+
+function isDuplicateSlug(
+  slug: string,
+  pages: SiteDocument["pages"],
+  ignoredPageId?: string,
+) {
+  return pages.some(
+    (page) => page.id !== ignoredPageId && page.slug === slug,
+  );
+}
+
+function getPublicPageHref(site: SiteDocument, pageId: string | undefined) {
+  const page = site.pages.find((candidate) => candidate.id === pageId);
+  if (!page) return "/portfolio/mackvali";
+  if (page.id === site.homePageId) return "/portfolio/mackvali";
+  return page.previewPath ?? `/portfolio/${site.handle}/${page.slug}`;
+}
+
 function sectionSourceLabel(section: SiteSection) {
   if (section.source.kind === "manual") {
     return "Manual";
   }
 
-  if (section.source.kind === "source") {
-    return `Source ${section.source.listingType}s`;
-  }
-
-  return `CREATOR ${section.source.entity}s`;
-}
-
-const addableSections: Array<{
-  type: SiteSectionType;
-  label: string;
-  source: SiteDataSource;
-  content?: Record<string, unknown>;
-  layout?: SiteSectionLayoutConfig;
-  style?: SiteSectionStyleConfig;
-}> = [
-  {
-    type: "content",
-    label: "Content",
-    source: { kind: "manual" },
-    content: {
-      heading: "New content section",
-      body: "Add a short message for this page.",
-    },
-    layout: {
-      alignment: "left",
-      width: "normal",
-      spacing: "normal",
-    },
-  },
-  {
-    type: "products",
-    label: "Products",
-    source: {
-      kind: "source",
-      listingType: "product",
-      mode: "selected",
-      listingIds: [],
-    },
-    content: {
-      heading: "Products",
-      intro: "",
-    },
-    layout: {
-      variant: "grid",
-      columns: 3,
-    },
-    style: {
-      showPrice: true,
-      showDescription: true,
-    },
-  },
-  {
-    type: "services",
-    label: "Services",
-    source: {
-      kind: "source",
-      listingType: "service",
-      mode: "selected",
-      listingIds: [],
-    },
-    content: {
-      heading: "Services",
-      intro: "",
-    },
-    layout: {
-      variant: "grid",
-      columns: 3,
-    },
-  },
-  {
-    type: "gallery",
-    label: "Gallery",
-    source: { kind: "manual" },
-    content: {
-      heading: "Gallery",
-    },
-    layout: {
-      variant: "grid",
-      columns: 3,
-    },
-  },
-  {
-    type: "cta",
-    label: "CTA",
-    source: { kind: "manual" },
-    content: {
-      heading: "Start something useful",
-      body: "Invite visitors into the next step.",
-      buttonLabel: "Get started",
-      buttonHref: "#contact",
-    },
-    layout: {
-      alignment: "left",
-      spacing: "normal",
-    },
-  },
-  {
-    type: "contact",
-    label: "Contact",
-    source: { kind: "manual" },
-    content: {
-      heading: "Let’s build something useful.",
-      body: "Open to creative opportunities, collaborations, and interesting projects.",
-      buttonLabel: "Get in touch",
-      buttonHref: "#contact",
-    },
-  },
-];
-
-function createSectionId(pageId: string, type: SiteSectionType) {
-  return `${pageId}-${type}-${Date.now().toString(36)}`;
+  return `Source ${section.source.listingType}s`;
 }
 
 function createDuplicateSectionId(sectionId: string) {
@@ -179,14 +176,34 @@ function createDuplicateSectionId(sectionId: string) {
 }
 
 function sectionHasDesignControls(section: SiteSection) {
-  return (
-    section.type === "hero" ||
-    section.type === "content" ||
-    section.type === "products" ||
-    section.type === "services" ||
-    section.type === "gallery" ||
-    section.type === "cta"
-  );
+  return Boolean(getSectionDefinition(section.type));
+}
+
+function getSectionNavigationChildren(
+  section: SiteSection,
+): SectionNavigationChild[] {
+  if (section.type === "hero") {
+    return [
+      { id: "text", label: "Text", icon: Type },
+      { id: "button", label: "Button", icon: MousePointerClick },
+    ];
+  }
+
+  if (section.type === "cta" || section.type === "contact") {
+    return [
+      { id: "text", label: "Text", icon: Type },
+      { id: "button", label: "Button", icon: MousePointerClick },
+    ];
+  }
+
+  return [];
+}
+
+function sectionSupportsContentNode(
+  section: SiteSection,
+  node: SiteContentNodeId,
+) {
+  return getSectionNavigationChildren(section).some((child) => child.id === node);
 }
 
 function InspectorHeader({
@@ -289,7 +306,7 @@ function InspectorMenuButton({
   disabled = false,
   danger = false,
 }: {
-  icon: typeof Eye;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   disabled?: boolean;
@@ -699,6 +716,143 @@ function InspectorContentPanel({
   );
 }
 
+function ContentNodeInspectorPanel({
+  section,
+  node,
+  onContentChange,
+}: {
+  section: SiteSection;
+  node: SiteContentNodeId;
+  onContentChange: (key: string, value: string) => void;
+}) {
+  const nodeLabel =
+    node === "button" ? "Button" : node === "media" ? "Media" : "Text";
+
+  if (node === "text") {
+    if (section.type === "hero") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Text
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Text
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-hero-node-eyebrow"
+              label="Eyebrow"
+              value={getContentString(section, "eyebrow")}
+              onChange={(value) => onContentChange("eyebrow", value)}
+            />
+            <TextAreaInput
+              id="site-hero-node-headline"
+              label="Heading"
+              value={getContentString(section, "headline")}
+              onChange={(value) => onContentChange("headline", value)}
+              rows={3}
+            />
+            <TextAreaInput
+              id="site-hero-node-intro"
+              label="Description"
+              value={getContentString(section, "intro")}
+              onChange={(value) => onContentChange("intro", value)}
+              rows={4}
+            />
+          </div>
+        </>
+      );
+    }
+
+    if (section.type === "cta" || section.type === "contact") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Text
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Text
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-action-node-heading"
+              label="Heading"
+              value={getContentString(section, "heading")}
+              onChange={(value) => onContentChange("heading", value)}
+            />
+            <TextAreaInput
+              id="site-action-node-body"
+              label="Body"
+              value={getContentString(section, "body")}
+              onChange={(value) => onContentChange("body", value)}
+              rows={4}
+            />
+          </div>
+        </>
+      );
+    }
+  }
+
+  if (node === "button") {
+    const labelKey = section.type === "hero" ? "primaryCtaLabel" : "buttonLabel";
+    const hrefKey = section.type === "hero" ? "primaryCtaHref" : "buttonHref";
+
+    if (section.type === "hero" || section.type === "cta" || section.type === "contact") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Button
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Button
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-button-node-label"
+              label="Label"
+              value={getContentString(section, labelKey)}
+              onChange={(value) => onContentChange(labelKey, value)}
+            />
+            <TextInput
+              id="site-button-node-href"
+              label="Link"
+              value={getContentString(section, hrefKey)}
+              onChange={(value) => onContentChange(hrefKey, value)}
+            />
+          </div>
+        </>
+      );
+    }
+  }
+
+  return (
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <p className="truncate text-[15px] font-medium text-zinc-100">
+          {nodeLabel}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+          {section.label} / {nodeLabel}
+        </p>
+      </div>
+      <div className="p-4">
+        <p className="text-[12px] leading-5 text-zinc-500">
+          This content node is not editable for this section yet.
+        </p>
+      </div>
+    </>
+  );
+}
+
 function SourceListingSelector({
   section,
   sourceStatus,
@@ -851,31 +1005,15 @@ function InspectorDesignPanel({
     value: SiteSectionStyleConfig[keyof SiteSectionStyleConfig],
   ) => void;
 }) {
-  const supportsAlignment =
-    section.type === "hero" ||
-    section.type === "content" ||
-    section.type === "cta";
-  const supportsVariant =
-    section.type === "hero" ||
-    section.type === "products" ||
-    section.type === "services";
-  const supportsColumns =
-    section.type === "products" ||
-    section.type === "services" ||
-    section.type === "gallery";
-  const supportsWidth = section.type === "content";
-  const supportsSpacing = section.type === "content" || section.type === "cta";
-  const supportsBackground =
-    section.type === "hero" ||
-    section.type === "content" ||
-    section.type === "products" ||
-    section.type === "services" ||
-    section.type === "gallery" ||
-    section.type === "cta";
-  const supportsListingDisplay = section.type === "products";
+  const definition = getSectionDefinition(section.type);
+  const supportsVariant = Boolean(definition && definition.variants.length > 1);
+  const supportsColumns = Boolean(definition?.supportsColumns);
+  const supportsWidth = Boolean(definition?.supportsWidth);
+  const supportsSpacing = Boolean(definition?.supportsSpacing);
+  const supportsBackground = Boolean(definition?.supportsBackground);
+  const supportsListingDisplay = Boolean(definition?.supportsListingDisplay);
 
   if (
-    !supportsAlignment &&
     !supportsVariant &&
     !supportsColumns &&
     !supportsWidth &&
@@ -892,40 +1030,18 @@ function InspectorDesignPanel({
 
   return (
     <div className="space-y-4">
-      {supportsAlignment || supportsVariant || supportsColumns || supportsWidth ? (
+      {supportsVariant || supportsColumns || supportsWidth ? (
         <InspectorGroup title="Layout">
-          {supportsVariant ? (
-            <SegmentedControl
+          {supportsVariant && definition ? (
+            <SectionVariantPicker
               label="Variant"
-              value={section.layout?.variant ?? (section.type === "hero" ? "split" : "grid")}
-              options={
-                section.type === "hero"
-                  ? [
-                      { label: "Split", value: "split" },
-                      { label: "Centered", value: "centered" },
-                    ]
-                  : section.type === "services"
-                  ? [
-                      { label: "Grid", value: "grid" },
-                      { label: "List", value: "row" },
-                    ]
-                  : [
-                      { label: "Grid", value: "grid" },
-                      { label: "Row", value: "row" },
-                    ]
+              variants={definition.variants}
+              value={
+                section.layout?.variant ??
+                getDefaultSectionVariant(definition.type as AddableSiteSectionType) ??
+                definition.variants[0]?.id
               }
               onChange={(value) => onLayoutChange("variant", value)}
-            />
-          ) : null}
-          {supportsAlignment ? (
-            <SegmentedControl
-              label="Alignment"
-              value={section.layout?.alignment ?? "left"}
-              options={[
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-              ]}
-              onChange={(value) => onLayoutChange("alignment", value)}
             />
           ) : null}
           {supportsColumns ? (
@@ -1008,10 +1124,33 @@ function InspectorDesignPanel({
 
 export default function SiteBuilder() {
   const [site, setSite] = useState<SiteDocument>(cloneInitialSite);
-  const [selectedPageId, setSelectedPageId] = useState("home");
-  const [selectedSectionId, setSelectedSectionId] =
-    useState("home-hero");
+  const [selectedPageId, setSelectedPageId] = useState(() => {
+    const initialSite = cloneInitialSite();
+    return initialSite.homePageId;
+  });
+  const [editorSelection, setEditorSelection] =
+    useState<SiteEditorSelection | null>(() =>
+      getInitialEditorSelection(cloneInitialSite()),
+    );
+  const [draftLoadStatus, setDraftLoadStatus] =
+    useState<DraftLoadStatus>("loading");
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
+  const [draftSaveStatus, setDraftSaveStatus] =
+    useState<DraftSaveStatus>("idle");
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
+  const [sectionInsertionIndex, setSectionInsertionIndex] =
+    useState<number | null>(null);
+  const [sectionInsertionPageId, setSectionInsertionPageId] =
+    useState<string | null>(null);
+  const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(
+    () => new Set([cloneInitialSite().homePageId]),
+  );
+  const [showPageDialog, setShowPageDialog] = useState(false);
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [pageDraftTitle, setPageDraftTitle] = useState("");
+  const [pageDraftSlug, setPageDraftSlug] = useState("");
+  const [pageDraftSlugTouched, setPageDraftSlugTouched] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
   const [activeInspectorMode, setActiveInspectorMode] =
     useState<InspectorMode>("content");
@@ -1020,37 +1159,444 @@ export default function SiteBuilder() {
     "idle" | "loading" | "loaded" | "error"
   >("idle");
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const latestSiteJsonRef = useRef(JSON.stringify(cloneInitialSite()));
+  const lastPersistedSiteJsonRef = useRef("");
+  const draftLoadRequestIdRef = useRef(0);
+  const mountedRef = useRef(false);
+  const saveRequestIdRef = useRef(0);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    latestSiteJsonRef.current = JSON.stringify(site);
+  }, [site]);
+
+  const loadDraft = useCallback(async () => {
+    const requestId = draftLoadRequestIdRef.current + 1;
+    draftLoadRequestIdRef.current = requestId;
+    setDraftLoadStatus("loading");
+    setDraftLoadError(null);
+
+    try {
+      const response = await fetch("/api/site-builder/draft", {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const payload = (await response.json()) as {
+        site?: SiteDocument | null;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to load site draft.");
+      }
+
+      if (!mountedRef.current || draftLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      const nextSite = payload.site ?? cloneInitialSite();
+      const nextSelection = getInitialEditorSelection(nextSite);
+      const nextPageId =
+        nextSite.pages.find((page) => page.id === nextSite.homePageId)?.id ??
+        nextSite.pages[0]?.id ??
+        "";
+      const nextSiteJson = JSON.stringify(nextSite);
+
+      setSite(nextSite);
+      setSelectedPageId(nextPageId);
+      setEditorSelection(nextSelection);
+      setExpandedPageIds(nextPageId ? new Set([nextPageId]) : new Set());
+      latestSiteJsonRef.current = nextSiteJson;
+      lastPersistedSiteJsonRef.current = nextSiteJson;
+      setDraftSaveStatus("idle");
+      setDraftSaveError(null);
+      setDraftLoadStatus("ready");
+    } catch (error) {
+      if (!mountedRef.current || draftLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      lastPersistedSiteJsonRef.current = latestSiteJsonRef.current;
+      setDraftLoadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load site draft.",
+      );
+      setDraftLoadStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    loadDraft();
+
+    return () => {
+      mountedRef.current = false;
+      draftLoadRequestIdRef.current += 1;
+    };
+  }, [loadDraft]);
+
+  useEffect(() => {
+    if (draftLoadStatus !== "ready") return;
+
+    const siteJson = JSON.stringify(site);
+    latestSiteJsonRef.current = siteJson;
+
+    if (siteJson === lastPersistedSiteJsonRef.current) return;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    setDraftSaveStatus("saving");
+    setDraftSaveError(null);
+
+    saveTimerRef.current = setTimeout(() => {
+      const requestSite = site;
+      const requestSiteJson = JSON.stringify(requestSite);
+      const requestId = saveRequestIdRef.current + 1;
+      saveRequestIdRef.current = requestId;
+
+      fetch("/api/site-builder/draft", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ site: requestSite }),
+      })
+        .then(async (response) => {
+          const payload = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Unable to save site draft.");
+          }
+
+          if (
+            saveRequestIdRef.current === requestId &&
+            latestSiteJsonRef.current === requestSiteJson
+          ) {
+            lastPersistedSiteJsonRef.current = requestSiteJson;
+            setDraftSaveStatus("saved");
+            setDraftSaveError(null);
+          }
+        })
+        .catch((error) => {
+          if (saveRequestIdRef.current !== requestId) return;
+          if (latestSiteJsonRef.current !== requestSiteJson) {
+            setDraftSaveStatus("saving");
+            setDraftSaveError(null);
+            return;
+          }
+
+          setDraftSaveStatus("error");
+          setDraftSaveError(
+            error instanceof Error
+              ? error.message
+              : "Unable to save site draft.",
+          );
+        });
+    }, 900);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [draftLoadStatus, site]);
 
   const selectedPage =
     site.pages.find((page) => page.id === selectedPageId) ?? site.pages[0];
 
+  const selectedSectionId =
+    editorSelection?.pageId === selectedPage?.id
+      ? editorSelection.sectionId
+      : "";
+  const selectedContentNode =
+    editorSelection?.kind === "content" &&
+    editorSelection.pageId === selectedPage?.id
+      ? editorSelection.node
+      : null;
   const selectedSection =
-    selectedPage?.sections.find(
-      (section) => section.id === selectedSectionId,
-    ) ?? selectedPage?.sections[0];
+    selectedSectionId
+      ? selectedPage?.sections.find(
+          (section) => section.id === selectedSectionId,
+        )
+      : undefined;
 
   const selectedSectionIndex = selectedPage?.sections.findIndex(
     (section) => section.id === selectedSection?.id,
   );
+  const sectionInsertionPage =
+    site.pages.find((page) => page.id === sectionInsertionPageId) ??
+    selectedPage;
   const sourceProducts = sourceListings.filter(
     (listing) => listing.type === "product",
   );
   const sourceServices = sourceListings.filter(
     (listing) => listing.type === "service",
   );
+  const editorLocked = draftLoadStatus !== "ready";
 
   function selectPage(pageId: string) {
     const page = site.pages.find((candidate) => candidate.id === pageId);
     if (!page) return;
 
     setSelectedPageId(page.id);
-    setSelectedSectionId(page.sections[0]?.id ?? "");
+    setEditorSelection(
+      page.sections[0]
+        ? {
+            kind: "section",
+            pageId: page.id,
+            sectionId: page.sections[0].id,
+          }
+        : null,
+    );
+    setExpandedPageIds((current) => new Set(current).add(page.id));
+  }
+
+  function selectSection(pageId: string, sectionId: string) {
+    setSelectedPageId(pageId);
+    setEditorSelection({ kind: "section", pageId, sectionId });
+    setExpandedPageIds((current) => new Set(current).add(pageId));
+  }
+
+  function selectSectionContentChild(
+    pageId: string,
+    sectionId: string,
+    node: SiteContentNodeId,
+  ) {
+    setSelectedPageId(pageId);
+    setEditorSelection({ kind: "content", pageId, sectionId, node });
+    setActiveInspectorMode("content");
+    setExpandedPageIds((current) => new Set(current).add(pageId));
+  }
+
+  function togglePageExpanded(pageId: string) {
+    setExpandedPageIds((current) => {
+      const next = new Set(current);
+      if (next.has(pageId)) {
+        if (pageId === selectedPageId) return current;
+        next.delete(pageId);
+      } else {
+        next.add(pageId);
+      }
+      return next;
+    });
+  }
+
+  function openSectionLibrary(pageId: string, insertionIndex: number) {
+    if (editorLocked) return;
+
+    setSelectedPageId(pageId);
+    setExpandedPageIds((current) => new Set(current).add(pageId));
+    setSectionInsertionIndex(insertionIndex);
+    setSectionInsertionPageId(pageId);
+    setShowSectionLibrary(true);
+  }
+
+  function closeSectionLibrary() {
+    setShowSectionLibrary(false);
+    setSectionInsertionIndex(null);
+    setSectionInsertionPageId(null);
+  }
+
+  function openNewPageDialog() {
+    if (editorLocked) return;
+
+    setEditingPageId(null);
+    setPageDraftTitle("");
+    setPageDraftSlug("");
+    setPageDraftSlugTouched(false);
+    setShowPageDialog(true);
+  }
+
+  function openPageSettings(pageId: string) {
+    if (editorLocked) return;
+
+    const page = site.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+
+    setEditingPageId(page.id);
+    setPageDraftTitle(page.title);
+    setPageDraftSlug(page.slug);
+    setPageDraftSlugTouched(true);
+    setShowPageDialog(true);
+  }
+
+  function closePageDialog() {
+    setShowPageDialog(false);
+    setEditingPageId(null);
+    setPageDraftTitle("");
+    setPageDraftSlug("");
+    setPageDraftSlugTouched(false);
+  }
+
+  function updatePageDraftTitle(value: string) {
+    if (editorLocked) return;
+
+    setPageDraftTitle(value);
+    if (!pageDraftSlugTouched && !editingPageId) {
+      setPageDraftSlug(slugifyPageTitle(value));
+    }
+  }
+
+  function updatePageDraftSlug(value: string) {
+    if (editorLocked) return;
+
+    setPageDraftSlugTouched(true);
+    setPageDraftSlug(sanitizeSlug(value));
+  }
+
+  function savePageDraft() {
+    if (editorLocked) return;
+
+    const title = pageDraftTitle.trim();
+    if (!title) return;
+
+    if (editingPageId) {
+      const editingPage = site.pages.find((page) => page.id === editingPageId);
+      if (!editingPage) return;
+      const nextSlug =
+        editingPage.id === site.homePageId
+          ? ""
+          : sanitizeSlug(pageDraftSlug);
+
+      if (
+        editingPage.id !== site.homePageId &&
+        (!nextSlug || isDuplicateSlug(nextSlug, site.pages, editingPage.id))
+      ) {
+        return;
+      }
+
+      setSite((current) => ({
+        ...current,
+        pages: current.pages.map((page) =>
+          page.id === editingPage.id
+            ? {
+                ...page,
+                title,
+                slug: page.id === current.homePageId ? "" : nextSlug,
+              }
+            : page,
+        ),
+      }));
+      closePageDialog();
+      return;
+    }
+
+    const slug = sanitizeSlug(pageDraftSlug || title);
+    if (!slug || isDuplicateSlug(slug, site.pages)) return;
+
+    const page = {
+      id: createPageId(title),
+      title,
+      slug,
+      sections: [],
+    };
+
+    setSite((current) => ({
+      ...current,
+      pages: [...current.pages, page],
+    }));
+    setSelectedPageId(page.id);
+    setEditorSelection(null);
+    setExpandedPageIds((current) => new Set(current).add(page.id));
+    closePageDialog();
+  }
+
+  function duplicatePage(pageId: string) {
+    if (editorLocked) return;
+
+    const sourcePage = site.pages.find((page) => page.id === pageId);
+    if (!sourcePage) return;
+
+    const duplicate = JSON.parse(JSON.stringify(sourcePage)) as typeof sourcePage;
+    duplicate.id = createDuplicatePageId(sourcePage.id);
+    duplicate.title = `${sourcePage.title} copy`;
+    duplicate.slug = uniqueSlug(
+      sourcePage.slug ? `${sourcePage.slug}-copy` : `${slugifyPageTitle(sourcePage.title)}-copy`,
+      site.pages,
+    );
+    duplicate.previewPath = undefined;
+    duplicate.sections = duplicate.sections.map((section) => ({
+      ...section,
+      id: createDuplicateSectionId(section.id),
+    }));
+
+    setSite((current) => ({
+      ...current,
+      pages: [...current.pages, duplicate],
+    }));
+    setSelectedPageId(duplicate.id);
+    setEditorSelection(
+      duplicate.sections[0]
+        ? {
+            kind: "section",
+            pageId: duplicate.id,
+            sectionId: duplicate.sections[0].id,
+          }
+        : null,
+    );
+    setExpandedPageIds((current) => new Set(current).add(duplicate.id));
+  }
+
+  function setHomepage(pageId: string) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      homePageId: pageId,
+      pages: current.pages.map((page) =>
+        page.id === pageId
+          ? { ...page, slug: "" }
+          : page.slug
+          ? page
+          : { ...page, slug: uniqueSlug(page.title, current.pages, page.id) },
+      ),
+    }));
+  }
+
+  function deletePage(pageId: string) {
+    if (editorLocked) return;
+
+    if (site.pages.length <= 1 || pageId === site.homePageId) return;
+
+    const pageIndex = site.pages.findIndex((page) => page.id === pageId);
+    const nextPage =
+      site.pages[pageIndex + 1] ??
+      site.pages[pageIndex - 1] ??
+      site.pages.find((page) => page.id !== pageId);
+    if (!nextPage) return;
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.filter((page) => page.id !== pageId),
+    }));
+
+    if (selectedPageId === pageId) {
+      setSelectedPageId(nextPage.id);
+      setEditorSelection(
+        nextPage.sections[0]
+          ? {
+              kind: "section",
+              pageId: nextPage.id,
+              sectionId: nextPage.sections[0].id,
+            }
+          : null,
+      );
+    }
   }
 
   function updateSelectedSectionContent(
     key: string,
     value: string,
   ) {
+    if (editorLocked) return;
     if (!selectedPage || !selectedSection) return;
 
     setSite((current) => ({
@@ -1076,9 +1622,41 @@ export default function SiteBuilder() {
     }));
   }
 
+  const updateSectionContent = useCallback((
+    pageId: string,
+    sectionId: string,
+    key: string,
+    value: string,
+  ) => {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) =>
+        page.id !== pageId
+        ? page
+        : {
+              ...page,
+              sections: page.sections.map((section) =>
+                section.id !== sectionId
+                  ? section
+                  : {
+                      ...section,
+                      content: {
+                        ...section.content,
+                        [key]: value,
+                      },
+                    },
+              ),
+            },
+      ),
+    }));
+  }, [editorLocked]);
+
   function updateSelectedSection(
     updater: (section: SiteSection) => SiteSection,
   ) {
+    if (editorLocked) return;
     if (!selectedPage || !selectedSection) return;
 
     setSite((current) => ({
@@ -1103,6 +1681,32 @@ export default function SiteBuilder() {
       ...section,
       visible: !section.visible,
     }));
+  }
+
+  function toggleSectionVisibility(pageId: string, sectionId: string) {
+    if (editorLocked) return;
+
+    const page = site.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) =>
+        page.id !== pageId
+          ? page
+          : {
+              ...page,
+              sections: page.sections.map((section) =>
+                section.id === sectionId
+                  ? { ...section, visible: !section.visible }
+                  : section,
+              ),
+          },
+      ),
+    }));
+    setSelectedPageId(pageId);
+    setEditorSelection({ kind: "section", pageId, sectionId });
+    setExpandedPageIds((current) => new Set(current).add(pageId));
   }
 
   function moveSelectedSection(direction: "up" | "down") {
@@ -1141,11 +1745,48 @@ export default function SiteBuilder() {
     }));
   }
 
+  function moveSection(
+    pageId: string,
+    sectionId: string,
+    direction: "up" | "down",
+  ) {
+    if (editorLocked) return;
+
+    const page = site.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+
+    const currentIndex = page.sections.findIndex(
+      (section) => section.id === sectionId,
+    );
+    if (currentIndex < 0) return;
+
+    const nextIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= page.sections.length) return;
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) => {
+        if (page.id !== pageId) return page;
+
+        const sections = [...page.sections];
+        const [moved] = sections.splice(currentIndex, 1);
+        sections.splice(nextIndex, 0, moved);
+
+        return {
+          ...page,
+          sections,
+        };
+      }),
+    }));
+    setSelectedPageId(pageId);
+    setEditorSelection({ kind: "section", pageId, sectionId });
+    setExpandedPageIds((current) => new Set(current).add(pageId));
+  }
+
   function deleteSelectedSection() {
+    if (editorLocked) return;
     if (!selectedPage || !selectedSection) return;
-    if (selectedSection.type === "hero" || selectedPage.sections.length <= 1) {
-      return;
-    }
 
     const nextSelection =
       selectedPage.sections.find(
@@ -1165,10 +1806,53 @@ export default function SiteBuilder() {
             },
       ),
     }));
-    setSelectedSectionId(nextSelection);
+    setEditorSelection(
+      nextSelection
+        ? {
+            kind: "section",
+            pageId: selectedPage.id,
+            sectionId: nextSelection,
+          }
+        : null,
+    );
+  }
+
+  function deleteSection(pageId: string, sectionId: string) {
+    if (editorLocked) return;
+
+    const page = site.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+
+    const nextSelection =
+      page.sections.find((section) => section.id !== sectionId)?.id ??
+      "";
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) =>
+        page.id !== pageId
+          ? page
+          : {
+              ...page,
+              sections: page.sections.filter(
+                (section) => section.id !== sectionId,
+              ),
+          },
+      ),
+    }));
+    setSelectedPageId(pageId);
+    setEditorSelection(
+      selectedPageId === pageId && selectedSection?.id !== sectionId
+        ? editorSelection
+        : nextSelection
+        ? { kind: "section", pageId, sectionId: nextSelection }
+        : null,
+    );
+    setExpandedPageIds((current) => new Set(current).add(pageId));
   }
 
   function duplicateSelectedSection() {
+    if (editorLocked) return;
     if (!selectedPage || !selectedSection) return;
 
     const duplicate: SiteSection = JSON.parse(
@@ -1196,36 +1880,100 @@ export default function SiteBuilder() {
         };
       }),
     }));
-    setSelectedSectionId(duplicate.id);
+    setEditorSelection({
+      kind: "section",
+      pageId: selectedPage.id,
+      sectionId: duplicate.id,
+    });
   }
 
-  function addSection(template: (typeof addableSections)[number]) {
-    if (!selectedPage) return;
+  function duplicateSection(pageId: string, sectionId: string) {
+    if (editorLocked) return;
 
-    const section: SiteSection = {
-      id: createSectionId(selectedPage.id, template.type),
-      label: template.label,
-      type: template.type,
-      visible: true,
-      source: template.source,
-      content: template.content ?? {},
-      layout: template.layout,
-      style: template.style,
-    };
+    const page = site.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+
+    const sourceSection = page.sections.find(
+      (section) => section.id === sectionId,
+    );
+    if (!sourceSection) return;
+
+    const duplicate: SiteSection = JSON.parse(
+      JSON.stringify(sourceSection),
+    ) as SiteSection;
+    duplicate.id = createDuplicateSectionId(sourceSection.id);
+    duplicate.label = `${sourceSection.label} copy`;
+    duplicate.visible = true;
 
     setSite((current) => ({
       ...current,
-      pages: current.pages.map((page) =>
-        page.id !== selectedPage.id
-          ? page
-          : {
-              ...page,
-              sections: [...page.sections, section],
-            },
-      ),
+      pages: current.pages.map((page) => {
+        if (page.id !== pageId) return page;
+
+        const currentIndex = page.sections.findIndex(
+          (section) => section.id === sectionId,
+        );
+        const insertIndex =
+          currentIndex < 0 ? page.sections.length : currentIndex + 1;
+        const sections = [...page.sections];
+        sections.splice(insertIndex, 0, duplicate);
+
+        return {
+          ...page,
+          sections,
+        };
+      }),
     }));
-    setSelectedSectionId(section.id);
-    setShowSectionLibrary(false);
+    setSelectedPageId(pageId);
+    setEditorSelection({ kind: "section", pageId, sectionId: duplicate.id });
+    setExpandedPageIds((current) => new Set(current).add(pageId));
+  }
+
+  function addSection(type: AddableSiteSectionType, variant: string) {
+    if (editorLocked) return;
+
+    const targetPage =
+      site.pages.find((page) => page.id === sectionInsertionPageId) ??
+      selectedPage;
+    if (!targetPage) return;
+
+    const requestedInsertIndex =
+      sectionInsertionIndex === null
+        ? targetPage.sections.length
+        : sectionInsertionIndex;
+    const boundedInsertIndex = Math.max(
+      0,
+      Math.min(requestedInsertIndex, targetPage.sections.length),
+    );
+    const section = createSiteSection({
+      pageId: targetPage.id,
+      type,
+      variant,
+      existingIds: targetPage.sections.map((candidate) => candidate.id),
+    });
+
+    setSite((current) => ({
+      ...current,
+      pages: current.pages.map((page) => {
+        if (page.id !== targetPage.id) return page;
+
+        const sections = [...page.sections];
+        sections.splice(boundedInsertIndex, 0, section);
+
+        return {
+          ...page,
+          sections,
+        };
+      }),
+    }));
+    setSelectedPageId(targetPage.id);
+    setEditorSelection({
+      kind: "section",
+      pageId: targetPage.id,
+      sectionId: section.id,
+    });
+    setExpandedPageIds((current) => new Set(current).add(targetPage.id));
+    closeSectionLibrary();
   }
 
   async function loadSourceListings() {
@@ -1258,13 +2006,19 @@ export default function SiteBuilder() {
     key: keyof SiteSectionLayoutConfig,
     value: SiteSectionLayoutConfig[keyof SiteSectionLayoutConfig],
   ) {
-    updateSelectedSection((section) => ({
-      ...section,
-      layout: {
-        ...section.layout,
-        [key]: value,
-      },
-    }));
+    updateSelectedSection((section) => {
+      if (key === "variant" && typeof value === "string") {
+        return changeSectionVariant(section, value);
+      }
+
+      return {
+        ...section,
+        layout: {
+          ...section.layout,
+          [key]: value,
+        },
+      };
+    });
   }
 
   function updateSelectedSectionStyle(
@@ -1284,6 +2038,8 @@ export default function SiteBuilder() {
     listingId: string,
     listingType: "product" | "service",
   ) {
+    if (editorLocked) return;
+
     updateSelectedSection((section) => {
       if (
         section.source.kind !== "source" ||
@@ -1320,15 +2076,29 @@ export default function SiteBuilder() {
     previewWindow.postMessage(
       createSitePreviewStateMessage({
         site,
+        selectedPageId: selectedPage?.id ?? site.homePageId,
         sourceListings,
       }),
       window.location.origin,
     );
-  }, [site, sourceListings]);
+  }, [selectedPage?.id, site, sourceListings]);
+
+  const postPreviewActiveSelection = useCallback(() => {
+    const previewWindow = previewIframeRef.current?.contentWindow;
+    if (!previewWindow) return;
+
+    previewWindow.postMessage(
+      createSitePreviewActiveSelectionMessage(editorSelection),
+      window.location.origin,
+    );
+  }, [editorSelection]);
+
+  const postPreviewInitialMessages = useCallback(() => {
+    postPreviewState();
+    postPreviewActiveSelection();
+  }, [postPreviewActiveSelection, postPreviewState]);
 
   useEffect(() => {
-    if (selectedPage?.id !== "home") return;
-
     const viewportNode = previewViewportRef.current;
     if (!viewportNode) return;
 
@@ -1342,24 +2112,62 @@ export default function SiteBuilder() {
     observer.observe(viewportNode);
 
     return () => observer.disconnect();
-  }, [selectedPage?.id]);
+  }, [selectedPage?.sections.length]);
 
   useEffect(() => {
-    if (selectedPage?.id !== "home") return;
     postPreviewState();
   }, [postPreviewState, previewMode, selectedPage?.id]);
 
   useEffect(() => {
+    postPreviewActiveSelection();
+  }, [postPreviewActiveSelection, previewMode, selectedPage?.id]);
+
+  useEffect(() => {
     function handleMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      if (!isSitePreviewHeightMessage(event.data)) return;
+      if (event.source !== previewIframeRef.current?.contentWindow) return;
 
-      setPreviewContentHeight(Math.ceil(event.data.payload.height));
+      if (isSitePreviewHeightMessage(event.data)) {
+        setPreviewContentHeight(Math.ceil(event.data.payload.height));
+        return;
+      }
+
+      if (isSitePreviewContentEditRequestMessage(event.data)) {
+        const { pageId, sectionId, field, value } = event.data.payload;
+        const page = site.pages.find((candidate) => candidate.id === pageId);
+        const section = page?.sections.find(
+          (candidate) => candidate.id === sectionId,
+        );
+
+        if (!page || !section) return;
+        if (!sectionTypeSupportsInlineEditField(section.type, field)) return;
+
+        updateSectionContent(page.id, section.id, field, value);
+        return;
+      }
+
+      if (!isSitePreviewSelectionRequestMessage(event.data)) return;
+
+      const { pageId, sectionId, node } = event.data.payload;
+      const page = site.pages.find((candidate) => candidate.id === pageId);
+      const section = page?.sections.find(
+        (candidate) => candidate.id === sectionId,
+      );
+
+      if (!page || !section) return;
+
+      if (node) {
+        if (!sectionSupportsContentNode(section, node)) return;
+        selectSectionContentChild(page.id, section.id, node);
+        return;
+      }
+
+      selectSection(page.id, section.id);
     }
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [site.pages, updateSectionContent]);
 
   const previewLogicalWidth = previewModes[previewMode].width;
   const previewLogicalHeight =
@@ -1386,14 +2194,203 @@ export default function SiteBuilder() {
     if (
       selectedSection &&
       activeInspectorMode === "design" &&
-      !sectionHasDesignControls(selectedSection)
+      (selectedContentNode || !sectionHasDesignControls(selectedSection))
     ) {
       setActiveInspectorMode("content");
     }
-  }, [activeInspectorMode, selectedSection]);
+  }, [activeInspectorMode, selectedContentNode, selectedSection]);
+
+  useEffect(() => {
+    if (!editorSelection) return;
+
+    const page = site.pages.find(
+      (candidate) => candidate.id === editorSelection.pageId,
+    );
+    if (!page) {
+      setEditorSelection(null);
+      return;
+    }
+
+    const section = page.sections.find(
+      (candidate) => candidate.id === editorSelection.sectionId,
+    );
+    if (!section) {
+      setEditorSelection(
+        page.sections[0]
+          ? {
+              kind: "section",
+              pageId: page.id,
+              sectionId: page.sections[0].id,
+            }
+          : null,
+      );
+      return;
+    }
+
+    if (
+      editorSelection.kind === "content" &&
+      !sectionSupportsContentNode(section, editorSelection.node)
+    ) {
+      setEditorSelection({
+        kind: "section",
+        pageId: page.id,
+        sectionId: section.id,
+      });
+    }
+  }, [editorSelection, site.pages]);
+
+  useEffect(() => {
+    if (!selectedPage?.id) return;
+
+    setExpandedPageIds((current) => {
+      if (current.has(selectedPage.id)) return current;
+
+      return new Set(current).add(selectedPage.id);
+    });
+  }, [selectedPage?.id]);
+
+  const editingPage = editingPageId
+    ? site.pages.find((page) => page.id === editingPageId)
+    : null;
+  const pageDialogTitle = editingPage ? "Page settings" : "New page";
+  const pageDialogSlug = editingPage?.id === site.homePageId
+    ? ""
+    : sanitizeSlug(pageDraftSlug || pageDraftTitle);
+  const pageDialogSlugDuplicate =
+    pageDialogSlug !== "" &&
+    isDuplicateSlug(pageDialogSlug, site.pages, editingPage?.id);
+  const pageDialogCanSave =
+    pageDraftTitle.trim().length > 0 &&
+    (editingPage?.id === site.homePageId ||
+      (pageDialogSlug.length > 0 && !pageDialogSlugDuplicate));
+  const sectionInsertionLabel =
+    sectionInsertionIndex === null || !sectionInsertionPage
+      ? "Adds a section to the end of this page."
+      : sectionInsertionIndex >= sectionInsertionPage.sections.length
+      ? "Adds a section to the end of this page."
+      : sectionInsertionIndex <= 0
+      ? `Inserts before ${sectionInsertionPage.sections[0]?.label ?? "the first section"}.`
+      : `Inserts after ${sectionInsertionPage.sections[sectionInsertionIndex - 1]?.label ?? "the selected section"}.`;
+  const draftStatusLabel =
+    draftLoadStatus === "loading"
+      ? "Loading draft"
+      : draftLoadStatus === "error"
+      ? "Draft load failed"
+      : draftSaveStatus === "saving"
+      ? "Saving"
+      : draftSaveStatus === "saved"
+      ? "Saved"
+      : draftSaveStatus === "error"
+      ? "Save failed"
+      : "Draft ready";
+  const DraftStatusIcon =
+    draftLoadStatus === "loading" || draftSaveStatus === "saving"
+      ? Loader2
+      : draftLoadStatus === "error" || draftSaveStatus === "error"
+      ? AlertTriangle
+      : draftSaveStatus === "saved"
+      ? CheckCircle2
+      : Globe2;
+  const draftStatusTitle =
+    draftLoadStatus === "error"
+      ? draftLoadError ?? draftStatusLabel
+      : draftSaveStatus === "error"
+      ? draftSaveError ?? draftStatusLabel
+      : draftStatusLabel;
+  const draftLoadNoticeTitle =
+    draftLoadStatus === "error" ? "Draft load failed" : "Loading draft";
+  const draftLoadNoticeBody =
+    draftLoadStatus === "error"
+      ? draftLoadError ?? "Unable to load site draft."
+      : "Editor controls unlock after the saved draft is loaded.";
 
   return (
     <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-screen lg:overflow-hidden">
+      <SectionLibrary
+        open={showSectionLibrary && !editorLocked}
+        insertionLabel={sectionInsertionLabel}
+        onClose={closeSectionLibrary}
+        onInsert={addSection}
+      />
+
+      {showPageDialog ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-24">
+          <div className="w-full max-w-[360px] rounded-lg border border-white/[0.1] bg-[#111214] p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[14px] font-medium text-zinc-100">
+                  {pageDialogTitle}
+                </p>
+                <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                  {editingPage?.id === site.homePageId
+                    ? "The homepage resolves at /."
+                    : "Set the page name and URL slug."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePageDialog}
+                className="rounded-md px-2 py-1 text-[11px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <TextInput
+                id="site-page-title"
+                label="Page name"
+                value={pageDraftTitle}
+                onChange={updatePageDraftTitle}
+                placeholder="About"
+              />
+
+              <div>
+                <TextInput
+                  id="site-page-slug"
+                  label="URL slug"
+                  value={
+                    editingPage?.id === site.homePageId
+                      ? ""
+                      : pageDraftSlug
+                  }
+                  onChange={updatePageDraftSlug}
+                  placeholder="about"
+                />
+                <p className="mt-1.5 text-[10px] text-zinc-600">
+                  {editingPage?.id === site.homePageId
+                    ? "/"
+                    : `/${pageDialogSlug || "page"}`}
+                </p>
+                {pageDialogSlugDuplicate ? (
+                  <p className="mt-1.5 text-[10px] text-red-200/80">
+                    That slug is already in use.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closePageDialog}
+                className="h-8 rounded-md border border-white/[0.08] px-3 text-[11px] text-zinc-400 transition hover:border-white/[0.16] hover:text-zinc-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={savePageDraft}
+                disabled={!pageDialogCanSave}
+                className="h-8 rounded-md bg-zinc-100 px-3 text-[11px] font-medium text-black transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {editingPage ? "Save" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="border-b border-white/[0.07] bg-[#090a0b] px-4 py-3 lg:hidden">
         <p className="text-sm font-medium">Site</p>
         <p className="mt-1 text-xs text-zinc-500">
@@ -1402,8 +2399,12 @@ export default function SiteBuilder() {
       </div>
 
       <div className="hidden h-full min-h-0 lg:grid lg:grid-cols-[240px_minmax(0,1fr)_310px]">
-        {/* LEFT: pages / sections */}
-        <aside className="min-h-0 overflow-y-auto border-r border-white/[0.07] bg-[#090a0b]">
+        {/* LEFT: site tree */}
+        <aside
+          className={`min-h-0 overflow-y-auto border-r border-white/[0.07] bg-[#090a0b] ${
+            editorLocked ? "pointer-events-none select-none opacity-60" : ""
+          }`}
+        >
           <div className="border-b border-white/[0.07] px-4 py-4">
             <div className="flex items-center gap-2">
               <Globe2 className="h-4 w-4 text-zinc-400" />
@@ -1415,102 +2416,325 @@ export default function SiteBuilder() {
             </p>
           </div>
 
-          <div className="px-2.5 py-4">
-            <p className="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-600">
-              Pages
-            </p>
+          <div className="px-2.5 py-3">
+            <div className="flex h-7 items-center justify-between px-2">
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-600">
+                Pages
+              </p>
+              <button
+                type="button"
+                onClick={openNewPageDialog}
+                className="flex h-6 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200"
+                title="New page"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New</span>
+              </button>
+            </div>
 
-            <div className="space-y-1">
+            <div className="mt-1 space-y-px">
               {site.pages.map((page) => {
+                const pageExpanded = expandedPageIds.has(page.id);
                 const activePage = page.id === selectedPage?.id;
+                const activePageRow = activePage && !selectedSection;
+                const isHomePage = page.id === site.homePageId;
 
                 return (
                   <div key={page.id}>
-                    <button
-                      type="button"
-                      onClick={() => selectPage(page.id)}
-                      className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition ${
-                        activePage
-                          ? "bg-white/[0.07] text-white"
-                          : "text-zinc-400 hover:bg-white/[0.035] hover:text-zinc-200"
+                    <div
+                      className={`group flex h-8 items-center gap-1 rounded pr-1 transition ${
+                        activePageRow
+                          ? "bg-white/[0.06] text-zinc-100"
+                          : activePage
+                          ? "text-zinc-100 hover:bg-white/[0.035]"
+                          : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
                       }`}
                     >
-                      <ChevronRight
-                        className={`h-3.5 w-3.5 transition ${
-                          activePage ? "rotate-90" : ""
-                        }`}
-                      />
-                      {page.title}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePageExpanded(page.id)}
+                        className="flex h-8 w-6 shrink-0 items-center justify-center text-zinc-600 transition hover:text-zinc-200"
+                        title={pageExpanded ? "Collapse page" : "Expand page"}
+                      >
+                        {pageExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => selectPage(page.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left text-[12.5px]"
+                      >
+                        <FileText
+                          className={`h-3.5 w-3.5 shrink-0 ${
+                            activePage ? "text-zinc-300" : "text-zinc-500"
+                          }`}
+                        />
+                        <span className="truncate font-medium">
+                          {page.title}
+                        </span>
+                        {isHomePage ? (
+                          <Home className="h-3 w-3 shrink-0 text-zinc-600" />
+                        ) : null}
+                      </button>
 
-                    {activePage ? (
-                      <div className="ml-[18px] border-l border-white/[0.07] pl-2">
-                        {page.sections.map((section) => {
+                      <details className="relative shrink-0 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100 open:opacity-100">
+                        <summary
+                          className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-100 [&::-webkit-details-marker]:hidden"
+                          title="Page actions"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </summary>
+                        <div className="absolute right-0 top-8 z-30 w-44 rounded-md border border-white/[0.1] bg-[#111214] p-1 shadow-2xl">
+                          <InspectorMenuButton
+                            icon={Pencil}
+                            label="Page settings"
+                            onClick={() => openPageSettings(page.id)}
+                          />
+                          <InspectorMenuButton
+                            icon={Copy}
+                            label="Duplicate"
+                            onClick={() => duplicatePage(page.id)}
+                          />
+                          <InspectorMenuButton
+                            icon={Home}
+                            label="Set homepage"
+                            onClick={() => setHomepage(page.id)}
+                            disabled={isHomePage}
+                          />
+                          <InspectorMenuButton
+                            icon={Trash2}
+                            label="Delete"
+                            onClick={() => deletePage(page.id)}
+                            disabled={site.pages.length <= 1 || isHomePage}
+                            danger
+                          />
+                        </div>
+                      </details>
+                    </div>
+
+                    {pageExpanded ? (
+                      <div className="ml-[17px] border-l border-white/[0.05] pl-2.5">
+                        {page.sections.length === 0 ? (
+                          <p className="h-8 px-2 pt-2 text-[11px] text-zinc-700">
+                            Empty
+                          </p>
+                        ) : null}
+
+                        {page.sections.map((section, index) => {
                           const active =
-                            section.id === selectedSection?.id;
+                            activePage && section.id === selectedSection?.id;
+                          const activeSectionRow =
+                            active && editorSelection?.kind === "section";
+                          const activeSectionAncestor =
+                            active && editorSelection?.kind === "content";
+                          const canMoveUp = index > 0;
+                          const canMoveDown = index < page.sections.length - 1;
+                          const childNodes = getSectionNavigationChildren(section);
 
                           return (
-                            <button
-                              key={section.id}
-                              type="button"
-                              onClick={() =>
-                                setSelectedSectionId(section.id)
-                              }
-                              className={`flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[11px] transition ${
-                                active
-                                  ? "bg-white/[0.055] text-zinc-100"
-                                  : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300"
-                              }`}
-                            >
-                              <span className="truncate">{section.label}</span>
-                              {!section.visible ? (
-                                <EyeOff className="h-3 w-3 shrink-0 text-zinc-700" />
+                            <div key={section.id}>
+                              {index > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openSectionLibrary(page.id, index)}
+                                  className="group flex h-2 w-full items-center"
+                                  title="Add section here"
+                                >
+                                  <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/[0.14]" />
+                                  <span className="mx-1 hidden h-4 w-4 items-center justify-center rounded-full border border-white/[0.14] bg-[#111214] text-zinc-500 group-hover:flex">
+                                    <Plus className="h-3 w-3" />
+                                  </span>
+                                  <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/[0.14]" />
+                                </button>
                               ) : null}
-                            </button>
+
+                              <div
+                                className={`group flex h-7 items-center gap-1 rounded pr-1 transition ${
+                                  activeSectionRow
+                                    ? "bg-white/[0.05] text-zinc-100"
+                                    : activeSectionAncestor
+                                    ? "bg-white/[0.025] text-zinc-200"
+                                    : section.visible
+                                    ? "text-zinc-500 hover:bg-white/[0.025] hover:text-zinc-300"
+                                    : "text-zinc-700 hover:bg-white/[0.02] hover:text-zinc-500"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => selectSection(page.id, section.id)}
+                                  className="flex min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11.5px]"
+                                >
+                                  <Package
+                                    className={`h-3.5 w-3.5 shrink-0 ${
+                                      activeSectionRow || activeSectionAncestor
+                                        ? "text-zinc-300"
+                                        : section.visible
+                                        ? "text-zinc-600"
+                                        : "text-zinc-800"
+                                    }`}
+                                  />
+                                  <span
+                                    className={`truncate ${
+                                      activeSectionRow || activeSectionAncestor
+                                        ? "font-medium"
+                                        : "font-normal"
+                                    }`}
+                                  >
+                                    {section.label}
+                                  </span>
+                                  {!section.visible ? (
+                                    <EyeOff className="h-3 w-3 shrink-0 text-zinc-700" />
+                                  ) : null}
+                                </button>
+
+                                <details className="relative shrink-0 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100 open:opacity-100">
+                                  <summary
+                                    className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-100 [&::-webkit-details-marker]:hidden"
+                                    title="Section actions"
+                                  >
+                                    <MoreHorizontal className="h-3.5 w-3.5" />
+                                  </summary>
+                                  <div className="absolute right-0 top-8 z-30 w-40 rounded-md border border-white/[0.1] bg-[#111214] p-1 shadow-2xl">
+                                    <InspectorMenuButton
+                                      icon={Copy}
+                                      label="Duplicate"
+                                      onClick={() => duplicateSection(page.id, section.id)}
+                                    />
+                                    <InspectorMenuButton
+                                      icon={ArrowUp}
+                                      label="Move up"
+                                      onClick={() => moveSection(page.id, section.id, "up")}
+                                      disabled={!canMoveUp}
+                                    />
+                                    <InspectorMenuButton
+                                      icon={ArrowDown}
+                                      label="Move down"
+                                      onClick={() => moveSection(page.id, section.id, "down")}
+                                      disabled={!canMoveDown}
+                                    />
+                                    <InspectorMenuButton
+                                      icon={section.visible ? EyeOff : Eye}
+                                      label={section.visible ? "Hide" : "Show"}
+                                      onClick={() => toggleSectionVisibility(page.id, section.id)}
+                                    />
+                                    <InspectorMenuButton
+                                      icon={Trash2}
+                                      label="Delete"
+                                      onClick={() => deleteSection(page.id, section.id)}
+                                      danger
+                                    />
+                                  </div>
+                                </details>
+                              </div>
+
+                              {childNodes.length > 0 ? (
+                                <div className="ml-[15px] border-l border-white/[0.04] pl-2.5">
+                                  {childNodes.map((child) => {
+                                    const ChildIcon = child.icon;
+                                    const childActive =
+                                      active &&
+                                      editorSelection?.kind === "content" &&
+                                      editorSelection.node === child.id;
+
+                                    return (
+                                      <button
+                                        key={`${section.id}-${child.id}`}
+                                        type="button"
+                                        onClick={() =>
+                                          selectSectionContentChild(
+                                            page.id,
+                                            section.id,
+                                            child.id,
+                                          )
+                                        }
+                                        className={`flex h-6 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
+                                          childActive
+                                            ? "bg-white/[0.04] text-zinc-100"
+                                            : active
+                                            ? "text-zinc-400 hover:bg-white/[0.025] hover:text-zinc-200"
+                                            : "text-zinc-600 hover:bg-white/[0.02] hover:text-zinc-400"
+                                        }`}
+                                      >
+                                        <ChildIcon
+                                          className={`h-3 w-3 shrink-0 ${
+                                            childActive
+                                              ? "text-zinc-300"
+                                              : "text-zinc-700"
+                                          }`}
+                                        />
+                                        <span
+                                          className={`truncate ${
+                                            childActive ? "font-medium" : "font-normal"
+                                          }`}
+                                        >
+                                          {child.label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
                           );
                         })}
+
+                        <button
+                          type="button"
+                          onClick={() => openSectionLibrary(page.id, page.sections.length)}
+                          className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] text-zinc-600 transition hover:bg-white/[0.025] hover:text-zinc-300"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add section
+                        </button>
                       </div>
                     ) : null}
                   </div>
                 );
               })}
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShowSectionLibrary((current) => !current)}
-              className="mt-4 flex w-full items-center gap-2 rounded-md border border-dashed border-white/[0.1] px-3 py-2 text-left text-[11px] text-zinc-500 transition hover:border-white/[0.18] hover:text-zinc-300"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add section
-            </button>
-
-            {showSectionLibrary ? (
-              <div className="mt-2 rounded-md border border-white/[0.08] bg-black/20 p-1">
-                {addableSections.map((section) => (
-                  <button
-                    key={section.type}
-                    type="button"
-                    onClick={() => addSection(section)}
-                    className="flex h-8 w-full items-center justify-between rounded px-2 text-left text-[11px] text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
-                  >
-                    {section.label}
-                    <span className="text-[9px] text-zinc-700">
-                      {section.type}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </div>
         </aside>
 
         {/* CENTER: actual renderer */}
         <main className="flex min-w-0 flex-col bg-[#0c0d0e]">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-            <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-              <Monitor className="h-3.5 w-3.5" />
-              {previewModes[previewMode].label} preview
+            <div className="flex items-center gap-4 text-[11px] text-zinc-500">
+              <span className="flex items-center gap-2">
+                <Monitor className="h-3.5 w-3.5" />
+                {previewModes[previewMode].label} preview
+              </span>
+              <span
+                className={`flex items-center gap-2 ${
+                  draftLoadStatus === "error" || draftSaveStatus === "error"
+                    ? "text-red-200/80"
+                    : draftSaveStatus === "saved"
+                    ? "text-emerald-200/80"
+                    : "text-zinc-500"
+                }`}
+                title={draftStatusTitle}
+              >
+                <DraftStatusIcon
+                  className={`h-3.5 w-3.5 ${
+                    draftLoadStatus === "loading" ||
+                    draftSaveStatus === "saving"
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
+                {draftStatusLabel}
+              </span>
+              {draftLoadStatus === "error" ? (
+                <button
+                  type="button"
+                  onClick={loadDraft}
+                  className="h-7 rounded-md border border-red-200/20 px-2.5 text-[11px] font-medium text-red-100/80 transition hover:border-red-100/40 hover:bg-red-100/[0.06] hover:text-red-50"
+                >
+                  Retry draft load
+                </button>
+              ) : null}
             </div>
 
             <div className="flex rounded-md border border-white/[0.08] bg-black/20 p-1">
@@ -1531,7 +2755,7 @@ export default function SiteBuilder() {
             </div>
 
             <a
-              href={selectedPage?.previewPath ?? "/portfolio/mackvali"}
+              href={getPublicPageHref(site, selectedPage?.id)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-2 text-[11px] text-zinc-500 transition hover:text-zinc-200"
@@ -1541,8 +2765,32 @@ export default function SiteBuilder() {
             </a>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-6">
-            {selectedPage?.id === "home" ? (
+          <div className="relative min-h-0 flex-1 overflow-auto p-6">
+            {selectedPage && selectedPage.sections.length === 0 ? (
+              <div className="flex min-h-[620px] items-center justify-center rounded-md border border-dashed border-white/[0.1] bg-black/25">
+                <div className="text-center">
+                  <p className="text-[18px] font-medium tracking-[-0.02em] text-zinc-100">
+                    Start this page
+                  </p>
+                  <p className="mt-2 text-[12px] text-zinc-500">
+                    Add a section to begin.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openSectionLibrary(
+                        selectedPage.id,
+                        selectedPage.sections.length,
+                      )
+                    }
+                    className="mt-5 inline-flex h-9 items-center gap-2 rounded-md border border-white/[0.12] px-3 text-[12px] text-zinc-200 transition hover:border-white/[0.24] hover:bg-white/[0.05]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add section
+                  </button>
+                </div>
+              </div>
+            ) : (
               <div
                 ref={previewViewportRef}
                 className="mx-auto w-full max-w-[1440px]"
@@ -1556,9 +2804,10 @@ export default function SiteBuilder() {
                 >
                   <iframe
                     ref={previewIframeRef}
-                    title="Mack homepage preview"
+                    title={`${selectedPage?.title ?? "Site"} preview`}
+                    key={selectedPage?.id}
                     src="/site/preview"
-                    onLoad={postPreviewState}
+                    onLoad={postPreviewInitialMessages}
                     className="absolute left-0 top-0 block origin-top-left border-0 bg-black"
                     style={{
                       width: previewLogicalWidth,
@@ -1568,28 +2817,55 @@ export default function SiteBuilder() {
                   />
                 </div>
               </div>
-            ) : (
-              <div
-                className="mx-auto min-h-[620px] overflow-hidden rounded-md border border-white/[0.08] bg-black"
-                style={{
-                  width: previewFrameWidth || "100%",
-                  maxWidth: "100%",
-                }}
-              >
-                <iframe
-                  key={selectedPage?.previewPath}
-                  title={`${selectedPage?.title ?? "Site"} preview`}
-                  src={selectedPage?.previewPath}
-                  className="h-full min-h-[620px] w-full border-0"
-                />
-              </div>
             )}
+            {editorLocked ? (
+              <div className="absolute inset-0 z-20 bg-black/[0.03]">
+                <div className="absolute left-1/2 top-4 w-[min(360px,calc(100%-32px))] -translate-x-1/2 rounded-md border border-white/[0.1] bg-[#111214]/95 px-3 py-2.5 shadow-2xl backdrop-blur">
+                  <div className="flex items-start gap-2.5">
+                    <DraftStatusIcon
+                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                        draftLoadStatus === "loading"
+                          ? "animate-spin text-zinc-400"
+                          : "text-red-200/80"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-medium text-zinc-100">
+                        {draftLoadNoticeTitle}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                        {draftLoadNoticeBody}
+                      </p>
+                    </div>
+                    {draftLoadStatus === "error" ? (
+                      <button
+                        type="button"
+                        onClick={loadDraft}
+                        className="h-7 shrink-0 rounded-md border border-white/[0.12] px-2 text-[11px] text-zinc-200 transition hover:border-white/[0.22] hover:bg-white/[0.05]"
+                      >
+                        Retry
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </main>
 
         {/* RIGHT: selected section inspector */}
-        <aside className="min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#090a0b]">
-          {selectedSection ? (
+        <aside
+          className={`min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#090a0b] ${
+            editorLocked ? "pointer-events-none select-none opacity-60" : ""
+          }`}
+        >
+          {selectedSection && selectedContentNode ? (
+            <ContentNodeInspectorPanel
+              section={selectedSection}
+              node={selectedContentNode}
+              onContentChange={updateSelectedSectionContent}
+            />
+          ) : selectedSection ? (
             <>
               <InspectorHeader
                 pageTitle={selectedPage?.title ?? "Page"}
@@ -1602,8 +2878,7 @@ export default function SiteBuilder() {
                     : false
                 }
                 canDelete={
-                  selectedSection.type !== "hero" &&
-                  Boolean(selectedPage && selectedPage.sections.length > 1)
+                  Boolean(selectedPage)
                 }
                 onDuplicate={duplicateSelectedSection}
                 onToggleVisible={toggleSelectedSectionVisibility}

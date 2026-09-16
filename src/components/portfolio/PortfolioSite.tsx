@@ -4,7 +4,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { resolveListingImage } from "@/components/profile/detailSheetUtils";
 import PortfolioVisual from "@/components/portfolio/PortfolioVisual";
@@ -13,7 +22,11 @@ import type {
   PortfolioProject,
   PortfolioSiteData,
 } from "@/lib/portfolio/types";
-import type { SiteSection } from "@/lib/site-builder/types";
+import type { SitePreviewInlineEditField } from "@/lib/site-builder/previewMessages";
+import type {
+  SiteEditorSelection,
+  SiteSection,
+} from "@/lib/site-builder/types";
 import type { SourceListing } from "@/types/source";
 
 type PortfolioSiteProps = {
@@ -21,7 +34,310 @@ type PortfolioSiteProps = {
   sections?: SiteSection[];
   sourceListings?: SourceListing[];
   editorPreview?: boolean;
+  editorPageId?: string;
+  editorSelection?: SiteEditorSelection | null;
+  onEditorSelectionRequest?: (selection: {
+    pageId: string;
+    sectionId: string;
+    node?: "text" | "button";
+  }) => void;
+  onEditorContentEditRequest?: (edit: {
+    pageId: string;
+    sectionId: string;
+    field: SitePreviewInlineEditField;
+    value: string;
+  }) => void;
 };
+
+type EditorNodeId = "text" | "button";
+
+type EditorSelectionContext = {
+  editorPreview: boolean;
+  pageId: string;
+  activeSelection: SiteEditorSelection | null;
+  onSelectionRequest?: (selection: {
+    pageId: string;
+    sectionId: string;
+    node?: EditorNodeId;
+  }) => void;
+  onContentEditRequest?: (edit: {
+    pageId: string;
+    sectionId: string;
+    field: SitePreviewInlineEditField;
+    value: string;
+  }) => void;
+};
+
+function getSectionSelectionState(
+  context: EditorSelectionContext,
+  sectionId: string,
+) {
+  const active =
+    context.activeSelection?.pageId === context.pageId &&
+    context.activeSelection.sectionId === sectionId;
+
+  return {
+    active,
+    selected: active && context.activeSelection?.kind === "section",
+  };
+}
+
+function getNodeSelectionState(
+  context: EditorSelectionContext,
+  sectionId: string,
+  node: EditorNodeId,
+) {
+  const active =
+    context.activeSelection?.pageId === context.pageId &&
+    context.activeSelection.sectionId === sectionId &&
+    context.activeSelection.kind === "content" &&
+    context.activeSelection.node === node;
+
+  return {
+    active,
+    sectionActive:
+      context.activeSelection?.pageId === context.pageId &&
+      context.activeSelection.sectionId === sectionId,
+  };
+}
+
+function editorSectionClass(
+  context: EditorSelectionContext,
+  sectionId: string | undefined,
+) {
+  if (!context.editorPreview || !sectionId) return "";
+
+  const state = getSectionSelectionState(context, sectionId);
+
+  if (state.selected) {
+    return "outline outline-1 -outline-offset-1 outline-white/45";
+  }
+
+  if (state.active) {
+    return "outline outline-1 -outline-offset-1 outline-white/22 hover:outline-white/32";
+  }
+
+  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:outline-white/12";
+}
+
+function editorNodeClass(
+  context: EditorSelectionContext,
+  sectionId: string | undefined,
+  node: EditorNodeId,
+) {
+  if (!context.editorPreview || !sectionId) return "";
+
+  const state = getNodeSelectionState(context, sectionId, node);
+
+  if (state.active) {
+    return "rounded-[3px] bg-white/[0.045] outline outline-1 -outline-offset-1 outline-white/50";
+  }
+
+  return "rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:bg-white/[0.025] hover:outline-white/24";
+}
+
+function handleEditorSectionClick(
+  event: MouseEvent<HTMLElement>,
+  context: EditorSelectionContext,
+  sectionId: string | undefined,
+) {
+  if (!context.editorPreview || !sectionId) return;
+
+  if (event.target instanceof Element && event.target.closest("a")) {
+    event.preventDefault();
+  }
+
+  context.onSelectionRequest?.({
+    pageId: context.pageId,
+    sectionId,
+  });
+}
+
+function handleEditorNodeClick(
+  event: MouseEvent<HTMLElement>,
+  context: EditorSelectionContext,
+  sectionId: string | undefined,
+  node: EditorNodeId,
+) {
+  if (!context.editorPreview || !sectionId) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  context.onSelectionRequest?.({
+    pageId: context.pageId,
+    sectionId,
+    node,
+  });
+}
+
+type InlineEditableTextProps = {
+  as?: "span" | "p" | "h1" | "h2";
+  value: string;
+  field: SitePreviewInlineEditField;
+  sectionId: string | undefined;
+  node: EditorNodeId;
+  editorContext: EditorSelectionContext;
+  className?: string;
+  multiline?: boolean;
+  children?: ReactNode;
+};
+
+function getPlainEditableText(element: HTMLElement) {
+  return element.innerText.replace(/\u00a0/g, " ");
+}
+
+function InlineEditableText({
+  as: Tag = "span",
+  value,
+  field,
+  sectionId,
+  node,
+  editorContext,
+  className = "",
+  multiline = false,
+  children,
+}: InlineEditableTextProps) {
+  const elementRef = useRef<HTMLElement | null>(null);
+  const startingValueRef = useRef(value);
+  const escapeRestoreRef = useRef<string | null>(null);
+  const editKeyRef = useRef(`${editorContext.pageId}:${sectionId ?? ""}:${field}`);
+  const [editing, setEditing] = useState(false);
+  const editable =
+    editorContext.editorPreview &&
+    Boolean(sectionId) &&
+    Boolean(editorContext.onContentEditRequest);
+
+  useEffect(() => {
+    if (editing) return;
+    if (elementRef.current && elementRef.current.innerText !== value) {
+      elementRef.current.innerText = value;
+    }
+  }, [editing, value]);
+
+  useLayoutEffect(() => {
+    if (!editing || !elementRef.current) return;
+    elementRef.current.innerText = startingValueRef.current;
+  }, [editing]);
+
+  useEffect(() => {
+    const nextKey = `${editorContext.pageId}:${sectionId ?? ""}:${field}`;
+    if (editKeyRef.current === nextKey) return;
+    editKeyRef.current = nextKey;
+    setEditing(false);
+  }, [editorContext.pageId, sectionId, field]);
+
+  function requestValue(nextValue: string) {
+    if (!sectionId) return;
+    editorContext.onContentEditRequest?.({
+      pageId: editorContext.pageId,
+      sectionId,
+      field,
+      value: nextValue,
+    });
+  }
+
+  function enterEditing(event: MouseEvent<HTMLElement>) {
+    if (!editable || !sectionId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    editorContext.onSelectionRequest?.({
+      pageId: editorContext.pageId,
+      sectionId,
+      node,
+    });
+    startingValueRef.current = value;
+    setEditing(true);
+
+    window.requestAnimationFrame(() => {
+      const element = elementRef.current;
+      if (!element) return;
+
+      element.focus();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+  }
+
+  function handleInput() {
+    const element = elementRef.current;
+    if (!element) return;
+    requestValue(getPlainEditableText(element));
+  }
+
+  function handleBlur() {
+    if (escapeRestoreRef.current !== null) {
+      requestValue(escapeRestoreRef.current);
+      escapeRestoreRef.current = null;
+    } else {
+      const element = elementRef.current;
+      if (element) requestValue(getPlainEditableText(element));
+    }
+
+    setEditing(false);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      escapeRestoreRef.current = startingValueRef.current;
+      elementRef.current?.blur();
+      return;
+    }
+
+    if (event.key === "Enter" && !multiline) {
+      event.preventDefault();
+      elementRef.current?.blur();
+    }
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLElement>) {
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(
+      document.createTextNode(multiline ? text : text.replace(/\s+/g, " ")),
+    );
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    handleInput();
+  }
+
+  return (
+    <Tag
+      ref={elementRef as never}
+      contentEditable={editing}
+      suppressContentEditableWarning
+      tabIndex={editing ? 0 : undefined}
+      onDoubleClick={enterEditing}
+      onInput={handleInput}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
+      className={`${className} ${
+        editable
+          ? "cursor-text rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent hover:outline-white/20"
+          : ""
+      } ${
+        editing
+          ? "bg-white/[0.055] outline-white/45"
+          : ""
+      }`}
+    >
+      {editing ? null : children ?? value}
+    </Tag>
+  );
+}
 
 const creatorLogo = "/images/creator-logo.png";
 const scheduleImage =
@@ -278,7 +594,7 @@ const defaultMackSections: Array<Pick<SiteSection, "id" | "label" | "type" | "vi
       label: "Software",
       type: "projects",
       visible: true,
-      source: { kind: "creator", entity: "project", mode: "selected" },
+      source: { kind: "manual" },
       content: { templateKind: "software" },
     },
     {
@@ -385,12 +701,21 @@ function sectionBackgroundClass(section: SiteSection | undefined) {
   return "";
 }
 
+function sectionVariant(section: SiteSection | undefined, fallback: string) {
+  const variant = section?.layout?.variant;
+  return typeof variant === "string" && variant.length > 0
+    ? variant
+    : fallback;
+}
+
 function HeroSection({
   site,
   section,
+  editorContext,
 }: {
   site: PortfolioSiteData;
   section?: SiteSection;
+  editorContext: EditorSelectionContext;
 }) {
   const eyebrow = readContentString(
     section,
@@ -403,52 +728,129 @@ function HeroSection({
     "Explore my work",
   );
   const ctaHref = readContentString(section, "primaryCtaHref", "#software");
-  const centered =
-    section?.layout?.alignment === "center" ||
-    section?.layout?.variant === "centered";
+  const headline = readContentString(section, "headline", site.headline);
+  const intro = readContentString(section, "intro", site.intro);
+  const variant = sectionVariant(section, "split");
+  const centered = variant === "centered";
+  const editorial = variant === "editorial";
+  const minimal = variant === "minimal";
 
   return (
     <section
-      className={`relative overflow-hidden border-b border-white/[0.08] lg:h-[410px] ${sectionBackgroundClass(
+      data-creator-editor-section={editorContext.editorPreview ? section?.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
+      className={`relative overflow-hidden border-b border-white/[0.08] ${
+        minimal ? "" : "lg:min-h-[410px]"
+      } ${sectionBackgroundClass(
         section,
-      )}`}
+      )} ${editorSectionClass(editorContext, section?.id)}`}
     >
-      <div className="relative mx-auto h-full max-w-[1600px]">
-        {centered ? null : <HeroStage />}
+      <div
+        className={`relative mx-auto max-w-[1600px] ${
+          centered
+            ? "px-5 py-12 text-center sm:px-8 lg:px-[58px] lg:py-16"
+            : editorial
+            ? "grid gap-8 px-5 py-10 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-[58px] lg:py-14"
+            : minimal
+            ? "px-5 py-8 sm:px-8 lg:px-[58px]"
+            : "h-full"
+        }`}
+      >
+        {variant === "split" ? <HeroStage /> : null}
 
-        <div className="relative z-10 flex min-h-[360px] flex-col justify-center px-5 py-10 sm:px-8 lg:h-full lg:min-h-0 lg:w-[31%] lg:px-[58px] lg:py-0">
-          <p className="text-[7px] font-medium uppercase tracking-[0.38em] text-white/38">
-            {eyebrow}
-          </p>
-
-          <h1
-            className={`mt-4 whitespace-pre-line text-[clamp(3rem,3.8vw,4rem)] leading-[0.93] tracking-[-0.065em] text-white/95 ${
-              centered ? "mx-auto max-w-[760px] text-center" : ""
-            }`}
+        <div
+          className={`relative z-10 flex flex-col justify-center ${
+            centered
+              ? "mx-auto min-h-0 max-w-[840px]"
+              : editorial
+              ? "min-h-[300px] max-w-[860px]"
+              : minimal
+              ? "max-w-[760px]"
+              : "min-h-[360px] px-5 py-10 sm:px-8 lg:h-[410px] lg:min-h-0 lg:w-[31%] lg:px-[58px] lg:py-0"
+          }`}
+        >
+          <div
+            data-creator-editor-node={editorContext.editorPreview ? "text" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section?.id, "text")
+            }
+            className={editorNodeClass(editorContext, section?.id, "text")}
           >
-            {site.headline}
-          </h1>
+            <InlineEditableText
+              as="p"
+              value={eyebrow}
+              field="eyebrow"
+              sectionId={section?.id}
+              node="text"
+              editorContext={editorContext}
+              className="text-[7px] font-medium uppercase tracking-[0.38em] text-white/38"
+            />
 
-          <p
-            className={`mt-5 max-w-[355px] text-[11px] leading-[1.55] text-white/53 ${
-              centered ? "mx-auto text-center" : ""
-            }`}
-          >
-            {site.intro}
-          </p>
+            <InlineEditableText
+              as="h1"
+              value={headline}
+              field="headline"
+              sectionId={section?.id}
+              node="text"
+              editorContext={editorContext}
+              className={`mt-4 whitespace-pre-line leading-[0.93] tracking-[-0.065em] text-white/95 ${
+                editorial
+                  ? "text-[clamp(3.5rem,7vw,7.5rem)]"
+                  : minimal
+                  ? "text-[clamp(2.25rem,4vw,4.25rem)]"
+                  : "text-[clamp(3rem,3.8vw,4rem)]"
+              } ${
+                centered ? "mx-auto max-w-[760px] text-center" : ""
+              }`}
+            />
+
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section?.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className={`mt-5 text-[11px] leading-[1.55] text-white/53 ${
+                editorial ? "max-w-[560px]" : "max-w-[355px]"
+              } ${
+                centered ? "mx-auto text-center" : ""
+              }`}
+            />
+          </div>
 
           <a
             href={ctaHref || "#software"}
+            data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section?.id, "button")
+            }
             className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/35 hover:text-white ${
               centered ? "mx-auto" : ""
-            }`}
+            } ${editorNodeClass(editorContext, section?.id, "button")}`}
           >
-            {ctaLabel}
+            <InlineEditableText
+              value={ctaLabel}
+              field="primaryCtaLabel"
+              sectionId={section?.id}
+              node="button"
+              editorContext={editorContext}
+            />
             <span>→</span>
           </a>
         </div>
 
-        <div className={`px-5 pb-7 ${centered ? "" : "lg:hidden"}`}>
+        {minimal ? null : (
+        <div
+          className={`${
+            centered
+              ? "mx-auto mt-8 max-w-[880px]"
+              : editorial
+              ? "self-center"
+              : "px-5 pb-7 lg:hidden"
+          }`}
+        >
           <div className="relative aspect-[16/9] overflow-hidden border border-white/[0.08] bg-black">
             <Image
               src={scheduleImage}
@@ -482,12 +884,21 @@ function HeroSection({
             </div>
           </div>
         </div>
+        )}
       </div>
     </section>
   );
 }
 
-function SoftwareSection({ site }: { site: PortfolioSiteData }) {
+function SoftwareSection({
+  site,
+  section,
+  editorContext,
+}: {
+  site: PortfolioSiteData;
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
   const creator =
     site.software.find((project) => project.slug === "creator") ??
     site.software[0];
@@ -499,7 +910,12 @@ function SoftwareSection({ site }: { site: PortfolioSiteData }) {
   return (
     <section
       id="software"
-      className="scroll-mt-16 border-b border-white/[0.08]"
+      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
+      className={`scroll-mt-16 border-b border-white/[0.08] ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
     >
       <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px]">
         <SectionRule number="01" label="Software" />
@@ -520,13 +936,25 @@ function SoftwareSection({ site }: { site: PortfolioSiteData }) {
 
 function LowerWorkSection({
   site,
-  kinds,
+  sections,
+  editorContext,
 }: {
   site: PortfolioSiteData;
-  kinds: MackSectionKind[];
+  sections: SiteSection[];
+  editorContext: EditorSelectionContext;
 }) {
+  const kinds = sections.map(getTemplateKind);
   const visibleKinds = kinds.filter(isLowerWorkKind);
   if (visibleKinds.length === 0) return null;
+  const clothingSection = sections.find(
+    (section) => getTemplateKind(section) === "clothing",
+  );
+  const visualSection = sections.find(
+    (section) => getTemplateKind(section) === "visual",
+  );
+  const studioSection = sections.find(
+    (section) => getTemplateKind(section) === "studio",
+  );
 
   return (
     <section className="border-b border-white/[0.08]">
@@ -536,7 +964,20 @@ function LowerWorkSection({
             <>
               <div
                 id="clothing"
-                className="overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r"
+                data-creator-editor-section={
+                  editorContext.editorPreview ? clothingSection?.id : undefined
+                }
+                onClick={(event) =>
+                  handleEditorSectionClick(
+                    event,
+                    editorContext,
+                    clothingSection?.id,
+                  )
+                }
+                className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
+                  editorContext,
+                  clothingSection?.id,
+                )}`}
               >
                 <div className="h-[28px] px-0">
                   <SectionRule number="03" label="Clothing" />
@@ -552,7 +993,22 @@ function LowerWorkSection({
                 </div>
               </div>
 
-              <div className="overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r">
+              <div
+                data-creator-editor-section={
+                  editorContext.editorPreview ? clothingSection?.id : undefined
+                }
+                onClick={(event) =>
+                  handleEditorSectionClick(
+                    event,
+                    editorContext,
+                    clothingSection?.id,
+                  )
+                }
+                className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
+                  editorContext,
+                  clothingSection?.id,
+                )}`}
+              >
                 <div className="h-[28px] border-b border-transparent" />
 
                 <div className="h-[136px]">
@@ -570,7 +1026,16 @@ function LowerWorkSection({
           {visibleKinds.includes("visual") ? (
             <div
               id="visual"
-              className="overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r"
+              data-creator-editor-section={
+                editorContext.editorPreview ? visualSection?.id : undefined
+              }
+              onClick={(event) =>
+                handleEditorSectionClick(event, editorContext, visualSection?.id)
+              }
+              className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
+                editorContext,
+                visualSection?.id,
+              )}`}
             >
               <div className="h-[28px]">
                 <SectionRule number="04" label="Visual" />
@@ -601,7 +1066,19 @@ function LowerWorkSection({
           ) : null}
 
           {visibleKinds.includes("studio") ? (
-            <div id="studio" className="overflow-hidden">
+            <div
+              id="studio"
+              data-creator-editor-section={
+                editorContext.editorPreview ? studioSection?.id : undefined
+              }
+              onClick={(event) =>
+                handleEditorSectionClick(event, editorContext, studioSection?.id)
+              }
+              className={`overflow-hidden ${editorSectionClass(
+                editorContext,
+                studioSection?.id,
+              )}`}
+            >
               <div className="h-[28px]">
                 <SectionRule number="05" label="Studio" />
               </div>
@@ -645,10 +1122,12 @@ function ProductsSection({
   section,
   listings,
   editorPreview,
+  editorContext,
 }: {
   section: SiteSection;
   listings: SourceListing[];
   editorPreview: boolean;
+  editorContext: EditorSelectionContext;
 }) {
   const selectedIds =
     section.source.kind === "source" && section.source.mode === "selected"
@@ -668,25 +1147,34 @@ function ProductsSection({
   const showPrice = section.style?.showPrice !== false;
   const showDescription = section.style?.showDescription !== false;
   const columns = section.layout?.columns ?? 3;
-  const variant = section.layout?.variant ?? "grid";
-  const gridClass =
-    variant === "row"
-      ? "grid gap-3 border-x border-t border-white/[0.08] p-3"
-      : `grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${
-          columns === 4
-            ? "lg:grid-cols-4"
-            : columns === 2
-            ? "lg:grid-cols-2"
-            : "lg:grid-cols-3"
-        }`;
+  const variant = sectionVariant(section, "grid");
+  const isServices = listingType === "service";
+  const listMode = variant === "list";
+  const featuredMode = variant === "featured";
+  const editorialMode = variant === "editorial";
+  const gridClass = listMode
+    ? "grid gap-3 border-x border-t border-white/[0.08] p-3"
+    : featuredMode
+    ? "grid gap-3 border-x border-t border-white/[0.08] p-3 lg:grid-cols-[1.45fr_1fr]"
+    : editorialMode
+    ? "grid gap-3 border-x border-t border-white/[0.08] p-3 md:grid-cols-2"
+    : `grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${
+        columns === 4
+          ? "lg:grid-cols-4"
+          : columns === 2
+          ? "lg:grid-cols-2"
+          : "lg:grid-cols-3"
+      }`;
 
   if (products.length === 0 && !editorPreview) return null;
 
   return (
     <section
+      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
       className={`border-b border-white/[0.08] ${sectionBackgroundClass(
         section,
-      )}`}
+      )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
@@ -698,48 +1186,93 @@ function ProductsSection({
 
         {products.length > 0 ? (
           <div className={gridClass}>
-            {products.map((product) => {
+            {products.map((product, index) => {
               const card = normalizeSourceListingCardProps(product);
               const image = resolveListingImage(product) ?? card.image;
+              const featured = featuredMode && index === 0;
 
               return (
                 <article
                   key={product.id}
-                  className="grid min-h-[132px] overflow-hidden border border-white/[0.08] bg-white/[0.018] sm:grid-cols-[42%_58%]"
+                  className={`grid overflow-hidden border border-white/[0.08] bg-white/[0.018] ${
+                    listMode
+                      ? "min-h-[112px] sm:grid-cols-[180px_1fr]"
+                      : editorialMode
+                      ? "min-h-[190px]"
+                      : featured
+                      ? "min-h-[260px] lg:row-span-2"
+                      : "min-h-[132px] sm:grid-cols-[42%_58%]"
+                  }`}
                 >
-                  <div className="relative min-h-[128px] bg-black">
+                  <div
+                    className={`relative bg-black ${
+                      listMode
+                        ? "min-h-[112px]"
+                        : editorialMode
+                        ? "hidden"
+                        : featured
+                        ? "min-h-[220px]"
+                        : "min-h-[128px]"
+                    }`}
+                  >
                     {image ? (
                       <img
                         src={image}
                         alt={product.title}
-                        className="h-full min-h-[128px] w-full object-cover"
+                        className={`h-full w-full object-cover ${
+                          listMode
+                            ? "min-h-[112px]"
+                            : featured
+                            ? "min-h-[220px]"
+                            : "min-h-[128px]"
+                        }`}
                       />
                     ) : (
-                      <div className="flex h-full min-h-[128px] items-center justify-center text-[8px] uppercase tracking-[0.24em] text-white/28">
+                      <div className="flex h-full min-h-[112px] items-center justify-center text-[8px] uppercase tracking-[0.24em] text-white/28">
                         No image
                       </div>
                     )}
                   </div>
 
-                  <div className="flex min-w-0 flex-col justify-between p-4">
+                  <div
+                    className={`flex min-w-0 flex-col justify-between ${
+                      editorialMode
+                        ? "p-6"
+                        : featured
+                        ? "p-5"
+                        : "p-4"
+                    }`}
+                  >
                     <div>
                       {showPrice ? (
                         <p className="text-[7px] font-medium uppercase tracking-[0.25em] text-white/35">
                         {card.priceLabel}
                         </p>
                       ) : null}
-                      <h3 className="mt-2 text-[18px] leading-tight tracking-[-0.04em] text-white/92">
+                      <h3
+                        className={`mt-2 leading-tight tracking-[-0.04em] text-white/92 ${
+                          editorialMode || featured
+                            ? "text-[28px]"
+                            : "text-[18px]"
+                        }`}
+                      >
                         {product.title}
                       </h3>
                       {showDescription && product.description ? (
-                        <p className="mt-2 line-clamp-3 text-[8.5px] leading-[1.55] text-white/42">
+                        <p
+                          className={`mt-2 leading-[1.55] text-white/42 ${
+                            editorialMode || featured
+                              ? "text-[11px]"
+                              : "line-clamp-3 text-[8.5px]"
+                          }`}
+                        >
                           {product.description}
                         </p>
                       ) : null}
                     </div>
 
                     <span className="mt-4 text-[7px] uppercase tracking-[0.14em] text-white/55">
-                      Source {listingType}
+                      Source {isServices ? "service" : "product"}
                     </span>
                   </div>
                 </article>
@@ -756,15 +1289,26 @@ function ProductsSection({
   );
 }
 
-function SimpleManualSection({ section }: { section: SiteSection }) {
+function SimpleManualSection({
+  section,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
   const heading = readContentString(section, "heading", section.label);
   const body = readContentString(section, "body");
+  const variant = sectionVariant(section, "standard");
+  const narrow = variant === "narrow";
+  const split = variant === "split";
 
   return (
     <section
+      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
       className={`border-b border-white/[0.08] ${sectionBackgroundClass(
         section,
-      )}`}
+      )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
         className={`mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
@@ -773,15 +1317,25 @@ function SimpleManualSection({ section }: { section: SiteSection }) {
       >
         <SectionRule number="02" label={section.label} />
         <div
-          className={`${sectionWidthClass(section)} py-5 ${sectionAlignmentClass(
-            section,
-          )}`}
+          className={`py-5 ${
+            split
+              ? "grid gap-5 md:grid-cols-[0.8fr_1.2fr]"
+              : `${narrow ? "mx-auto max-w-[520px] text-center" : sectionWidthClass(section)} ${sectionAlignmentClass(section)}`
+          }`}
         >
-          <h2 className="text-[28px] leading-none tracking-[-0.05em] text-white/92">
+          <h2
+            className={`leading-none tracking-[-0.05em] text-white/92 ${
+              split ? "text-[36px]" : "text-[28px]"
+            }`}
+          >
             {heading}
           </h2>
           {body ? (
-            <p className="mt-3 text-[11px] leading-[1.65] text-white/48">
+            <p
+              className={`text-[11px] leading-[1.65] text-white/48 ${
+                split ? "mt-1 max-w-[620px]" : "mt-3"
+              }`}
+            >
               {body}
             </p>
           ) : null}
@@ -791,20 +1345,32 @@ function SimpleManualSection({ section }: { section: SiteSection }) {
   );
 }
 
-function GallerySection({ section }: { section: SiteSection }) {
+function GallerySection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
   const heading = readContentString(section, "heading", section.label);
   const columns = section.layout?.columns ?? 3;
 
+  if (!editorPreview) return null;
+
   return (
     <section
+      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
       className={`border-b border-white/[0.08] ${sectionBackgroundClass(
         section,
-      )}`}
+      )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
         <div
-          className={`grid gap-3 border-x border-t border-white/[0.08] p-3 ${
+          className={`grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${
             columns === 4
               ? "lg:grid-cols-4"
               : columns === 2
@@ -821,18 +1387,28 @@ function GallerySection({ section }: { section: SiteSection }) {
   );
 }
 
-function CtaSection({ section }: { section: SiteSection }) {
+function CtaSection({
+  section,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
   const heading = readContentString(section, "heading", section.label);
   const body = readContentString(section, "body");
   const label = readContentString(section, "buttonLabel", "Get started");
   const href = readContentString(section, "buttonHref", "#contact");
-  const centered = section.layout?.alignment === "center";
+  const variant = sectionVariant(section, "banner");
+  const centered = variant === "centered";
+  const minimal = variant === "minimal";
 
   return (
     <section
+      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
       className={`border-b border-white/[0.08] ${sectionBackgroundClass(
         section,
-      )}`}
+      )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
         className={`mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
@@ -840,23 +1416,66 @@ function CtaSection({ section }: { section: SiteSection }) {
         )}`}
       >
         <div
-          className={`max-w-[680px] ${centered ? "mx-auto text-center" : ""}`}
+          className={`${
+            centered
+              ? "mx-auto max-w-[680px] text-center"
+              : minimal
+              ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
+              : "grid gap-5 md:grid-cols-[1fr_auto] md:items-center"
+          }`}
         >
-          <h2 className="text-[32px] leading-none tracking-[-0.055em] text-white/92">
-            {heading}
-          </h2>
-          {body ? (
-            <p className="mt-3 text-[11px] leading-[1.65] text-white/48">
-              {body}
-            </p>
-          ) : null}
+          <div
+            data-creator-editor-node={editorContext.editorPreview ? "text" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section.id, "text")
+            }
+            className={`${minimal ? "max-w-[720px]" : ""} ${editorNodeClass(
+              editorContext,
+              section.id,
+              "text",
+            )}`}
+          >
+            <InlineEditableText
+              as="h2"
+              value={heading}
+              field="heading"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              className={`leading-none tracking-[-0.055em] text-white/92 ${
+                minimal ? "text-[22px]" : "text-[32px]"
+              }`}
+            />
+            {body ? (
+              <InlineEditableText
+                as="p"
+                value={body}
+                field="body"
+                sectionId={section.id}
+                node="text"
+                editorContext={editorContext}
+                multiline
+                className="mt-3 text-[11px] leading-[1.65] text-white/48"
+              />
+            ) : null}
+          </div>
           <a
             href={href || "#contact"}
+            data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section.id, "button")
+            }
             className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/35 hover:text-white ${
-              centered ? "mx-auto" : ""
-            }`}
+              centered ? "mx-auto" : minimal ? "mt-0 shrink-0" : "mt-0 shrink-0"
+            } ${editorNodeClass(editorContext, section.id, "button")}`}
           >
-            {label}
+            <InlineEditableText
+              value={label}
+              field="buttonLabel"
+              sectionId={section.id}
+              node="button"
+              editorContext={editorContext}
+            />
             <span>→</span>
           </a>
         </div>
@@ -868,9 +1487,11 @@ function CtaSection({ section }: { section: SiteSection }) {
 function ContactSection({
   site,
   section,
+  editorContext,
 }: {
   site: PortfolioSiteData;
   section?: SiteSection;
+  editorContext: EditorSelectionContext;
 }) {
   const heading = readContentString(
     section,
@@ -884,28 +1505,79 @@ function ContactSection({
   );
   const label = readContentString(section, "buttonLabel", "Get in touch");
   const href = readContentString(section, "buttonHref", "#contact");
+  const centered = sectionVariant(section, "standard") === "centered";
 
   return (
-    <section id="contact">
+    <section
+      id="contact"
+      data-creator-editor-section={editorContext.editorPreview ? section?.id : undefined}
+      onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
+      className={editorSectionClass(editorContext, section?.id)}
+    >
       <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px]">
-        <div className="grid min-h-[48px] items-center gap-4 border-b border-white/[0.08] lg:grid-cols-[210px_1fr_auto]">
+        <div
+          className={`grid items-center gap-4 border-b border-white/[0.08] ${
+            centered
+              ? "min-h-[180px] py-8 text-center"
+              : "min-h-[48px] lg:grid-cols-[210px_1fr_auto]"
+          }`}
+        >
           <SectionRule number="06" label="Contact" />
 
-          <div className="flex items-baseline gap-7">
-            <p className="text-[13px] tracking-[-0.02em] text-white/80">
-              {heading}
-            </p>
+          <div
+            data-creator-editor-node={editorContext.editorPreview ? "text" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section?.id, "text")
+            }
+            className={`${
+              centered
+                ? "mx-auto max-w-[620px]"
+                : "flex items-baseline gap-7"
+            } ${editorNodeClass(editorContext, section?.id, "text")}`}
+          >
+            <InlineEditableText
+              as="p"
+              value={heading}
+              field="heading"
+              sectionId={section?.id}
+              node="text"
+              editorContext={editorContext}
+              className="text-[13px] tracking-[-0.02em] text-white/80"
+            />
 
-            <p className="hidden text-[8px] text-white/32 xl:block">
-              {body}
-            </p>
+            <InlineEditableText
+              as="p"
+              value={body}
+              field="body"
+              sectionId={section?.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className={`text-white/32 ${
+                centered
+                  ? "mt-3 text-[10px] leading-5"
+                  : "hidden text-[8px] xl:block"
+              }`}
+            />
           </div>
 
           <a
             href={href || "#contact"}
-            className="inline-flex h-7 w-fit items-center gap-4 rounded-full border border-white/[0.17] px-4 text-[7px] uppercase tracking-[0.17em] text-white/65"
+            data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
+            onClick={(event) =>
+              handleEditorNodeClick(event, editorContext, section?.id, "button")
+            }
+            className={`inline-flex h-7 w-fit items-center gap-4 rounded-full border border-white/[0.17] px-4 text-[7px] uppercase tracking-[0.17em] text-white/65 ${
+              centered ? "mx-auto" : ""
+            } ${editorNodeClass(editorContext, section?.id, "button")}`}
           >
-            {label}
+            <InlineEditableText
+              value={label}
+              field="buttonLabel"
+              sectionId={section?.id}
+              node="button"
+              editorContext={editorContext}
+            />
             <span>→</span>
           </a>
         </div>
@@ -929,11 +1601,13 @@ function MackHomeSections({
   sections,
   sourceListings,
   editorPreview,
+  editorContext,
 }: {
   site: PortfolioSiteData;
   sections: SiteSection[];
   sourceListings: SourceListing[];
   editorPreview: boolean;
+  editorContext: EditorSelectionContext;
 }) {
   const visibleSections = sections.filter((section) => section.visible);
   const nodes: ReactNode[] = [];
@@ -943,30 +1617,45 @@ function MackHomeSections({
     const kind = getTemplateKind(section);
 
     if (isLowerWorkKind(kind)) {
-      const lowerKinds: MackSectionKind[] = [kind];
+      const lowerSections: SiteSection[] = [section];
 
       while (
         visibleSections[index + 1] &&
         isLowerWorkKind(getTemplateKind(visibleSections[index + 1]))
       ) {
         index += 1;
-        lowerKinds.push(getTemplateKind(visibleSections[index]));
+        lowerSections.push(visibleSections[index]);
       }
 
       nodes.push(
         <LowerWorkSection
           key={`${section.id}-lower-work`}
           site={site}
-          kinds={lowerKinds}
+          sections={lowerSections}
+          editorContext={editorContext}
         />,
       );
       continue;
     }
 
     if (kind === "hero") {
-      nodes.push(<HeroSection key={section.id} site={site} section={section} />);
+      nodes.push(
+        <HeroSection
+          key={section.id}
+          site={site}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
     } else if (kind === "software") {
-      nodes.push(<SoftwareSection key={section.id} site={site} />);
+      nodes.push(
+        <SoftwareSection
+          key={section.id}
+          site={site}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
     } else if (kind === "products") {
       nodes.push(
         <ProductsSection
@@ -974,6 +1663,7 @@ function MackHomeSections({
           section={section}
           listings={sourceListings}
           editorPreview={editorPreview}
+          editorContext={editorContext}
         />,
       );
     } else if (kind === "services") {
@@ -983,16 +1673,43 @@ function MackHomeSections({
           section={section}
           listings={sourceListings}
           editorPreview={editorPreview}
+          editorContext={editorContext}
         />,
       );
     } else if (kind === "gallery") {
-      nodes.push(<GallerySection key={section.id} section={section} />);
+      nodes.push(
+        <GallerySection
+          key={section.id}
+          section={section}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
     } else if (kind === "cta") {
-      nodes.push(<CtaSection key={section.id} section={section} />);
+      nodes.push(
+        <CtaSection
+          key={section.id}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
     } else if (kind === "contact") {
-      nodes.push(<ContactSection key={section.id} site={site} section={section} />);
+      nodes.push(
+        <ContactSection
+          key={section.id}
+          site={site}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
     } else {
-      nodes.push(<SimpleManualSection key={section.id} section={section} />);
+      nodes.push(
+        <SimpleManualSection
+          key={section.id}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
     }
   }
 
@@ -1004,8 +1721,19 @@ export default function PortfolioSite({
   sections,
   sourceListings = [],
   editorPreview = false,
+  editorPageId = "",
+  editorSelection = null,
+  onEditorSelectionRequest,
+  onEditorContentEditRequest,
 }: PortfolioSiteProps) {
   const renderSections = (sections ?? defaultMackSections) as SiteSection[];
+  const editorContext: EditorSelectionContext = {
+    editorPreview,
+    pageId: editorPageId,
+    activeSelection: editorSelection,
+    onSelectionRequest: onEditorSelectionRequest,
+    onContentEditRequest: onEditorContentEditRequest,
+  };
 
   return (
     <div className="min-h-screen bg-[#080808] text-[#f4f3ef]">
@@ -1051,6 +1779,7 @@ export default function PortfolioSite({
           sections={renderSections}
           sourceListings={sourceListings}
           editorPreview={editorPreview}
+          editorContext={editorContext}
         />
       </main>
     </div>

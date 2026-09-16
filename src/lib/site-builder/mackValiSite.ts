@@ -9,6 +9,7 @@ export const mackValiSiteDocument: SiteDocument = {
   id: "mackvali-site",
   name: "Mack Vali",
   handle: "mackvali",
+  homePageId: "home",
   pages: [
     {
       id: "home",
@@ -44,12 +45,7 @@ export const mackValiSiteDocument: SiteDocument = {
           label: "Software",
           type: "projects",
           visible: true,
-          source: {
-            kind: "creator",
-            entity: "project",
-            mode: "selected",
-            entityIds: ["creator", "small-business-sites"],
-          },
+          source: { kind: "manual" },
           content: {
             templateKind: "software",
           },
@@ -198,7 +194,10 @@ function readString(
 export function renderMackSiteDraft(
   site: SiteDocument,
 ): PortfolioSiteData {
-  const home = site.pages.find((page) => page.id === "home");
+  const home =
+    site.pages.find((page) => page.id === site.homePageId) ??
+    site.pages.find((page) => page.id === "home") ??
+    site.pages[0];
   const hero = home?.sections.find((section) => section.type === "hero");
 
   return {
