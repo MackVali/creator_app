@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { mapFriendConnection } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 function resolveDisplayName(profile?: {
   name?: string | null;
@@ -86,8 +87,16 @@ export async function GET(request: Request) {
     const viewerFollowsFollowerIds = new Set(
       (viewerFollowingRows ?? []).map((row) => row.friend_user_id)
     );
+    const admin = createAdminClient();
 
-    const { data: followerProfiles, error: profileError } = await supabase
+    if (!admin) {
+      return NextResponse.json(
+        { friends: [], error: "Unable to load friends." },
+        { status: 503 }
+      );
+    }
+
+    const { data: followerProfiles, error: profileError } = await admin
       .from("profiles")
       .select("user_id, username, name, avatar_url")
       .in("user_id", followerIds);
@@ -112,8 +121,7 @@ export async function GET(request: Request) {
         "unknown";
       const displayName =
         resolveDisplayName(profile ?? undefined) ?? username;
-      const avatarUrl =
-        (profile?.avatar_url ?? null) as string | null;
+      const avatarUrl = (profile?.avatar_url ?? null) as string | null;
 
       const syntheticConnection = {
         id: row.id,
@@ -235,44 +243,41 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: targetUserId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: normalizedUsername }
-  );
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Unable to follow user." },
+      { status: 503 }
+    );
+  }
 
-  if (lookupError) {
-    console.error("Failed to resolve profile id", lookupError);
+  const { data: targetProfile, error: profileError } = await admin
+    .from("profiles")
+    .select("user_id, username, name, avatar_url")
+    .ilike("username", normalizedUsername)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("Failed to resolve profile", profileError);
     return NextResponse.json(
       { error: "Unable to follow user." },
       { status: 500 }
     );
   }
 
-  if (!targetUserId) {
+  if (!targetProfile?.user_id) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 }
     );
   }
 
+  const targetUserId = targetProfile.user_id;
+
   if (targetUserId === user.id) {
     return NextResponse.json(
       { error: "Cannot follow yourself." },
       { status: 400 }
-    );
-  }
-
-  const { data: targetProfile, error: profileError } = await supabase
-    .from("profiles")
-    .select("username, name, avatar_url")
-    .eq("user_id", targetUserId)
-    .maybeSingle();
-
-  if (profileError || !targetProfile) {
-    console.error("Missing canonical profile data", profileError);
-    return NextResponse.json(
-      { error: "Unable to follow user." },
-      { status: 500 }
     );
   }
 
