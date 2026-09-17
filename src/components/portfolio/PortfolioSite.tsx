@@ -692,6 +692,44 @@ function readContentString(
   return typeof value === "string" ? value : fallback;
 }
 
+type SiteGalleryItem = {
+  id: string;
+  url: string;
+  path: string;
+  alt: string;
+};
+
+function readGalleryItems(section: SiteSection): SiteGalleryItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.url !== "string"
+    ) {
+      return [];
+    }
+
+    return [{
+      id: candidate.id,
+      url: candidate.url,
+      path: typeof candidate.path === "string" ? candidate.path : "",
+      alt: typeof candidate.alt === "string" ? candidate.alt : "",
+    }];
+  });
+}
+
 function sectionAlignmentClass(section: SiteSection | undefined) {
   return section?.layout?.alignment === "center"
     ? "mx-auto text-center"
@@ -1317,6 +1355,81 @@ function ProductsSection({
   );
 }
 
+function StandaloneMediaSection({
+  section,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
+  const mediaUrl = readContentString(section, "mediaUrl");
+  const mediaAlt = readContentString(section, "mediaAlt");
+  const mediaFit =
+    readContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
+  const variant = sectionVariant(section, "contained");
+
+  if (!mediaUrl && !editorContext.editorPreview) return null;
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview ? section.id : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(event, editorContext, section.id)
+      }
+      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(editorContext, section.id)}`}
+    >
+      <div
+        className={`mx-auto px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )} ${
+          variant === "wide"
+            ? "max-w-[1600px]"
+            : "max-w-[1200px]"
+        }`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview ? "media" : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "media",
+            )
+          }
+          className={`relative min-h-[220px] overflow-hidden border border-white/[0.08] bg-black ${editorNodeClass(
+            editorContext,
+            section.id,
+            "media",
+          )}`}
+        >
+          {mediaUrl ? (
+            <img
+              src={mediaUrl}
+              alt={mediaAlt}
+              className={`h-full min-h-[220px] w-full ${
+                mediaFit === "cover"
+                  ? "object-cover"
+                  : "object-contain"
+              }`}
+            />
+          ) : (
+            <div className="flex min-h-[260px] items-center justify-center border border-dashed border-white/[0.08] text-[10px] uppercase tracking-[0.18em] text-white/30">
+              Upload media
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SimpleManualSection({
   section,
   editorContext,
@@ -1383,32 +1496,73 @@ function GallerySection({
   editorContext: EditorSelectionContext;
 }) {
   const heading = readContentString(section, "heading", section.label);
+  const items = readGalleryItems(section);
   const columns = section.layout?.columns ?? 3;
 
-  if (!editorPreview) return null;
+  if (items.length === 0 && !editorPreview) return null;
+
+  const gridColumns =
+    columns === 4
+      ? "lg:grid-cols-4"
+      : columns === 2
+      ? "lg:grid-cols-2"
+      : "lg:grid-cols-3";
 
   return (
     <section
-      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
-      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
+      data-creator-editor-section={
+        editorContext.editorPreview ? section.id : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(event, editorContext, section.id)
+      }
       className={`border-b border-white/[0.08] ${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
+
         <div
-          className={`grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${
-            columns === 4
-              ? "lg:grid-cols-4"
-              : columns === 2
-              ? "lg:grid-cols-2"
-              : "lg:grid-cols-3"
-          }`}
+          data-creator-editor-node={
+            editorContext.editorPreview ? "media" : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "media",
+            )
+          }
+          className={`mt-3 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "media",
+          )}`}
         >
-          <div className="col-span-full border border-dashed border-white/[0.12] px-4 py-8 text-center text-[10px] uppercase tracking-[0.18em] text-white/35">
-            Add media in a future media library slice
-          </div>
+          {items.length > 0 ? (
+            <div
+              className={`grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${gridColumns}`}
+            >
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  className="relative aspect-[4/3] overflow-hidden border border-white/[0.08] bg-black"
+                >
+                  <img
+                    src={item.url}
+                    alt={item.alt}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-[180px] items-center justify-center border border-dashed border-white/[0.12] text-[10px] uppercase tracking-[0.18em] text-white/35">
+              Add gallery images
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -1726,6 +1880,14 @@ function MackHomeSections({
         <ContactSection
           key={section.id}
           site={site}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "media") {
+      nodes.push(
+        <StandaloneMediaSection
+          key={section.id}
           section={section}
           editorContext={editorContext}
         />,

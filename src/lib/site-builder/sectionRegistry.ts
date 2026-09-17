@@ -216,10 +216,11 @@ const sectionDefinitions = [
   {
     type: "gallery",
     label: "Gallery",
-    description: "Reserve space for public visual work.",
+    description: "Show a collection of uploaded images.",
     category: "Media",
     defaultContent: {
       heading: "Gallery",
+      items: [],
     },
     defaultSource: { kind: "manual" },
     defaultLayout: {
@@ -232,6 +233,41 @@ const sectionDefinitions = [
     ],
     usesSource: false,
     supportsColumns: true,
+    supportsBackground: true,
+  },
+  {
+    type: "media",
+    label: "Media",
+    description: "Place a single uploaded image on the page.",
+    category: "Media",
+    defaultContent: {
+      mediaUrl: "",
+      mediaPath: "",
+      mediaAlt: "",
+      mediaFit: "contain",
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "contained",
+      width: "wide",
+      spacing: "normal",
+    },
+    defaultStyle: { background: "default" },
+    variants: [
+      {
+        id: "contained",
+        label: "Contained",
+        description: "Image sits inside the page content width.",
+      },
+      {
+        id: "wide",
+        label: "Wide",
+        description: "Image receives a wider visual stage.",
+      },
+    ],
+    usesSource: false,
+    supportsWidth: true,
+    supportsSpacing: true,
     supportsBackground: true,
   },
 ] as const satisfies readonly SiteSectionDefinition[];

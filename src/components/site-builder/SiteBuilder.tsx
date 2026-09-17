@@ -67,6 +67,15 @@ type SectionNavigationChild = {
   icon: LucideIcon;
 };
 
+type SiteContentChangeHandler = (key: string, value: unknown) => void;
+
+type SiteGalleryItem = {
+  id: string;
+  url: string;
+  path: string;
+  alt: string;
+};
+
 const previewModes: Record<
   PreviewMode,
   { label: string; width: number; viewportHeight: number | null }
@@ -196,6 +205,18 @@ function getSectionNavigationChildren(
     return [
       { id: "text", label: "Text", icon: Type },
       { id: "button", label: "Button", icon: MousePointerClick },
+    ];
+  }
+
+  if (section.type === "media") {
+    return [
+      { id: "media", label: "Media", icon: ImageIcon },
+    ];
+  }
+
+  if (section.type === "gallery") {
+    return [
+      { id: "media", label: "Images", icon: ImageIcon },
     ];
   }
 
@@ -338,6 +359,38 @@ function InspectorMenuButton({
 function getContentString(section: SiteSection, key: string) {
   const value = section.content[key];
   return typeof value === "string" ? value : "";
+}
+
+function getGalleryItems(section: SiteSection): SiteGalleryItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.url !== "string" ||
+      typeof candidate.path !== "string"
+    ) {
+      return [];
+    }
+
+    return [{
+      id: candidate.id,
+      url: candidate.url,
+      path: candidate.path,
+      alt: typeof candidate.alt === "string" ? candidate.alt : "",
+    }];
+  });
 }
 
 function FieldLabel({
@@ -510,7 +563,7 @@ function CtaFields({
   href: string;
   labelKey: string;
   hrefKey: string;
-  onContentChange: (key: string, value: string) => void;
+  onContentChange: SiteContentChangeHandler;
 }) {
   return (
     <div className="grid grid-cols-[0.9fr_1.1fr] gap-2">
@@ -535,7 +588,7 @@ function MediaEditor({
   onContentChange,
 }: {
   section: SiteSection;
-  onContentChange: (key: string, value: string) => void;
+  onContentChange: SiteContentChangeHandler;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -641,15 +694,176 @@ function MediaEditor({
   );
 }
 
-function MediaSummary({ section }: { section: SiteSection }) {
+function GalleryEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const items = getGalleryItems(section);
+
+  function setItems(nextItems: SiteGalleryItem[]) {
+    onContentChange("items", nextItems);
+  }
+
+  async function upload(files: File[]) {
+    if (files.length === 0) return;
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const uploaded: SiteGalleryItem[] = [];
+
+      for (const file of files) {
+        const result = await uploadSiteImage(file);
+        uploaded.push({
+          id: crypto.randomUUID(),
+          url: result.url,
+          path: result.path,
+          alt: "",
+        });
+      }
+
+      setItems([...items, ...uploaded]);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload gallery image.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (item: SiteGalleryItem) => SiteGalleryItem,
+  ) {
+    setItems(
+      items.map((item) =>
+        item.id === itemId ? updater(item) : item,
+      ),
+    );
+  }
+
+  function moveItem(itemId: string, direction: "up" | "down") {
+    const index = items.findIndex((item) => item.id === itemId);
+    if (index < 0) return;
+
+    const destination = direction === "up" ? index - 1 : index + 1;
+    if (destination < 0 || destination >= items.length) return;
+
+    const next = [...items];
+    const [item] = next.splice(index, 1);
+    next.splice(destination, 0, item);
+    setItems(next);
+  }
+
   return (
-    <div className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
-      <p className="text-[11px] font-medium text-zinc-300">
-        {section.type === "hero" ? "Template media" : "Media"}
-      </p>
-      <p className="mt-1 text-[11px] leading-5 text-zinc-600">
-        Media editing for this section is not connected yet.
-      </p>
+    <div className="space-y-3">
+      <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.1] px-3 text-[11px] text-zinc-300 transition hover:border-white/[0.2] hover:text-zinc-100">
+        {uploading ? "Uploading…" : "Add images"}
+        <input
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+          disabled={uploading}
+          className="hidden"
+          onChange={(event) => {
+            const input = event.currentTarget;
+            const files = Array.from(input.files ?? []);
+            if (files.length === 0) return;
+
+            void upload(files).finally(() => {
+              input.value = "";
+            });
+          }}
+        />
+      </label>
+
+      {uploadError ? (
+        <p className="text-[11px] leading-4 text-red-200/80">
+          {uploadError}
+        </p>
+      ) : null}
+
+      {items.length === 0 ? (
+        <div className="rounded-md border border-dashed border-white/[0.1] px-3 py-6 text-center text-[11px] text-zinc-600">
+          No gallery images yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div
+              key={item.id}
+              className="rounded-md border border-white/[0.08] bg-black/20 p-2"
+            >
+              <div className="flex gap-2">
+                <div
+                  className="h-14 w-16 shrink-0 rounded-sm border border-white/[0.08] bg-black bg-cover bg-center"
+                  style={{ backgroundImage: `url(${item.url})` }}
+                />
+
+                <div className="min-w-0 flex-1">
+                  <input
+                    value={item.alt}
+                    placeholder="Alt text"
+                    onChange={(event) =>
+                      updateItem(item.id, (current) => ({
+                        ...current,
+                        alt: event.target.value,
+                      }))
+                    }
+                    className="h-7 w-full rounded-md border border-white/[0.08] bg-black/25 px-2 text-[11px] text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-white/[0.18]"
+                  />
+
+                  <div className="mt-2 flex gap-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => moveItem(item.id, "up")}
+                      className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                      title="Move earlier"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={index === items.length - 1}
+                      onClick={() => moveItem(item.id, "down")}
+                      className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                      title="Move later"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setItems(
+                          items.filter(
+                            (candidate) => candidate.id !== item.id,
+                          ),
+                        )
+                      }
+                      className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+                      title="Remove image"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -667,7 +881,7 @@ function InspectorContentPanel({
   onToggleSourceListing,
 }: {
   section: SiteSection;
-  onContentChange: (key: string, value: string) => void;
+  onContentChange: SiteContentChangeHandler;
   sourceStatus: "idle" | "loading" | "loaded" | "error";
   sourceError: string | null;
   sourceProducts: SourceListing[];
@@ -783,17 +997,32 @@ function InspectorContentPanel({
     return (
       <div className="space-y-4">
         <InspectorGroup title="Content">
-        <TextInput
-          id="site-gallery-heading"
-          label="Heading"
-          value={getContentString(section, "heading")}
-          onChange={(value) => onContentChange("heading", value)}
-        />
+          <TextInput
+            id="site-gallery-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) => onContentChange("heading", value)}
+          />
         </InspectorGroup>
-        <InspectorGroup title="Media">
-          <MediaSummary section={section} />
+
+        <InspectorGroup title="Images">
+          <GalleryEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
         </InspectorGroup>
       </div>
+    );
+  }
+
+  if (section.type === "media") {
+    return (
+      <InspectorGroup title="Media">
+        <MediaEditor
+          section={section}
+          onContentChange={onContentChange}
+        />
+      </InspectorGroup>
     );
   }
 
@@ -840,7 +1069,7 @@ function ContentNodeInspectorPanel({
 }: {
   section: SiteSection;
   node: SiteContentNodeId;
-  onContentChange: (key: string, value: string) => void;
+  onContentChange: SiteContentChangeHandler;
 }) {
   const nodeLabel =
     node === "button" ? "Button" : node === "media" ? "Media" : "Text";
@@ -951,7 +1180,10 @@ function ContentNodeInspectorPanel({
     }
   }
 
-  if (node === "media" && section.type === "hero") {
+  if (
+    node === "media" &&
+    (section.type === "hero" || section.type === "media")
+  ) {
     return (
       <>
         <div className="border-b border-white/[0.07] px-4 py-3">
@@ -965,6 +1197,28 @@ function ContentNodeInspectorPanel({
 
         <div className="p-4">
           <MediaEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </div>
+      </>
+    );
+  }
+
+  if (node === "media" && section.type === "gallery") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="truncate text-[15px] font-medium text-zinc-100">
+            Images
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+            {section.label} / Images
+          </p>
+        </div>
+
+        <div className="p-4">
+          <GalleryEditor
             section={section}
             onContentChange={onContentChange}
           />
@@ -1733,7 +1987,7 @@ export default function SiteBuilder() {
 
   function updateSelectedSectionContent(
     key: string,
-    value: string,
+    value: unknown,
   ) {
     if (editorLocked) return;
     if (!selectedPage || !selectedSection) return;
