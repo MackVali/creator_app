@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type RelationshipStatus =
   | "self"
@@ -32,26 +33,34 @@ export async function GET(_: Request, context: { params: { username?: string } }
   }
 
   const supabase = await requireSupabase();
+  const admin = createAdminClient();
 
-  if (!supabase) {
-    return respond("none");
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Profile service unavailable." },
+      { status: 503 }
+    );
   }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  let viewerId: string | null = null;
+  if (supabase) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  if (authError) {
-    console.error("Failed to resolve authenticated user", authError);
+    if (authError) {
+      console.error("Failed to resolve authenticated user", authError);
+    }
+
+    viewerId = user?.id ?? null;
   }
 
-  const viewerId = user?.id ?? null;
-
-  const { data: targetId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: normalizedUsername }
-  );
+  const { data: targetProfile, error: lookupError } = await admin
+    .from("profiles")
+    .select("user_id")
+    .ilike("username", normalizedUsername)
+    .maybeSingle();
 
   if (lookupError) {
     console.error("Failed to resolve profile id", lookupError);
@@ -60,6 +69,8 @@ export async function GET(_: Request, context: { params: { username?: string } }
       { status: 500 }
     );
   }
+
+  const targetId = targetProfile?.user_id ?? null;
 
   if (!targetId) {
     return NextResponse.json(
@@ -72,7 +83,7 @@ export async function GET(_: Request, context: { params: { username?: string } }
     return respond("self");
   }
 
-  if (!viewerId) {
+  if (!viewerId || !supabase) {
     return respond("none");
   }
 
