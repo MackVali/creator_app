@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const PUBLIC_PROFILE_COLUMNS = "user_id, username, name, bio, city, avatar_url";
+const PUBLIC_PROFILE_COLUMNS = [
+  "user_id",
+  "username",
+  "name",
+  "bio",
+  "city",
+  "avatar_url",
+  "banner_url",
+  "verified",
+  "theme_color",
+  "font_family",
+  "accent_color",
+].join(", ");
 
 export async function GET(
   _: Request,
