@@ -42,7 +42,9 @@ type SchedulerRunContext = {
 export async function POST(request: NextRequest) {
   const routeStartedAt = schedulerNowMs();
   const requestUrl = request.nextUrl;
-  const includeDebugSummary = requestUrl.searchParams.get("debug") === "1";
+  const includeDebugSummary =
+    process.env.NODE_ENV !== "production" &&
+    requestUrl.searchParams.get("debug") === "1";
   const writeThroughDaysOverride = parseWriteThroughDaysQueryParam(
     requestUrl.searchParams.get("writeThroughDays")
   );
