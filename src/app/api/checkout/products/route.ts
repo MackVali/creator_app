@@ -63,7 +63,10 @@ function normalizeItems(payload: unknown): ProductCheckoutItemInput[] {
       order.push(id);
       bucket.set(id, quantity);
     } else {
-      bucket.set(id, bucket.get(id)! + quantity);
+      bucket.set(
+        id,
+        Math.min(MAXIMUM_QUANTITY, bucket.get(id)! + quantity),
+      );
     }
   }
 
