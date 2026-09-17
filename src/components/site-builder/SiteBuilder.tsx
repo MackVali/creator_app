@@ -115,6 +115,7 @@ type SiteCardItem = {
   imageAlt: string;
   linkLabel: string;
   linkHref: string;
+  linkPageId: string;
 };
 
 const previewModes: Record<
@@ -475,6 +476,7 @@ function getCardItems(section: SiteSection): SiteCardItem[] {
         imageAlt: read("imageAlt"),
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
+        linkPageId: read("linkPageId"),
       },
     ];
   });
@@ -635,36 +637,123 @@ function InspectorGroup({
   );
 }
 
+function SiteLinkTargetEditor({
+  idPrefix,
+  site,
+  pageId,
+  href,
+  onPageIdChange,
+  onHrefChange,
+}: {
+  idPrefix: string;
+  site: SiteDocument;
+  pageId: string;
+  href: string;
+  onPageIdChange: (value: string) => void;
+  onHrefChange: (value: string) => void;
+}) {
+  const pageExists =
+    Boolean(pageId) &&
+    site.pages.some((page) => page.id === pageId);
+
+  return (
+    <div>
+      <FieldLabel htmlFor={`${idPrefix}-target`}>
+        Target
+      </FieldLabel>
+
+      <select
+        id={`${idPrefix}-target`}
+        value={pageExists ? pageId : "__custom__"}
+        onChange={(event) => {
+          onPageIdChange(
+            event.target.value === "__custom__"
+              ? ""
+              : event.target.value,
+          );
+        }}
+        className="mt-1.5 h-8 w-full rounded-md border border-white/[0.09] bg-black/30 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.18]"
+      >
+        <option value="__custom__">
+          Custom URL
+        </option>
+
+        {site.pages.map((page) => (
+          <option
+            key={page.id}
+            value={page.id}
+          >
+            {page.id === site.homePageId
+              ? `${page.title} · Home`
+              : page.title}
+          </option>
+        ))}
+      </select>
+
+      {pageExists ? (
+        <p className="mt-1.5 break-all text-[10px] text-zinc-600">
+          {getSitePageHref(site, pageId)}
+        </p>
+      ) : (
+        <div className="mt-2">
+          <TextInput
+            id={`${idPrefix}-href`}
+            label="Custom URL"
+            value={href}
+            placeholder="https://… or #section"
+            onChange={onHrefChange}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CtaFields({
+  site,
   labelId,
   hrefId,
   label,
   href,
+  pageId,
   labelKey,
   hrefKey,
+  pageIdKey,
   onContentChange,
 }: {
+  site: SiteDocument;
   labelId: string;
   hrefId: string;
   label: string;
   href: string;
+  pageId: string;
   labelKey: string;
   hrefKey: string;
+  pageIdKey: string;
   onContentChange: SiteContentChangeHandler;
 }) {
   return (
-    <div className="grid grid-cols-[0.9fr_1.1fr] gap-2">
+    <div className="space-y-3">
       <TextInput
         id={labelId}
         label="Label"
         value={label}
-        onChange={(value) => onContentChange(labelKey, value)}
+        onChange={(value) =>
+          onContentChange(labelKey, value)
+        }
       />
-      <TextInput
-        id={hrefId}
-        label="Link"
-        value={href}
-        onChange={(value) => onContentChange(hrefKey, value)}
+
+      <SiteLinkTargetEditor
+        idPrefix={hrefId}
+        site={site}
+        pageId={pageId}
+        href={href}
+        onPageIdChange={(value) =>
+          onContentChange(pageIdKey, value)
+        }
+        onHrefChange={(value) =>
+          onContentChange(hrefKey, value)
+        }
       />
     </div>
   );
@@ -674,6 +763,7 @@ function MediaEditor({
   section,
   onContentChange,
 }: {
+  site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
 }) {
@@ -782,9 +872,11 @@ function MediaEditor({
 }
 
 function CardsEditor({
+  site,
   section,
   onContentChange,
 }: {
+  site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
 }) {
@@ -847,6 +939,7 @@ function CardsEditor({
         imageAlt: "",
         linkLabel: "View",
         linkHref: "#",
+        linkPageId: "",
       },
     ]);
   }
@@ -1078,31 +1171,36 @@ function CardsEditor({
               ) : null}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <TextInput
-                id={`site-card-link-label-${item.id}`}
-                label="Link label"
-                value={item.linkLabel}
-                onChange={(value) =>
-                  updateItem(item.id, (current) => ({
-                    ...current,
-                    linkLabel: value,
-                  }))
-                }
-              />
+            <TextInput
+              id={`site-card-link-label-${item.id}`}
+              label="Link label"
+              value={item.linkLabel}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  linkLabel: value,
+                }))
+              }
+            />
 
-              <TextInput
-                id={`site-card-link-href-${item.id}`}
-                label="Link"
-                value={item.linkHref}
-                onChange={(value) =>
-                  updateItem(item.id, (current) => ({
-                    ...current,
-                    linkHref: value,
-                  }))
-                }
-              />
-            </div>
+            <SiteLinkTargetEditor
+              idPrefix={`site-card-link-${item.id}`}
+              site={site}
+              pageId={item.linkPageId}
+              href={item.linkHref}
+              onPageIdChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  linkPageId: value,
+                }))
+              }
+              onHrefChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  linkHref: value,
+                }))
+              }
+            />
 
             <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
               <div className="flex gap-1">
@@ -1351,6 +1449,7 @@ function GalleryEditor({
 }
 
 function InspectorContentPanel({
+  site,
   section,
   onContentChange,
   sourceStatus,
@@ -1403,12 +1502,15 @@ function InspectorContentPanel({
         </InspectorGroup>
         <InspectorGroup title="Action">
           <CtaFields
+            site={site}
             labelId="site-hero-cta-label"
             hrefId="site-hero-cta-href"
             label={getContentString(section, "primaryCtaLabel")}
             href={getContentString(section, "primaryCtaHref")}
+            pageId={getContentString(section, "primaryCtaPageId")}
             labelKey="primaryCtaLabel"
             hrefKey="primaryCtaHref"
+            pageIdKey="primaryCtaPageId"
             onContentChange={onContentChange}
           />
         </InspectorGroup>
@@ -1481,6 +1583,7 @@ function InspectorContentPanel({
 
         <InspectorGroup title="Cards">
           <CardsEditor
+            site={site}
             section={section}
             onContentChange={onContentChange}
           />
@@ -1559,12 +1662,15 @@ function InspectorContentPanel({
           rows={3}
         />
         <CtaFields
+          site={site}
           labelId="site-action-button-label"
           hrefId="site-action-button-href"
           label={getContentString(section, "buttonLabel")}
           href={getContentString(section, "buttonHref")}
+          pageId={getContentString(section, "buttonPageId")}
           labelKey="buttonLabel"
           hrefKey="buttonHref"
+          pageIdKey="buttonPageId"
           onContentChange={onContentChange}
         />
       </InspectorGroup>
@@ -1579,10 +1685,12 @@ function InspectorContentPanel({
 }
 
 function ContentNodeInspectorPanel({
+  site,
   section,
   node,
   onContentChange,
 }: {
+  site: SiteDocument;
   section: SiteSection;
   node: SiteContentNodeId;
   onContentChange: SiteContentChangeHandler;
@@ -1698,8 +1806,18 @@ function ContentNodeInspectorPanel({
   }
 
   if (node === "button") {
-    const labelKey = section.type === "hero" ? "primaryCtaLabel" : "buttonLabel";
-    const hrefKey = section.type === "hero" ? "primaryCtaHref" : "buttonHref";
+    const labelKey =
+      section.type === "hero"
+        ? "primaryCtaLabel"
+        : "buttonLabel";
+    const hrefKey =
+      section.type === "hero"
+        ? "primaryCtaHref"
+        : "buttonHref";
+    const pageIdKey =
+      section.type === "hero"
+        ? "primaryCtaPageId"
+        : "buttonPageId";
 
     if (section.type === "hero" || section.type === "cta" || section.type === "contact") {
       return (
@@ -1720,11 +1838,17 @@ function ContentNodeInspectorPanel({
               value={getContentString(section, labelKey)}
               onChange={(value) => onContentChange(labelKey, value)}
             />
-            <TextInput
-              id="site-button-node-href"
-              label="Link"
-              value={getContentString(section, hrefKey)}
-              onChange={(value) => onContentChange(hrefKey, value)}
+            <SiteLinkTargetEditor
+              idPrefix="site-button-node"
+              site={site}
+              pageId={getContentString(section, pageIdKey)}
+              href={getContentString(section, hrefKey)}
+              onPageIdChange={(value) =>
+                onContentChange(pageIdKey, value)
+              }
+              onHrefChange={(value) =>
+                onContentChange(hrefKey, value)
+              }
             />
           </div>
         </>
@@ -4664,6 +4788,7 @@ export default function SiteBuilder() {
             />
           ) : selectedSection && selectedContentNode ? (
             <ContentNodeInspectorPanel
+              site={site}
               section={selectedSection}
               node={selectedContentNode}
               onContentChange={updateSelectedSectionContent}
@@ -4720,6 +4845,7 @@ export default function SiteBuilder() {
                 <div className="mt-4">
                   {activeInspectorMode === "content" ? (
                     <InspectorContentPanel
+                      site={site}
                       section={selectedSection}
                       onContentChange={updateSelectedSectionContent}
                       sourceStatus={sourceStatus}

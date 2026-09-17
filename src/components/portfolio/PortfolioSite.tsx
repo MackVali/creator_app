@@ -28,6 +28,7 @@ import {
   getSiteHeaderConfig,
 } from "@/lib/site-builder/siteChrome";
 import {
+  resolveSiteLinkHref,
   resolveSiteNavigationHref,
 } from "@/lib/site-builder/siteLinks";
 import {
@@ -758,6 +759,7 @@ type SiteCardItem = {
   imageAlt: string;
   linkLabel: string;
   linkHref: string;
+  linkPageId: string;
 };
 
 function readCardItems(section: SiteSection): SiteCardItem[] {
@@ -795,6 +797,7 @@ function readCardItems(section: SiteSection): SiteCardItem[] {
         imageAlt: read("imageAlt"),
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
+        linkPageId: read("linkPageId"),
       },
     ];
   });
@@ -849,10 +852,12 @@ function sectionVariant(section: SiteSection | undefined, fallback: string) {
 
 function HeroSection({
   site,
+  siteDocument,
   section,
   editorContext,
 }: {
   site: PortfolioSiteData;
+  siteDocument?: SiteDocument;
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
@@ -866,7 +871,23 @@ function HeroSection({
     "primaryCtaLabel",
     "Explore my work",
   );
-  const ctaHref = readContentString(section, "primaryCtaHref", "#software");
+  const ctaHref = readContentString(
+    section,
+    "primaryCtaHref",
+    "#software",
+  );
+  const ctaPageId = readContentString(
+    section,
+    "primaryCtaPageId",
+  );
+  const resolvedCtaHref = resolveSiteLinkHref(
+    siteDocument,
+    site.handle,
+    {
+      href: ctaHref,
+      pageId: ctaPageId || undefined,
+    },
+  );
   const headline = readContentString(section, "headline", site.headline);
   const intro = readContentString(section, "intro", site.intro);
   const variant = sectionVariant(section, "split");
@@ -965,7 +986,7 @@ function HeroSection({
           </div>
 
           <a
-            href={ctaHref || "#software"}
+            href={resolvedCtaHref}
             data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section?.id, "button")
@@ -1434,10 +1455,14 @@ function ProductsSection({
 }
 
 function CardsSection({
+  siteHandle,
+  siteDocument,
   section,
   editorPreview,
   editorContext,
 }: {
+  siteHandle: string;
+  siteDocument?: SiteDocument;
   section: SiteSection;
   editorPreview: boolean;
   editorContext: EditorSelectionContext;
@@ -1544,6 +1569,15 @@ function CardsSection({
             {items.map((item, index) => {
               const featured =
                 variant === "featured" && index === 0;
+              const resolvedLink = resolveSiteLinkHref(
+                siteDocument,
+                siteHandle,
+                {
+                  href: item.linkHref,
+                  pageId:
+                    item.linkPageId || undefined,
+                },
+              );
 
               const cardBody = (
                 <>
@@ -1626,13 +1660,13 @@ function CardsSection({
               }`;
 
               if (
-                item.linkHref &&
-                item.linkHref !== "#"
+                resolvedLink &&
+                resolvedLink !== "#"
               ) {
                 return (
                   <a
                     key={item.id}
-                    href={item.linkHref}
+                    href={resolvedLink}
                     className={`${cardClass} transition hover:-translate-y-px`}
                   >
                     {cardBody}
@@ -1875,9 +1909,13 @@ function GallerySection({
 }
 
 function CtaSection({
+  siteHandle,
+  siteDocument,
   section,
   editorContext,
 }: {
+  siteHandle: string;
+  siteDocument?: SiteDocument;
   section: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
@@ -1885,6 +1923,15 @@ function CtaSection({
   const body = readContentString(section, "body");
   const label = readContentString(section, "buttonLabel", "Get started");
   const href = readContentString(section, "buttonHref", "#contact");
+  const pageId = readContentString(section, "buttonPageId");
+  const resolvedHref = resolveSiteLinkHref(
+    siteDocument,
+    siteHandle,
+    {
+      href,
+      pageId: pageId || undefined,
+    },
+  );
   const variant = sectionVariant(section, "banner");
   const centered = variant === "centered";
   const minimal = variant === "minimal";
@@ -1947,7 +1994,7 @@ function CtaSection({
             ) : null}
           </div>
           <a
-            href={href || "#contact"}
+            href={resolvedHref}
             data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section.id, "button")
@@ -1972,9 +2019,13 @@ function CtaSection({
 }
 
 function ContactSection({
+  siteHandle,
+  siteDocument,
   section,
   editorContext,
 }: {
+  siteHandle: string;
+  siteDocument?: SiteDocument;
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
@@ -1990,6 +2041,15 @@ function ContactSection({
   );
   const label = readContentString(section, "buttonLabel", "Get in touch");
   const href = readContentString(section, "buttonHref", "#contact");
+  const pageId = readContentString(section, "buttonPageId");
+  const resolvedHref = resolveSiteLinkHref(
+    siteDocument,
+    siteHandle,
+    {
+      href,
+      pageId: pageId || undefined,
+    },
+  );
   const centered = sectionVariant(section, "standard") === "centered";
 
   return (
@@ -2047,7 +2107,7 @@ function ContactSection({
           </div>
 
           <a
-            href={href || "#contact"}
+            href={resolvedHref}
             data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section?.id, "button")
@@ -2074,12 +2134,14 @@ function ContactSection({
 
 function MackHomeSections({
   site,
+  siteDocument,
   sections,
   sourceListings,
   editorPreview,
   editorContext,
 }: {
   site: PortfolioSiteData;
+  siteDocument?: SiteDocument;
   sections: SiteSection[];
   sourceListings: SourceListing[];
   editorPreview: boolean;
@@ -2119,6 +2181,7 @@ function MackHomeSections({
         <HeroSection
           key={section.id}
           site={site}
+          siteDocument={siteDocument}
           section={section}
           editorContext={editorContext}
         />,
@@ -2156,6 +2219,8 @@ function MackHomeSections({
       nodes.push(
         <CardsSection
           key={section.id}
+          siteHandle={site.handle}
+          siteDocument={siteDocument}
           section={section}
           editorPreview={editorPreview}
           editorContext={editorContext}
@@ -2174,6 +2239,8 @@ function MackHomeSections({
       nodes.push(
         <CtaSection
           key={section.id}
+          siteHandle={site.handle}
+          siteDocument={siteDocument}
           section={section}
           editorContext={editorContext}
         />,
@@ -2182,6 +2249,8 @@ function MackHomeSections({
       nodes.push(
         <ContactSection
           key={section.id}
+          siteHandle={site.handle}
+          siteDocument={siteDocument}
           section={section}
           editorContext={editorContext}
         />,
@@ -2284,6 +2353,7 @@ export default function PortfolioSite({
       <main id="work">
         <MackHomeSections
           site={site}
+          siteDocument={siteDocument}
           sections={renderSections}
           sourceListings={sourceListings}
           editorPreview={editorPreview}

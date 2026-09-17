@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
 import {
   getSitePageHref,
+  resolveSiteLinkHref,
   resolveSiteNavigationHref,
 } from "@/lib/site-builder/siteLinks";
 
@@ -60,6 +61,44 @@ describe("site builder links", () => {
     ).toBe(
       `/portfolio/renamed-site/${page.slug}`,
     );
+  });
+
+  it("resolves content buttons to site pages", () => {
+    const site = structuredClone(mackValiSiteDocument);
+    site.handle = "example-site";
+
+    const page = site.pages.find(
+      (candidate) => candidate.id !== site.homePageId,
+    );
+
+    if (!page) {
+      throw new Error("Expected a non-home page.");
+    }
+
+    expect(
+      resolveSiteLinkHref(
+        site,
+        site.handle,
+        {
+          href: "#fallback",
+          pageId: page.id,
+        },
+      ),
+    ).toBe(
+      `/portfolio/example-site/${page.slug}`,
+    );
+  });
+
+  it("falls back to a custom URL when no page is selected", () => {
+    expect(
+      resolveSiteLinkHref(
+        undefined,
+        "example",
+        {
+          href: "https://example.com/contact",
+        },
+      ),
+    ).toBe("https://example.com/contact");
   });
 
   it("preserves custom navigation URLs", () => {

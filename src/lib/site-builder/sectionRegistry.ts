@@ -113,6 +113,7 @@ const sectionDefinitions = [
           imageAlt: "",
           linkLabel: "View",
           linkHref: "#",
+          linkPageId: "",
         },
         {
           id: "card-2",
@@ -124,6 +125,7 @@ const sectionDefinitions = [
           imageAlt: "",
           linkLabel: "View",
           linkHref: "#",
+          linkPageId: "",
         },
         {
           id: "card-3",
@@ -135,6 +137,7 @@ const sectionDefinitions = [
           imageAlt: "",
           linkLabel: "View",
           linkHref: "#",
+          linkPageId: "",
         },
       ],
     },
