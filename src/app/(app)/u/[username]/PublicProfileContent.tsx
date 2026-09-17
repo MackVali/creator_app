@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, User } from "lucide-react";
-import { getProfileByUsername } from "@/lib/db";
-import { Profile } from "@/lib/types";
+import { MapPin, User } from "lucide-react";
 import LinkedAccountsBar from "@/components/profile/LinkedAccountsBar";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 
@@ -15,23 +13,42 @@ interface PublicProfileContentProps {
   username: string;
 }
 
+type PublicProfile = {
+  user_id: string;
+  username: string;
+  name: string | null;
+  bio: string | null;
+  city: string | null;
+  avatar_url: string | null;
+};
+
+type PublicProfileResponse = {
+  profile?: PublicProfile;
+  error?: string;
+};
+
 export default function PublicProfileContent({
   username,
 }: PublicProfileContentProps) {
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProfile() {
       try {
-        const userProfile = await getProfileByUsername(username);
-        if (!userProfile) {
-          setError("Profile not found");
+        const response = await fetch(`/api/public/profile/${encodeURIComponent(username)}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => null)) as PublicProfileResponse | null;
+
+        if (!response.ok || !payload?.profile) {
+          setError(response.status === 404 ? "Profile not found" : "Failed to load profile");
           return;
         }
-        setProfile(userProfile);
+
+        setProfile(payload.profile);
       } catch (err) {
         setError("Failed to load profile");
         console.error("Error loading profile:", err);
@@ -85,13 +102,12 @@ export default function PublicProfileContent({
     );
   }
 
-  const initials = getInitials(profile.name || null, profile.username);
+  const initials = getInitials(profile.name, profile.username);
 
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6">
       <h1 className="mb-6 text-3xl font-bold">@{profile.username}</h1>
       <div className="space-y-6">
-        {/* Profile Header */}
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center space-x-6">
@@ -120,7 +136,6 @@ export default function PublicProfileContent({
           </CardContent>
         </Card>
 
-        {/* Profile Details */}
         <Card>
           <CardHeader>
             <CardTitle>Profile Information</CardTitle>
@@ -144,18 +159,6 @@ export default function PublicProfileContent({
                   <p className="font-medium">{profile.username}</p>
                 </div>
               </div>
-
-              {profile.dob && (
-                <div className="flex items-center space-x-3">
-                  <Calendar className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Date of Birth</p>
-                    <p className="font-medium">
-                      {new Date(profile.dob).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {profile.city && (
                 <div className="flex items-center space-x-3">
