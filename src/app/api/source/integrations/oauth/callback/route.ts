@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 import { requirePlus } from "@/lib/entitlements/requirePlus"
+import { safeOutboundFetch } from "@/lib/server/safeOutboundFetch"
 
 import {
   coerceNumber,
@@ -158,7 +159,7 @@ export async function GET(request: NextRequest) {
       for (const [key, value] of tokenParams.entries()) {
         url.searchParams.set(key, value)
       }
-      tokenResponse = await fetch(url.toString(), {
+      tokenResponse = await safeOutboundFetch(url.toString(), {
         method: "GET",
         headers,
       })
@@ -168,7 +169,7 @@ export async function GET(request: NextRequest) {
           ? JSON.stringify(Object.fromEntries(tokenParams.entries()))
           : tokenParams.toString()
 
-      tokenResponse = await fetch(integration.oauth_token_url, {
+      tokenResponse = await safeOutboundFetch(integration.oauth_token_url, {
         method: "POST",
         headers,
         body,
