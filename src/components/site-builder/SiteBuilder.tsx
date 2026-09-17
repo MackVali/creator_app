@@ -38,6 +38,10 @@ import {
   getSiteHeaderConfig,
 } from "@/lib/site-builder/siteChrome";
 import {
+  isValidSiteHandle,
+  sanitizeSiteHandle,
+} from "@/lib/site-builder/siteIdentity";
+import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
   isSitePreviewContentEditRequestMessage,
@@ -72,7 +76,11 @@ type PublishRequestStatus =
   | "ready"
   | "publishing"
   | "error";
-type SiteChromeSelection = "header" | "navigation" | "footer";
+type SiteChromeSelection =
+  | "site"
+  | "header"
+  | "navigation"
+  | "footer";
 type SectionNavigationChild = {
   id: SiteContentNodeId;
   label: string;
@@ -1530,12 +1538,16 @@ function InspectorDesignPanel({
 function SiteChromeInspector({
   selection,
   site,
+  onSiteNameChange,
+  onSiteHandleChange,
   onHeaderChange,
   onFooterChange,
   onNavigationChange,
 }: {
   selection: SiteChromeSelection;
   site: SiteDocument;
+  onSiteNameChange: (value: string) => void;
+  onSiteHandleChange: (value: string) => void;
   onHeaderChange: (
     key: "brandLabel" | "tagline",
     value: string,
@@ -1548,6 +1560,69 @@ function SiteChromeInspector({
 }) {
   const header = getSiteHeaderConfig(site);
   const footer = getSiteFooterConfig(site);
+  const handleValid = isValidSiteHandle(site.handle);
+
+  if (selection === "site") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="text-[15px] font-medium text-zinc-100">
+            Site
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-600">
+            Site settings
+          </p>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <InspectorGroup title="Identity">
+            <TextInput
+              id="site-name"
+              label="Site name"
+              value={site.name}
+              onChange={onSiteNameChange}
+              placeholder="My site"
+            />
+
+            <div>
+              <TextInput
+                id="site-handle"
+                label="Public handle"
+                value={site.handle}
+                onChange={onSiteHandleChange}
+                placeholder="my-site"
+              />
+
+              <p
+                className={`mt-1.5 text-[10px] ${
+                  handleValid
+                    ? "text-zinc-600"
+                    : "text-red-200/70"
+                }`}
+              >
+                {handleValid
+                  ? `/portfolio/${site.handle}`
+                  : "Enter a valid public handle."}
+              </p>
+            </div>
+          </InspectorGroup>
+
+          <div className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
+            <p className="text-[11px] font-medium text-zinc-300">
+              Public address
+            </p>
+            <p className="mt-1 break-all text-[11px] text-zinc-600">
+              /portfolio/{site.handle || "your-handle"}
+            </p>
+            <p className="mt-2 text-[10px] leading-4 text-zinc-700">
+              Changing the handle changes the site address the next
+              time you publish.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (selection === "header") {
     return (
@@ -2050,6 +2125,24 @@ export default function SiteBuilder() {
     setSiteChromeSelection(selection);
     setEditorSelection(null);
     setActiveInspectorMode("content");
+  }
+
+  function updateSiteName(value: string) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      name: value,
+    }));
+  }
+
+  function updateSiteHandle(value: string) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      handle: sanitizeSiteHandle(value),
+    }));
   }
 
   function updateSiteHeaderField(
@@ -3126,8 +3219,11 @@ export default function SiteBuilder() {
       : hasUnpublishedChanges
       ? "Publish changes"
       : "Published";
+  const siteHandleValid = isValidSiteHandle(site.handle);
   const publishTitle =
-    publishRequestStatus === "error"
+    !siteHandleValid
+      ? "Enter a valid public handle before publishing."
+      : publishRequestStatus === "error"
       ? publishError ?? "Publication failed"
       : publishedAt && !hasUnpublishedChanges
       ? `Published ${new Date(publishedAt).toLocaleString()}`
@@ -3236,15 +3332,33 @@ export default function SiteBuilder() {
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
-          <div className="border-b border-white/[0.07] px-4 py-4">
-            <div className="flex items-center gap-2">
-              <Globe2 className="h-4 w-4 text-zinc-400" />
-              <p className="text-[13px] font-semibold">Site</p>
-            </div>
+          <div className="border-b border-white/[0.07] p-2.5">
+            <button
+              type="button"
+              onClick={() => selectSiteChrome("site")}
+              className={`w-full rounded-md px-2 py-2 text-left transition ${
+                siteChromeSelection === "site"
+                  ? "bg-white/[0.06]"
+                  : "hover:bg-white/[0.03]"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Globe2
+                  className={`h-4 w-4 ${
+                    siteChromeSelection === "site"
+                      ? "text-zinc-200"
+                      : "text-zinc-400"
+                  }`}
+                />
+                <p className="text-[13px] font-semibold text-zinc-100">
+                  Site
+                </p>
+              </div>
 
-            <p className="mt-1 text-[11px] text-zinc-500">
-              {site.name}
-            </p>
+              <p className="mt-1 truncate pl-6 text-[11px] text-zinc-500">
+                {site.name || "Untitled site"}
+              </p>
+            </button>
           </div>
 
           <div className="px-2.5 pt-3">
@@ -3649,6 +3763,7 @@ export default function SiteBuilder() {
               onClick={publishSite}
               disabled={
                 editorLocked ||
+                !siteHandleValid ||
                 publishRequestStatus === "checking" ||
                 publishRequestStatus === "publishing"
               }
@@ -3774,6 +3889,8 @@ export default function SiteBuilder() {
             <SiteChromeInspector
               selection={siteChromeSelection}
               site={site}
+              onSiteNameChange={updateSiteName}
+              onSiteHandleChange={updateSiteHandle}
               onHeaderChange={updateSiteHeaderField}
               onFooterChange={updateSiteFooterField}
               onNavigationChange={updateSiteNavigation}

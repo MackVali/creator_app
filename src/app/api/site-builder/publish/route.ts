@@ -4,18 +4,10 @@ import {
   authenticateSiteBuilderDraftRequest,
   isSiteDocument,
 } from "@/lib/site-builder/draftPersistence";
-
-function normalizeHandle(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function isValidHandle(value: string) {
-  return (
-    value.length >= 1 &&
-    value.length <= 63 &&
-    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value)
-  );
-}
+import {
+  isValidSiteHandle,
+  normalizeSiteHandle,
+} from "@/lib/site-builder/siteIdentity";
 
 export async function GET() {
   const auth = await authenticateSiteBuilderDraftRequest();
@@ -89,9 +81,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const handle = normalizeHandle(candidate.handle);
+  const handle = normalizeSiteHandle(candidate.handle);
 
-  if (!isValidHandle(handle)) {
+  if (!isValidSiteHandle(handle)) {
     return NextResponse.json(
       { error: "Invalid site handle" },
       { status: 400 },
