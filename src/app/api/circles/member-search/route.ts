@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const profileColumns = "user_id, username, name, avatar_url";
 
@@ -59,9 +60,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ profiles: [] }, { status: 200 });
   }
 
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Unable to search profiles." },
+      { status: 503 }
+    );
+  }
+
   const pattern = `%${query}%`;
-  const { data: profiles, error: profilesError } = await supabase
-    .schema("public")
+  const { data: profiles, error: profilesError } = await admin
     .from("profiles")
     .select(profileColumns)
     .or(`username.ilike.${pattern},name.ilike.${pattern}`)
