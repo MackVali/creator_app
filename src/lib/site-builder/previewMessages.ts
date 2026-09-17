@@ -1,4 +1,5 @@
 import type {
+  SiteContentNodeId,
   SiteDocument,
   SiteEditorSelection,
   SiteSectionType,
@@ -30,7 +31,7 @@ export type SitePreviewHeightMessage = {
 export type SitePreviewSelectionRequestPayload = {
   pageId: string;
   sectionId: string;
-  node?: "text" | "button";
+  node?: SiteContentNodeId;
 };
 
 export type SitePreviewSelectionRequestMessage = {
@@ -105,8 +106,8 @@ function isSourceListing(value: unknown): value is SourceListing {
   );
 }
 
-function isSelectableNode(value: unknown): value is "text" | "button" {
-  return value === "text" || value === "button";
+function isSelectableNode(value: unknown): value is SiteContentNodeId {
+  return value === "text" || value === "button" || value === "media";
 }
 
 export function isSitePreviewInlineEditField(

@@ -24,6 +24,7 @@ import type {
 } from "@/lib/portfolio/types";
 import type { SitePreviewInlineEditField } from "@/lib/site-builder/previewMessages";
 import type {
+  SiteContentNodeId,
   SiteEditorSelection,
   SiteSection,
 } from "@/lib/site-builder/types";
@@ -39,7 +40,7 @@ type PortfolioSiteProps = {
   onEditorSelectionRequest?: (selection: {
     pageId: string;
     sectionId: string;
-    node?: "text" | "button";
+    node?: SiteContentNodeId;
   }) => void;
   onEditorContentEditRequest?: (edit: {
     pageId: string;
@@ -49,7 +50,7 @@ type PortfolioSiteProps = {
   }) => void;
 };
 
-type EditorNodeId = "text" | "button";
+type EditorNodeId = SiteContentNodeId;
 
 type EditorSelectionContext = {
   editorPreview: boolean;
@@ -384,17 +385,39 @@ function SectionRule({
   );
 }
 
-function HeroStage() {
+function HeroStage({
+  section,
+  editorContext,
+}: {
+  section?: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
+  const mediaUrl = readContentString(section, "mediaUrl", heroCover);
+  const mediaAlt = readContentString(section, "mediaAlt");
+  const mediaFit =
+    readContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
+
   return (
-    <div className="absolute inset-0 hidden overflow-hidden bg-black lg:block">
+    <div
+      data-creator-editor-node={
+        editorContext.editorPreview ? "media" : undefined
+      }
+      onClick={(event) =>
+        handleEditorNodeClick(event, editorContext, section?.id, "media")
+      }
+      className={`absolute inset-0 hidden overflow-hidden bg-black lg:block ${editorNodeClass(
+        editorContext,
+        section?.id,
+        "media",
+      )}`}
+    >
       <div className="absolute inset-y-0 left-[31%] right-[2%]">
-        <Image
-          src={heroCover}
-          alt=""
-          fill
-          priority
-          sizes="67vw"
-          className="object-contain object-right"
+        <img
+          src={mediaUrl}
+          alt={mediaAlt}
+          className={`h-full w-full object-right ${
+            mediaFit === "cover" ? "object-cover" : "object-contain"
+          }`}
         />
       </div>
     </div>
@@ -756,7 +779,12 @@ function HeroSection({
             : "h-full"
         }`}
       >
-        {variant === "split" ? <HeroStage /> : null}
+        {variant === "split" ? (
+          <HeroStage
+            section={section}
+            editorContext={editorContext}
+          />
+        ) : null}
 
         <div
           className={`relative z-10 flex flex-col justify-center ${

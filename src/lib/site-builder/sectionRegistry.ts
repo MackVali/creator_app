@@ -44,6 +44,10 @@ const sectionDefinitions = [
       intro: "Introduce what you do and why it matters.",
       primaryCtaLabel: "Learn more",
       primaryCtaHref: "#contact",
+      mediaUrl: "",
+      mediaPath: "",
+      mediaAlt: "",
+      mediaFit: "contain",
     },
     defaultSource: { kind: "manual" },
     defaultLayout: {

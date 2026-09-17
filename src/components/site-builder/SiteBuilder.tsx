@@ -13,6 +13,7 @@ import {
   FileText,
   Globe2,
   Home,
+  ImageIcon,
   Loader2,
   MousePointerClick,
   Monitor,
@@ -30,6 +31,7 @@ import { SectionLibrary } from "@/components/site-builder/SectionLibrary";
 import { SectionVariantPicker } from "@/components/site-builder/SectionVariantPicker";
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
 import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
+import { uploadSiteImage } from "@/lib/site-builder/mediaStorage";
 import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
@@ -186,6 +188,7 @@ function getSectionNavigationChildren(
     return [
       { id: "text", label: "Text", icon: Type },
       { id: "button", label: "Button", icon: MousePointerClick },
+      { id: "media", label: "Media", icon: ImageIcon },
     ];
   }
 
@@ -527,6 +530,117 @@ function CtaFields({
   );
 }
 
+function MediaEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: (key: string, value: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const mediaUrl = getContentString(section, "mediaUrl");
+  const mediaAlt = getContentString(section, "mediaAlt");
+  const mediaFit =
+    getContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
+
+  async function upload(file: File) {
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const result = await uploadSiteImage(file);
+      onContentChange("mediaUrl", result.url);
+      onContentChange("mediaPath", result.path);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "Unable to upload image.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="relative aspect-[16/9] overflow-hidden rounded-md border border-white/[0.08] bg-black/30 bg-center bg-no-repeat"
+        style={
+          mediaUrl
+            ? {
+                backgroundImage: `url(${mediaUrl})`,
+                backgroundSize: mediaFit,
+              }
+            : undefined
+        }
+      >
+        {!mediaUrl ? (
+          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-zinc-600">
+            Using template media
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex gap-2">
+        <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.1] px-3 text-[11px] text-zinc-300 transition hover:border-white/[0.2] hover:text-zinc-100">
+          {uploading ? "Uploading…" : mediaUrl ? "Replace" : "Upload"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            className="hidden"
+            disabled={uploading}
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              if (!file) return;
+
+              void upload(file).finally(() => {
+                input.value = "";
+              });
+            }}
+          />
+        </label>
+
+        {mediaUrl ? (
+          <button
+            type="button"
+            onClick={() => {
+              onContentChange("mediaUrl", "");
+              onContentChange("mediaPath", "");
+            }}
+            className="h-8 rounded-md border border-white/[0.08] px-3 text-[11px] text-zinc-500 transition hover:border-red-300/20 hover:text-red-200"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+
+      {uploadError ? (
+        <p className="text-[11px] leading-4 text-red-200/80">{uploadError}</p>
+      ) : null}
+
+      <TextInput
+        id={`site-${section.id}-media-alt`}
+        label="Alt text"
+        value={mediaAlt}
+        onChange={(value) => onContentChange("mediaAlt", value)}
+        placeholder="Describe this image"
+      />
+
+      <SegmentedControl
+        label="Fit"
+        value={mediaFit}
+        options={[
+          { label: "Contain", value: "contain" },
+          { label: "Cover", value: "cover" },
+        ]}
+        onChange={(value) => onContentChange("mediaFit", value)}
+      />
+    </div>
+  );
+}
+
 function MediaSummary({ section }: { section: SiteSection }) {
   return (
     <div className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
@@ -534,7 +648,7 @@ function MediaSummary({ section }: { section: SiteSection }) {
         {section.type === "hero" ? "Template media" : "Media"}
       </p>
       <p className="mt-1 text-[11px] leading-5 text-zinc-600">
-        Media replacement is not connected in this builder slice yet.
+        Media editing for this section is not connected yet.
       </p>
     </div>
   );
@@ -603,7 +717,10 @@ function InspectorContentPanel({
           />
         </InspectorGroup>
         <InspectorGroup title="Media">
-          <MediaSummary section={section} />
+          <MediaEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
         </InspectorGroup>
       </div>
     );
@@ -832,6 +949,28 @@ function ContentNodeInspectorPanel({
         </>
       );
     }
+  }
+
+  if (node === "media" && section.type === "hero") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="truncate text-[15px] font-medium text-zinc-100">
+            Media
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+            {section.label} / Media
+          </p>
+        </div>
+
+        <div className="p-4">
+          <MediaEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </div>
+      </>
+    );
   }
 
   return (
