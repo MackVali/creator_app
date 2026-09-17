@@ -102,6 +102,18 @@ type SiteGalleryItem = {
   alt: string;
 };
 
+type SiteCardItem = {
+  id: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  imageUrl: string;
+  imagePath: string;
+  imageAlt: string;
+  linkLabel: string;
+  linkHref: string;
+};
+
 const previewModes: Record<
   PreviewMode,
   { label: string; width: number; viewportHeight: number | null }
@@ -231,6 +243,12 @@ function getSectionNavigationChildren(
     return [
       { id: "text", label: "Text", icon: Type },
       { id: "button", label: "Button", icon: MousePointerClick },
+    ];
+  }
+
+  if (section.type === "cards") {
+    return [
+      { id: "text", label: "Section text", icon: Type },
     ];
   }
 
@@ -416,6 +434,46 @@ function getGalleryItems(section: SiteSection): SiteGalleryItem[] {
       path: candidate.path,
       alt: typeof candidate.alt === "string" ? candidate.alt : "",
     }];
+  });
+}
+
+function getCardItems(section: SiteSection): SiteCardItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") {
+      return [];
+    }
+
+    const read = (key: string) =>
+      typeof candidate[key] === "string"
+        ? (candidate[key] as string)
+        : "";
+
+    return [
+      {
+        id: candidate.id,
+        eyebrow: read("eyebrow"),
+        title: read("title"),
+        body: read("body"),
+        imageUrl: read("imageUrl"),
+        imagePath: read("imagePath"),
+        imageAlt: read("imageAlt"),
+        linkLabel: read("linkLabel"),
+        linkHref: read("linkHref"),
+      },
+    ];
   });
 }
 
@@ -720,6 +778,401 @@ function MediaEditor({
   );
 }
 
+function CardsEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const items = getCardItems(section);
+  const [uploadingItemId, setUploadingItemId] =
+    useState<string | null>(null);
+  const [uploadError, setUploadError] =
+    useState<string | null>(null);
+
+  function setItems(nextItems: SiteCardItem[]) {
+    onContentChange("items", nextItems);
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (item: SiteCardItem) => SiteCardItem,
+  ) {
+    setItems(
+      items.map((item) =>
+        item.id === itemId ? updater(item) : item,
+      ),
+    );
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: "up" | "down",
+  ) {
+    const index = items.findIndex(
+      (item) => item.id === itemId,
+    );
+    if (index < 0) return;
+
+    const destination =
+      direction === "up" ? index - 1 : index + 1;
+
+    if (
+      destination < 0 ||
+      destination >= items.length
+    ) {
+      return;
+    }
+
+    const next = [...items];
+    const [moved] = next.splice(index, 1);
+    next.splice(destination, 0, moved);
+    setItems(next);
+  }
+
+  function addItem() {
+    setItems([
+      ...items,
+      {
+        id: crypto.randomUUID(),
+        eyebrow: "Project",
+        title: "New card",
+        body: "Describe this item.",
+        imageUrl: "",
+        imagePath: "",
+        imageAlt: "",
+        linkLabel: "View",
+        linkHref: "#",
+      },
+    ]);
+  }
+
+  function duplicateItem(item: SiteCardItem) {
+    const index = items.findIndex(
+      (candidate) => candidate.id === item.id,
+    );
+
+    const copy: SiteCardItem = {
+      ...item,
+      id: crypto.randomUUID(),
+      title: item.title
+        ? `${item.title} copy`
+        : "Card copy",
+    };
+
+    const next = [...items];
+    next.splice(index + 1, 0, copy);
+    setItems(next);
+  }
+
+  async function uploadImage(
+    itemId: string,
+    file: File,
+  ) {
+    setUploadingItemId(itemId);
+    setUploadError(null);
+
+    try {
+      const result = await uploadSiteImage(file);
+
+      updateItem(itemId, (item) => ({
+        ...item,
+        imageUrl: result.url,
+        imagePath: result.path,
+      }));
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload card image.",
+      );
+    } finally {
+      setUploadingItemId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {uploadError ? (
+        <p className="rounded-md border border-red-400/20 bg-red-400/[0.04] px-3 py-2 text-[11px] leading-4 text-red-200/80">
+          {uploadError}
+        </p>
+      ) : null}
+
+      {items.map((item, index) => (
+        <details
+          key={item.id}
+          className="group rounded-md border border-white/[0.08] bg-black/20"
+          open={items.length <= 2}
+        >
+          <summary className="flex h-9 cursor-pointer list-none items-center gap-2 px-2.5 text-[11px] text-zinc-300 [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 transition group-open:rotate-90" />
+
+            {item.imageUrl ? (
+              <span
+                className="h-5 w-6 shrink-0 rounded-sm border border-white/[0.08] bg-cover bg-center"
+                style={{
+                  backgroundImage: `url(${item.imageUrl})`,
+                }}
+              />
+            ) : (
+              <span className="flex h-5 w-6 shrink-0 items-center justify-center rounded-sm border border-white/[0.08]">
+                <ImageIcon className="h-3 w-3 text-zinc-700" />
+              </span>
+            )}
+
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {item.title || `Card ${index + 1}`}
+            </span>
+
+            <span className="text-[10px] text-zinc-700">
+              {index + 1}
+            </span>
+          </summary>
+
+          <div className="space-y-3 border-t border-white/[0.06] p-2.5">
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput
+                id={`site-card-eyebrow-${item.id}`}
+                label="Eyebrow"
+                value={item.eyebrow}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    eyebrow: value,
+                  }))
+                }
+              />
+
+              <TextInput
+                id={`site-card-title-${item.id}`}
+                label="Title"
+                value={item.title}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    title: value,
+                  }))
+                }
+              />
+            </div>
+
+            <TextAreaInput
+              id={`site-card-body-${item.id}`}
+              label="Description"
+              value={item.body}
+              rows={3}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  body: value,
+                }))
+              }
+            />
+
+            <div>
+              <FieldLabel>Image</FieldLabel>
+
+              {item.imageUrl ? (
+                <div className="mt-1.5 overflow-hidden rounded-md border border-white/[0.08] bg-black/30">
+                  <div
+                    className="h-24 bg-contain bg-center bg-no-repeat"
+                    style={{
+                      backgroundImage: `url(${item.imageUrl})`,
+                    }}
+                  />
+
+                  <div className="flex gap-2 border-t border-white/[0.06] p-2">
+                    <label className="flex h-7 cursor-pointer items-center rounded border border-white/[0.09] px-2 text-[10px] text-zinc-400 hover:text-zinc-100">
+                      {uploadingItemId === item.id
+                        ? "Uploading…"
+                        : "Replace"}
+
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                        disabled={uploadingItemId !== null}
+                        className="hidden"
+                        onChange={(event) => {
+                          const input = event.currentTarget;
+                          const file = input.files?.[0];
+                          if (!file) return;
+
+                          void uploadImage(
+                            item.id,
+                            file,
+                          ).finally(() => {
+                            input.value = "";
+                          });
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateItem(
+                          item.id,
+                          (current) => ({
+                            ...current,
+                            imageUrl: "",
+                            imagePath: "",
+                          }),
+                        )
+                      }
+                      className="h-7 rounded border border-white/[0.09] px-2 text-[10px] text-zinc-500 hover:text-red-200"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="mt-1.5 flex h-16 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-white/[0.1] text-[10px] text-zinc-600 hover:border-white/[0.18] hover:text-zinc-300">
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  {uploadingItemId === item.id
+                    ? "Uploading…"
+                    : "Upload image"}
+
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                    disabled={uploadingItemId !== null}
+                    className="hidden"
+                    onChange={(event) => {
+                      const input = event.currentTarget;
+                      const file = input.files?.[0];
+                      if (!file) return;
+
+                      void uploadImage(
+                        item.id,
+                        file,
+                      ).finally(() => {
+                        input.value = "";
+                      });
+                    }}
+                  />
+                </label>
+              )}
+
+              {item.imageUrl ? (
+                <div className="mt-2">
+                  <TextInput
+                    id={`site-card-alt-${item.id}`}
+                    label="Alt text"
+                    value={item.imageAlt}
+                    onChange={(value) =>
+                      updateItem(
+                        item.id,
+                        (current) => ({
+                          ...current,
+                          imageAlt: value,
+                        }),
+                      )
+                    }
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput
+                id={`site-card-link-label-${item.id}`}
+                label="Link label"
+                value={item.linkLabel}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    linkLabel: value,
+                  }))
+                }
+              />
+
+              <TextInput
+                id={`site-card-link-href-${item.id}`}
+                label="Link"
+                value={item.linkHref}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    linkHref: value,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() =>
+                    moveItem(item.id, "up")
+                  }
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move earlier"
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    index === items.length - 1
+                  }
+                  onClick={() =>
+                    moveItem(item.id, "down")
+                  }
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move later"
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    duplicateItem(item)
+                  }
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:text-zinc-200"
+                  title="Duplicate card"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setItems(
+                    items.filter(
+                      (candidate) =>
+                        candidate.id !== item.id,
+                    ),
+                  )
+                }
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+                title="Delete card"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </details>
+      ))}
+
+      <button
+        type="button"
+        onClick={addItem}
+        className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add card
+      </button>
+    </div>
+  );
+}
+
 function GalleryEditor({
   section,
   onContentChange,
@@ -999,6 +1452,40 @@ function InspectorContentPanel({
     );
   }
 
+  if (section.type === "cards") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Section">
+          <TextInput
+            id="site-cards-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-cards-intro"
+            label="Intro"
+            value={getContentString(section, "intro")}
+            onChange={(value) =>
+              onContentChange("intro", value)
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Cards">
+          <CardsEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "content") {
     return (
       <InspectorGroup title="Content">
@@ -1132,6 +1619,42 @@ function ContentNodeInspectorPanel({
               label="Description"
               value={getContentString(section, "intro")}
               onChange={(value) => onContentChange("intro", value)}
+              rows={4}
+            />
+          </div>
+        </>
+      );
+    }
+
+    if (section.type === "cards") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Section text
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Section text
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-cards-node-heading"
+              label="Heading"
+              value={getContentString(section, "heading")}
+              onChange={(value) =>
+                onContentChange("heading", value)
+              }
+            />
+
+            <TextAreaInput
+              id="site-cards-node-intro"
+              label="Intro"
+              value={getContentString(section, "intro")}
+              onChange={(value) =>
+                onContentChange("intro", value)
+              }
               rows={4}
             />
           </div>

@@ -610,6 +610,7 @@ type MackSectionKind =
   | "contact"
   | "products"
   | "content"
+  | "cards"
   | "services"
   | "gallery"
   | "media"
@@ -685,6 +686,7 @@ function getTemplateKind(section: SiteSection): MackSectionKind {
   if (section.type === "media") return "media";
   if (section.type === "cta") return "cta";
   if (section.type === "content") return "content";
+  if (section.type === "cards") return "cards";
   if (section.type === "contact") return "contact";
 
   return section.label.trim().toLowerCase() === "software"
@@ -740,6 +742,58 @@ function readGalleryItems(section: SiteSection): SiteGalleryItem[] {
       path: typeof candidate.path === "string" ? candidate.path : "",
       alt: typeof candidate.alt === "string" ? candidate.alt : "",
     }];
+  });
+}
+
+type SiteCardItem = {
+  id: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  imageUrl: string;
+  imagePath: string;
+  imageAlt: string;
+  linkLabel: string;
+  linkHref: string;
+};
+
+function readCardItems(section: SiteSection): SiteCardItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") {
+      return [];
+    }
+
+    const read = (key: string) =>
+      typeof candidate[key] === "string"
+        ? (candidate[key] as string)
+        : "";
+
+    return [
+      {
+        id: candidate.id,
+        eyebrow: read("eyebrow"),
+        title: read("title"),
+        body: read("body"),
+        imageUrl: read("imageUrl"),
+        imagePath: read("imagePath"),
+        imageAlt: read("imageAlt"),
+        linkLabel: read("linkLabel"),
+        linkHref: read("linkHref"),
+      },
+    ];
   });
 }
 
@@ -1376,6 +1430,233 @@ function ProductsSection({
   );
 }
 
+function CardsSection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const intro = readContentString(section, "intro");
+  const items = readCardItems(section);
+  const variant = sectionVariant(section, "grid");
+  const columns = section.layout?.columns ?? 3;
+
+  if (items.length === 0 && !editorPreview) {
+    return null;
+  }
+
+  const gridColumns =
+    columns === 4
+      ? "lg:grid-cols-4"
+      : columns === 2
+      ? "lg:grid-cols-2"
+      : "lg:grid-cols-3";
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-5 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            className="text-[clamp(2rem,4vw,3.75rem)] leading-[0.95] tracking-[-0.055em] text-white/92"
+          />
+
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+            />
+          ) : null}
+        </div>
+
+        {items.length > 0 ? (
+          <div
+            className={
+              variant === "list"
+                ? "grid gap-3"
+                : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
+            }
+          >
+            {items.map((item, index) => {
+              const featured =
+                variant === "featured" && index === 0;
+
+              const cardBody = (
+                <>
+                  {item.imageUrl ? (
+                    <div
+                      className={`overflow-hidden bg-[var(--site-surface-strong)] ${
+                        variant === "list"
+                          ? "min-h-[170px]"
+                          : featured
+                          ? "aspect-[16/8]"
+                          : "aspect-[4/3]"
+                      }`}
+                    >
+                      <img
+                        src={item.imageUrl}
+                        alt={item.imageAlt}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={`flex items-center justify-center bg-[var(--site-surface-strong)] text-[8px] uppercase tracking-[0.2em] text-white/20 ${
+                        variant === "list"
+                          ? "min-h-[130px]"
+                          : featured
+                          ? "aspect-[16/8]"
+                          : "aspect-[4/3]"
+                      }`}
+                    >
+                      No image
+                    </div>
+                  )}
+
+                  <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
+                    <div>
+                      {item.eyebrow ? (
+                        <p
+                          className="text-[7px] font-medium uppercase tracking-[0.25em]"
+                          style={{
+                            color:
+                              "var(--site-accent)",
+                          }}
+                        >
+                          {item.eyebrow}
+                        </p>
+                      ) : null}
+
+                      <h3
+                        className={`mt-2 leading-[1.02] tracking-[-0.04em] text-white/92 ${
+                          featured
+                            ? "text-[30px]"
+                            : "text-[20px]"
+                        }`}
+                      >
+                        {item.title || "Untitled card"}
+                      </h3>
+
+                      {item.body ? (
+                        <p className="mt-3 text-[10px] leading-[1.6] text-white/45">
+                          {item.body}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {item.linkLabel ? (
+                      <span className="mt-5 text-[7px] font-medium uppercase tracking-[0.16em] text-[var(--site-accent)]">
+                        {item.linkLabel} →
+                      </span>
+                    ) : null}
+                  </div>
+                </>
+              );
+
+              const cardClass = `overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface)] rounded-[var(--site-radius)] ${
+                variant === "list"
+                  ? "grid md:grid-cols-[240px_1fr]"
+                  : featured
+                  ? "md:col-span-2"
+                  : ""
+              }`;
+
+              if (
+                item.linkHref &&
+                item.linkHref !== "#"
+              ) {
+                return (
+                  <a
+                    key={item.id}
+                    href={item.linkHref}
+                    className={`${cardClass} transition hover:-translate-y-px`}
+                  >
+                    {cardBody}
+                  </a>
+                );
+              }
+
+              return (
+                <article
+                  key={item.id}
+                  className={cardClass}
+                >
+                  {cardBody}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex min-h-[180px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+            Add cards
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StandaloneMediaSection({
   section,
   editorContext,
@@ -1864,6 +2145,15 @@ function MackHomeSections({
           key={section.id}
           section={section}
           listings={sourceListings}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "cards") {
+      nodes.push(
+        <CardsSection
+          key={section.id}
+          section={section}
           editorPreview={editorPreview}
           editorContext={editorContext}
         />,

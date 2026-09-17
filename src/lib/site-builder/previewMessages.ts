@@ -42,6 +42,7 @@ export type SitePreviewSelectionRequestMessage = {
 
 export const SITE_PREVIEW_INLINE_EDIT_FIELDS = {
   hero: ["eyebrow", "headline", "intro", "primaryCtaLabel"],
+  cards: ["heading", "intro"],
   cta: ["heading", "body", "buttonLabel"],
   contact: ["heading", "body", "buttonLabel"],
 } as const satisfies Partial<Record<SiteSectionType, readonly string[]>>;
