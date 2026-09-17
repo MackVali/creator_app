@@ -24,6 +24,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Secret scan
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          patterns = {
+              "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+              "Stripe secret key": re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b"),
+              "TestSprite-style key": re.compile(r"\bsk-user-[A-Za-z0-9_-]{20,}\b"),
+              "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+              "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+              "Supabase service-role JWT": re.compile(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+          }
+
+          excluded_prefixes = (
+              ".git/",
+              "node_modules/",
+              ".next/",
+              "coverage/",
+              "testsprite_tests/tmp/",
+          )
+
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"],
+          ).decode().split("\0")
+
+          findings = []
+          for rel in tracked:
+              if not rel or rel.startswith(excluded_prefixes):
+                  continue
+              path = pathlib.Path(rel)
+              try:
+                  data = path.read_text(encoding="utf-8")
+              except (UnicodeDecodeError, OSError):
+                  continue
+
+              for name, pattern in patterns.items():
+                  for match in pattern.finditer(data):
+                      findings.append((rel, name, match.start()))
+
+          if findings:
+              for rel, name, _ in findings:
+                  print(f"Potential secret detected: {name} in {rel}", file=sys.stderr)
+              sys.exit(1)
+
+          print("No tracked-file secret patterns detected.")
+          PY
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
