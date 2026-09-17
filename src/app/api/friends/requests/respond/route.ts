@@ -200,7 +200,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: profileRows, error: profileError } = await supabase
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    return NextResponse.json(
+      { error: "Profile service unavailable." },
+      { status: 503 }
+    );
+  }
+
+  const { data: profileRows, error: profileError } = await adminClient
     .from("profiles")
     .select(profileSelect)
     .in("user_id", [updated.requester_id, updated.target_id]);
