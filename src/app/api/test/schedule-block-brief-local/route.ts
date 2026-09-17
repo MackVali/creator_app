@@ -48,6 +48,10 @@ function instanceMatchesTimeBlock(
 }
 
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
