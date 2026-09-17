@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ApiRateLimitRpcRow = Record<string, unknown> & {
@@ -19,6 +21,13 @@ export type ApiRateLimitDecision = {
 
 type CheckApiRateLimitOptions = {
   userId: string;
+  action: string;
+  windowSeconds: number;
+  maxRequests: number;
+};
+
+type CheckApiSubjectRateLimitOptions = {
+  subject: string;
   action: string;
   windowSeconds: number;
   maxRequests: number;
@@ -51,6 +60,25 @@ function normalizeRpcRow(
   };
 }
 
+function normalizeClientAddress(value: string | null) {
+  if (!value) return null;
+  const first = value.split(",")[0]?.trim();
+  return first || null;
+}
+
+export function getClientRateLimitSubject(request: Request) {
+  const clientAddress =
+    normalizeClientAddress(request.headers.get("x-vercel-forwarded-for")) ??
+    normalizeClientAddress(request.headers.get("x-forwarded-for")) ??
+    normalizeClientAddress(request.headers.get("x-real-ip"));
+
+  return clientAddress ? `ip:${clientAddress}` : "ip:unknown";
+}
+
+export function hashApiRateLimitSubject(subject: string) {
+  return createHash("sha256").update(subject).digest("hex");
+}
+
 export async function checkApiRateLimit({
   userId,
   action,
@@ -64,6 +92,37 @@ export async function checkApiRateLimit({
 
   const { data, error } = await admin.rpc("check_api_rate_limit", {
     p_user_id: userId,
+    p_action: action,
+    p_window_seconds: windowSeconds,
+    p_max_requests: maxRequests,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = Array.isArray(data)
+    ? (data[0] as ApiRateLimitRpcRow | undefined)
+    : (data as ApiRateLimitRpcRow | null);
+  const fallbackResetAt = new Date(Date.now() + windowSeconds * 1000);
+
+  return normalizeRpcRow(row ?? null, fallbackResetAt);
+}
+
+export async function checkApiSubjectRateLimit({
+  subject,
+  action,
+  windowSeconds,
+  maxRequests,
+}: CheckApiSubjectRateLimitOptions): Promise<ApiRateLimitDecision> {
+  const admin = createAdminClient();
+  if (!admin) {
+    throw new Error("Supabase admin client not initialized");
+  }
+
+  const subjectHash = hashApiRateLimitSubject(subject);
+  const { data, error } = await admin.rpc("check_api_subject_rate_limit", {
+    p_subject_hash: subjectHash,
     p_action: action,
     p_window_seconds: windowSeconds,
     p_max_requests: maxRequests,
