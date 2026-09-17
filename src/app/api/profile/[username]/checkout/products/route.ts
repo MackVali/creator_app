@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
+  checkApiSubjectRateLimit,
+  getClientRateLimitSubject,
+} from "@/lib/server/rateLimit";
+import {
   LISTING_FIELDS,
   serializeListing,
   type ListingRow,
@@ -11,6 +15,10 @@ import {
 import type { ProductCheckoutItemInput, ProductCheckoutResponse } from "@/types/checkout";
 
 const MINIMUM_QUANTITY = 1;
+const MAXIMUM_QUANTITY = 99;
+const MAXIMUM_DISTINCT_ITEMS = 25;
+const CHECKOUT_RATE_LIMIT_WINDOW_SECONDS = 10 * 60;
+const CHECKOUT_RATE_LIMIT_MAX_REQUESTS = 30;
 
 function buildErrorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -47,7 +55,10 @@ function normalizeItems(payload: unknown): ProductCheckoutItemInput[] {
       typeof rawQuantity === "number" && Number.isFinite(rawQuantity)
         ? Math.floor(rawQuantity)
         : MINIMUM_QUANTITY;
-    const quantity = Math.max(MINIMUM_QUANTITY, quantityCandidate);
+    const quantity = Math.min(
+      MAXIMUM_QUANTITY,
+      Math.max(MINIMUM_QUANTITY, quantityCandidate),
+    );
 
     if (!bucket.has(id)) {
       order.push(id);
@@ -67,6 +78,28 @@ export async function POST(
   const username = (context.params?.username ?? "").trim();
   if (!username) {
     return buildErrorResponse("Username is required to start checkout.", 400);
+  }
+
+  try {
+    const limit = await checkApiSubjectRateLimit({
+      subject: getClientRateLimitSubject(request),
+      action: "checkout_create",
+      windowSeconds: CHECKOUT_RATE_LIMIT_WINDOW_SECONDS,
+      maxRequests: CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
+    });
+
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many checkout attempts. Try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
+        },
+      );
+    }
+  } catch (rateLimitError) {
+    console.error("Checkout rate limit check failed", rateLimitError);
+    return buildErrorResponse("Checkout service currently unavailable.", 503);
   }
 
   const supabase = createAdminClient();
@@ -95,6 +128,13 @@ export async function POST(
 
   if (normalizedItems.length === 0) {
     return buildErrorResponse("At least one cart item is required.", 400);
+  }
+
+  if (normalizedItems.length > MAXIMUM_DISTINCT_ITEMS) {
+    return buildErrorResponse(
+      `A cart can contain at most ${MAXIMUM_DISTINCT_ITEMS} distinct items.`,
+      400,
+    );
   }
 
   const { data: sellerUserId, error: lookupError } = await supabase.rpc(
