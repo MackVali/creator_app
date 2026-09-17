@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { requirePlus } from "@/lib/entitlements/requirePlus";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const circleColumns =
   "id, owner_user_id, name, icon_emoji, circle_type, status, description, created_at, updated_at";
@@ -193,8 +194,15 @@ export async function GET(_request: Request, context: CircleDetailParams) {
   const profileByUserId = new Map<string, ProfileRow>();
 
   if (memberIds.length > 0) {
-    const { data: profiles, error: profilesError } = await supabase
-      .schema("public")
+    const admin = createAdminClient();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Unable to load circle members." },
+        { status: 503 }
+      );
+    }
+
+    const { data: profiles, error: profilesError } = await admin
       .from("profiles")
       .select("user_id, username, name, avatar_url")
       .in("user_id", memberIds)
