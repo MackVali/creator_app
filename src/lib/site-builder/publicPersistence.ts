@@ -60,14 +60,28 @@ export async function getPublishedSiteRecordByHandle(
     return null;
   }
 
-  const document =
-    data && typeof data === "object"
-      ? (data as Record<string, unknown>).document
-      : null;
-
-  if (!isSiteDocument(document)) {
+  if (!data || typeof data !== "object") {
     return null;
   }
 
-  return document;
+  const row = data as Record<string, unknown>;
+  const document = row.document;
+
+  if (
+    !isSiteDocument(document) ||
+    typeof row.user_id !== "string" ||
+    typeof row.handle !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    site: document,
+    userId: row.user_id,
+    handle: row.handle,
+    publishedAt:
+      typeof row.published_at === "string"
+        ? row.published_at
+        : null,
+  };
 }
