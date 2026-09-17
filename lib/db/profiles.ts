@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import type { OnboardingUpdate, Profile } from "@/lib/types";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Profile schema validation
 export const profileSchema = z.object({
@@ -80,12 +81,11 @@ export async function getProfile(userId: string) {
   const supabase = getSupabaseServer(cookieStore);
   if (!supabase) return null;
 
-  // Use .eq('user_id', uid).maybeSingle() to ensure single result and avoid PGRST116
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("user_id", userId)
-    .maybeSingle(); // Use maybeSingle to handle case where profile doesn't exist
+    .maybeSingle();
 
   if (error) {
     console.error("Error fetching profile:", error);
@@ -101,13 +101,11 @@ export async function ensureProfile(userId: string) {
   const supabase = getSupabaseServer(cookieStore);
   if (!supabase) return null;
 
-  // Check if profile exists
   const existingProfile = await getProfile(userId);
   if (existingProfile) {
     return existingProfile;
   }
 
-  // Create profile if it doesn't exist
   const { data, error } = await supabase
     .from("profiles")
     .insert({
@@ -136,36 +134,42 @@ export async function updateMyProfile(input: ProfileFormData) {
   const supabase = getSupabaseServer(cookieStore);
   if (!supabase) return { success: false, error: "Supabase not initialized" };
 
-  // Get current user
   const user = await getCurrentUser();
   if (!user) {
     return { success: false, error: "Not authenticated" };
   }
 
   try {
-    // Validate input
     const validatedData = profileSchema.parse(input);
+    const admin = createAdminClient();
+    if (!admin) {
+      return { success: false, error: "Profile service unavailable" };
+    }
 
-    // Check username uniqueness (case-insensitive) - exclude current user
-    const { data: existingProfile } = await supabase
+    // Username uniqueness is cross-user, so perform this narrow lookup server-side.
+    const { data: existingProfile, error: usernameLookupError } = await admin
       .from("profiles")
       .select("user_id")
-      .ilike("username", validatedData.username) // Use ilike for case-insensitive comparison
+      .ilike("username", validatedData.username)
       .neq("user_id", user.id)
       .maybeSingle();
+
+    if (usernameLookupError) {
+      console.error("Error checking username availability:", usernameLookupError);
+      return { success: false, error: "Failed to validate username" };
+    }
 
     if (existingProfile) {
       return { success: false, error: "Username is taken" };
     }
 
-    // Update profile - ensure we only update the current user's profile
     const { data, error } = await supabase
       .from("profiles")
       .upsert({
         user_id: user.id,
         ...validatedData,
       })
-      .eq("user_id", user.id) // Ensure we only update current user's profile
+      .eq("user_id", user.id)
       .select()
       .single();
 
@@ -268,16 +272,21 @@ export async function updateMyOnboarding(
   }
 }
 
-// Get profile by username (for public profiles)
+// Get profile by username (for server-side public profile consumers)
 export async function getProfileByUsername(username: string) {
-  const cookieStore = await cookies();
-  const supabase = getSupabaseServer(cookieStore);
-  if (!supabase) return null;
+  const normalizedUsername = username.trim().toLowerCase();
+  if (!normalizedUsername) return null;
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  if (!admin) return null;
+
+  const { data, error } = await admin
     .from("profiles")
-    .select("*")
-    .ilike("username", username)
+    .select(
+      "user_id, username, name, bio, city, avatar_url, banner_url, verified, theme_color, font_family, accent_color"
+    )
+    .ilike("username", normalizedUsername)
+    .or("is_private.eq.false,is_private.is.null")
     .maybeSingle();
 
   if (error) {
