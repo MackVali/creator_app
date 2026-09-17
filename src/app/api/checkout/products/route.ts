@@ -24,6 +24,14 @@ function buildErrorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function getTrustedCheckoutOrigin(request: Request) {
+  if (process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production") {
+    return "https://trycreator.app";
+  }
+
+  return new URL(request.url).origin;
+}
+
 function normalizeItems(payload: unknown): ProductCheckoutItemInput[] {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -227,7 +235,7 @@ export async function POST(request: Request) {
     sellerHandle: sellerHandleByUserId.get(listingRowById.get(item.id)?.user_id ?? "") ?? "",
   }));
 
-  const origin = new URL(request.url).origin;
+  const origin = getTrustedCheckoutOrigin(request);
   const successUrl = `${origin}/checkout/success?checkout_id=${checkoutId}&session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${origin}/checkout/cancel?checkout_id=${checkoutId}`;
 
