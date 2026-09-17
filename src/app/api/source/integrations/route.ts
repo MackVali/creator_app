@@ -3,6 +3,10 @@ import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 import type { SourceIntegration } from "@/types/source"
 import { requirePlus } from "@/lib/entitlements/requirePlus"
+import {
+  assertSafeOutboundUrl,
+  parseHttpsUrl,
+} from "@/lib/server/safeOutboundFetch"
 
 export const runtime = "nodejs"
 
@@ -132,12 +136,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Platform name is required" }, { status: 400 })
   }
 
-  if (!connectionUrl || typeof connectionUrl !== "string" || !isValidUrl(connectionUrl)) {
-    return NextResponse.json({ error: "A valid website URL is required" }, { status: 400 })
+  if (!connectionUrl || typeof connectionUrl !== "string" || !isHttpsUrl(connectionUrl)) {
+    return NextResponse.json({ error: "A valid HTTPS website URL is required" }, { status: 400 })
   }
 
-  if (!publishUrl || typeof publishUrl !== "string" || !isValidUrl(publishUrl)) {
+  if (!publishUrl || typeof publishUrl !== "string") {
     return NextResponse.json({ error: "A valid publish endpoint is required" }, { status: 400 })
+  }
+
+  try {
+    await assertSafeOutboundUrl(publishUrl.trim())
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unsafe publish endpoint"
+    return NextResponse.json({ error: message }, { status: 400 })
   }
 
   if (typeof publishMethod !== "string" || !allowedMethods.includes(publishMethod as typeof allowedMethods[number])) {
@@ -195,12 +206,19 @@ export async function POST(request: Request) {
   let preparedOauthMetadata: Record<string, unknown> | null = null
 
   if (authMode === "oauth2") {
-    if (!oauthAuthorizeUrl || typeof oauthAuthorizeUrl !== "string" || !isValidUrl(oauthAuthorizeUrl)) {
-      return NextResponse.json({ error: "A valid authorization URL is required" }, { status: 400 })
+    if (!oauthAuthorizeUrl || typeof oauthAuthorizeUrl !== "string" || !isHttpsUrl(oauthAuthorizeUrl)) {
+      return NextResponse.json({ error: "A valid HTTPS authorization URL is required" }, { status: 400 })
     }
 
-    if (!oauthTokenUrl || typeof oauthTokenUrl !== "string" || !isValidUrl(oauthTokenUrl)) {
+    if (!oauthTokenUrl || typeof oauthTokenUrl !== "string") {
       return NextResponse.json({ error: "A valid token URL is required" }, { status: 400 })
+    }
+
+    try {
+      await assertSafeOutboundUrl(oauthTokenUrl.trim())
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unsafe OAuth token endpoint"
+      return NextResponse.json({ error: message }, { status: 400 })
     }
 
     if (!oauthClientId || typeof oauthClientId !== "string" || !oauthClientId.trim()) {
@@ -321,10 +339,10 @@ function sanitizeHeaders(headers: IntegrationRow["headers"]) {
   }, {} as Record<string, string>)
 }
 
-function isValidUrl(value: string) {
+function isHttpsUrl(value: string) {
   try {
-    const url = new URL(value)
-    return Boolean(url.protocol && url.host)
+    parseHttpsUrl(value)
+    return true
   } catch {
     return false
   }
