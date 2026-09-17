@@ -1,5 +1,9 @@
 import type { PortfolioSiteData } from "@/lib/portfolio/types";
 import { mackValiPortfolio } from "@/lib/portfolio/mackValiPortfolio";
+import {
+  createDefaultSiteFooter,
+  createDefaultSiteHeader,
+} from "@/lib/site-builder/siteChrome";
 import type {
   SiteDocument,
   SiteSection,
@@ -10,6 +14,8 @@ export const mackValiSiteDocument: SiteDocument = {
   name: "Mack Vali",
   handle: "mackvali",
   homePageId: "home",
+  header: createDefaultSiteHeader("Mack Vali"),
+  footer: createDefaultSiteFooter("Mack Vali"),
   pages: [
     {
       id: "home",

@@ -48,6 +48,38 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
 
+function isSiteNavigationItem(value: unknown) {
+  return (
+    isRecord(value) &&
+    isString(value.id) &&
+    isString(value.label) &&
+    isString(value.href) &&
+    typeof value.visible === "boolean"
+  );
+}
+
+function isSiteHeaderConfig(value: unknown) {
+  if (value === undefined) return true;
+
+  return (
+    isRecord(value) &&
+    isString(value.brandLabel) &&
+    isString(value.tagline) &&
+    Array.isArray(value.navigation) &&
+    value.navigation.every(isSiteNavigationItem)
+  );
+}
+
+function isSiteFooterConfig(value: unknown) {
+  if (value === undefined) return true;
+
+  return (
+    isRecord(value) &&
+    isString(value.brandLabel) &&
+    isString(value.tagline)
+  );
+}
+
 function isPersistableSectionType(value: unknown): value is SiteSectionType {
   if (!isString(value)) return false;
   return (
@@ -193,6 +225,8 @@ export function isSiteDocument(value: unknown): value is SiteDocument {
     !isString(value.name) ||
     !isString(value.handle) ||
     !isString(value.homePageId) ||
+    !isSiteHeaderConfig(value.header) ||
+    !isSiteFooterConfig(value.footer) ||
     !Array.isArray(value.pages) ||
     !value.pages.every(isSitePage)
   ) {

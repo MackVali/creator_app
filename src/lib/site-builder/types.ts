@@ -69,10 +69,30 @@ export type SitePage = {
   sections: SiteSection[];
 };
 
+export type SiteNavigationItem = {
+  id: string;
+  label: string;
+  href: string;
+  visible: boolean;
+};
+
+export type SiteHeaderConfig = {
+  brandLabel: string;
+  tagline: string;
+  navigation: SiteNavigationItem[];
+};
+
+export type SiteFooterConfig = {
+  brandLabel: string;
+  tagline: string;
+};
+
 export type SiteDocument = {
   id: string;
   name: string;
   handle: string;
   homePageId: string;
+  header?: SiteHeaderConfig;
+  footer?: SiteFooterConfig;
   pages: SitePage[];
 };

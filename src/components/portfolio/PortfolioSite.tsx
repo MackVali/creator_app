@@ -23,8 +23,13 @@ import type {
   PortfolioSiteData,
 } from "@/lib/portfolio/types";
 import type { SitePreviewInlineEditField } from "@/lib/site-builder/previewMessages";
+import {
+  getSiteFooterConfig,
+  getSiteHeaderConfig,
+} from "@/lib/site-builder/siteChrome";
 import type {
   SiteContentNodeId,
+  SiteDocument,
   SiteEditorSelection,
   SiteSection,
 } from "@/lib/site-builder/types";
@@ -32,6 +37,7 @@ import type { SourceListing } from "@/types/source";
 
 type PortfolioSiteProps = {
   site: PortfolioSiteData;
+  siteDocument?: SiteDocument;
   sections?: SiteSection[];
   sourceListings?: SourceListing[];
   editorPreview?: boolean;
@@ -1667,11 +1673,9 @@ function CtaSection({
 }
 
 function ContactSection({
-  site,
   section,
   editorContext,
 }: {
-  site: PortfolioSiteData;
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
@@ -1764,15 +1768,6 @@ function ContactSection({
           </a>
         </div>
 
-        <footer className="flex h-[32px] items-center justify-between">
-          <p className="text-[8px] font-semibold tracking-[0.42em] text-white/66">
-            {site.name}
-          </p>
-
-          <p className="text-[6px] uppercase tracking-[0.33em] text-white/17">
-            Better tools · Brighter days.
-          </p>
-        </footer>
       </div>
     </section>
   );
@@ -1879,7 +1874,6 @@ function MackHomeSections({
       nodes.push(
         <ContactSection
           key={section.id}
-          site={site}
           section={section}
           editorContext={editorContext}
         />,
@@ -1908,6 +1902,7 @@ function MackHomeSections({
 
 export default function PortfolioSite({
   site,
+  siteDocument,
   sections,
   sourceListings = [],
   editorPreview = false,
@@ -1917,6 +1912,14 @@ export default function PortfolioSite({
   onEditorContentEditRequest,
 }: PortfolioSiteProps) {
   const renderSections = (sections ?? defaultMackSections) as SiteSection[];
+  const headerConfig = getSiteHeaderConfig({
+    name: site.name,
+    header: siteDocument?.header,
+  });
+  const footerConfig = getSiteFooterConfig({
+    name: site.name,
+    footer: siteDocument?.footer,
+  });
   const editorContext: EditorSelectionContext = {
     editorPreview,
     pageId: editorPageId,
@@ -1933,33 +1936,28 @@ export default function PortfolioSite({
             href={`/portfolio/${site.handle}`}
             className="text-[10px] font-semibold tracking-[0.43em] text-white/88"
           >
-            {site.name}
+            {headerConfig.brandLabel}
           </Link>
 
           <nav className="hidden items-center gap-9 text-[9px] text-white/48 md:flex">
-            <a href="#work" className="hover:text-white/82">
-              Work
-            </a>
-            <a href="#software" className="hover:text-white/82">
-              Software
-            </a>
-            <a href="#clothing" className="hover:text-white/82">
-              Clothing
-            </a>
-            <a href="#visual" className="hover:text-white/82">
-              Visual
-            </a>
-            <a href="#studio" className="hover:text-white/82">
-              Studio
-            </a>
-            <a href="#contact" className="hover:text-white/82">
-              Contact
-            </a>
+            {headerConfig.navigation
+              .filter((item) => item.visible)
+              .map((item) => (
+                <a
+                  key={item.id}
+                  href={item.href}
+                  className="hover:text-white/82"
+                >
+                  {item.label}
+                </a>
+              ))}
           </nav>
 
-          <p className="hidden text-[8px] text-white/40 xl:block">
-            • &nbsp; Ideas. Products. A Quieter Internet.
-          </p>
+          {headerConfig.tagline ? (
+            <p className="hidden text-[8px] text-white/40 xl:block">
+              • &nbsp; {headerConfig.tagline}
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -1972,6 +1970,20 @@ export default function PortfolioSite({
           editorContext={editorContext}
         />
       </main>
+
+      <footer className="border-t border-white/[0.08]">
+        <div className="mx-auto flex min-h-[42px] max-w-[1600px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-[58px]">
+          <p className="text-[8px] font-semibold tracking-[0.42em] text-white/66">
+            {footerConfig.brandLabel}
+          </p>
+
+          {footerConfig.tagline ? (
+            <p className="text-right text-[6px] uppercase tracking-[0.33em] text-white/17">
+              {footerConfig.tagline}
+            </p>
+          ) : null}
+        </div>
+      </footer>
     </div>
   );
 }

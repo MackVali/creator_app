@@ -15,6 +15,7 @@ import {
   Home,
   ImageIcon,
   Loader2,
+  Menu,
   MousePointerClick,
   Monitor,
   MoreHorizontal,
@@ -32,6 +33,10 @@ import { SectionVariantPicker } from "@/components/site-builder/SectionVariantPi
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
 import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
 import { uploadSiteImage } from "@/lib/site-builder/mediaStorage";
+import {
+  getSiteFooterConfig,
+  getSiteHeaderConfig,
+} from "@/lib/site-builder/siteChrome";
 import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
@@ -51,6 +56,7 @@ import type {
   SiteContentNodeId,
   SiteDocument,
   SiteEditorSelection,
+  SiteNavigationItem,
   SiteSection,
   SiteSectionLayoutConfig,
   SiteSectionStyleConfig,
@@ -61,6 +67,7 @@ type PreviewMode = "desktop" | "tablet" | "mobile";
 type InspectorMode = "content" | "design";
 type DraftLoadStatus = "loading" | "ready" | "error";
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+type SiteChromeSelection = "header" | "navigation" | "footer";
 type SectionNavigationChild = {
   id: SiteContentNodeId;
   label: string;
@@ -1515,6 +1522,246 @@ function InspectorDesignPanel({
   );
 }
 
+function SiteChromeInspector({
+  selection,
+  site,
+  onHeaderChange,
+  onFooterChange,
+  onNavigationChange,
+}: {
+  selection: SiteChromeSelection;
+  site: SiteDocument;
+  onHeaderChange: (
+    key: "brandLabel" | "tagline",
+    value: string,
+  ) => void;
+  onFooterChange: (
+    key: "brandLabel" | "tagline",
+    value: string,
+  ) => void;
+  onNavigationChange: (items: SiteNavigationItem[]) => void;
+}) {
+  const header = getSiteHeaderConfig(site);
+  const footer = getSiteFooterConfig(site);
+
+  if (selection === "header") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="text-[15px] font-medium text-zinc-100">Header</p>
+          <p className="mt-0.5 text-[11px] text-zinc-600">
+            Site / Header
+          </p>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <InspectorGroup title="Brand">
+            <TextInput
+              id="site-header-brand"
+              label="Brand label"
+              value={header.brandLabel}
+              onChange={(value) =>
+                onHeaderChange("brandLabel", value)
+              }
+            />
+          </InspectorGroup>
+
+          <InspectorGroup title="Header text">
+            <TextInput
+              id="site-header-tagline"
+              label="Tagline"
+              value={header.tagline}
+              onChange={(value) =>
+                onHeaderChange("tagline", value)
+              }
+            />
+          </InspectorGroup>
+        </div>
+      </>
+    );
+  }
+
+  if (selection === "navigation") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="text-[15px] font-medium text-zinc-100">
+            Navigation
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-600">
+            Site / Header / Navigation
+          </p>
+        </div>
+
+        <div className="space-y-3 p-4">
+          {header.navigation.map((item, index) => (
+            <div
+              key={item.id}
+              className="rounded-md border border-white/[0.08] bg-black/20 p-2.5"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput
+                  id={`site-nav-label-${item.id}`}
+                  label="Label"
+                  value={item.label}
+                  onChange={(value) =>
+                    onNavigationChange(
+                      header.navigation.map((candidate) =>
+                        candidate.id === item.id
+                          ? { ...candidate, label: value }
+                          : candidate,
+                      ),
+                    )
+                  }
+                />
+
+                <TextInput
+                  id={`site-nav-href-${item.id}`}
+                  label="Link"
+                  value={item.href}
+                  onChange={(value) =>
+                    onNavigationChange(
+                      header.navigation.map((candidate) =>
+                        candidate.id === item.id
+                          ? { ...candidate, href: value }
+                          : candidate,
+                      ),
+                    )
+                  }
+                />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-[11px] text-zinc-500">
+                  <input
+                    type="checkbox"
+                    checked={item.visible}
+                    onChange={(event) =>
+                      onNavigationChange(
+                        header.navigation.map((candidate) =>
+                          candidate.id === item.id
+                            ? {
+                                ...candidate,
+                                visible: event.target.checked,
+                              }
+                            : candidate,
+                        ),
+                      )
+                    }
+                    className="h-3.5 w-3.5 accent-zinc-100"
+                  />
+                  Visible
+                </label>
+
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => {
+                      const next = [...header.navigation];
+                      const [moved] = next.splice(index, 1);
+                      next.splice(index - 1, 0, moved);
+                      onNavigationChange(next);
+                    }}
+                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                    title="Move up"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={index === header.navigation.length - 1}
+                    onClick={() => {
+                      const next = [...header.navigation];
+                      const [moved] = next.splice(index, 1);
+                      next.splice(index + 1, 0, moved);
+                      onNavigationChange(next);
+                    }}
+                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                    title="Move down"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onNavigationChange(
+                        header.navigation.filter(
+                          (candidate) => candidate.id !== item.id,
+                        ),
+                      )
+                    }
+                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+                    title="Delete link"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={() =>
+              onNavigationChange([
+                ...header.navigation,
+                {
+                  id: `nav-${crypto.randomUUID()}`,
+                  label: "New link",
+                  href: "#",
+                  visible: true,
+                },
+              ])
+            }
+            className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add link
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <p className="text-[15px] font-medium text-zinc-100">Footer</p>
+        <p className="mt-0.5 text-[11px] text-zinc-600">
+          Site / Footer
+        </p>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <InspectorGroup title="Brand">
+          <TextInput
+            id="site-footer-brand"
+            label="Brand label"
+            value={footer.brandLabel}
+            onChange={(value) =>
+              onFooterChange("brandLabel", value)
+            }
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Footer text">
+          <TextInput
+            id="site-footer-tagline"
+            label="Tagline"
+            value={footer.tagline}
+            onChange={(value) =>
+              onFooterChange("tagline", value)
+            }
+          />
+        </InspectorGroup>
+      </div>
+    </>
+  );
+}
+
 export default function SiteBuilder() {
   const [site, setSite] = useState<SiteDocument>(cloneInitialSite);
   const [selectedPageId, setSelectedPageId] = useState(() => {
@@ -1525,6 +1772,8 @@ export default function SiteBuilder() {
     useState<SiteEditorSelection | null>(() =>
       getInitialEditorSelection(cloneInitialSite()),
     );
+  const [siteChromeSelection, setSiteChromeSelection] =
+    useState<SiteChromeSelection | null>(null);
   const [draftLoadStatus, setDraftLoadStatus] =
     useState<DraftLoadStatus>("loading");
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
@@ -1600,6 +1849,7 @@ export default function SiteBuilder() {
       setSite(nextSite);
       setSelectedPageId(nextPageId);
       setEditorSelection(nextSelection);
+      setSiteChromeSelection(null);
       setExpandedPageIds(nextPageId ? new Set([nextPageId]) : new Set());
       latestSiteJsonRef.current = nextSiteJson;
       lastPersistedSiteJsonRef.current = nextSiteJson;
@@ -1735,11 +1985,74 @@ export default function SiteBuilder() {
   );
   const editorLocked = draftLoadStatus !== "ready";
 
+  function selectSiteChrome(selection: SiteChromeSelection) {
+    if (editorLocked) return;
+
+    setSiteChromeSelection(selection);
+    setEditorSelection(null);
+    setActiveInspectorMode("content");
+  }
+
+  function updateSiteHeaderField(
+    key: "brandLabel" | "tagline",
+    value: string,
+  ) {
+    if (editorLocked) return;
+
+    setSite((current) => {
+      const header = getSiteHeaderConfig(current);
+
+      return {
+        ...current,
+        header: {
+          ...header,
+          [key]: value,
+        },
+      };
+    });
+  }
+
+  function updateSiteNavigation(items: SiteNavigationItem[]) {
+    if (editorLocked) return;
+
+    setSite((current) => {
+      const header = getSiteHeaderConfig(current);
+
+      return {
+        ...current,
+        header: {
+          ...header,
+          navigation: items,
+        },
+      };
+    });
+  }
+
+  function updateSiteFooterField(
+    key: "brandLabel" | "tagline",
+    value: string,
+  ) {
+    if (editorLocked) return;
+
+    setSite((current) => {
+      const footer = getSiteFooterConfig(current);
+
+      return {
+        ...current,
+        footer: {
+          ...footer,
+          [key]: value,
+        },
+      };
+    });
+  }
+
   function selectPage(pageId: string) {
     const page = site.pages.find((candidate) => candidate.id === pageId);
     if (!page) return;
 
     setSelectedPageId(page.id);
+    setSiteChromeSelection(null);
     setEditorSelection(
       page.sections[0]
         ? {
@@ -1754,6 +2067,7 @@ export default function SiteBuilder() {
 
   function selectSection(pageId: string, sectionId: string) {
     setSelectedPageId(pageId);
+    setSiteChromeSelection(null);
     setEditorSelection({ kind: "section", pageId, sectionId });
     setExpandedPageIds((current) => new Set(current).add(pageId));
   }
@@ -1764,6 +2078,7 @@ export default function SiteBuilder() {
     node: SiteContentNodeId,
   ) {
     setSelectedPageId(pageId);
+    setSiteChromeSelection(null);
     setEditorSelection({ kind: "content", pageId, sectionId, node });
     setActiveInspectorMode("content");
     setExpandedPageIds((current) => new Set(current).add(pageId));
@@ -1801,6 +2116,7 @@ export default function SiteBuilder() {
   function openNewPageDialog() {
     if (editorLocked) return;
 
+    setSiteChromeSelection(null);
     setEditingPageId(null);
     setPageDraftTitle("");
     setPageDraftSlug("");
@@ -2809,6 +3125,49 @@ export default function SiteBuilder() {
             </p>
           </div>
 
+          <div className="px-2.5 pt-3">
+            <button
+              type="button"
+              onClick={() => selectSiteChrome("header")}
+              className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+                siteChromeSelection === "header"
+                  ? "bg-white/[0.06] text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+              }`}
+            >
+              <Globe2 className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="font-medium">Header</span>
+            </button>
+
+            <div className="ml-[15px] border-l border-white/[0.05] pl-2.5">
+              <button
+                type="button"
+                onClick={() => selectSiteChrome("header")}
+                className={`flex h-6 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
+                  siteChromeSelection === "header"
+                    ? "bg-white/[0.04] text-zinc-100"
+                    : "text-zinc-600 hover:bg-white/[0.02] hover:text-zinc-400"
+                }`}
+              >
+                <Type className="h-3 w-3 text-zinc-700" />
+                Brand
+              </button>
+
+              <button
+                type="button"
+                onClick={() => selectSiteChrome("navigation")}
+                className={`flex h-6 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
+                  siteChromeSelection === "navigation"
+                    ? "bg-white/[0.04] text-zinc-100"
+                    : "text-zinc-600 hover:bg-white/[0.02] hover:text-zinc-400"
+                }`}
+              >
+                <Menu className="h-3 w-3 text-zinc-700" />
+                Navigation
+              </button>
+            </div>
+          </div>
+
           <div className="px-2.5 py-3">
             <div className="flex h-7 items-center justify-between px-2">
               <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-600">
@@ -2829,7 +3188,8 @@ export default function SiteBuilder() {
               {site.pages.map((page) => {
                 const pageExpanded = expandedPageIds.has(page.id);
                 const activePage = page.id === selectedPage?.id;
-                const activePageRow = activePage && !selectedSection;
+                const activePageRow =
+                  activePage && !selectedSection && !siteChromeSelection;
                 const isHomePage = page.id === site.homePageId;
 
                 return (
@@ -3089,6 +3449,21 @@ export default function SiteBuilder() {
               })}
             </div>
           </div>
+
+          <div className="border-t border-white/[0.05] px-2.5 py-3">
+            <button
+              type="button"
+              onClick={() => selectSiteChrome("footer")}
+              className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+                siteChromeSelection === "footer"
+                  ? "bg-white/[0.06] text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="font-medium">Footer</span>
+            </button>
+          </div>
         </aside>
 
         {/* CENTER: actual renderer */}
@@ -3252,7 +3627,15 @@ export default function SiteBuilder() {
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
-          {selectedSection && selectedContentNode ? (
+          {siteChromeSelection ? (
+            <SiteChromeInspector
+              selection={siteChromeSelection}
+              site={site}
+              onHeaderChange={updateSiteHeaderField}
+              onFooterChange={updateSiteFooterField}
+              onNavigationChange={updateSiteNavigation}
+            />
+          ) : selectedSection && selectedContentNode ? (
             <ContentNodeInspectorPanel
               section={selectedSection}
               node={selectedContentNode}

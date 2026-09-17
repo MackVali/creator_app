@@ -111,6 +111,7 @@ export default function SitePreviewFrame() {
     <div ref={rootRef}>
       <PortfolioSite
         site={previewSite}
+        siteDocument={site}
         sections={selectedPage?.sections ?? []}
         sourceListings={sourceListings}
         editorPreview

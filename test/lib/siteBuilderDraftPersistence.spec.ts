@@ -17,6 +17,21 @@ describe("site builder draft persistence validation", () => {
     ).toBe(false);
   });
 
+  it("rejects invalid site navigation items", () => {
+    const site = structuredClone(mackValiSiteDocument);
+
+    if (!site.header) {
+      throw new Error("Expected Mack seed header.");
+    }
+
+    site.header.navigation[0] = {
+      ...site.header.navigation[0],
+      href: 123,
+    } as never;
+
+    expect(isSiteDocument(site)).toBe(false);
+  });
+
   it("rejects sections with invalid source bindings", () => {
     const site = structuredClone(mackValiSiteDocument);
     site.pages[0].sections[0].source = {
