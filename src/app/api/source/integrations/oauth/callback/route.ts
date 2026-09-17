@@ -250,7 +250,14 @@ function htmlResponse({
     message: message ?? null,
   }
 
-  const script = `window.opener && window.opener.postMessage(${JSON.stringify(payload)}, window.location.origin);
+  const serializedPayload = JSON.stringify(payload)
+    .replace(/&/g, "\\u0026")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029")
+
+  const script = `window.opener && window.opener.postMessage(${serializedPayload}, window.location.origin);
 window.close();`
 
   const body = `<!DOCTYPE html>
