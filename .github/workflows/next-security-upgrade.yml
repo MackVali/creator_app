@@ -8,7 +8,7 @@ on:
       - ".github/workflows/next-security-upgrade.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
@@ -37,12 +37,14 @@ jobs:
       - name: Validate frozen install
         run: pnpm install --frozen-lockfile
 
-      - name: Upload upgraded manifests
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-security-upgrade
-          path: |
-            package.json
-            pnpm-lock.yaml
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit generated upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo "No dependency changes to commit."
+            exit 0
+          fi
+          git commit -m "security: upgrade Next.js maintenance LTS"
+          git push origin HEAD:feature/portfolio-v1
