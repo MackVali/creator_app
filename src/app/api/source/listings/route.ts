@@ -23,6 +23,7 @@ import {
 } from "./shared"
 
 import { requirePlus } from "@/lib/entitlements/requirePlus"
+import { safeOutboundFetch } from "@/lib/server/safeOutboundFetch"
 
 export const runtime = "nodejs"
 
@@ -338,7 +339,7 @@ export async function publishToIntegrations({
     }
 
     try {
-      const response = await fetch(integrationRecord.publish_url, {
+      const response = await safeOutboundFetch(integrationRecord.publish_url, {
         method,
         headers,
         body: JSON.stringify(payloadBody),
@@ -488,14 +489,14 @@ async function ensureOAuthAccessToken(
       for (const [key, value] of params.entries()) {
         url.searchParams.set(key, value)
       }
-      tokenResponse = await fetch(url.toString(), { method: "GET", headers })
+      tokenResponse = await safeOutboundFetch(url.toString(), { method: "GET", headers })
     } else {
       const body =
         bodyFormat === "json"
           ? JSON.stringify(Object.fromEntries(params.entries()))
           : params.toString()
 
-      tokenResponse = await fetch(integration.oauth_token_url, {
+      tokenResponse = await safeOutboundFetch(integration.oauth_token_url, {
         method: "POST",
         headers,
         body,
