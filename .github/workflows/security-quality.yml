@@ -43,7 +43,9 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Lint
+        if: always()
         run: pnpm lint
 
       - name: Dependency audit
+        if: always()
         run: pnpm audit --audit-level high
