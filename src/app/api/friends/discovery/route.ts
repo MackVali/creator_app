@@ -8,6 +8,7 @@ import {
   mapSuggestedFriend,
 } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type RelationshipStatus =
   | "self"
@@ -72,6 +73,19 @@ export async function GET() {
     );
   }
 
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json(
+      {
+        contactImport: mapContactImportStatus(null),
+        invites: [],
+        discoveryProfiles: [],
+        suggestions: [],
+      },
+      { status: 503 }
+    );
+  }
+
   const {
     data: contactRow,
     error: contactError,
@@ -122,7 +136,7 @@ export async function GET() {
   const {
     data: publicProfileRows,
     error: publicProfilesError,
-  } = await supabase
+  } = await admin
     .from("profiles")
     .select("id, user_id, username, name, avatar_url, created_at")
     .not("username", "is", null)
@@ -343,7 +357,7 @@ export async function GET() {
   if (normalizedUsernames.length) {
     const lookupResults = await Promise.all(
       normalizedUsernames.map(async (username) => {
-        const { data: targetId, error: lookupError } = await supabase.rpc(
+        const { data: targetId, error: lookupError } = await admin.rpc(
           "get_profile_user_id",
           { p_username: username }
         );
