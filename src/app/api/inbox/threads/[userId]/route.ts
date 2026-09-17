@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type ThreadMessage = {
   id: string;
@@ -43,6 +44,14 @@ export async function GET(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const admin = createAdminClient();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Profile service unavailable" },
+        { status: 503 }
+      );
+    }
+
     const messageCutoffIso = getFriendMessageCutoffIso();
 
     const messagesQuery = supabase
@@ -55,11 +64,11 @@ export async function GET(
       .order("created_at", { ascending: true })
       .limit(500);
 
-    const profileQuery = supabase
+    const profileQuery = admin
       .from("profiles")
       .select("user_id, username, name, avatar_url")
       .eq("user_id", participantId)
-      .single();
+      .maybeSingle();
 
     const viewerFriendQuery = supabase
       .from("friend_connections")
