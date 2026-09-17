@@ -615,6 +615,8 @@ type MackSectionKind =
   | "products"
   | "content"
   | "cards"
+  | "faq"
+  | "testimonials"
   | "services"
   | "gallery"
   | "media"
@@ -691,6 +693,8 @@ function getTemplateKind(section: SiteSection): MackSectionKind {
   if (section.type === "cta") return "cta";
   if (section.type === "content") return "content";
   if (section.type === "cards") return "cards";
+  if (section.type === "faq") return "faq";
+  if (section.type === "testimonials") return "testimonials";
   if (section.type === "contact") return "contact";
 
   return section.label.trim().toLowerCase() === "software"
@@ -798,6 +802,87 @@ function readCardItems(section: SiteSection): SiteCardItem[] {
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
         linkPageId: read("linkPageId"),
+      },
+    ];
+  });
+}
+
+type SiteFaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+type SiteTestimonialItem = {
+  id: string;
+  quote: string;
+  name: string;
+  role: string;
+};
+
+function readFaqItems(section: SiteSection): SiteFaqItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") return [];
+
+    return [
+      {
+        id: candidate.id,
+        question:
+          typeof candidate.question === "string"
+            ? candidate.question
+            : "",
+        answer:
+          typeof candidate.answer === "string"
+            ? candidate.answer
+            : "",
+      },
+    ];
+  });
+}
+
+function readTestimonialItems(
+  section: SiteSection,
+): SiteTestimonialItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") return [];
+
+    const read = (key: string) =>
+      typeof candidate[key] === "string"
+        ? (candidate[key] as string)
+        : "";
+
+    return [
+      {
+        id: candidate.id,
+        quote: read("quote"),
+        name: read("name"),
+        role: read("role"),
       },
     ];
   });
@@ -1694,6 +1779,316 @@ function CardsSection({
   );
 }
 
+function FaqSection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const intro = readContentString(section, "intro");
+  const items = readFaqItems(section);
+  const variant = sectionVariant(
+    section,
+    "accordion",
+  );
+
+  if (items.length === 0 && !editorPreview) {
+    return null;
+  }
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-6 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+          />
+
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+            />
+          ) : null}
+        </div>
+
+        {items.length > 0 ? (
+          <div
+            className={
+              variant === "columns"
+                ? "grid gap-3 md:grid-cols-2"
+                : "grid"
+            }
+          >
+            {items.map((item) =>
+              variant === "accordion" ? (
+                <details
+                  key={item.id}
+                  className="group border-t border-[var(--site-border)] last:border-b"
+                >
+                  <summary className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-6 py-3 text-[13px] font-medium text-white/85 [&::-webkit-details-marker]:hidden">
+                    <span>{item.question}</span>
+                    <span className="text-[18px] font-light text-white/35 transition group-open:rotate-45">
+                      +
+                    </span>
+                  </summary>
+
+                  {item.answer ? (
+                    <p className="max-w-[760px] pb-5 text-[11px] leading-[1.7] text-white/47">
+                      {item.answer}
+                    </p>
+                  ) : null}
+                </details>
+              ) : (
+                <article
+                  key={item.id}
+                  className={`border-[var(--site-border)] ${
+                    variant === "columns"
+                      ? "rounded-[var(--site-radius)] border bg-[var(--site-surface)] p-5"
+                      : "border-t py-5 last:border-b"
+                  }`}
+                >
+                  <h3 className="text-[14px] font-medium tracking-[-0.02em] text-white/88">
+                    {item.question}
+                  </h3>
+                  {item.answer ? (
+                    <p className="mt-3 text-[11px] leading-[1.7] text-white/47">
+                      {item.answer}
+                    </p>
+                  ) : null}
+                </article>
+              ),
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+            Add FAQ questions
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TestimonialsSection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const intro = readContentString(section, "intro");
+  const items = readTestimonialItems(section);
+  const variant = sectionVariant(section, "grid");
+  const columns = section.layout?.columns ?? 3;
+
+  if (items.length === 0 && !editorPreview) {
+    return null;
+  }
+
+  const gridColumns =
+    columns === 4
+      ? "lg:grid-cols-4"
+      : columns === 2
+      ? "lg:grid-cols-2"
+      : "lg:grid-cols-3";
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-6 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+          />
+
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+            />
+          ) : null}
+        </div>
+
+        {items.length > 0 ? (
+          <div
+            className={
+              variant === "list"
+                ? "grid gap-3"
+                : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
+            }
+          >
+            {items.map((item, index) => {
+              const featured =
+                variant === "featured" && index === 0;
+
+              return (
+                <article
+                  key={item.id}
+                  className={`flex flex-col justify-between border border-[var(--site-border)] bg-[var(--site-surface)] p-5 rounded-[var(--site-radius)] ${
+                    featured
+                      ? "min-h-[260px] sm:col-span-2"
+                      : variant === "list"
+                      ? "min-h-[150px]"
+                      : "min-h-[190px]"
+                  }`}
+                >
+                  <p
+                    className={`leading-[1.45] tracking-[-0.025em] text-white/88 ${
+                      featured
+                        ? "max-w-[900px] text-[clamp(1.8rem,3vw,3rem)]"
+                        : "text-[18px]"
+                    }`}
+                  >
+                    “{item.quote}”
+                  </p>
+
+                  <div className="mt-8 border-t border-[var(--site-border)] pt-3">
+                    <p className="text-[10px] font-medium text-[var(--site-accent)]">
+                      {item.name}
+                    </p>
+                    {item.role ? (
+                      <p className="mt-1 text-[9px] text-white/35">
+                        {item.role}
+                      </p>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+            Add testimonials
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StandaloneMediaSection({
   section,
   editorContext,
@@ -2221,6 +2616,24 @@ function MackHomeSections({
           key={section.id}
           siteHandle={site.handle}
           siteDocument={siteDocument}
+          section={section}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "faq") {
+      nodes.push(
+        <FaqSection
+          key={section.id}
+          section={section}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "testimonials") {
+      nodes.push(
+        <TestimonialsSection
+          key={section.id}
           section={section}
           editorPreview={editorPreview}
           editorContext={editorContext}

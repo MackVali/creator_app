@@ -39,6 +39,29 @@ describe("site builder section registry", () => {
     expect(section.style?.showDescription).toBe(true);
   });
 
+  it("creates FAQ sections with editable questions", () => {
+    const section = createSiteSection({
+      pageId: "home",
+      type: "faq",
+    });
+
+    expect(section.type).toBe("faq");
+    expect(section.layout?.variant).toBe("accordion");
+    expect(Array.isArray(section.content.items)).toBe(true);
+  });
+
+  it("creates testimonial sections with presentation variants", () => {
+    const section = createSiteSection({
+      pageId: "home",
+      type: "testimonials",
+      variant: "featured",
+    });
+
+    expect(section.type).toBe("testimonials");
+    expect(section.layout?.variant).toBe("featured");
+    expect(Array.isArray(section.content.items)).toBe(true);
+  });
+
   it("changes only layout variant when switching variants", () => {
     const section = createSiteSection({
       pageId: "home",

@@ -118,6 +118,20 @@ type SiteCardItem = {
   linkPageId: string;
 };
 
+type SiteFaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+type SiteTestimonialItem = {
+  id: string;
+  quote: string;
+  name: string;
+  role: string;
+};
+
+
 const previewModes: Record<
   PreviewMode,
   { label: string; width: number; viewportHeight: number | null }
@@ -251,6 +265,15 @@ function getSectionNavigationChildren(
   }
 
   if (section.type === "cards") {
+    return [
+      { id: "text", label: "Section text", icon: Type },
+    ];
+  }
+
+  if (
+    section.type === "faq" ||
+    section.type === "testimonials"
+  ) {
     return [
       { id: "text", label: "Section text", icon: Type },
     ];
@@ -477,6 +500,74 @@ function getCardItems(section: SiteSection): SiteCardItem[] {
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
         linkPageId: read("linkPageId"),
+      },
+    ];
+  });
+}
+
+function getFaqItems(section: SiteSection): SiteFaqItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") return [];
+
+    return [
+      {
+        id: candidate.id,
+        question:
+          typeof candidate.question === "string"
+            ? candidate.question
+            : "",
+        answer:
+          typeof candidate.answer === "string"
+            ? candidate.answer
+            : "",
+      },
+    ];
+  });
+}
+
+function getTestimonialItems(
+  section: SiteSection,
+): SiteTestimonialItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") return [];
+
+    const read = (key: string) =>
+      typeof candidate[key] === "string"
+        ? (candidate[key] as string)
+        : "";
+
+    return [
+      {
+        id: candidate.id,
+        quote: read("quote"),
+        name: read("name"),
+        role: read("role"),
       },
     ];
   });
@@ -1274,6 +1365,367 @@ function CardsEditor({
   );
 }
 
+function FaqEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const items = getFaqItems(section);
+
+  function setItems(next: SiteFaqItem[]) {
+    onContentChange("items", next);
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (item: SiteFaqItem) => SiteFaqItem,
+  ) {
+    setItems(
+      items.map((item) =>
+        item.id === itemId ? updater(item) : item,
+      ),
+    );
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: "up" | "down",
+  ) {
+    const index = items.findIndex(
+      (item) => item.id === itemId,
+    );
+    if (index < 0) return;
+
+    const nextIndex =
+      direction === "up" ? index - 1 : index + 1;
+
+    if (nextIndex < 0 || nextIndex >= items.length) {
+      return;
+    }
+
+    const next = [...items];
+    const [moved] = next.splice(index, 1);
+    next.splice(nextIndex, 0, moved);
+    setItems(next);
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <details
+          key={item.id}
+          className="group rounded-md border border-white/[0.08] bg-black/20"
+          open={items.length <= 2}
+        >
+          <summary className="flex h-9 cursor-pointer list-none items-center gap-2 px-2.5 text-[11px] text-zinc-300 [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 transition group-open:rotate-90" />
+            <span className="min-w-0 flex-1 truncate">
+              {item.question || `Question ${index + 1}`}
+            </span>
+            <span className="text-[10px] text-zinc-700">
+              {index + 1}
+            </span>
+          </summary>
+
+          <div className="space-y-3 border-t border-white/[0.06] p-2.5">
+            <TextInput
+              id={`site-faq-question-${item.id}`}
+              label="Question"
+              value={item.question}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  question: value,
+                }))
+              }
+            />
+
+            <TextAreaInput
+              id={`site-faq-answer-${item.id}`}
+              label="Answer"
+              value={item.answer}
+              rows={4}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  answer: value,
+                }))
+              }
+            />
+
+            <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => moveItem(item.id, "up")}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move earlier"
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={index === items.length - 1}
+                  onClick={() => moveItem(item.id, "down")}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move later"
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const copy = {
+                      ...item,
+                      id: crypto.randomUUID(),
+                    };
+                    const next = [...items];
+                    next.splice(index + 1, 0, copy);
+                    setItems(next);
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:text-zinc-200"
+                  title="Duplicate question"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setItems(
+                    items.filter(
+                      (candidate) =>
+                        candidate.id !== item.id,
+                    ),
+                  )
+                }
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+                title="Delete question"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </details>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setItems([
+            ...items,
+            {
+              id: crypto.randomUUID(),
+              question: "New question",
+              answer: "Add an answer.",
+            },
+          ])
+        }
+        className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add question
+      </button>
+    </div>
+  );
+}
+
+function TestimonialsEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const items = getTestimonialItems(section);
+
+  function setItems(next: SiteTestimonialItem[]) {
+    onContentChange("items", next);
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (
+      item: SiteTestimonialItem,
+    ) => SiteTestimonialItem,
+  ) {
+    setItems(
+      items.map((item) =>
+        item.id === itemId ? updater(item) : item,
+      ),
+    );
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: "up" | "down",
+  ) {
+    const index = items.findIndex(
+      (item) => item.id === itemId,
+    );
+    if (index < 0) return;
+
+    const nextIndex =
+      direction === "up" ? index - 1 : index + 1;
+
+    if (nextIndex < 0 || nextIndex >= items.length) {
+      return;
+    }
+
+    const next = [...items];
+    const [moved] = next.splice(index, 1);
+    next.splice(nextIndex, 0, moved);
+    setItems(next);
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <details
+          key={item.id}
+          className="group rounded-md border border-white/[0.08] bg-black/20"
+          open={items.length <= 2}
+        >
+          <summary className="flex h-9 cursor-pointer list-none items-center gap-2 px-2.5 text-[11px] text-zinc-300 [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 transition group-open:rotate-90" />
+
+            <span className="min-w-0 flex-1 truncate">
+              {item.name || `Testimonial ${index + 1}`}
+            </span>
+
+            <span className="text-[10px] text-zinc-700">
+              {index + 1}
+            </span>
+          </summary>
+
+          <div className="space-y-3 border-t border-white/[0.06] p-2.5">
+            <TextAreaInput
+              id={`site-testimonial-quote-${item.id}`}
+              label="Quote"
+              value={item.quote}
+              rows={4}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  quote: value,
+                }))
+              }
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput
+                id={`site-testimonial-name-${item.id}`}
+                label="Name"
+                value={item.name}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    name: value,
+                  }))
+                }
+              />
+
+              <TextInput
+                id={`site-testimonial-role-${item.id}`}
+                label="Role"
+                value={item.role}
+                onChange={(value) =>
+                  updateItem(item.id, (current) => ({
+                    ...current,
+                    role: value,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => moveItem(item.id, "up")}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move earlier"
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={index === items.length - 1}
+                  onClick={() => moveItem(item.id, "down")}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                  title="Move later"
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const copy = {
+                      ...item,
+                      id: crypto.randomUUID(),
+                    };
+                    const next = [...items];
+                    next.splice(index + 1, 0, copy);
+                    setItems(next);
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:text-zinc-200"
+                  title="Duplicate testimonial"
+                >
+                  <Copy className="h-3 w-3" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setItems(
+                    items.filter(
+                      (candidate) =>
+                        candidate.id !== item.id,
+                    ),
+                  )
+                }
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+                title="Delete testimonial"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </details>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setItems([
+            ...items,
+            {
+              id: crypto.randomUUID(),
+              quote: "Add a testimonial.",
+              name: "Person name",
+              role: "Customer",
+            },
+          ])
+        }
+        className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add testimonial
+      </button>
+    </div>
+  );
+}
+
 function GalleryEditor({
   section,
   onContentChange,
@@ -1592,6 +2044,74 @@ function InspectorContentPanel({
     );
   }
 
+  if (section.type === "faq") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Section">
+          <TextInput
+            id="site-faq-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-faq-intro"
+            label="Intro"
+            value={getContentString(section, "intro")}
+            onChange={(value) =>
+              onContentChange("intro", value)
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Questions">
+          <FaqEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
+  if (section.type === "testimonials") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Section">
+          <TextInput
+            id="site-testimonials-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-testimonials-intro"
+            label="Intro"
+            value={getContentString(section, "intro")}
+            onChange={(value) =>
+              onContentChange("intro", value)
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Testimonials">
+          <TestimonialsEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "content") {
     return (
       <InspectorGroup title="Content">
@@ -1761,6 +2281,45 @@ function ContentNodeInspectorPanel({
 
             <TextAreaInput
               id="site-cards-node-intro"
+              label="Intro"
+              value={getContentString(section, "intro")}
+              onChange={(value) =>
+                onContentChange("intro", value)
+              }
+              rows={4}
+            />
+          </div>
+        </>
+      );
+    }
+
+    if (
+      section.type === "faq" ||
+      section.type === "testimonials"
+    ) {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Section text
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Section text
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-trust-node-heading"
+              label="Heading"
+              value={getContentString(section, "heading")}
+              onChange={(value) =>
+                onContentChange("heading", value)
+              }
+            />
+
+            <TextAreaInput
+              id="site-trust-node-intro"
               label="Intro"
               value={getContentString(section, "intro")}
               onChange={(value) =>

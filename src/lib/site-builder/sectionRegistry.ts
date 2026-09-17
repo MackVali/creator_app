@@ -6,7 +6,11 @@ import type {
   SiteSectionType,
 } from "@/lib/site-builder/types";
 
-export type SiteSectionCategory = "Essentials" | "Commerce" | "Media";
+export type SiteSectionCategory =
+  | "Essentials"
+  | "Trust"
+  | "Commerce"
+  | "Media";
 
 export type SiteSectionVariant = {
   id: string;
@@ -163,6 +167,121 @@ const sectionDefinitions = [
         id: "featured",
         label: "Featured",
         description: "Emphasize the first item.",
+      },
+    ],
+    usesSource: false,
+    supportsColumns: true,
+    supportsSpacing: true,
+    supportsBackground: true,
+  },
+  {
+    type: "faq",
+    label: "FAQ",
+    description:
+      "Answer common questions with a structured expandable section.",
+    category: "Trust",
+    defaultContent: {
+      heading: "Frequently asked questions",
+      intro: "",
+      items: [
+        {
+          id: "faq-1",
+          question: "What should people know?",
+          answer: "Give visitors a clear, direct answer here.",
+        },
+        {
+          id: "faq-2",
+          question: "How does this work?",
+          answer: "Explain the process in a few useful sentences.",
+        },
+        {
+          id: "faq-3",
+          question: "What happens next?",
+          answer: "Explain the next step or call to action.",
+        },
+      ],
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "accordion",
+      width: "wide",
+      spacing: "normal",
+    },
+    defaultStyle: { background: "default" },
+    variants: [
+      {
+        id: "accordion",
+        label: "Accordion",
+        description: "Expandable questions in a clean vertical list.",
+      },
+      {
+        id: "columns",
+        label: "Columns",
+        description: "Open answers arranged in two columns.",
+      },
+      {
+        id: "plain",
+        label: "Plain",
+        description: "Simple stacked questions and answers.",
+      },
+    ],
+    usesSource: false,
+    supportsWidth: true,
+    supportsSpacing: true,
+    supportsBackground: true,
+  },
+  {
+    type: "testimonials",
+    label: "Testimonials",
+    description:
+      "Show quotes, reviews, endorsements, or other social proof.",
+    category: "Trust",
+    defaultContent: {
+      heading: "What people say",
+      intro: "",
+      items: [
+        {
+          id: "testimonial-1",
+          quote: "Add a real customer, client, or collaborator quote here.",
+          name: "Person name",
+          role: "Customer",
+        },
+        {
+          id: "testimonial-2",
+          quote: "Use this section for proof that supports the rest of the page.",
+          name: "Person name",
+          role: "Client",
+        },
+        {
+          id: "testimonial-3",
+          quote: "Short, specific testimonials usually work better than vague praise.",
+          name: "Person name",
+          role: "Collaborator",
+        },
+      ],
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "grid",
+      columns: 3,
+      spacing: "normal",
+    },
+    defaultStyle: { background: "default" },
+    variants: [
+      {
+        id: "grid",
+        label: "Grid",
+        description: "Balanced quote cards.",
+      },
+      {
+        id: "featured",
+        label: "Featured",
+        description: "Emphasize the first testimonial.",
+      },
+      {
+        id: "list",
+        label: "List",
+        description: "Simple stacked testimonials.",
       },
     ],
     usesSource: false,
@@ -351,6 +470,7 @@ const sectionDefinitions = [
 
 export const SECTION_CATEGORIES: SiteSectionCategory[] = [
   "Essentials",
+  "Trust",
   "Commerce",
   "Media",
 ];
