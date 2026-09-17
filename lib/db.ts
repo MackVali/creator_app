@@ -128,7 +128,7 @@ export async function deleteRecord(
     .from(table)
     .delete()
     .eq("id", id)
-    .eq("user_id", userId); // Ensure user can only delete their own records
+    .eq("user_id", userId); // Ensure user can only update their own records
 
   return { error };
 }
@@ -263,24 +263,40 @@ export async function updateProfilePreferences(
   return { data: data as Profile | null, error };
 }
 
+async function fetchPublicProfileByUsername(
+  username: string
+): Promise<Profile | null> {
+  const normalizedUsername = username.trim();
+  if (!normalizedUsername) return null;
+
+  try {
+    const response = await fetch(
+      `/api/public/profile/${encodeURIComponent(normalizedUsername)}`,
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      if (response.status !== 404) {
+        console.error("Error fetching public profile:", response.status);
+      }
+      return null;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { profile?: Profile | null }
+      | null;
+
+    return payload?.profile ?? null;
+  } catch (error) {
+    console.error("Error fetching public profile:", error);
+    return null;
+  }
+}
+
 export async function getProfileByUsername(
   username: string
 ): Promise<Profile | null> {
-  const supabase = getSupabaseBrowser();
-  if (!supabase) return null;
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .ilike("username", username) // Use ilike for case-insensitive comparison
-    .maybeSingle(); // Use maybeSingle to handle case where profile doesn't exist
-
-  if (error) {
-    console.error("Error fetching profile by username:", error);
-    return null;
-  }
-
-  return data;
+  return fetchPublicProfileByUsername(username);
 }
 
 export async function updateProfile(
@@ -446,7 +462,6 @@ export async function createProfile(
         city: profileData.city || null,
         avatar_url: null,
         banner_url: null,
-        verified: false,
         theme_color: "#3B82F6",
         font_family: "Inter",
         accent_color: "#8B5CF6",
@@ -483,26 +498,7 @@ export async function ensureProfileExists(
 export async function getProfileByHandle(
   handle: string
 ): Promise<Profile | null> {
-  const supabase = getSupabaseBrowser();
-  if (!supabase) return null;
-
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .ilike("username", handle)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error fetching profile by handle:", error);
-      return null;
-    }
-
-    return data;
-  } catch (error) {
-    console.error("Error in getProfileByHandle:", error);
-    return null;
-  }
+  return fetchPublicProfileByUsername(handle);
 }
 
 // Get profile links (content cards) for a user
