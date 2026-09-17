@@ -25,6 +25,7 @@ interface SiteBuilderDraftTableQuery extends PromiseLike<SiteBuilderDraftResult>
     values: unknown,
     options?: { onConflict?: string },
   ): SiteBuilderDraftTableQuery;
+  delete(): SiteBuilderDraftTableQuery;
 }
 
 type SiteBuilderDraftQuery = {

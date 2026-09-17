@@ -208,6 +208,8 @@ export function renderMackSiteDraft(
 
   return {
     ...mackValiPortfolio,
+    name: site.name,
+    handle: site.handle,
     headline: readString(
       hero,
       "headline",

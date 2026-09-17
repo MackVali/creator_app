@@ -67,6 +67,11 @@ type PreviewMode = "desktop" | "tablet" | "mobile";
 type InspectorMode = "content" | "design";
 type DraftLoadStatus = "loading" | "ready" | "error";
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+type PublishRequestStatus =
+  | "checking"
+  | "ready"
+  | "publishing"
+  | "error";
 type SiteChromeSelection = "header" | "navigation" | "footer";
 type SectionNavigationChild = {
   id: SiteContentNodeId;
@@ -1780,6 +1785,12 @@ export default function SiteBuilder() {
   const [draftSaveStatus, setDraftSaveStatus] =
     useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const [publishRequestStatus, setPublishRequestStatus] =
+    useState<PublishRequestStatus>("checking");
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishedSiteJson, setPublishedSiteJson] =
+    useState<string | null>(null);
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
   const [sectionInsertionIndex, setSectionInsertionIndex] =
     useState<number | null>(null);
@@ -1811,6 +1822,48 @@ export default function SiteBuilder() {
   useEffect(() => {
     latestSiteJsonRef.current = JSON.stringify(site);
   }, [site]);
+
+  const loadPublicationState = useCallback(async () => {
+    setPublishRequestStatus("checking");
+    setPublishError(null);
+
+    try {
+      const response = await fetch("/api/site-builder/publish", {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      const payload = (await response.json()) as {
+        published?: boolean;
+        site?: SiteDocument | null;
+        publishedAt?: string | null;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ?? "Unable to load publication state.",
+        );
+      }
+
+      setPublishedSiteJson(
+        payload.published && payload.site
+          ? JSON.stringify(payload.site)
+          : null,
+      );
+      setPublishedAt(payload.publishedAt ?? null);
+      setPublishRequestStatus("ready");
+    } catch (error) {
+      setPublishError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load publication state.",
+      );
+      setPublishRequestStatus("error");
+    }
+  }, []);
 
   const loadDraft = useCallback(async () => {
     const requestId = draftLoadRequestIdRef.current + 1;
@@ -1880,6 +1933,12 @@ export default function SiteBuilder() {
       draftLoadRequestIdRef.current += 1;
     };
   }, [loadDraft]);
+
+  useEffect(() => {
+    if (draftLoadStatus !== "ready") return;
+
+    void loadPublicationState();
+  }, [draftLoadStatus, loadPublicationState]);
 
   useEffect(() => {
     if (draftLoadStatus !== "ready") return;
@@ -2773,6 +2832,47 @@ export default function SiteBuilder() {
     });
   }
 
+  async function publishSite() {
+    if (editorLocked || publishRequestStatus === "publishing") {
+      return;
+    }
+
+    setPublishRequestStatus("publishing");
+    setPublishError(null);
+
+    try {
+      const response = await fetch("/api/site-builder/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ site }),
+      });
+
+      const payload = (await response.json()) as {
+        site?: SiteDocument;
+        publishedAt?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.site) {
+        throw new Error(payload.error ?? "Unable to publish site.");
+      }
+
+      setPublishedSiteJson(JSON.stringify(payload.site));
+      setPublishedAt(payload.publishedAt ?? new Date().toISOString());
+      setPublishRequestStatus("ready");
+    } catch (error) {
+      setPublishError(
+        error instanceof Error
+          ? error.message
+          : "Unable to publish site.",
+      );
+      setPublishRequestStatus("error");
+    }
+  }
+
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [previewAvailableWidth, setPreviewAvailableWidth] = useState(0);
@@ -3012,6 +3112,28 @@ export default function SiteBuilder() {
     draftLoadStatus === "error"
       ? draftLoadError ?? "Unable to load site draft."
       : "Editor controls unlock after the saved draft is loaded.";
+  const currentSiteJson = JSON.stringify(site);
+  const siteIsPublished = publishedSiteJson !== null;
+  const hasUnpublishedChanges =
+    siteIsPublished && publishedSiteJson !== currentSiteJson;
+  const publishLabel =
+    publishRequestStatus === "checking"
+      ? "Checking…"
+      : publishRequestStatus === "publishing"
+      ? "Publishing…"
+      : !siteIsPublished
+      ? "Publish"
+      : hasUnpublishedChanges
+      ? "Publish changes"
+      : "Published";
+  const publishTitle =
+    publishRequestStatus === "error"
+      ? publishError ?? "Publication failed"
+      : publishedAt && !hasUnpublishedChanges
+      ? `Published ${new Date(publishedAt).toLocaleString()}`
+      : hasUnpublishedChanges
+      ? "The draft has changes that are not live yet."
+      : "Publish this site.";
 
   return (
     <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-screen lg:overflow-hidden">
@@ -3521,6 +3643,27 @@ export default function SiteBuilder() {
                 </button>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={publishSite}
+              disabled={
+                editorLocked ||
+                publishRequestStatus === "checking" ||
+                publishRequestStatus === "publishing"
+              }
+              title={publishTitle}
+              className={`flex h-7 items-center gap-2 rounded-md border px-2.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                publishRequestStatus === "error"
+                  ? "border-red-200/20 text-red-100/80"
+                  : siteIsPublished && !hasUnpublishedChanges
+                  ? "border-emerald-200/15 text-emerald-100/75"
+                  : "border-white/[0.1] text-zinc-300 hover:border-white/[0.2] hover:text-zinc-100"
+              }`}
+            >
+              <Globe2 className="h-3.5 w-3.5" />
+              {publishLabel}
+            </button>
 
             <a
               href={getPublicPageHref(site, selectedPage?.id)}
