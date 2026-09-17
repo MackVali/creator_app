@@ -55,6 +55,10 @@ function isSiteNavigationItem(value: unknown) {
     isString(value.id) &&
     isString(value.label) &&
     isString(value.href) &&
+    (
+      value.pageId === undefined ||
+      isString(value.pageId)
+    ) &&
     typeof value.visible === "boolean"
   );
 }

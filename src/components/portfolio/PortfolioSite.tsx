@@ -28,6 +28,9 @@ import {
   getSiteHeaderConfig,
 } from "@/lib/site-builder/siteChrome";
 import {
+  resolveSiteNavigationHref,
+} from "@/lib/site-builder/siteLinks";
+import {
   getSiteThemeConfig,
   getSiteThemeStyle,
 } from "@/lib/site-builder/siteTheme";
@@ -2258,7 +2261,11 @@ export default function PortfolioSite({
               .map((item) => (
                 <a
                   key={item.id}
-                  href={item.href}
+                  href={resolveSiteNavigationHref(
+                    siteDocument,
+                    site.handle,
+                    item,
+                  )}
                   className="hover:text-white/82"
                 >
                   {item.label}

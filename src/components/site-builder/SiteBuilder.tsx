@@ -43,6 +43,9 @@ import {
   sanitizeSiteHandle,
 } from "@/lib/site-builder/siteIdentity";
 import {
+  getSitePageHref,
+} from "@/lib/site-builder/siteLinks";
+import {
   getSiteThemeConfig,
 } from "@/lib/site-builder/siteTheme";
 import {
@@ -205,11 +208,11 @@ function isDuplicateSlug(
   );
 }
 
-function getPublicPageHref(site: SiteDocument, pageId: string | undefined) {
-  const page = site.pages.find((candidate) => candidate.id === pageId);
-  if (!page) return "/portfolio/mackvali";
-  if (page.id === site.homePageId) return "/portfolio/mackvali";
-  return page.previewPath ?? `/portfolio/${site.handle}/${page.slug}`;
+function getPublicPageHref(
+  site: SiteDocument,
+  pageId: string | undefined,
+) {
+  return getSitePageHref(site, pageId);
 }
 
 function sectionSourceLabel(section: SiteSection) {
@@ -2093,6 +2096,14 @@ function SiteChromeInspector({
   const footer = getSiteFooterConfig(site);
   const handleValid = isValidSiteHandle(site.handle);
   const theme = getSiteThemeConfig(site);
+  const linkedNavigationPageIds = new Set(
+    header.navigation.flatMap((item) =>
+      item.pageId ? [item.pageId] : [],
+    ),
+  );
+  const navigationPagesNotLinked = site.pages.filter(
+    (page) => !linkedNavigationPageIds.has(page.id),
+  );
 
   if (selection === "site") {
     return (
@@ -2341,21 +2352,85 @@ function SiteChromeInspector({
                   }
                 />
 
-                <TextInput
-                  id={`site-nav-href-${item.id}`}
-                  label="Link"
-                  value={item.href}
-                  onChange={(value) =>
-                    onNavigationChange(
-                      header.navigation.map((candidate) =>
-                        candidate.id === item.id
-                          ? { ...candidate, href: value }
-                          : candidate,
-                      ),
-                    )
-                  }
-                />
+                <div>
+                  <FieldLabel
+                    htmlFor={`site-nav-target-${item.id}`}
+                  >
+                    Target
+                  </FieldLabel>
+
+                  <select
+                    id={`site-nav-target-${item.id}`}
+                    value={item.pageId ?? "__custom__"}
+                    onChange={(event) => {
+                      const nextPageId =
+                        event.target.value === "__custom__"
+                          ? undefined
+                          : event.target.value;
+
+                      onNavigationChange(
+                        header.navigation.map((candidate) =>
+                          candidate.id === item.id
+                            ? {
+                                ...candidate,
+                                pageId: nextPageId,
+                              }
+                            : candidate,
+                        ),
+                      );
+                    }}
+                    className="mt-1.5 h-8 w-full rounded-md border border-white/[0.09] bg-black/30 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.18]"
+                  >
+                    <option value="__custom__">
+                      Custom URL
+                    </option>
+
+                    {site.pages.map((page) => (
+                      <option
+                        key={page.id}
+                        value={page.id}
+                      >
+                        {page.id === site.homePageId
+                          ? `${page.title} · Home`
+                          : page.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {item.pageId ? (
+                <div className="mt-2 rounded border border-white/[0.06] bg-black/20 px-2.5 py-2">
+                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-700">
+                    Resolves to
+                  </p>
+                  <p className="mt-1 break-all text-[10px] text-zinc-500">
+                    {getSitePageHref(site, item.pageId)}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <TextInput
+                    id={`site-nav-href-${item.id}`}
+                    label="Custom URL"
+                    value={item.href}
+                    placeholder="https://… or #section"
+                    onChange={(value) =>
+                      onNavigationChange(
+                        header.navigation.map(
+                          (candidate) =>
+                            candidate.id === item.id
+                              ? {
+                                  ...candidate,
+                                  href: value,
+                                }
+                              : candidate,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              )}
 
               <div className="mt-2 flex items-center justify-between gap-2">
                 <label className="flex items-center gap-2 text-[11px] text-zinc-500">
@@ -2429,24 +2504,47 @@ function SiteChromeInspector({
             </div>
           ))}
 
-          <button
-            type="button"
-            onClick={() =>
-              onNavigationChange([
-                ...header.navigation,
-                {
-                  id: `nav-${crypto.randomUUID()}`,
-                  label: "New link",
-                  href: "#",
-                  visible: true,
-                },
-              ])
-            }
-            className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add link
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={navigationPagesNotLinked.length === 0}
+              onClick={() =>
+                onNavigationChange([
+                  ...header.navigation,
+                  ...navigationPagesNotLinked.map((page) => ({
+                    id: `nav-${crypto.randomUUID()}`,
+                    label: page.title,
+                    href: "",
+                    pageId: page.id,
+                    visible: true,
+                  })),
+                ])
+              }
+              className="flex h-8 items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Add pages
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                onNavigationChange([
+                  ...header.navigation,
+                  {
+                    id: `nav-${crypto.randomUUID()}`,
+                    label: "New link",
+                    href: "#",
+                    visible: true,
+                  },
+                ])
+              }
+              className="flex h-8 items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Custom link
+            </button>
+          </div>
         </div>
       </>
     );

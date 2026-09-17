@@ -74,6 +74,7 @@ export type SiteNavigationItem = {
   id: string;
   label: string;
   href: string;
+  pageId?: string;
   visible: boolean;
 };
 
