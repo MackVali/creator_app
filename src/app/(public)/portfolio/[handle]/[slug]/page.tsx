@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 
 import PortfolioSite from "@/components/portfolio/PortfolioSite";
 import { renderMackSiteDraft } from "@/lib/site-builder/mackValiSite";
-import { getPublishedSiteByHandle } from "@/lib/site-builder/publicPersistence";
+import { getPublishedSiteRecordByHandle } from "@/lib/site-builder/publicPersistence";
+import { getPublishedSiteSourceListings } from "@/lib/site-builder/publicSourceListings";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +22,18 @@ export default async function PublishedSitePage({
     slug: requestedSlug,
   } = await params;
 
-  const site = await getPublishedSiteByHandle(requestedHandle);
+  const publishedRecord =
+    await getPublishedSiteRecordByHandle(requestedHandle);
 
-  if (!site) {
+  if (!publishedRecord) {
     notFound();
   }
+
+  const site = publishedRecord.site;
+  const sourceListings =
+    await getPublishedSiteSourceListings(
+      publishedRecord.userId,
+    );
 
   const slug = requestedSlug.trim().toLowerCase();
 
@@ -44,6 +52,7 @@ export default async function PublishedSitePage({
       site={renderMackSiteDraft(site)}
       siteDocument={site}
       sections={page.sections}
+      sourceListings={sourceListings}
     />
   );
 }

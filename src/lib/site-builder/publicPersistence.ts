@@ -22,9 +22,16 @@ type PublicSiteDatabase = {
   from(table: string): PublicSiteTableQuery;
 };
 
-export async function getPublishedSiteByHandle(
+export type PublishedSiteRecord = {
+  site: SiteDocument;
+  userId: string;
+  handle: string;
+  publishedAt: string | null;
+};
+
+export async function getPublishedSiteRecordByHandle(
   requestedHandle: string,
-): Promise<SiteDocument | null> {
+): Promise<PublishedSiteRecord | null> {
   const handle = requestedHandle.trim().toLowerCase();
 
   if (!handle) return null;
@@ -40,7 +47,7 @@ export async function getPublishedSiteByHandle(
 
   const { data, error } = await db
     .from("site_builder_public_sites")
-    .select("document")
+    .select("user_id,handle,document,published_at")
     .eq("handle", handle)
     .maybeSingle();
 

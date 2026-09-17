@@ -6,7 +6,8 @@ import {
   mackValiSiteDocument,
   renderMackSiteDraft,
 } from "@/lib/site-builder/mackValiSite";
-import { getPublishedSiteByHandle } from "@/lib/site-builder/publicPersistence";
+import { getPublishedSiteRecordByHandle } from "@/lib/site-builder/publicPersistence";
+import { getPublishedSiteSourceListings } from "@/lib/site-builder/publicSourceListings";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,16 @@ export default async function PortfolioPage({
   const { handle: requestedHandle } = await params;
   const handle = requestedHandle.trim().toLowerCase();
 
-  const publishedSite = await getPublishedSiteByHandle(handle);
+  const publishedRecord =
+    await getPublishedSiteRecordByHandle(handle);
 
-  if (publishedSite) {
+  if (publishedRecord) {
+    const publishedSite = publishedRecord.site;
+    const sourceListings =
+      await getPublishedSiteSourceListings(
+        publishedRecord.userId,
+      );
+
     const homePage =
       publishedSite.pages.find(
         (page) => page.id === publishedSite.homePageId,
@@ -39,6 +47,7 @@ export default async function PortfolioPage({
         site={renderMackSiteDraft(publishedSite)}
         siteDocument={publishedSite}
         sections={homePage.sections}
+        sourceListings={sourceListings}
       />
     );
   }
