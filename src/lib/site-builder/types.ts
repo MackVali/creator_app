@@ -1,7 +1,9 @@
 export type SiteSectionType =
   | "hero"
   | "content"
+  | "split"
   | "cards"
+  | "stats"
   | "faq"
   | "testimonials"
   | "projects"

@@ -98,6 +98,51 @@ const sectionDefinitions = [
     supportsBackground: true,
   },
   {
+    type: "split",
+    label: "Split",
+    description:
+      "Combine editable copy, an action, and media in a flexible two-part section.",
+    category: "Essentials",
+    defaultContent: {
+      eyebrow: "About",
+      heading: "Tell the story with a little more room.",
+      body: "Use this section for an introduction, feature, service explanation, process, or anything that benefits from text beside media.",
+      buttonLabel: "Learn more",
+      buttonHref: "#",
+      buttonPageId: "",
+      mediaUrl: "",
+      mediaPath: "",
+      mediaAlt: "",
+      mediaFit: "cover",
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "media-right",
+      spacing: "normal",
+    },
+    defaultStyle: { background: "default" },
+    variants: [
+      {
+        id: "media-right",
+        label: "Media right",
+        description: "Copy on the left with media on the right.",
+      },
+      {
+        id: "media-left",
+        label: "Media left",
+        description: "Media on the left with copy on the right.",
+      },
+      {
+        id: "stacked",
+        label: "Stacked",
+        description: "Copy above a wide media stage.",
+      },
+    ],
+    usesSource: false,
+    supportsSpacing: true,
+    supportsBackground: true,
+  },
+  {
     type: "cards",
     label: "Cards",
     description:
@@ -167,6 +212,62 @@ const sectionDefinitions = [
         id: "featured",
         label: "Featured",
         description: "Emphasize the first item.",
+      },
+    ],
+    usesSource: false,
+    supportsColumns: true,
+    supportsSpacing: true,
+    supportsBackground: true,
+  },
+  {
+    type: "stats",
+    label: "Stats",
+    description:
+      "Highlight numbers, milestones, metrics, or other compact proof points.",
+    category: "Trust",
+    defaultContent: {
+      heading: "By the numbers",
+      intro: "",
+      items: [
+        {
+          id: "stat-1",
+          value: "10+",
+          label: "Projects",
+        },
+        {
+          id: "stat-2",
+          value: "5",
+          label: "Years building",
+        },
+        {
+          id: "stat-3",
+          value: "100%",
+          label: "Independent",
+        },
+      ],
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "grid",
+      columns: 3,
+      spacing: "normal",
+    },
+    defaultStyle: { background: "default" },
+    variants: [
+      {
+        id: "grid",
+        label: "Grid",
+        description: "Large values in individual cells.",
+      },
+      {
+        id: "strip",
+        label: "Strip",
+        description: "Compact horizontal metrics.",
+      },
+      {
+        id: "editorial",
+        label: "Editorial",
+        description: "Oversized typography with minimal chrome.",
       },
     ],
     usesSource: false,

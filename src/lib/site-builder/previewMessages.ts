@@ -42,7 +42,9 @@ export type SitePreviewSelectionRequestMessage = {
 
 export const SITE_PREVIEW_INLINE_EDIT_FIELDS = {
   hero: ["eyebrow", "headline", "intro", "primaryCtaLabel"],
+  split: ["eyebrow", "heading", "body", "buttonLabel"],
   cards: ["heading", "intro"],
+  stats: ["heading", "intro"],
   faq: ["heading", "intro"],
   testimonials: ["heading", "intro"],
   cta: ["heading", "body", "buttonLabel"],

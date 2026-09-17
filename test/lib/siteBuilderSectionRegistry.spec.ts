@@ -39,6 +39,32 @@ describe("site builder section registry", () => {
     expect(section.style?.showDescription).toBe(true);
   });
 
+  it("creates split sections with media and an action", () => {
+    const section = createSiteSection({
+      pageId: "about",
+      type: "split",
+      variant: "media-left",
+    });
+
+    expect(section.type).toBe("split");
+    expect(section.layout?.variant).toBe("media-left");
+    expect(section.content).toHaveProperty("heading");
+    expect(section.content).toHaveProperty("mediaUrl");
+    expect(section.content).toHaveProperty("buttonLabel");
+  });
+
+  it("creates repeatable stats sections", () => {
+    const section = createSiteSection({
+      pageId: "home",
+      type: "stats",
+      variant: "editorial",
+    });
+
+    expect(section.type).toBe("stats");
+    expect(section.layout?.variant).toBe("editorial");
+    expect(Array.isArray(section.content.items)).toBe(true);
+  });
+
   it("creates FAQ sections with editable questions", () => {
     const section = createSiteSection({
       pageId: "home",

@@ -118,6 +118,12 @@ type SiteCardItem = {
   linkPageId: string;
 };
 
+type SiteStatItem = {
+  id: string;
+  value: string;
+  label: string;
+};
+
 type SiteFaqItem = {
   id: string;
   question: string;
@@ -264,7 +270,21 @@ function getSectionNavigationChildren(
     ];
   }
 
+  if (section.type === "split") {
+    return [
+      { id: "text", label: "Text", icon: Type },
+      { id: "button", label: "Button", icon: MousePointerClick },
+      { id: "media", label: "Media", icon: ImageIcon },
+    ];
+  }
+
   if (section.type === "cards") {
+    return [
+      { id: "text", label: "Section text", icon: Type },
+    ];
+  }
+
+  if (section.type === "stats") {
     return [
       { id: "text", label: "Section text", icon: Type },
     ];
@@ -500,6 +520,39 @@ function getCardItems(section: SiteSection): SiteCardItem[] {
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
         linkPageId: read("linkPageId"),
+      },
+    ];
+  });
+}
+
+function getStatItems(section: SiteSection): SiteStatItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") return [];
+
+    return [
+      {
+        id: candidate.id,
+        value:
+          typeof candidate.value === "string"
+            ? candidate.value
+            : "",
+        label:
+          typeof candidate.label === "string"
+            ? candidate.label
+            : "",
       },
     ];
   });
@@ -1365,6 +1418,171 @@ function CardsEditor({
   );
 }
 
+function StatsEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const items = getStatItems(section);
+
+  function setItems(next: SiteStatItem[]) {
+    onContentChange("items", next);
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (item: SiteStatItem) => SiteStatItem,
+  ) {
+    setItems(
+      items.map((item) =>
+        item.id === itemId ? updater(item) : item,
+      ),
+    );
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: "up" | "down",
+  ) {
+    const index = items.findIndex(
+      (item) => item.id === itemId,
+    );
+    if (index < 0) return;
+
+    const destination =
+      direction === "up" ? index - 1 : index + 1;
+
+    if (
+      destination < 0 ||
+      destination >= items.length
+    ) {
+      return;
+    }
+
+    const next = [...items];
+    const [moved] = next.splice(index, 1);
+    next.splice(destination, 0, moved);
+    setItems(next);
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <div
+          key={item.id}
+          className="rounded-md border border-white/[0.08] bg-black/20 p-2.5"
+        >
+          <div className="grid grid-cols-[0.7fr_1.3fr] gap-2">
+            <TextInput
+              id={`site-stat-value-${item.id}`}
+              label="Value"
+              value={item.value}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  value,
+                }))
+              }
+            />
+
+            <TextInput
+              id={`site-stat-label-${item.id}`}
+              label="Label"
+              value={item.label}
+              onChange={(value) =>
+                updateItem(item.id, (current) => ({
+                  ...current,
+                  label: value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2">
+            <div className="flex gap-1">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() =>
+                  moveItem(item.id, "up")
+                }
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                title="Move earlier"
+              >
+                <ArrowUp className="h-3 w-3" />
+              </button>
+
+              <button
+                type="button"
+                disabled={index === items.length - 1}
+                onClick={() =>
+                  moveItem(item.id, "down")
+                }
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
+                title="Move later"
+              >
+                <ArrowDown className="h-3 w-3" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = [...items];
+                  next.splice(index + 1, 0, {
+                    ...item,
+                    id: crypto.randomUUID(),
+                  });
+                  setItems(next);
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:text-zinc-200"
+                title="Duplicate stat"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setItems(
+                  items.filter(
+                    (candidate) =>
+                      candidate.id !== item.id,
+                  ),
+                )
+              }
+              className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
+              title="Delete stat"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setItems([
+            ...items,
+            {
+              id: crypto.randomUUID(),
+              value: "100",
+              label: "New metric",
+            },
+          ])
+        }
+        className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add stat
+      </button>
+    </div>
+  );
+}
+
 function FaqEditor({
   section,
   onContentChange,
@@ -1976,6 +2194,65 @@ function InspectorContentPanel({
     );
   }
 
+  if (section.type === "split") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Text">
+          <TextInput
+            id="site-split-eyebrow"
+            label="Eyebrow"
+            value={getContentString(section, "eyebrow")}
+            onChange={(value) =>
+              onContentChange("eyebrow", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-split-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+            rows={3}
+          />
+
+          <TextAreaInput
+            id="site-split-body"
+            label="Body"
+            value={getContentString(section, "body")}
+            onChange={(value) =>
+              onContentChange("body", value)
+            }
+            rows={5}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Action">
+          <CtaFields
+            site={site}
+            labelId="site-split-button-label"
+            hrefId="site-split-button"
+            label={getContentString(section, "buttonLabel")}
+            href={getContentString(section, "buttonHref")}
+            pageId={getContentString(section, "buttonPageId")}
+            labelKey="buttonLabel"
+            hrefKey="buttonHref"
+            pageIdKey="buttonPageId"
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Media">
+          <MediaEditor
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "products" || section.type === "services") {
     return (
       <div className="space-y-4">
@@ -2036,6 +2313,40 @@ function InspectorContentPanel({
         <InspectorGroup title="Cards">
           <CardsEditor
             site={site}
+            section={section}
+            onContentChange={onContentChange}
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
+  if (section.type === "stats") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Section">
+          <TextInput
+            id="site-stats-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-stats-intro"
+            label="Intro"
+            value={getContentString(section, "intro")}
+            onChange={(value) =>
+              onContentChange("intro", value)
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Stats">
+          <StatsEditor
             section={section}
             onContentChange={onContentChange}
           />
@@ -2257,6 +2568,52 @@ function ContentNodeInspectorPanel({
       );
     }
 
+    if (section.type === "split") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Text
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Text
+            </p>
+          </div>
+
+          <div className="space-y-3 p-4">
+            <TextInput
+              id="site-split-node-eyebrow"
+              label="Eyebrow"
+              value={getContentString(section, "eyebrow")}
+              onChange={(value) =>
+                onContentChange("eyebrow", value)
+              }
+            />
+
+            <TextAreaInput
+              id="site-split-node-heading"
+              label="Heading"
+              value={getContentString(section, "heading")}
+              onChange={(value) =>
+                onContentChange("heading", value)
+              }
+              rows={3}
+            />
+
+            <TextAreaInput
+              id="site-split-node-body"
+              label="Body"
+              value={getContentString(section, "body")}
+              onChange={(value) =>
+                onContentChange("body", value)
+              }
+              rows={5}
+            />
+          </div>
+        </>
+      );
+    }
+
     if (section.type === "cards") {
       return (
         <>
@@ -2294,6 +2651,7 @@ function ContentNodeInspectorPanel({
     }
 
     if (
+      section.type === "stats" ||
       section.type === "faq" ||
       section.type === "testimonials"
     ) {
@@ -2378,7 +2736,12 @@ function ContentNodeInspectorPanel({
         ? "primaryCtaPageId"
         : "buttonPageId";
 
-    if (section.type === "hero" || section.type === "cta" || section.type === "contact") {
+    if (
+      section.type === "hero" ||
+      section.type === "split" ||
+      section.type === "cta" ||
+      section.type === "contact"
+    ) {
       return (
         <>
           <div className="border-b border-white/[0.07] px-4 py-3">
@@ -2417,7 +2780,11 @@ function ContentNodeInspectorPanel({
 
   if (
     node === "media" &&
-    (section.type === "hero" || section.type === "media")
+    (
+      section.type === "hero" ||
+      section.type === "split" ||
+      section.type === "media"
+    )
   ) {
     return (
       <>

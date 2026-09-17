@@ -614,7 +614,9 @@ type MackSectionKind =
   | "contact"
   | "products"
   | "content"
+  | "split"
   | "cards"
+  | "stats"
   | "faq"
   | "testimonials"
   | "services"
@@ -692,7 +694,9 @@ function getTemplateKind(section: SiteSection): MackSectionKind {
   if (section.type === "media") return "media";
   if (section.type === "cta") return "cta";
   if (section.type === "content") return "content";
+  if (section.type === "split") return "split";
   if (section.type === "cards") return "cards";
+  if (section.type === "stats") return "stats";
   if (section.type === "faq") return "faq";
   if (section.type === "testimonials") return "testimonials";
   if (section.type === "contact") return "contact";
@@ -802,6 +806,49 @@ function readCardItems(section: SiteSection): SiteCardItem[] {
         linkLabel: read("linkLabel"),
         linkHref: read("linkHref"),
         linkPageId: read("linkPageId"),
+      },
+    ];
+  });
+}
+
+type SiteStatItem = {
+  id: string;
+  value: string;
+  label: string;
+};
+
+function readStatItems(
+  section: SiteSection,
+): SiteStatItem[] {
+  const value = section.content.items;
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item)
+    ) {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+
+    if (typeof candidate.id !== "string") {
+      return [];
+    }
+
+    return [
+      {
+        id: candidate.id,
+        value:
+          typeof candidate.value === "string"
+            ? candidate.value
+            : "",
+        label:
+          typeof candidate.label === "string"
+            ? candidate.label
+            : "",
       },
     ];
   });
@@ -1779,6 +1826,400 @@ function CardsSection({
   );
 }
 
+function SplitSection({
+  siteHandle,
+  siteDocument,
+  section,
+  editorContext,
+}: {
+  siteHandle: string;
+  siteDocument?: SiteDocument;
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
+  const eyebrow = readContentString(
+    section,
+    "eyebrow",
+  );
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const body = readContentString(section, "body");
+  const buttonLabel = readContentString(
+    section,
+    "buttonLabel",
+  );
+  const buttonHref = readContentString(
+    section,
+    "buttonHref",
+    "#",
+  );
+  const buttonPageId = readContentString(
+    section,
+    "buttonPageId",
+  );
+  const mediaUrl = readContentString(
+    section,
+    "mediaUrl",
+  );
+  const mediaAlt = readContentString(
+    section,
+    "mediaAlt",
+  );
+  const mediaFit =
+    readContentString(section, "mediaFit") === "contain"
+      ? "contain"
+      : "cover";
+
+  const variant = sectionVariant(
+    section,
+    "media-right",
+  );
+
+  const resolvedHref = resolveSiteLinkHref(
+    siteDocument,
+    siteHandle,
+    {
+      href: buttonHref,
+      pageId: buttonPageId || undefined,
+    },
+  );
+
+  const copy = (
+    <div
+      data-creator-editor-node={
+        editorContext.editorPreview
+          ? "text"
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorNodeClick(
+          event,
+          editorContext,
+          section.id,
+          "text",
+        )
+      }
+      className={`flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:p-12 ${editorNodeClass(
+        editorContext,
+        section.id,
+        "text",
+      )}`}
+    >
+      {eyebrow ? (
+        <InlineEditableText
+          value={eyebrow}
+          field="eyebrow"
+          sectionId={section.id}
+          node="text"
+          editorContext={editorContext}
+          className="text-[8px] font-medium uppercase tracking-[0.25em] text-[var(--site-accent)]"
+        />
+      ) : null}
+
+      <InlineEditableText
+        as="h2"
+        value={heading}
+        field="heading"
+        sectionId={section.id}
+        node="text"
+        editorContext={editorContext}
+        className="mt-3 max-w-[720px] text-[clamp(2rem,4.4vw,4.5rem)] leading-[0.94] tracking-[-0.06em] text-white/92"
+      />
+
+      {body ? (
+        <InlineEditableText
+          as="p"
+          value={body}
+          field="body"
+          sectionId={section.id}
+          node="text"
+          editorContext={editorContext}
+          multiline
+          className="mt-5 max-w-[620px] text-[11px] leading-[1.75] text-white/48"
+        />
+      ) : null}
+
+      {buttonLabel ? (
+        <a
+          href={resolvedHref}
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "button"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "button",
+            )
+          }
+          className={`mt-7 inline-flex h-9 w-fit items-center gap-4 rounded-[var(--site-radius)] border border-[var(--site-border)] px-4 text-[8px] uppercase tracking-[0.18em] text-[var(--site-accent)] ${editorNodeClass(
+            editorContext,
+            section.id,
+            "button",
+          )}`}
+        >
+          <InlineEditableText
+            value={buttonLabel}
+            field="buttonLabel"
+            sectionId={section.id}
+            node="button"
+            editorContext={editorContext}
+          />
+          <span>→</span>
+        </a>
+      ) : null}
+    </div>
+  );
+
+  const media = (
+    <div
+      data-creator-editor-node={
+        editorContext.editorPreview
+          ? "media"
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorNodeClick(
+          event,
+          editorContext,
+          section.id,
+          "media",
+        )
+      }
+      className={`relative min-h-[300px] overflow-hidden bg-[var(--site-surface-strong)] ${editorNodeClass(
+        editorContext,
+        section.id,
+        "media",
+      )}`}
+    >
+      {mediaUrl ? (
+        <img
+          src={mediaUrl}
+          alt={mediaAlt}
+          className={`absolute inset-0 h-full w-full ${
+            mediaFit === "contain"
+              ? "object-contain"
+              : "object-cover"
+          }`}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.2em] text-white/25">
+          Add media
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          className={`overflow-hidden rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface)] ${
+            variant === "stacked"
+              ? "grid"
+              : "grid lg:grid-cols-2"
+          }`}
+        >
+          {variant === "media-left" ? (
+            <>
+              {media}
+              {copy}
+            </>
+          ) : variant === "stacked" ? (
+            <>
+              {copy}
+              <div className="min-h-[360px]">
+                {media}
+              </div>
+            </>
+          ) : (
+            <>
+              {copy}
+              {media}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatsSection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const intro = readContentString(section, "intro");
+  const items = readStatItems(section);
+  const variant = sectionVariant(section, "grid");
+  const columns = section.layout?.columns ?? 3;
+
+  if (items.length === 0 && !editorPreview) {
+    return null;
+  }
+
+  const gridColumns =
+    columns === 4
+      ? "lg:grid-cols-4"
+      : columns === 2
+      ? "lg:grid-cols-2"
+      : "lg:grid-cols-3";
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-5 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+          />
+
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+            />
+          ) : null}
+        </div>
+
+        {items.length > 0 ? (
+          <div
+            className={
+              variant === "strip"
+                ? `grid border-y border-[var(--site-border)] sm:grid-cols-2 ${gridColumns}`
+                : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
+            }
+          >
+            {items.map((item) => (
+              <article
+                key={item.id}
+                className={
+                  variant === "strip"
+                    ? "border-b border-[var(--site-border)] py-5 sm:border-b-0 sm:border-r sm:px-5 first:pl-0 last:border-r-0"
+                    : variant === "editorial"
+                    ? "py-6"
+                    : "rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface)] p-5"
+                }
+              >
+                <p
+                  className={`leading-none tracking-[-0.07em] text-[var(--site-accent)] ${
+                    variant === "editorial"
+                      ? "text-[clamp(4rem,8vw,8rem)]"
+                      : "text-[clamp(2.8rem,5vw,5rem)]"
+                  }`}
+                >
+                  {item.value}
+                </p>
+
+                {item.label ? (
+                  <p className="mt-3 text-[9px] uppercase tracking-[0.16em] text-white/42">
+                    {item.label}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[140px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+            Add stats
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function FaqSection({
   section,
   editorPreview,
@@ -2606,6 +3047,25 @@ function MackHomeSections({
           key={section.id}
           section={section}
           listings={sourceListings}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "split") {
+      nodes.push(
+        <SplitSection
+          key={section.id}
+          siteHandle={site.handle}
+          siteDocument={siteDocument}
+          section={section}
+          editorContext={editorContext}
+        />,
+      );
+    } else if (kind === "stats") {
+      nodes.push(
+        <StatsSection
+          key={section.id}
+          section={section}
           editorPreview={editorPreview}
           editorContext={editorContext}
         />,
