@@ -1,64 +1,44 @@
 import "server-only";
 
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-function parseIpv4(address: string) {
-  const parts = address.split(".").map((part) => Number(part));
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return null;
-  }
-  return parts as [number, number, number, number];
-}
+const UNSAFE_IPS = new BlockList();
+UNSAFE_IPS.addSubnet("0.0.0.0", 8, "ipv4");
+UNSAFE_IPS.addSubnet("10.0.0.0", 8, "ipv4");
+UNSAFE_IPS.addSubnet("100.64.0.0", 10, "ipv4");
+UNSAFE_IPS.addSubnet("127.0.0.0", 8, "ipv4");
+UNSAFE_IPS.addSubnet("169.254.0.0", 16, "ipv4");
+UNSAFE_IPS.addSubnet("172.16.0.0", 12, "ipv4");
+UNSAFE_IPS.addSubnet("192.0.0.0", 24, "ipv4");
+UNSAFE_IPS.addSubnet("192.0.2.0", 24, "ipv4");
+UNSAFE_IPS.addSubnet("192.168.0.0", 16, "ipv4");
+UNSAFE_IPS.addSubnet("198.18.0.0", 15, "ipv4");
+UNSAFE_IPS.addSubnet("198.51.100.0", 24, "ipv4");
+UNSAFE_IPS.addSubnet("203.0.113.0", 24, "ipv4");
+UNSAFE_IPS.addSubnet("224.0.0.0", 4, "ipv4");
+UNSAFE_IPS.addSubnet("240.0.0.0", 4, "ipv4");
+UNSAFE_IPS.addSubnet("::", 128, "ipv6");
+UNSAFE_IPS.addSubnet("::1", 128, "ipv6");
+UNSAFE_IPS.addSubnet("fc00::", 7, "ipv6");
+UNSAFE_IPS.addSubnet("fe80::", 10, "ipv6");
+UNSAFE_IPS.addSubnet("ff00::", 8, "ipv6");
+UNSAFE_IPS.addSubnet("2001:db8::", 32, "ipv6");
 
-function isUnsafeIpv4(address: string) {
-  const parts = parseIpv4(address);
-  if (!parts) return true;
-  const [a, b] = parts;
-
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
-}
-
-function isUnsafeIpv6(address: string) {
-  const normalized = address.toLowerCase();
-
-  if (normalized === "::" || normalized === "::1") return true;
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-
-  const firstHextet = normalized.split(":")[0] ?? "";
-  if (/^fe[89ab]$/i.test(firstHextet)) return true;
-
-  if (normalized.startsWith("::ffff:")) {
-    const mapped = normalized.slice("::ffff:".length);
-    if (isIP(mapped) === 4) {
-      return isUnsafeIpv4(mapped);
-    }
-  }
-
-  return false;
+function normalizeIpLiteral(hostname: string) {
+  return hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
 }
 
 function isUnsafeAddress(address: string) {
-  const version = isIP(address);
-  if (version === 4) return isUnsafeIpv4(address);
-  if (version === 6) return isUnsafeIpv6(address);
+  const normalized = normalizeIpLiteral(address);
+  const version = isIP(normalized);
+  if (version === 4) return UNSAFE_IPS.check(normalized, "ipv4");
+  if (version === 6) return UNSAFE_IPS.check(normalized, "ipv6");
   return true;
 }
 
@@ -93,13 +73,14 @@ export function parseHttpsUrl(value: string) {
 export async function assertSafeOutboundUrl(value: string) {
   const url = parseHttpsUrl(value);
   const hostname = url.hostname.toLowerCase();
+  const ipLiteral = normalizeIpLiteral(hostname);
 
   if (process.env.NODE_ENV === "test" && hostname.endsWith(".example.com")) {
     return url;
   }
 
-  if (isIP(hostname)) {
-    if (isUnsafeAddress(hostname)) {
+  if (isIP(ipLiteral)) {
+    if (isUnsafeAddress(ipLiteral)) {
       throw new Error("Private, loopback, link-local, or reserved IP addresses are not allowed.");
     }
     return url;
