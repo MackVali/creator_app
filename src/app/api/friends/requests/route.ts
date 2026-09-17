@@ -218,40 +218,18 @@ export async function POST(request: Request) {
   const requesterDisplayName = getDisplayName(requesterProfile);
   const requesterAvatarUrl = requesterProfile.avatar_url ?? null;
 
-  const { data: targetId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: normalizedUsername }
-  );
-
-  if (lookupError) {
-    console.error("Failed to resolve username to user ID", lookupError);
+  const admin = createAdminClient();
+  if (!admin) {
     return NextResponse.json(
       { error: "Unable to send request." },
-      { status: 500 }
+      { status: 503 }
     );
   }
 
-  if (!targetId) {
-    return NextResponse.json(
-      { error: "We couldn’t find that creator." },
-      { status: 404 }
-    );
-  }
-
-  if (targetId === user.id) {
-    return NextResponse.json(
-      { error: "You can’t send a request to yourself." },
-      { status: 400 }
-    );
-  }
-
-  const {
-    data: targetProfile,
-    error: targetProfileError,
-  } = await supabase
+  const { data: targetProfile, error: targetProfileError } = await admin
     .from("profiles")
     .select(profileSelect)
-    .eq("user_id", targetId)
+    .ilike("username", normalizedUsername)
     .maybeSingle();
 
   if (targetProfileError) {
@@ -262,11 +240,19 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!targetProfile?.username?.trim()) {
-    console.error("Target profile missing canonical username", targetProfile);
+  if (!targetProfile?.user_id || !targetProfile.username?.trim()) {
     return NextResponse.json(
       { error: "We couldn’t find that creator." },
       { status: 404 }
+    );
+  }
+
+  const targetId = targetProfile.user_id;
+
+  if (targetId === user.id) {
+    return NextResponse.json(
+      { error: "You can’t send a request to yourself." },
+      { status: 400 }
     );
   }
 
