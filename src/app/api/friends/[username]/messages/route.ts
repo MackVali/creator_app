@@ -143,12 +143,23 @@ export async function POST(
       );
     }
 
+    const admin = createAdminClient();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Profile service unavailable" },
+        { status: 503 }
+      );
+    }
+
+    const normalizedUsername = params.username.trim().toLowerCase();
     const {
-      data: recipientUserId,
+      data: recipientProfile,
       error: recipientLookupError,
-    } = await supabase.rpc("get_profile_user_id", {
-      p_username: params.username,
-    });
+    } = await admin
+      .from("profiles")
+      .select("user_id")
+      .ilike("username", normalizedUsername)
+      .maybeSingle();
 
     if (recipientLookupError) {
       console.error(
@@ -160,6 +171,8 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    const recipientUserId = recipientProfile?.user_id ?? null;
 
     if (!recipientUserId) {
       return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
