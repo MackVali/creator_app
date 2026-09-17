@@ -235,8 +235,15 @@ export async function POST(
     );
   }
 
-  const { data: profiles, error: profileError } = await supabase
-    .schema("public")
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Unable to find user." },
+      { status: 503 }
+    );
+  }
+
+  const { data: profiles, error: profileError } = await admin
     .from("profiles")
     .select(profileColumns)
     .ilike("username", username)
