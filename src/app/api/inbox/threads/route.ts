@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type ThreadMessage = {
   id: string;
@@ -67,6 +68,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const admin = createAdminClient();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Profile service unavailable" },
+        { status: 503 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const rawSearchQuery = searchParams.get("q");
     const searchQuery = rawSearchQuery?.trim() ?? "";
@@ -125,7 +134,7 @@ export async function GET(request: NextRequest) {
 
       const { data: profileRows, error: profileError } =
         participantIds.length > 0
-          ? await supabase
+          ? await admin
               .from("profiles")
               .select("user_id, username, name, avatar_url")
               .in("user_id", participantIds)
@@ -257,7 +266,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ threads: [], currentUserId: user.id });
     }
 
-    const { data: profileRows, error: profileError } = await supabase
+    const { data: profileRows, error: profileError } = await admin
       .from("profiles")
       .select("user_id, username, name, avatar_url")
       .in("user_id", participantIds);
