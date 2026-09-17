@@ -4,6 +4,7 @@ import {
   createDefaultSiteFooter,
   createDefaultSiteHeader,
 } from "@/lib/site-builder/siteChrome";
+import { createDefaultSiteTheme } from "@/lib/site-builder/siteTheme";
 import type {
   SiteDocument,
   SiteSection,
@@ -16,6 +17,7 @@ export const mackValiSiteDocument: SiteDocument = {
   homePageId: "home",
   header: createDefaultSiteHeader("Mack Vali"),
   footer: createDefaultSiteFooter("Mack Vali"),
+  theme: createDefaultSiteTheme(),
   pages: [
     {
       id: "home",

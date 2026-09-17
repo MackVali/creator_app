@@ -20,6 +20,7 @@ import {
   Monitor,
   MoreHorizontal,
   Package,
+  Palette,
   Pencil,
   Plus,
   Trash2,
@@ -41,6 +42,9 @@ import {
   isValidSiteHandle,
   sanitizeSiteHandle,
 } from "@/lib/site-builder/siteIdentity";
+import {
+  getSiteThemeConfig,
+} from "@/lib/site-builder/siteTheme";
 import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
@@ -64,6 +68,7 @@ import type {
   SiteSection,
   SiteSectionLayoutConfig,
   SiteSectionStyleConfig,
+  SiteThemeConfig,
 } from "@/lib/site-builder/types";
 import type { ListingsResponse, SourceListing } from "@/types/source";
 
@@ -78,6 +83,7 @@ type PublishRequestStatus =
   | "error";
 type SiteChromeSelection =
   | "site"
+  | "design"
   | "header"
   | "navigation"
   | "footer";
@@ -1540,6 +1546,7 @@ function SiteChromeInspector({
   site,
   onSiteNameChange,
   onSiteHandleChange,
+  onThemeChange,
   onHeaderChange,
   onFooterChange,
   onNavigationChange,
@@ -1548,6 +1555,7 @@ function SiteChromeInspector({
   site: SiteDocument;
   onSiteNameChange: (value: string) => void;
   onSiteHandleChange: (value: string) => void;
+  onThemeChange: (theme: SiteThemeConfig) => void;
   onHeaderChange: (
     key: "brandLabel" | "tagline",
     value: string,
@@ -1561,6 +1569,7 @@ function SiteChromeInspector({
   const header = getSiteHeaderConfig(site);
   const footer = getSiteFooterConfig(site);
   const handleValid = isValidSiteHandle(site.handle);
+  const theme = getSiteThemeConfig(site);
 
   if (selection === "site") {
     return (
@@ -1619,6 +1628,120 @@ function SiteChromeInspector({
               time you publish.
             </p>
           </div>
+        </div>
+      </>
+    );
+  }
+
+  if (selection === "design") {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="text-[15px] font-medium text-zinc-100">
+            Design
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-600">
+            Site / Design
+          </p>
+        </div>
+
+        <div className="space-y-5 p-4">
+          <InspectorGroup title="Color">
+            <SegmentedControl
+              label="Palette"
+              value={theme.palette}
+              options={[
+                { label: "Graphite", value: "graphite" },
+                { label: "Ink", value: "ink" },
+                { label: "Slate", value: "slate" },
+                { label: "Warm", value: "warm" },
+              ]}
+              onChange={(palette) =>
+                onThemeChange({ ...theme, palette })
+              }
+            />
+
+            <div>
+              <FieldLabel htmlFor="site-theme-accent">
+                Accent
+              </FieldLabel>
+
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  id="site-theme-accent"
+                  type="color"
+                  value={theme.accentColor}
+                  onChange={(event) =>
+                    onThemeChange({
+                      ...theme,
+                      accentColor: event.target.value,
+                    })
+                  }
+                  className="h-8 w-10 cursor-pointer rounded border border-white/[0.1] bg-transparent p-1"
+                />
+
+                <div className="flex h-8 flex-1 items-center rounded-md border border-white/[0.09] bg-black/30 px-2.5 text-[11px] text-zinc-400">
+                  {theme.accentColor.toUpperCase()}
+                </div>
+              </div>
+            </div>
+          </InspectorGroup>
+
+          <InspectorGroup title="Typography">
+            <SegmentedControl
+              label="Typeface"
+              value={theme.typography}
+              options={[
+                { label: "Sans", value: "sans" },
+                { label: "Serif", value: "serif" },
+                { label: "Mono", value: "mono" },
+              ]}
+              onChange={(typography) =>
+                onThemeChange({ ...theme, typography })
+              }
+            />
+          </InspectorGroup>
+
+          <InspectorGroup title="Layout">
+            <SegmentedControl
+              label="Page width"
+              value={theme.width}
+              options={[
+                { label: "Compact", value: "compact" },
+                { label: "Standard", value: "standard" },
+                { label: "Wide", value: "wide" },
+              ]}
+              onChange={(width) =>
+                onThemeChange({ ...theme, width })
+              }
+            />
+
+            <SegmentedControl
+              label="Spacing"
+              value={theme.spacing}
+              options={[
+                { label: "Compact", value: "compact" },
+                { label: "Normal", value: "normal" },
+                { label: "Spacious", value: "spacious" },
+              ]}
+              onChange={(spacing) =>
+                onThemeChange({ ...theme, spacing })
+              }
+            />
+
+            <SegmentedControl
+              label="Corners"
+              value={theme.radius}
+              options={[
+                { label: "Sharp", value: "sharp" },
+                { label: "Soft", value: "soft" },
+                { label: "Rounded", value: "rounded" },
+              ]}
+              onChange={(radius) =>
+                onThemeChange({ ...theme, radius })
+              }
+            />
+          </InspectorGroup>
         </div>
       </>
     );
@@ -2142,6 +2265,15 @@ export default function SiteBuilder() {
     setSite((current) => ({
       ...current,
       handle: sanitizeSiteHandle(value),
+    }));
+  }
+
+  function updateSiteTheme(theme: SiteThemeConfig) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      theme,
     }));
   }
 
@@ -3364,6 +3496,19 @@ export default function SiteBuilder() {
           <div className="px-2.5 pt-3">
             <button
               type="button"
+              onClick={() => selectSiteChrome("design")}
+              className={`mb-1 flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+                siteChromeSelection === "design"
+                  ? "bg-white/[0.06] text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+              }`}
+            >
+              <Palette className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="font-medium">Design</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => selectSiteChrome("header")}
               className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
                 siteChromeSelection === "header"
@@ -3891,6 +4036,7 @@ export default function SiteBuilder() {
               site={site}
               onSiteNameChange={updateSiteName}
               onSiteHandleChange={updateSiteHandle}
+              onThemeChange={updateSiteTheme}
               onHeaderChange={updateSiteHeaderField}
               onFooterChange={updateSiteFooterField}
               onNavigationChange={updateSiteNavigation}

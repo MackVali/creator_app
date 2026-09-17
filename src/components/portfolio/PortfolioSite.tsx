@@ -27,6 +27,10 @@ import {
   getSiteFooterConfig,
   getSiteHeaderConfig,
 } from "@/lib/site-builder/siteChrome";
+import {
+  getSiteThemeConfig,
+  getSiteThemeStyle,
+} from "@/lib/site-builder/siteTheme";
 import type {
   SiteContentNodeId,
   SiteDocument,
@@ -365,7 +369,7 @@ function PillLink({
   return (
     <Link
       href={href}
-      className="inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-white/72 transition hover:border-white/35 hover:text-white"
+      className="inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35"
     >
       {children}
       <span className="text-xs">→</span>
@@ -383,7 +387,10 @@ function SectionRule({
   return (
     <div className="flex h-[30px] items-center gap-4">
       <span className="text-[8px] text-white/25">{number}</span>
-      <span className="text-[8px] font-medium uppercase tracking-[0.3em] text-white/58">
+      <span
+        className="text-[8px] font-medium uppercase tracking-[0.3em]"
+        style={{ color: "var(--site-accent)" }}
+      >
         {label}
       </span>
       <span className="h-px flex-1 bg-white/[0.08]" />
@@ -411,7 +418,7 @@ function HeroStage({
       onClick={(event) =>
         handleEditorNodeClick(event, editorContext, section?.id, "media")
       }
-      className={`absolute inset-0 hidden overflow-hidden bg-black lg:block ${editorNodeClass(
+      className={`absolute inset-0 hidden overflow-hidden bg-[var(--site-surface-strong)] lg:block ${editorNodeClass(
         editorContext,
         section?.id,
         "media",
@@ -442,7 +449,7 @@ function CreatorCard({
       <div className="flex min-w-0 flex-col justify-between px-5 py-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="relative h-[44px] w-[44px] shrink-0 overflow-hidden rounded-[4px] border border-white/[0.1] bg-white/[0.018]">
+            <div className="relative h-[44px] w-[44px] shrink-0 overflow-hidden rounded-[var(--site-radius)] border border-white/[0.1] bg-white/[0.018]">
               <Image
                 src={creatorLogo}
                 alt=""
@@ -474,7 +481,7 @@ function CreatorCard({
       </div>
 
       <div className="grid min-w-0 grid-cols-[1fr_62px] items-center gap-3 px-3 py-3">
-        <div className="relative h-full min-h-[126px] overflow-hidden border border-white/[0.08] bg-black">
+        <div className="relative h-full min-h-[126px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
           <Image
             src={scheduleImage}
             alt="CREATOR schedule"
@@ -509,7 +516,7 @@ function IronPrairieCard({
       <div className="flex min-w-0 flex-col justify-between px-5 py-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[4px] bg-[#f0c400] text-[9px] font-black text-black">
+            <div className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[var(--site-radius)] bg-[#f0c400] text-[9px] font-black text-black">
               IPL
             </div>
 
@@ -534,7 +541,7 @@ function IronPrairieCard({
         </PillLink>
       </div>
 
-      <div className="relative m-3 ml-0 min-h-[126px] overflow-hidden border border-white/[0.08] bg-black">
+      <div className="relative m-3 ml-0 min-h-[126px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
         <Image
           src={ironPrairieImage}
           alt="Iron Prairie Logistics website"
@@ -751,20 +758,28 @@ function sectionWidthClass(section: SiteSection | undefined) {
 function sectionPaddingClass(section: SiteSection | undefined) {
   if (section?.layout?.spacing === "compact") return "py-5";
   if (section?.layout?.spacing === "spacious") return "py-12";
-  return "py-8";
+  return "py-[var(--site-section-y)]";
 }
 
 function sectionBackgroundClass(section: SiteSection | undefined) {
-  if (section?.style?.background === "plain") return "bg-[#0c0c0c]";
+  if (section?.style?.background === "plain") {
+    return "bg-[var(--site-surface)]";
+  }
+
   if (
     section?.style?.background === "dark" ||
     section?.style?.background === "contrast"
   ) {
-    return "bg-black";
+    return "bg-[var(--site-surface-strong)]";
   }
-  if (section?.style?.background === "muted" || section?.style?.muted) {
-    return "bg-white/[0.018]";
+
+  if (
+    section?.style?.background === "muted" ||
+    section?.style?.muted
+  ) {
+    return "bg-[var(--site-surface-muted)]";
   }
+
   return "";
 }
 
@@ -813,7 +828,7 @@ function HeroSection({
       )} ${editorSectionClass(editorContext, section?.id)}`}
     >
       <div
-        className={`relative mx-auto max-w-[1600px] ${
+        className={`relative mx-auto max-w-[var(--site-page-width)] ${
           centered
             ? "px-5 py-12 text-center sm:px-8 lg:px-[58px] lg:py-16"
             : editorial
@@ -898,7 +913,7 @@ function HeroSection({
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section?.id, "button")
             }
-            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/35 hover:text-white ${
+            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
               centered ? "mx-auto" : ""
             } ${editorNodeClass(editorContext, section?.id, "button")}`}
           >
@@ -923,7 +938,7 @@ function HeroSection({
               : "px-5 pb-7 lg:hidden"
           }`}
         >
-          <div className="relative aspect-[16/9] overflow-hidden border border-white/[0.08] bg-black">
+          <div className="relative aspect-[16/9] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
             <Image
               src={scheduleImage}
               alt="CREATOR schedule"
@@ -935,7 +950,7 @@ function HeroSection({
           </div>
 
           <div className="mt-3 grid grid-cols-[0.58fr_1.42fr] gap-3">
-            <div className="relative aspect-[568/1220] overflow-hidden border border-white/[0.08] bg-black">
+            <div className="relative aspect-[568/1220] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
               <Image
                 src={commandMobile}
                 alt="CREATOR mobile dashboard"
@@ -945,7 +960,7 @@ function HeroSection({
               />
             </div>
 
-            <div className="relative min-h-[180px] overflow-hidden border border-white/[0.08] bg-black">
+            <div className="relative min-h-[180px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
               <Image
                 src={ironPrairieImage}
                 alt="Iron Prairie Logistics"
@@ -989,7 +1004,7 @@ function SoftwareSection({
         section.id,
       )}`}
     >
-      <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
         <SectionRule number="01" label="Software" />
 
         <div className="grid overflow-hidden border-x border-t border-white/[0.08] lg:h-[165px] lg:grid-cols-2">
@@ -1030,7 +1045,7 @@ function LowerWorkSection({
 
   return (
     <section className="border-b border-white/[0.08]">
-      <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
         <div className="grid lg:h-[164px] lg:grid-cols-[1.28fr_1.28fr_0.82fr_0.82fr]">
           {visibleKinds.includes("clothing") ? (
             <>
@@ -1248,7 +1263,7 @@ function ProductsSection({
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
-      <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
         {intro ? (
           <p className="mb-4 max-w-[620px] text-[11px] leading-[1.6] text-white/45">
@@ -1277,7 +1292,7 @@ function ProductsSection({
                   }`}
                 >
                   <div
-                    className={`relative bg-black ${
+                    className={`relative bg-[var(--site-surface-strong)] ${
                       listMode
                         ? "min-h-[112px]"
                         : editorialMode
@@ -1393,7 +1408,7 @@ function StandaloneMediaSection({
           section,
         )} ${
           variant === "wide"
-            ? "max-w-[1600px]"
+            ? "max-w-[var(--site-page-width)]"
             : "max-w-[1200px]"
         }`}
       >
@@ -1409,7 +1424,7 @@ function StandaloneMediaSection({
               "media",
             )
           }
-          className={`relative min-h-[220px] overflow-hidden border border-white/[0.08] bg-black ${editorNodeClass(
+          className={`relative min-h-[220px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)] ${editorNodeClass(
             editorContext,
             section.id,
             "media",
@@ -1458,7 +1473,7 @@ function SimpleManualSection({
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
-        className={`mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -1526,7 +1541,7 @@ function GallerySection({
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
-      <div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
 
         <div
@@ -1554,7 +1569,7 @@ function GallerySection({
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="relative aspect-[4/3] overflow-hidden border border-white/[0.08] bg-black"
+                  className="relative aspect-[4/3] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]"
                 >
                   <img
                     src={item.url}
@@ -1599,7 +1614,7 @@ function CtaSection({
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
-        className={`mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -1653,7 +1668,7 @@ function CtaSection({
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section.id, "button")
             }
-            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/35 hover:text-white ${
+            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
               centered ? "mx-auto" : minimal ? "mt-0 shrink-0" : "mt-0 shrink-0"
             } ${editorNodeClass(editorContext, section.id, "button")}`}
           >
@@ -1700,7 +1715,7 @@ function ContactSection({
       onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
       className={editorSectionClass(editorContext, section?.id)}
     >
-      <div className="mx-auto max-w-[1600px] px-5 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
         <div
           className={`grid items-center gap-4 border-b border-white/[0.08] ${
             centered
@@ -1753,7 +1768,7 @@ function ContactSection({
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section?.id, "button")
             }
-            className={`inline-flex h-7 w-fit items-center gap-4 rounded-full border border-white/[0.17] px-4 text-[7px] uppercase tracking-[0.17em] text-white/65 ${
+            className={`inline-flex h-7 w-fit items-center gap-4 rounded-full border border-white/[0.17] px-4 text-[7px] uppercase tracking-[0.17em] text-[var(--site-accent)] ${
               centered ? "mx-auto" : ""
             } ${editorNodeClass(editorContext, section?.id, "button")}`}
           >
@@ -1920,6 +1935,10 @@ export default function PortfolioSite({
     name: site.name,
     footer: siteDocument?.footer,
   });
+  const themeConfig = getSiteThemeConfig({
+    theme: siteDocument?.theme,
+  });
+  const themeStyle = getSiteThemeStyle(themeConfig);
   const editorContext: EditorSelectionContext = {
     editorPreview,
     pageId: editorPageId,
@@ -1929,12 +1948,16 @@ export default function PortfolioSite({
   };
 
   return (
-    <div className="min-h-screen bg-[#080808] text-[#f4f3ef]">
-      <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-[#080808]/95 backdrop-blur-xl">
-        <div className="mx-auto flex h-[48px] max-w-[1600px] items-center justify-between px-5 sm:px-8 lg:px-[58px]">
+    <div
+      style={themeStyle}
+      className="min-h-screen bg-[var(--site-bg)] text-[var(--site-text)]"
+    >
+      <header className="sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl">
+        <div className="mx-auto flex h-[48px] max-w-[var(--site-page-width)] items-center justify-between px-5 sm:px-8 lg:px-[58px]">
           <Link
             href={`/portfolio/${site.handle}`}
-            className="text-[10px] font-semibold tracking-[0.43em] text-white/88"
+            className="text-[10px] font-semibold tracking-[0.43em]"
+            style={{ color: "var(--site-accent)" }}
           >
             {headerConfig.brandLabel}
           </Link>
@@ -1971,9 +1994,12 @@ export default function PortfolioSite({
         />
       </main>
 
-      <footer className="border-t border-white/[0.08]">
-        <div className="mx-auto flex min-h-[42px] max-w-[1600px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-[58px]">
-          <p className="text-[8px] font-semibold tracking-[0.42em] text-white/66">
+      <footer className="border-t border-[var(--site-border)]">
+        <div className="mx-auto flex min-h-[42px] max-w-[var(--site-page-width)] items-center justify-between gap-4 px-5 sm:px-8 lg:px-[58px]">
+          <p
+            className="text-[8px] font-semibold tracking-[0.42em]"
+            style={{ color: "var(--site-accent)" }}
+          >
             {footerConfig.brandLabel}
           </p>
 

@@ -81,6 +81,42 @@ function isSiteFooterConfig(value: unknown) {
   );
 }
 
+function isSiteThemeConfig(value: unknown) {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+
+  return (
+    (
+      value.palette === "graphite" ||
+      value.palette === "ink" ||
+      value.palette === "slate" ||
+      value.palette === "warm"
+    ) &&
+    isString(value.accentColor) &&
+    /^#[0-9a-fA-F]{6}$/.test(value.accentColor) &&
+    (
+      value.typography === "sans" ||
+      value.typography === "serif" ||
+      value.typography === "mono"
+    ) &&
+    (
+      value.width === "compact" ||
+      value.width === "standard" ||
+      value.width === "wide"
+    ) &&
+    (
+      value.spacing === "compact" ||
+      value.spacing === "normal" ||
+      value.spacing === "spacious"
+    ) &&
+    (
+      value.radius === "sharp" ||
+      value.radius === "soft" ||
+      value.radius === "rounded"
+    )
+  );
+}
+
 function isPersistableSectionType(value: unknown): value is SiteSectionType {
   if (!isString(value)) return false;
   return (
@@ -228,6 +264,7 @@ export function isSiteDocument(value: unknown): value is SiteDocument {
     !isString(value.homePageId) ||
     !isSiteHeaderConfig(value.header) ||
     !isSiteFooterConfig(value.footer) ||
+    !isSiteThemeConfig(value.theme) ||
     !Array.isArray(value.pages) ||
     !value.pages.every(isSitePage)
   ) {

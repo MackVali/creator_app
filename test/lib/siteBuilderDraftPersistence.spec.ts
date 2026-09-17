@@ -17,6 +17,18 @@ describe("site builder draft persistence validation", () => {
     ).toBe(false);
   });
 
+  it("rejects invalid site theme values", () => {
+    const site = structuredClone(mackValiSiteDocument);
+
+    if (!site.theme) {
+      throw new Error("Expected Mack seed theme.");
+    }
+
+    site.theme.palette = "rainbow" as never;
+
+    expect(isSiteDocument(site)).toBe(false);
+  });
+
   it("rejects invalid site navigation items", () => {
     const site = structuredClone(mackValiSiteDocument);
 

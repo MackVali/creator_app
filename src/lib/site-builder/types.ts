@@ -87,6 +87,41 @@ export type SiteFooterConfig = {
   tagline: string;
 };
 
+export type SiteThemePalette =
+  | "graphite"
+  | "ink"
+  | "slate"
+  | "warm";
+
+export type SiteThemeTypography =
+  | "sans"
+  | "serif"
+  | "mono";
+
+export type SiteThemeWidth =
+  | "compact"
+  | "standard"
+  | "wide";
+
+export type SiteThemeSpacing =
+  | "compact"
+  | "normal"
+  | "spacious";
+
+export type SiteThemeRadius =
+  | "sharp"
+  | "soft"
+  | "rounded";
+
+export type SiteThemeConfig = {
+  palette: SiteThemePalette;
+  accentColor: string;
+  typography: SiteThemeTypography;
+  width: SiteThemeWidth;
+  spacing: SiteThemeSpacing;
+  radius: SiteThemeRadius;
+};
+
 export type SiteDocument = {
   id: string;
   name: string;
@@ -94,5 +129,6 @@ export type SiteDocument = {
   homePageId: string;
   header?: SiteHeaderConfig;
   footer?: SiteFooterConfig;
+  theme?: SiteThemeConfig;
   pages: SitePage[];
 };
