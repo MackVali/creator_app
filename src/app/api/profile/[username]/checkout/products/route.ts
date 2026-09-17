@@ -24,6 +24,14 @@ function buildErrorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function getTrustedCheckoutOrigin(request: Request) {
+  if (process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production") {
+    return "https://trycreator.app";
+  }
+
+  return new URL(request.url).origin;
+}
+
 function normalizeItems(payload: unknown): ProductCheckoutItemInput[] {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -224,7 +232,7 @@ export async function POST(
     unitAmount: Math.round(item.unitPrice * 100),
   }));
 
-  const origin = new URL(request.url).origin;
+  const origin = getTrustedCheckoutOrigin(request);
   const encodedHandle = encodeURIComponent(username);
   const successUrl = `${origin}/profile/${encodedHandle}/checkout/success?checkout_id=${checkoutId}&session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${origin}/profile/${encodedHandle}/checkout/cancel?checkout_id=${checkoutId}`;
