@@ -58,7 +58,7 @@ export async function GET(_: Request, context: { params: { username?: string } }
 
   const { data: targetProfile, error: lookupError } = await admin
     .from("profiles")
-    .select("user_id")
+    .select("user_id, is_private")
     .ilike("username", normalizedUsername)
     .maybeSingle();
 
@@ -72,7 +72,10 @@ export async function GET(_: Request, context: { params: { username?: string } }
 
   const targetId = targetProfile?.user_id ?? null;
 
-  if (!targetId) {
+  if (
+    !targetId ||
+    (targetProfile?.is_private === true && viewerId !== targetId)
+  ) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 }
