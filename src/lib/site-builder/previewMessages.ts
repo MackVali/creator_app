@@ -47,6 +47,7 @@ export const SITE_PREVIEW_INLINE_EDIT_FIELDS = {
   stats: ["heading", "intro"],
   faq: ["heading", "intro"],
   testimonials: ["heading", "intro"],
+  embed: ["heading", "intro"],
   cta: ["heading", "body", "buttonLabel"],
   contact: ["heading", "body", "buttonLabel"],
 } as const satisfies Partial<Record<SiteSectionType, readonly string[]>>;

@@ -11,6 +11,7 @@ export type SiteSectionType =
   | "services"
   | "gallery"
   | "media"
+  | "embed"
   | "cta"
   | "contact";
 
@@ -25,16 +26,59 @@ export type SiteDataSource =
       listingIds?: string[];
     };
 
+export type SiteSectionPadding =
+  | "none"
+  | "small"
+  | "medium"
+  | "large"
+  | "xlarge";
+
+export type SiteSectionDivider =
+  | "none"
+  | "top"
+  | "bottom"
+  | "both";
+
+export type SiteSectionDividerStrength =
+  | "hairline"
+  | "strong";
+
 export type SiteSectionLayoutConfig = {
   variant?: string;
   alignment?: "left" | "center";
-  width?: "narrow" | "normal" | "wide";
+  width?: "narrow" | "normal" | "wide" | "full";
+
+  // Legacy coarse spacing remains supported.
   spacing?: "compact" | "normal" | "spacious";
+  size?: "default" | "compact" | "standard" | "large";
+
+  // Optional per-section overrides.
+  paddingTop?: SiteSectionPadding;
+  paddingBottom?: SiteSectionPadding;
+
   columns?: 2 | 3 | 4;
+
+  // Precise visual editor overrides. When present, these take precedence over
+  // the legacy coarse layout tokens above.
+  contentWidth?: number;
+
+  heightMode?: "auto" | "minimum" | "screen";
+  minHeight?: number;
+
+  paddingTopPx?: number;
+  paddingRightPx?: number;
+  paddingBottomPx?: number;
+  paddingLeftPx?: number;
+
+  gap?: number;
 };
 
 export type SiteSectionStyleConfig = {
   background?: "default" | "plain" | "dark" | "muted" | "contrast";
+
+  divider?: SiteSectionDivider;
+  dividerStrength?: SiteSectionDividerStrength;
+
   muted?: boolean;
   showPrice?: boolean;
   showDescription?: boolean;
@@ -64,6 +108,12 @@ export type SiteEditorSelection =
       pageId: string;
       sectionId: string;
       node: SiteContentNodeId;
+    }
+  | {
+      kind: "block";
+      pageId: string;
+      sectionId: string;
+      blockId: string;
     };
 
 export type SitePage = {
@@ -97,7 +147,8 @@ export type SiteThemePalette =
   | "graphite"
   | "ink"
   | "slate"
-  | "warm";
+  | "warm"
+  | "paper";
 
 export type SiteThemeTypography =
   | "sans"
@@ -119,12 +170,29 @@ export type SiteThemeRadius =
   | "soft"
   | "rounded";
 
+export type SiteThemeColorOverrides = {
+  background?: string;
+  surface?: string;
+  text?: string;
+  mutedText?: string;
+  border?: string;
+};
+
 export type SiteThemeConfig = {
   palette: SiteThemePalette;
   accentColor: string;
+
+  colors?: SiteThemeColorOverrides;
+
   typography: SiteThemeTypography;
   width: SiteThemeWidth;
+
+  // Kept for compatibility with existing saved sites.
   spacing: SiteThemeSpacing;
+
+  sectionSpacing?: number;
+  pagePadding?: number;
+
   radius: SiteThemeRadius;
 };
 

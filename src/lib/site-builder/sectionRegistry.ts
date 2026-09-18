@@ -194,28 +194,30 @@ const sectionDefinitions = [
     defaultLayout: {
       variant: "grid",
       columns: 3,
-      spacing: "normal",
+      width: "wide",
+      spacing: "spacious",
     },
     defaultStyle: { background: "default" },
     variants: [
       {
         id: "grid",
         label: "Grid",
-        description: "Balanced responsive card grid.",
+        description: "Large visual portfolio tiles.",
       },
       {
         id: "list",
         label: "List",
-        description: "Stacked horizontal cards.",
+        description: "Wide horizontal project rows.",
       },
       {
         id: "featured",
         label: "Featured",
-        description: "Emphasize the first item.",
+        description: "Lead with one large showcase item.",
       },
     ],
     usesSource: false,
     supportsColumns: true,
+    supportsWidth: true,
     supportsSpacing: true,
     supportsBackground: true,
   },
@@ -425,8 +427,14 @@ const sectionDefinitions = [
     defaultContent: {
       heading: "Let's build something useful.",
       body: "Open to creative opportunities, collaborations, and interesting projects.",
-      buttonLabel: "Get in touch",
+      formEnabled: true,
+      nameLabel: "Name",
+      emailLabel: "Email",
+      messageLabel: "Message",
+      buttonLabel: "Send message",
+      successMessage: "Thanks — your message was sent.",
       buttonHref: "#contact",
+      buttonPageId: "",
     },
     defaultSource: { kind: "manual" },
     defaultLayout: {
@@ -530,6 +538,46 @@ const sectionDefinitions = [
     ],
     usesSource: false,
     supportsColumns: true,
+    supportsBackground: true,
+  },
+  {
+    type: "embed",
+    label: "Embed",
+    description:
+      "Embed supported video, music, or hosted media.",
+    category: "Media",
+    defaultContent: {
+      heading: "Featured media",
+      intro: "",
+      url: "",
+      title: "Embedded media",
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "contained",
+      width: "wide",
+      spacing: "normal",
+    },
+    defaultStyle: {
+      background: "default",
+    },
+    variants: [
+      {
+        id: "contained",
+        label: "Contained",
+        description:
+          "Media sits inside a focused content width.",
+      },
+      {
+        id: "wide",
+        label: "Wide",
+        description:
+          "Media expands across the page stage.",
+      },
+    ],
+    usesSource: false,
+    supportsWidth: true,
+    supportsSpacing: true,
     supportsBackground: true,
   },
   {

@@ -8,7 +8,6 @@ import {
   renderMackSiteDraft,
 } from "@/lib/site-builder/mackValiSite";
 import {
-  createSitePreviewHeightMessage,
   createSitePreviewContentEditRequestMessage,
   createSitePreviewSelectionRequestMessage,
   isSitePreviewActiveSelectionMessage,
@@ -24,20 +23,6 @@ function cloneInitialSite(): SiteDocument {
   return JSON.parse(JSON.stringify(mackValiSiteDocument)) as SiteDocument;
 }
 
-function getDocumentHeight() {
-  const body = document.body;
-  const element = document.documentElement;
-
-  return Math.ceil(
-    Math.max(
-      body.scrollHeight,
-      body.offsetHeight,
-      element.clientHeight,
-      element.scrollHeight,
-      element.offsetHeight,
-    ),
-  );
-}
 
 export default function SitePreviewFrame() {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -54,6 +39,30 @@ export default function SitePreviewFrame() {
     site.pages.find((page) => page.id === selectedPageId) ??
     site.pages.find((page) => page.id === site.homePageId) ??
     site.pages[0];
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    rootRef.current?.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "auto",
+    });
+  }, [selectedPageId]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -75,40 +84,15 @@ export default function SitePreviewFrame() {
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  useEffect(() => {
-    let animationFrame = 0;
 
-    const postHeight = () => {
-      window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(() => {
-        window.parent.postMessage(
-          createSitePreviewHeightMessage(getDocumentHeight()),
-          window.location.origin,
-        );
-      });
-    };
-
-    postHeight();
-
-    const observer = new ResizeObserver(postHeight);
-    observer.observe(document.documentElement);
-    observer.observe(document.body);
-
-    if (rootRef.current) {
-      observer.observe(rootRef.current);
-    }
-
-    window.addEventListener("load", postHeight);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      observer.disconnect();
-      window.removeEventListener("load", postHeight);
-    };
-  }, [site, sourceListings, selectedPageId]);
 
   return (
-    <div ref={rootRef}>
+    <div
+      ref={rootRef}
+      data-site-preview-scroll-root
+      className="h-dvh overflow-y-auto overflow-x-hidden overscroll-contain"
+      style={{ WebkitOverflowScrolling: "touch" }}
+    >
       <PortfolioSite
         site={previewSite}
         siteDocument={site}

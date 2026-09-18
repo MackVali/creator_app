@@ -15,6 +15,7 @@ import {
   Home,
   ImageIcon,
   Loader2,
+  Mail,
   Menu,
   MousePointerClick,
   Monitor,
@@ -30,9 +31,9 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { SectionLibrary } from "@/components/site-builder/SectionLibrary";
-import { SectionVariantPicker } from "@/components/site-builder/SectionVariantPicker";
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
 import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
+import { migrateLegacyMackSite } from "@/lib/site-builder/migrateLegacyMackSite";
 import { uploadSiteImage } from "@/lib/site-builder/mediaStorage";
 import {
   getSiteFooterConfig,
@@ -46,20 +47,24 @@ import {
   getSitePageHref,
 } from "@/lib/site-builder/siteLinks";
 import {
+  resolveSiteEmbedUrl,
+} from "@/lib/site-builder/siteEmbeds";
+import {
+  getSiteThemeColors,
   getSiteThemeConfig,
+  getSiteThemePreset,
+  getSiteThemeStyle,
 } from "@/lib/site-builder/siteTheme";
 import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
   isSitePreviewContentEditRequestMessage,
-  isSitePreviewHeightMessage,
   isSitePreviewSelectionRequestMessage,
   sectionTypeSupportsInlineEditField,
 } from "@/lib/site-builder/previewMessages";
 import {
   changeSectionVariant,
   createSiteSection,
-  getDefaultSectionVariant,
   getSectionDefinition,
   type AddableSiteSectionType,
 } from "@/lib/site-builder/sectionRegistry";
@@ -77,6 +82,7 @@ import type { ListingsResponse, SourceListing } from "@/types/source";
 
 type PreviewMode = "desktop" | "tablet" | "mobile";
 type InspectorMode = "content" | "design";
+type SiteRailMode = "structure" | "design";
 type DraftLoadStatus = "loading" | "ready" | "error";
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 type PublishRequestStatus =
@@ -87,16 +93,43 @@ type PublishRequestStatus =
 type SiteChromeSelection =
   | "site"
   | "design"
+  | "inquiries"
   | "header"
   | "navigation"
   | "footer";
-type SectionNavigationChild = {
-  id: SiteContentNodeId;
-  label: string;
-  icon: LucideIcon;
-};
+type SectionNavigationChild =
+  | {
+      kind?: "content";
+      id: SiteContentNodeId;
+      label: string;
+      icon: LucideIcon;
+    }
+  | {
+      kind: "block";
+      id: string;
+      label: string;
+      icon: LucideIcon;
+    };
 
 type SiteContentChangeHandler = (key: string, value: unknown) => void;
+
+type SiteInquiry = {
+  id: string;
+  site_handle: string;
+  page_id: string;
+  section_id: string;
+  sender_name: string;
+  sender_email: string;
+  message: string;
+  status: "new" | "read" | "archived";
+  created_at: string;
+};
+
+type InquiryLoadStatus =
+  | "idle"
+  | "loading"
+  | "loaded"
+  | "error";
 
 type SiteGalleryItem = {
   id: string;
@@ -142,7 +175,7 @@ const previewModes: Record<
   PreviewMode,
   { label: string; width: number; viewportHeight: number | null }
 > = {
-  desktop: { label: "Desktop", width: 1440, viewportHeight: null },
+  desktop: { label: "Desktop", width: 1440, viewportHeight: 900 },
   tablet: { label: "Tablet", width: 768, viewportHeight: 1024 },
   mobile: { label: "Mobile", width: 390, viewportHeight: 844 },
 };
@@ -153,24 +186,18 @@ const inspectorModes: Array<{ id: InspectorMode; label: string }> = [
 ];
 
 function cloneInitialSite(): SiteDocument {
-  return JSON.parse(
+  const site = JSON.parse(
     JSON.stringify(mackValiSiteDocument),
   ) as SiteDocument;
+
+  return migrateLegacyMackSite(site);
 }
 
-function getInitialEditorSelection(site: SiteDocument): SiteEditorSelection | null {
-  const page =
-    site.pages.find((candidate) => candidate.id === site.homePageId) ??
-    site.pages[0];
-  const section = page?.sections[0];
-
-  if (!page || !section) return null;
-
-  return {
-    kind: "section",
-    pageId: page.id,
-    sectionId: section.id,
-  };
+function getInitialEditorSelection(
+  _site: SiteDocument,
+): SiteEditorSelection | null {
+  void _site;
+  return null;
 }
 
 function slugifyPageTitle(value: string) {
@@ -252,6 +279,105 @@ function sectionHasDesignControls(section: SiteSection) {
   return Boolean(getSectionDefinition(section.type));
 }
 
+function getSectionBlockNavigationChildren(
+  section: SiteSection,
+): SectionNavigationChild[] {
+  if (
+    section.type !== "cards" &&
+    section.type !== "stats" &&
+    section.type !== "faq" &&
+    section.type !== "testimonials"
+  ) {
+    return [];
+  }
+
+  const items = Array.isArray(
+    section.content.items,
+  )
+    ? section.content.items
+    : [];
+
+  return items.flatMap(
+    (item, index) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return [];
+      }
+
+      const record =
+        item as Record<
+          string,
+          unknown
+        >;
+
+      const id =
+        typeof record.id === "string" &&
+        record.id.trim()
+          ? record.id
+          : "";
+
+      if (!id) {
+        return [];
+      }
+
+      let label = "";
+
+      if (
+        section.type === "cards"
+      ) {
+        label =
+          typeof record.title ===
+            "string" &&
+          record.title.trim()
+            ? record.title
+            : `Card ${index + 1}`;
+      } else if (
+        section.type === "faq"
+      ) {
+        label =
+          typeof record.question ===
+            "string" &&
+          record.question.trim()
+            ? record.question
+            : `Question ${index + 1}`;
+      } else if (
+        section.type ===
+        "testimonials"
+      ) {
+        label =
+          typeof record.name ===
+            "string" &&
+          record.name.trim()
+            ? record.name
+            : `Testimonial ${index + 1}`;
+      } else {
+        label =
+          typeof record.label ===
+            "string" &&
+          record.label.trim()
+            ? record.label
+            : typeof record.value ===
+                  "string" &&
+                record.value.trim()
+              ? record.value
+              : `Stat ${index + 1}`;
+      }
+
+      return [
+        {
+          kind: "block" as const,
+          id,
+          label,
+          icon: FileText,
+        },
+      ];
+    },
+  );
+}
+
 function getSectionNavigationChildren(
   section: SiteSection,
 ): SectionNavigationChild[] {
@@ -263,10 +389,24 @@ function getSectionNavigationChildren(
     ];
   }
 
-  if (section.type === "cta" || section.type === "contact") {
+  if (section.type === "cta") {
     return [
       { id: "text", label: "Text", icon: Type },
       { id: "button", label: "Button", icon: MousePointerClick },
+    ];
+  }
+
+  if (section.type === "contact") {
+    return [
+      { id: "text", label: "Text", icon: Type },
+      {
+        id: "button",
+        label:
+          section.content.formEnabled === true
+            ? "Submit button"
+            : "Button",
+        icon: MousePointerClick,
+      },
     ];
   }
 
@@ -278,24 +418,36 @@ function getSectionNavigationChildren(
     ];
   }
 
-  if (section.type === "cards") {
-    return [
-      { id: "text", label: "Section text", icon: Type },
-    ];
-  }
-
-  if (section.type === "stats") {
-    return [
-      { id: "text", label: "Section text", icon: Type },
-    ];
-  }
-
   if (
+    section.type === "cards" ||
+    section.type === "stats" ||
     section.type === "faq" ||
     section.type === "testimonials"
   ) {
     return [
-      { id: "text", label: "Section text", icon: Type },
+      {
+        id: "text",
+        label: "Section text",
+        icon: Type,
+      },
+      ...getSectionBlockNavigationChildren(
+        section,
+      ),
+    ];
+  }
+
+  if (section.type === "embed") {
+    return [
+      {
+        id: "text",
+        label: "Section text",
+        icon: Type,
+      },
+      {
+        id: "media",
+        label: "Embed",
+        icon: ImageIcon,
+      },
     ];
   }
 
@@ -312,6 +464,38 @@ function getSectionNavigationChildren(
   }
 
   return [];
+}
+
+function getSectionTreeIcon(
+  type: SiteSection["type"],
+) {
+  switch (type) {
+    case "hero":
+      return Globe2;
+
+    case "content":
+    case "split":
+    case "stats":
+    case "faq":
+    case "testimonials":
+      return Type;
+
+    case "gallery":
+    case "media":
+    case "embed":
+      return ImageIcon;
+
+    case "cta":
+    case "contact":
+      return MousePointerClick;
+
+    case "cards":
+    case "projects":
+    case "products":
+    case "services":
+    default:
+      return Package;
+  }
 }
 
 function sectionSupportsContentNode(
@@ -903,11 +1087,82 @@ function CtaFields({
   );
 }
 
+function EmbedEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const url = getContentString(
+    section,
+    "url",
+  );
+  const title = getContentString(
+    section,
+    "title",
+  );
+  const resolved = resolveSiteEmbedUrl(url);
+
+  const providerLabel =
+    resolved?.provider === "youtube"
+      ? "YouTube"
+      : resolved?.provider === "vimeo"
+      ? "Vimeo"
+      : resolved?.provider === "spotify"
+      ? "Spotify"
+      : resolved?.provider === "video"
+      ? "Direct video"
+      : null;
+
+  return (
+    <div className="space-y-3">
+      <TextInput
+        id={`site-${section.id}-embed-url`}
+        label="Media URL"
+        value={url}
+        placeholder="Paste YouTube, Vimeo, Spotify, or video URL"
+        onChange={(value) =>
+          onContentChange("url", value)
+        }
+      />
+
+      <TextInput
+        id={`site-${section.id}-embed-title`}
+        label="Accessible title"
+        value={title}
+        placeholder="Video or audio title"
+        onChange={(value) =>
+          onContentChange("title", value)
+        }
+      />
+
+      {url ? (
+        <div
+          className={`rounded-md border px-3 py-2 text-[10px] leading-4 ${
+            resolved
+              ? "border-emerald-300/10 bg-emerald-300/[0.03] text-emerald-100/60"
+              : "border-amber-300/10 bg-amber-300/[0.03] text-amber-100/60"
+          }`}
+        >
+          {resolved
+            ? `${providerLabel} embed recognized.`
+            : "Unsupported URL. Use YouTube, Vimeo, Spotify, MP4, WebM, OGG, or OGV."}
+        </div>
+      ) : (
+        <p className="text-[10px] leading-4 text-zinc-600">
+          Supports YouTube, Vimeo, Spotify,
+          and direct hosted video files.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function MediaEditor({
   section,
   onContentChange,
 }: {
-  site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
 }) {
@@ -2131,6 +2386,7 @@ function InspectorContentPanel({
   onLoadSourceListings,
   onToggleSourceListing,
 }: {
+  site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
   sourceStatus: "idle" | "loading" | "loaded" | "error";
@@ -2465,6 +2721,54 @@ function InspectorContentPanel({
     );
   }
 
+  if (section.type === "embed") {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Section">
+          <TextInput
+            id="site-embed-heading"
+            label="Heading"
+            value={getContentString(
+              section,
+              "heading",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "heading",
+                value,
+              )
+            }
+          />
+
+          <TextAreaInput
+            id="site-embed-intro"
+            label="Intro"
+            value={getContentString(
+              section,
+              "intro",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "intro",
+                value,
+              )
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Embed">
+          <EmbedEditor
+            section={section}
+            onContentChange={
+              onContentChange
+            }
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "media") {
     return (
       <InspectorGroup title="Media">
@@ -2476,20 +2780,153 @@ function InspectorContentPanel({
     );
   }
 
-  if (section.type === "cta" || section.type === "contact") {
+  if (section.type === "contact") {
+    const formEnabled =
+      section.content.formEnabled === true;
+
     return (
-      <InspectorGroup title={section.type === "contact" ? "Contact" : "Content"}>
+      <div className="space-y-4">
+        <InspectorGroup title="Contact">
+          <TextInput
+            id="site-contact-heading"
+            label="Heading"
+            value={getContentString(section, "heading")}
+            onChange={(value) =>
+              onContentChange("heading", value)
+            }
+          />
+
+          <TextAreaInput
+            id="site-contact-body"
+            label="Body"
+            value={getContentString(section, "body")}
+            onChange={(value) =>
+              onContentChange("body", value)
+            }
+            rows={3}
+          />
+
+          <ToggleRow
+            label="Contact form"
+            checked={formEnabled}
+            description={
+              formEnabled
+                ? "Visitors can send inquiries directly through this Site."
+                : "Use the Contact section as a normal linked action."
+            }
+            onChange={(checked) =>
+              onContentChange("formEnabled", checked)
+            }
+          />
+        </InspectorGroup>
+
+        {formEnabled ? (
+          <InspectorGroup title="Form">
+            <TextInput
+              id="site-contact-name-label"
+              label="Name field"
+              value={
+                getContentString(section, "nameLabel") ||
+                "Name"
+              }
+              onChange={(value) =>
+                onContentChange("nameLabel", value)
+              }
+            />
+
+            <TextInput
+              id="site-contact-email-label"
+              label="Email field"
+              value={
+                getContentString(section, "emailLabel") ||
+                "Email"
+              }
+              onChange={(value) =>
+                onContentChange("emailLabel", value)
+              }
+            />
+
+            <TextInput
+              id="site-contact-message-label"
+              label="Message field"
+              value={
+                getContentString(section, "messageLabel") ||
+                "Message"
+              }
+              onChange={(value) =>
+                onContentChange("messageLabel", value)
+              }
+            />
+
+            <TextInput
+              id="site-contact-submit-label"
+              label="Submit button"
+              value={
+                getContentString(section, "buttonLabel") ||
+                "Send message"
+              }
+              onChange={(value) =>
+                onContentChange("buttonLabel", value)
+              }
+            />
+
+            <TextAreaInput
+              id="site-contact-success-message"
+              label="Success message"
+              value={
+                getContentString(
+                  section,
+                  "successMessage",
+                ) ||
+                "Thanks — your message was sent."
+              }
+              onChange={(value) =>
+                onContentChange(
+                  "successMessage",
+                  value,
+                )
+              }
+              rows={2}
+            />
+          </InspectorGroup>
+        ) : (
+          <InspectorGroup title="Action">
+            <CtaFields
+              site={site}
+              labelId="site-contact-button-label"
+              hrefId="site-contact-button-href"
+              label={getContentString(section, "buttonLabel")}
+              href={getContentString(section, "buttonHref")}
+              pageId={getContentString(section, "buttonPageId")}
+              labelKey="buttonLabel"
+              hrefKey="buttonHref"
+              pageIdKey="buttonPageId"
+              onContentChange={onContentChange}
+            />
+          </InspectorGroup>
+        )}
+      </div>
+    );
+  }
+
+  if (section.type === "cta") {
+    return (
+      <InspectorGroup title="Content">
         <TextInput
           id="site-action-heading"
           label="Heading"
           value={getContentString(section, "heading")}
-          onChange={(value) => onContentChange("heading", value)}
+          onChange={(value) =>
+            onContentChange("heading", value)
+          }
         />
         <TextAreaInput
           id="site-action-body"
           label="Body"
           value={getContentString(section, "body")}
-          onChange={(value) => onContentChange("body", value)}
+          onChange={(value) =>
+            onContentChange("body", value)
+          }
           rows={3}
         />
         <CtaFields
@@ -2653,7 +3090,8 @@ function ContentNodeInspectorPanel({
     if (
       section.type === "stats" ||
       section.type === "faq" ||
-      section.type === "testimonials"
+      section.type === "testimonials" ||
+      section.type === "embed"
     ) {
       return (
         <>
@@ -2735,6 +3173,9 @@ function ContentNodeInspectorPanel({
       section.type === "hero"
         ? "primaryCtaPageId"
         : "buttonPageId";
+    const contactFormEnabled =
+      section.type === "contact" &&
+      section.content.formEnabled === true;
 
     if (
       section.type === "hero" ||
@@ -2760,22 +3201,55 @@ function ContentNodeInspectorPanel({
               value={getContentString(section, labelKey)}
               onChange={(value) => onContentChange(labelKey, value)}
             />
-            <SiteLinkTargetEditor
-              idPrefix="site-button-node"
-              site={site}
-              pageId={getContentString(section, pageIdKey)}
-              href={getContentString(section, hrefKey)}
-              onPageIdChange={(value) =>
-                onContentChange(pageIdKey, value)
-              }
-              onHrefChange={(value) =>
-                onContentChange(hrefKey, value)
-              }
-            />
+            {contactFormEnabled ? (
+              <p className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-4 text-zinc-500">
+                This button submits the Contact form.
+              </p>
+            ) : (
+              <SiteLinkTargetEditor
+                idPrefix="site-button-node"
+                site={site}
+                pageId={getContentString(section, pageIdKey)}
+                href={getContentString(section, hrefKey)}
+                onPageIdChange={(value) =>
+                  onContentChange(pageIdKey, value)
+                }
+                onHrefChange={(value) =>
+                  onContentChange(hrefKey, value)
+                }
+              />
+            )}
           </div>
         </>
       );
     }
+  }
+
+  if (
+    node === "media" &&
+    section.type === "embed"
+  ) {
+    return (
+      <>
+        <div className="border-b border-white/[0.07] px-4 py-3">
+          <p className="truncate text-[15px] font-medium text-zinc-100">
+            Embed
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+            {section.label} / Embed
+          </p>
+        </div>
+
+        <div className="p-4">
+          <EmbedEditor
+            section={section}
+            onContentChange={
+              onContentChange
+            }
+          />
+        </div>
+      </>
+    );
   }
 
   if (
@@ -2985,6 +3459,266 @@ function SourceListingSelector({
   );
 }
 
+function InspectorSelectRow<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: {
+    label: string;
+    value: T;
+  }[];
+  onChange: (value: T) => void;
+}) {
+  const active =
+    options.find(
+      (option) =>
+        option.value === value,
+    ) ?? options[0];
+
+  return (
+    <label className="group relative flex h-8 cursor-pointer items-center gap-3 border-b border-white/[0.045] px-1 last:border-b-0">
+      <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500 transition group-hover:text-zinc-400">
+        {label}
+      </span>
+
+      <span className="max-w-[140px] truncate text-right text-[10px] text-zinc-300">
+        {active?.label ?? value}
+      </span>
+
+      <ChevronRight className="h-3 w-3 shrink-0 text-zinc-700 transition group-hover:text-zinc-500" />
+
+      <select
+        value={value}
+        onChange={(event) =>
+          onChange(
+            event.target.value as T,
+          )
+        }
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        aria-label={label}
+      >
+        {options.map((option) => (
+          <option
+            key={option.value}
+            value={option.value}
+          >
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function InspectorSegmentedControl<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: {
+    label: string;
+    value: T;
+  }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="px-1 py-2">
+      <div className="mb-2 text-[10px] text-zinc-500">
+        {label}
+      </div>
+      <div className="grid grid-flow-col auto-cols-fr overflow-hidden rounded-md border border-white/[0.08] bg-black/25 p-0.5">
+        {options.map((option) => {
+          const selected =
+            option.value === value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() =>
+                onChange(option.value)
+              }
+              className={`h-7 min-w-0 rounded-[4px] px-2 text-[10px] transition ${
+                selected
+                  ? "bg-white text-black"
+                  : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InspectorRangeField({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit = "",
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  onChange: (value: number) => void;
+}) {
+  const clampedValue = Math.max(
+    min,
+    Math.min(max, value),
+  );
+
+  function commit(nextValue: number) {
+    if (!Number.isFinite(nextValue)) return;
+    onChange(
+      Math.max(
+        min,
+        Math.min(max, nextValue),
+      ),
+    );
+  }
+
+  return (
+    <div className="px-1 py-2.5">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500">
+          {label}
+        </span>
+        <span className="flex h-6 items-center rounded-md border border-white/[0.08] bg-black/25 px-2">
+          <input
+            value={clampedValue}
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            onChange={(event) =>
+              commit(
+                Number(event.target.value),
+              )
+            }
+            className="w-12 bg-transparent text-right text-[10px] tabular-nums text-zinc-200 outline-none"
+            aria-label={label}
+          />
+          {unit ? (
+            <span className="ml-1 text-[9px] text-zinc-600">
+              {unit}
+            </span>
+          ) : null}
+        </span>
+      </div>
+      <input
+        value={clampedValue}
+        min={min}
+        max={max}
+        step={step}
+        type="range"
+        onChange={(event) =>
+          commit(Number(event.target.value))
+        }
+        className="h-1.5 w-full accent-zinc-100"
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+function InspectorSpacingControl({
+  values,
+  onChange,
+}: {
+  values: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  onChange: (
+    side: "top" | "right" | "bottom" | "left",
+    value: number,
+  ) => void;
+}) {
+  const sides = [
+    { id: "top", label: "T" },
+    { id: "right", label: "R" },
+    { id: "bottom", label: "B" },
+    { id: "left", label: "L" },
+  ] as const;
+
+  return (
+    <div className="px-1 py-2.5">
+      <div className="mb-2 text-[10px] text-zinc-500">
+        Padding
+      </div>
+      <div className="rounded-md border border-white/[0.08] bg-black/25 p-2">
+        <div className="relative mx-auto mb-3 h-16 w-24 rounded-sm border border-dashed border-white/20">
+          <div className="absolute left-1/2 top-1 -translate-x-1/2 text-[9px] tabular-nums text-zinc-400">
+            {values.top}
+          </div>
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] tabular-nums text-zinc-400">
+            {values.right}
+          </div>
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] tabular-nums text-zinc-400">
+            {values.bottom}
+          </div>
+          <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[9px] tabular-nums text-zinc-400">
+            {values.left}
+          </div>
+          <div className="absolute inset-5 rounded-[3px] bg-white/[0.08]" />
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {sides.map((side) => (
+            <label
+              key={side.id}
+              className="min-w-0"
+            >
+              <span className="mb-1 block text-center text-[8px] text-zinc-600">
+                {side.label}
+              </span>
+              <input
+                value={values[side.id]}
+                type="number"
+                min={0}
+                max={240}
+                step={1}
+                onChange={(event) =>
+                  onChange(
+                    side.id,
+                    Math.max(
+                      0,
+                      Math.min(
+                        240,
+                        Number(
+                          event.target.value,
+                        ) || 0,
+                      ),
+                    ),
+                  )
+                }
+                className="h-7 w-full rounded-[4px] border border-white/[0.08] bg-black/25 px-1 text-center text-[10px] tabular-nums text-zinc-200 outline-none focus:border-white/20"
+                aria-label={`${side.label} padding`}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InspectorDesignPanel({
   section,
   onLayoutChange,
@@ -2993,127 +3727,1118 @@ function InspectorDesignPanel({
   section: SiteSection;
   onLayoutChange: (
     key: keyof SiteSectionLayoutConfig,
-    value: SiteSectionLayoutConfig[keyof SiteSectionLayoutConfig],
+    value:
+      SiteSectionLayoutConfig[
+        keyof SiteSectionLayoutConfig
+      ],
   ) => void;
   onStyleChange: (
     key: keyof SiteSectionStyleConfig,
-    value: SiteSectionStyleConfig[keyof SiteSectionStyleConfig],
+    value:
+      SiteSectionStyleConfig[
+        keyof SiteSectionStyleConfig
+      ],
   ) => void;
 }) {
-  const definition = getSectionDefinition(section.type);
-  const supportsVariant = Boolean(definition && definition.variants.length > 1);
-  const supportsColumns = Boolean(definition?.supportsColumns);
-  const supportsWidth = Boolean(definition?.supportsWidth);
-  const supportsSpacing = Boolean(definition?.supportsSpacing);
-  const supportsBackground = Boolean(definition?.supportsBackground);
-  const supportsListingDisplay = Boolean(definition?.supportsListingDisplay);
+  const definition =
+    getSectionDefinition(section.type);
 
-  if (
-    !supportsVariant &&
-    !supportsColumns &&
-    !supportsWidth &&
-    !supportsSpacing &&
-    !supportsBackground &&
-    !supportsListingDisplay
-  ) {
+  const supportsVariant =
+    Boolean(
+      definition &&
+        definition.variants.length > 1,
+    );
+
+  const supportsColumns =
+    Boolean(
+      definition?.supportsColumns,
+    );
+
+  const supportsWidth =
+    Boolean(
+      definition?.supportsWidth,
+    );
+
+  const supportsListingDisplay =
+    Boolean(
+      definition?.supportsListingDisplay,
+    );
+
+  const supportsAlignment =
+    section.layout?.alignment !==
+    undefined;
+
+  const currentVariant =
+    section.layout?.variant ??
+    definition?.defaultLayout.variant ??
+    definition?.variants[0]?.id ??
+    "";
+
+  const divider =
+    section.style?.divider ??
+    "none";
+
+  if (section.type === "cards") {
+    const layout = section.layout ?? {};
+    const width =
+      layout.width ?? "wide";
+    const heightMode =
+      layout.heightMode ?? "auto";
+    const fallbackPadding =
+      layout.spacing === "compact"
+        ? 20
+        : layout.spacing === "normal"
+          ? 40
+          : 48;
+    const paddingValues = {
+      top:
+        layout.paddingTopPx ??
+        fallbackPadding,
+      right:
+        layout.paddingRightPx ??
+        48,
+      bottom:
+        layout.paddingBottomPx ??
+        fallbackPadding,
+      left:
+        layout.paddingLeftPx ??
+        48,
+    };
+
     return (
-      <p className="text-[12px] leading-5 text-zinc-500">
-        This section keeps the Mack template design.
-      </p>
+      <div className="space-y-5">
+        <InspectorGroup title="Layout">
+          <div>
+            {supportsVariant &&
+            definition ? (
+              <InspectorSelectRow
+                label="Variant"
+                value={currentVariant}
+                options={definition.variants.map(
+                  (variant) => ({
+                    label:
+                      variant.label,
+                    value:
+                      variant.id,
+                  }),
+                )}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "variant",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+
+            <InspectorSegmentedControl
+              label="Columns"
+              value={String(
+                layout.columns ?? 3,
+              )}
+              options={[
+                {
+                  label: "2",
+                  value: "2",
+                },
+                {
+                  label: "3",
+                  value: "3",
+                },
+                {
+                  label: "4",
+                  value: "4",
+                },
+              ]}
+              onChange={(value) =>
+                onLayoutChange(
+                  "columns",
+                  Number(value) as
+                    | 2
+                    | 3
+                    | 4,
+                )
+              }
+            />
+
+            {supportsAlignment ? (
+              <InspectorSelectRow
+                label="Alignment"
+                value={
+                  layout.alignment ?? "left"
+                }
+                options={[
+                  {
+                    label: "Left",
+                    value: "left",
+                  },
+                  {
+                    label: "Center",
+                    value: "center",
+                  },
+                ]}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "alignment",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+          </div>
+        </InspectorGroup>
+
+        <InspectorGroup title="Dimensions">
+          <InspectorSegmentedControl
+            label="Width"
+            value={width}
+            options={[
+              {
+                label: "Narrow",
+                value: "narrow",
+              },
+              {
+                label: "Normal",
+                value: "normal",
+              },
+              {
+                label: "Wide",
+                value: "wide",
+              },
+              {
+                label: "Full",
+                value: "full",
+              },
+            ]}
+            onChange={(value) =>
+              onLayoutChange(
+                "width",
+                value,
+              )
+            }
+          />
+
+          <InspectorRangeField
+            label="Content width"
+            value={
+              layout.contentWidth ??
+              (width === "narrow"
+                ? 900
+                : width === "normal"
+                  ? 1180
+                  : width === "full"
+                    ? 1600
+                    : 1320)
+            }
+            min={520}
+            max={1800}
+            step={10}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "contentWidth",
+                value,
+              )
+            }
+          />
+
+          <InspectorSegmentedControl
+            label="Height"
+            value={heightMode}
+            options={[
+              {
+                label: "Auto",
+                value: "auto",
+              },
+              {
+                label: "Min",
+                value: "minimum",
+              },
+              {
+                label: "Screen",
+                value: "screen",
+              },
+            ]}
+            onChange={(value) =>
+              onLayoutChange(
+                "heightMode",
+                value,
+              )
+            }
+          />
+
+          {heightMode === "minimum" ? (
+            <InspectorRangeField
+              label="Min height"
+              value={
+                layout.minHeight ?? 560
+              }
+              min={240}
+              max={1200}
+              step={10}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "minHeight",
+                  value,
+                )
+              }
+            />
+          ) : null}
+        </InspectorGroup>
+
+        <InspectorGroup title="Spacing">
+          <InspectorSpacingControl
+            values={paddingValues}
+            onChange={(side, value) => {
+              const key =
+                side === "top"
+                  ? "paddingTopPx"
+                  : side === "right"
+                    ? "paddingRightPx"
+                    : side === "bottom"
+                      ? "paddingBottomPx"
+                      : "paddingLeftPx";
+
+              onLayoutChange(
+                key as keyof SiteSectionLayoutConfig,
+                value,
+              );
+            }}
+          />
+
+          <InspectorRangeField
+            label="Gap"
+            value={layout.gap ?? 20}
+            min={0}
+            max={96}
+            step={1}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "gap",
+                value,
+              )
+            }
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Appearance">
+          <div>
+            <InspectorSelectRow
+              label="Background"
+              value={
+                section.style
+                  ?.background ??
+                "default"
+              }
+              options={[
+                {
+                  label: "Site background",
+                  value: "default",
+                },
+                {
+                  label: "Surface",
+                  value: "plain",
+                },
+                {
+                  label: "Muted surface",
+                  value: "muted",
+                },
+                {
+                  label: "Strong surface",
+                  value: "dark",
+                },
+                {
+                  label: "Contrast",
+                  value: "contrast",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "background",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSelectRow
+              label="Divider"
+              value={divider}
+              options={[
+                {
+                  label: "None",
+                  value: "none",
+                },
+                {
+                  label: "Top",
+                  value: "top",
+                },
+                {
+                  label: "Bottom",
+                  value: "bottom",
+                },
+                {
+                  label: "Top & bottom",
+                  value: "both",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "divider",
+                  value,
+                )
+              }
+            />
+
+            {divider !== "none" ? (
+              <InspectorSelectRow
+                label="Divider weight"
+                value={
+                  section.style
+                    ?.dividerStrength ??
+                  "hairline"
+                }
+                options={[
+                  {
+                    label: "Hairline",
+                    value: "hairline",
+                  },
+                  {
+                    label: "Strong",
+                    value: "strong",
+                  },
+                ]}
+                onChange={(value) =>
+                  onStyleChange(
+                    "dividerStrength",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+          </div>
+        </InspectorGroup>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {supportsVariant || supportsColumns || supportsWidth ? (
-        <InspectorGroup title="Layout">
-          {supportsVariant && definition ? (
-            <SectionVariantPicker
-              label="Variant"
-              variants={definition.variants}
+    <div className="space-y-5">
+
+      {/* APPEARANCE */}
+      <InspectorGroup title="Appearance">
+        <div>
+          <InspectorSelectRow
+            label="Background"
+            value={
+              section.style?.background ??
+              "default"
+            }
+            options={[
+              {
+                label: "Site background",
+                value: "default",
+              },
+              {
+                label: "Surface",
+                value: "plain",
+              },
+              {
+                label: "Muted surface",
+                value: "muted",
+              },
+              {
+                label: "Strong surface",
+                value: "dark",
+              },
+              {
+                label: "Contrast",
+                value: "contrast",
+              },
+            ]}
+            onChange={(value) =>
+              onStyleChange(
+                "background",
+                value,
+              )
+            }
+          />
+
+          <InspectorSelectRow
+            label="Divider"
+            value={divider}
+            options={[
+              {
+                label: "None",
+                value: "none",
+              },
+              {
+                label: "Top",
+                value: "top",
+              },
+              {
+                label: "Bottom",
+                value: "bottom",
+              },
+              {
+                label: "Top & bottom",
+                value: "both",
+              },
+            ]}
+            onChange={(value) =>
+              onStyleChange(
+                "divider",
+                value,
+              )
+            }
+          />
+
+          {divider !== "none" ? (
+            <InspectorSelectRow
+              label="Divider weight"
               value={
-                section.layout?.variant ??
-                getDefaultSectionVariant(definition.type as AddableSiteSectionType) ??
-                definition.variants[0]?.id
+                section.style
+                  ?.dividerStrength ??
+                "hairline"
               }
-              onChange={(value) => onLayoutChange("variant", value)}
-            />
-          ) : null}
-          {supportsColumns ? (
-            <SegmentedControl
-              label="Columns"
-              value={String(section.layout?.columns ?? 3)}
               options={[
-                { label: "2", value: "2" },
-                { label: "3", value: "3" },
-                { label: "4", value: "4" },
+                {
+                  label: "Hairline",
+                  value: "hairline",
+                },
+                {
+                  label: "Strong",
+                  value: "strong",
+                },
               ]}
               onChange={(value) =>
-                onLayoutChange("columns", Number(value) as 2 | 3 | 4)
+                onStyleChange(
+                  "dividerStrength",
+                  value,
+                )
               }
             />
           ) : null}
-          {supportsWidth ? (
-            <SegmentedControl
-              label="Content width"
-              value={section.layout?.width ?? "normal"}
+        </div>
+      </InspectorGroup>
+
+
+      {/* LAYOUT */}
+      {supportsVariant ||
+      supportsColumns ||
+      supportsWidth ||
+      supportsAlignment ? (
+        <InspectorGroup title="Layout">
+          <div>
+            {supportsVariant &&
+            definition ? (
+              <InspectorSelectRow
+                label="Variant"
+                value={currentVariant}
+                options={definition.variants.map(
+                  (variant) => ({
+                    label:
+                      variant.label,
+                    value:
+                      variant.id,
+                  }),
+                )}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "variant",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+
+            {supportsWidth ? (
+              <InspectorSelectRow
+                label="Width"
+                value={
+                  section.layout?.width ??
+                  "normal"
+                }
+                options={[
+                  {
+                    label: "Narrow",
+                    value: "narrow",
+                  },
+                  {
+                    label: "Normal",
+                    value: "normal",
+                  },
+                  {
+                    label: "Wide",
+                    value: "wide",
+                  },
+                  {
+                    label: "Full",
+                    value: "full",
+                  },
+                ]}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "width",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+
+            {supportsAlignment ? (
+              <InspectorSelectRow
+                label="Alignment"
+                value={
+                  section.layout
+                    ?.alignment ??
+                  "left"
+                }
+                options={[
+                  {
+                    label: "Left",
+                    value: "left",
+                  },
+                  {
+                    label: "Center",
+                    value: "center",
+                  },
+                ]}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "alignment",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+
+            {supportsColumns ? (
+              <InspectorSelectRow
+                label="Columns"
+                value={String(
+                  section.layout?.columns ??
+                    3,
+                )}
+                options={[
+                  {
+                    label: "2",
+                    value: "2",
+                  },
+                  {
+                    label: "3",
+                    value: "3",
+                  },
+                  {
+                    label: "4",
+                    value: "4",
+                  },
+                ]}
+                onChange={(value) =>
+                  onLayoutChange(
+                    "columns",
+                    Number(value) as
+                      | 2
+                      | 3
+                      | 4,
+                  )
+                }
+              />
+            ) : null}
+          </div>
+        </InspectorGroup>
+      ) : null}
+
+
+      {/* SPACING */}
+      <InspectorGroup title="Section">
+        <InspectorSelectRow
+          label="Size"
+          value={
+            section.layout?.size ??
+            "default"
+          }
+          options={[
+            {
+              label: "Default",
+              value: "default",
+            },
+            {
+              label: "Compact",
+              value: "compact",
+            },
+            {
+              label: "Standard",
+              value: "standard",
+            },
+            {
+              label: "Large",
+              value: "large",
+            },
+          ]}
+          onChange={(value) =>
+            onLayoutChange(
+              "size",
+              value,
+            )
+          }
+        />
+
+        <details className="group border-t border-white/[0.045]">
+          <summary className="flex h-8 cursor-pointer list-none items-center justify-between px-1 text-[10px] text-zinc-600 transition hover:text-zinc-400 [&::-webkit-details-marker]:hidden">
+            <span>Advanced spacing</span>
+            <ChevronRight className="h-3 w-3 transition group-open:rotate-90" />
+          </summary>
+
+          <div className="pb-1">
+            <InspectorSelectRow
+              label="Top padding"
+              value={
+                section.layout?.paddingTop ??
+                "default"
+              }
               options={[
-                { label: "Narrow", value: "narrow" },
-                { label: "Normal", value: "normal" },
-                { label: "Wide", value: "wide" },
+                { label: "Default", value: "default" },
+                { label: "None", value: "none" },
+                { label: "Small", value: "small" },
+                { label: "Medium", value: "medium" },
+                { label: "Large", value: "large" },
+                { label: "Extra large", value: "xlarge" },
               ]}
-              onChange={(value) => onLayoutChange("width", value)}
+              onChange={(value) =>
+                onLayoutChange(
+                  "paddingTop",
+                  value === "default"
+                    ? undefined
+                    : value,
+                )
+              }
             />
-          ) : null}
-        </InspectorGroup>
-      ) : null}
 
-      {supportsBackground ? (
-        <InspectorGroup title="Appearance">
-          <SegmentedControl
-            label="Background"
-            value={section.style?.background ?? "default"}
-            options={[
-              { label: "Default", value: "default" },
-              { label: "Plain", value: "plain" },
-              { label: "Dark", value: "dark" },
-              { label: "Muted", value: "muted" },
-            ]}
-            onChange={(value) => onStyleChange("background", value)}
-          />
-        </InspectorGroup>
-      ) : null}
+            <InspectorSelectRow
+              label="Bottom padding"
+              value={
+                section.layout?.paddingBottom ??
+                "default"
+              }
+              options={[
+                { label: "Default", value: "default" },
+                { label: "None", value: "none" },
+                { label: "Small", value: "small" },
+                { label: "Medium", value: "medium" },
+                { label: "Large", value: "large" },
+                { label: "Extra large", value: "xlarge" },
+              ]}
+              onChange={(value) =>
+                onLayoutChange(
+                  "paddingBottom",
+                  value === "default"
+                    ? undefined
+                    : value,
+                )
+              }
+            />
+          </div>
+        </details>
+      </InspectorGroup>
 
-      {supportsSpacing ? (
-        <InspectorGroup title="Spacing">
-          <SegmentedControl
-            label="Padding"
-            value={section.layout?.spacing ?? "normal"}
-            options={[
-              { label: "Small", value: "compact" },
-              { label: "Medium", value: "normal" },
-              { label: "Large", value: "spacious" },
-            ]}
-            onChange={(value) => onLayoutChange("spacing", value)}
-          />
-        </InspectorGroup>
-      ) : null}
-
+      {/* COMMERCE DISPLAY */}
       {supportsListingDisplay ? (
-        <InspectorGroup title="Cards">
+        <InspectorGroup title="Display">
           <ToggleRow
             label="Show price"
-            checked={section.style?.showPrice !== false}
-            onChange={(checked) => onStyleChange("showPrice", checked)}
+            checked={
+              section.style
+                ?.showPrice !== false
+            }
+            onChange={(checked) =>
+              onStyleChange(
+                "showPrice",
+                checked,
+              )
+            }
           />
+
           <ToggleRow
             label="Show description"
-            checked={section.style?.showDescription !== false}
-            onChange={(checked) => onStyleChange("showDescription", checked)}
+            checked={
+              section.style
+                ?.showDescription !==
+              false
+            }
+            onChange={(checked) =>
+              onStyleChange(
+                "showDescription",
+                checked,
+              )
+            }
           />
         </InspectorGroup>
       ) : null}
     </div>
+  );
+}
+
+
+function ThemeColorRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(
+    value.toUpperCase(),
+  );
+
+  useEffect(() => {
+    setDraft(value.toUpperCase());
+  }, [value]);
+
+  function commit() {
+    if (
+      /^#[0-9a-fA-F]{6}$/.test(
+        draft,
+      )
+    ) {
+      onChange(draft);
+      return;
+    }
+
+    setDraft(value.toUpperCase());
+  }
+
+  return (
+    <div className="flex h-8 items-center gap-2 px-2">
+      <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">
+        {label}
+      </span>
+
+      <input
+        value={draft}
+        onChange={(event) =>
+          setDraft(
+            event.target.value.toUpperCase(),
+          )
+        }
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+        }}
+        spellCheck={false}
+        className="w-[58px] bg-transparent text-right font-mono text-[9px] text-zinc-600 outline-none focus:text-zinc-300"
+      />
+
+      <label
+        className="relative h-4 w-4 shrink-0 cursor-pointer overflow-hidden rounded-[4px] border border-white/[0.14]"
+        style={{
+          backgroundColor: value,
+        }}
+      >
+        <input
+          type="color"
+          value={value}
+          onChange={(event) =>
+            onChange(
+              event.target.value,
+            )
+          }
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
+    </div>
+  );
+}
+
+
+function ThemeRangeControl({
+  label,
+  value,
+  min,
+  max,
+  step,
+  suffix = "px",
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-zinc-500">
+          {label}
+        </span>
+
+        <span className="font-mono text-[9px] text-zinc-600">
+          {value}
+          {suffix}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) =>
+          onChange(
+            Number(
+              event.target.value,
+            ),
+          )
+        }
+        className="mt-1 h-3 w-full accent-zinc-300"
+      />
+    </div>
+  );
+}
+
+
+function PageInspector({
+  site,
+  page,
+  onOpenSettings,
+  onDuplicate,
+  onSetHomepage,
+  onDelete,
+}: {
+  site: SiteDocument;
+  page: SiteDocument["pages"][number];
+  onOpenSettings: () => void;
+  onDuplicate: () => void;
+  onSetHomepage: () => void;
+  onDelete: () => void;
+}) {
+  const isHomePage =
+    page.id === site.homePageId;
+
+  return (
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              {page.title}
+            </p>
+
+            <p className="mt-0.5 text-[11px] text-zinc-600">
+              Page
+            </p>
+          </div>
+
+          {isHomePage ? (
+            <span className="rounded-full border border-white/[0.08] px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-zinc-500">
+              Home
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <InspectorGroup title="Page">
+          <div className="rounded-md border border-white/[0.07] bg-black/20 px-3 py-2.5">
+            <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-600">
+              Public path
+            </p>
+
+            <p className="mt-1 break-all text-[11px] text-zinc-300">
+              {getSitePageHref(
+                site,
+                page.id,
+              )}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.09] text-[11px] text-zinc-300 transition hover:border-white/[0.17] hover:bg-white/[0.035] hover:text-zinc-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Page settings
+          </button>
+        </InspectorGroup>
+
+        <InspectorGroup title="Actions">
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-zinc-500 transition hover:bg-white/[0.035] hover:text-zinc-200"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            Duplicate
+          </button>
+
+          {!isHomePage ? (
+            <>
+              <button
+                type="button"
+                onClick={onSetHomepage}
+                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-zinc-500 transition hover:bg-white/[0.035] hover:text-zinc-200"
+              >
+                <Home className="h-3.5 w-3.5" />
+                Set as homepage
+              </button>
+
+              <button
+                type="button"
+                onClick={onDelete}
+                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-zinc-600 transition hover:bg-red-400/[0.05] hover:text-red-200"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            </>
+          ) : null}
+        </InspectorGroup>
+      </div>
+    </>
+  );
+}
+
+
+function SiteInquiriesInspector({
+  inquiries,
+  status,
+  error,
+  onRefresh,
+}: {
+  inquiries: SiteInquiry[];
+  status: InquiryLoadStatus;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  return (
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[15px] font-medium text-zinc-100">
+              Inquiries
+            </p>
+
+            <p className="mt-0.5 text-[11px] text-zinc-600">
+              Site contact submissions
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={status === "loading"}
+            className="flex h-7 items-center gap-1.5 rounded-md border border-white/[0.08] px-2 text-[10px] text-zinc-500 transition hover:border-white/[0.16] hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === "loading" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : null}
+
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="p-3">
+        {status === "loading" &&
+        inquiries.length === 0 ? (
+          <div className="flex items-center gap-2 px-1 py-4 text-[11px] text-zinc-600">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading inquiries…
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-md border border-red-400/20 bg-red-400/[0.04] px-3 py-2 text-[10px] leading-4 text-red-200/80">
+            {error}
+          </div>
+        ) : null}
+
+        {status !== "loading" &&
+        !error &&
+        inquiries.length === 0 ? (
+          <div className="px-1 py-5">
+            <p className="text-[11px] text-zinc-500">
+              No inquiries yet.
+            </p>
+
+            <p className="mt-1 text-[10px] leading-4 text-zinc-700">
+              Contact form submissions will appear here.
+            </p>
+          </div>
+        ) : null}
+
+        {inquiries.length > 0 ? (
+          <div className="space-y-1.5">
+            {inquiries.map((inquiry) => {
+              const createdAt =
+                new Date(
+                  inquiry.created_at,
+                );
+
+              return (
+                <div
+                  key={inquiry.id}
+                  className="rounded-md border border-white/[0.06] bg-white/[0.015] px-3 py-2.5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-medium text-zinc-300">
+                        {inquiry.sender_name}
+                      </p>
+
+                      <p className="mt-0.5 truncate text-[9px] text-zinc-600">
+                        {inquiry.sender_email}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] ${
+                        inquiry.status === "new"
+                          ? "bg-white/[0.08] text-zinc-300"
+                          : inquiry.status === "archived"
+                            ? "text-zinc-700"
+                            : "text-zinc-500"
+                      }`}
+                    >
+                      {inquiry.status}
+                    </span>
+                  </div>
+
+                  <p className="mt-2 whitespace-pre-wrap text-[10px] leading-4 text-zinc-500">
+                    {inquiry.message}
+                  </p>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/[0.045] pt-2">
+                    <span className="truncate text-[8px] text-zinc-700">
+                      {inquiry.page_id}
+                    </span>
+
+                    <span className="shrink-0 text-[8px] text-zinc-700">
+                      {Number.isNaN(
+                        createdAt.getTime(),
+                      )
+                        ? inquiry.created_at
+                        : createdAt.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -3146,6 +4871,26 @@ function SiteChromeInspector({
   const footer = getSiteFooterConfig(site);
   const handleValid = isValidSiteHandle(site.handle);
   const theme = getSiteThemeConfig(site);
+  const themeColors =
+    getSiteThemeColors(theme);
+
+  function updateThemeColor(
+    key:
+      | "background"
+      | "surface"
+      | "text"
+      | "mutedText"
+      | "border",
+    value: string,
+  ) {
+    onThemeChange({
+      ...theme,
+      colors: {
+        ...theme.colors,
+        [key]: value,
+      },
+    });
+  }
   const linkedNavigationPageIds = new Set(
     header.navigation.flatMap((item) =>
       item.pageId ? [item.pageId] : [],
@@ -3218,114 +4963,314 @@ function SiteChromeInspector({
   }
 
   if (selection === "design") {
+
     return (
       <>
-        <div className="border-b border-white/[0.07] px-4 py-3">
-          <p className="text-[15px] font-medium text-zinc-100">
-            Design
-          </p>
-          <p className="mt-0.5 text-[11px] text-zinc-600">
-            Site / Design
-          </p>
+        <div className="border-b border-white/[0.06] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[13px] font-medium text-zinc-100">
+                Design
+              </p>
+
+              <p className="mt-0.5 text-[9px] text-zinc-650">
+                Site-wide appearance
+              </p>
+            </div>
+
+            {theme.colors ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const preset =
+                    getSiteThemePreset(
+                      theme.palette,
+                    );
+
+                  onThemeChange({
+                    ...theme,
+                    colors: undefined,
+                    accentColor:
+                      preset.accent,
+                  });
+                }}
+                className="text-[9px] text-zinc-600 transition hover:text-zinc-300"
+              >
+                Reset
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        <div className="space-y-5 p-4">
-          <InspectorGroup title="Color">
-            <SegmentedControl
-              label="Palette"
-              value={theme.palette}
-              options={[
-                { label: "Graphite", value: "graphite" },
-                { label: "Ink", value: "ink" },
-                { label: "Slate", value: "slate" },
-                { label: "Warm", value: "warm" },
-              ]}
-              onChange={(palette) =>
-                onThemeChange({ ...theme, palette })
-              }
-            />
+        <div className="space-y-5 p-3">
 
-            <div>
-              <FieldLabel htmlFor="site-theme-accent">
-                Accent
-              </FieldLabel>
 
-              <div className="mt-1.5 flex items-center gap-2">
-                <input
-                  id="site-theme-accent"
-                  type="color"
-                  value={theme.accentColor}
-                  onChange={(event) =>
+
+          <section>
+            <p className="mb-1 text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Colors
+            </p>
+
+            <div className="overflow-hidden rounded-md border border-white/[0.055]">
+              <ThemeColorRow
+                label="Background"
+                value={
+                  themeColors.background
+                }
+                onChange={(value) =>
+                  updateThemeColor(
+                    "background",
+                    value,
+                  )
+                }
+              />
+
+              <ThemeColorRow
+                label="Surface"
+                value={
+                  themeColors.surface
+                }
+                onChange={(value) =>
+                  updateThemeColor(
+                    "surface",
+                    value,
+                  )
+                }
+              />
+
+              <ThemeColorRow
+                label="Text"
+                value={
+                  themeColors.text
+                }
+                onChange={(value) =>
+                  updateThemeColor(
+                    "text",
+                    value,
+                  )
+                }
+              />
+
+              <ThemeColorRow
+                label="Secondary"
+                value={
+                  themeColors.mutedText
+                }
+                onChange={(value) =>
+                  updateThemeColor(
+                    "mutedText",
+                    value,
+                  )
+                }
+              />
+
+              <ThemeColorRow
+                label="Border"
+                value={
+                  themeColors.border
+                }
+                onChange={(value) =>
+                  updateThemeColor(
+                    "border",
+                    value,
+                  )
+                }
+              />
+
+              <ThemeColorRow
+                label="Accent"
+                value={
+                  theme.accentColor
+                }
+                onChange={(value) =>
+                  onThemeChange({
+                    ...theme,
+                    accentColor:
+                      value,
+                  })
+                }
+              />
+            </div>
+          </section>
+
+          <section>
+            <p className="mb-1.5 text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Typography
+            </p>
+
+            <div className="grid grid-cols-3 overflow-hidden rounded-md border border-white/[0.06]">
+              {(
+                [
+                  {
+                    value: "sans",
+                    label: "Sans",
+                  },
+                  {
+                    value: "serif",
+                    label: "Serif",
+                  },
+                  {
+                    value: "mono",
+                    label: "Mono",
+                  },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() =>
                     onThemeChange({
                       ...theme,
-                      accentColor: event.target.value,
+                      typography:
+                        option.value,
                     })
                   }
-                  className="h-8 w-10 cursor-pointer rounded border border-white/[0.1] bg-transparent p-1"
-                />
+                  className={`h-7 border-r border-white/[0.05] text-[9px] last:border-r-0 ${
+                    theme.typography ===
+                    option.value
+                      ? "bg-white/[0.08] text-zinc-200"
+                      : "text-zinc-600 hover:bg-white/[0.025] hover:text-zinc-400"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
 
-                <div className="flex h-8 flex-1 items-center rounded-md border border-white/[0.09] bg-black/30 px-2.5 text-[11px] text-zinc-400">
-                  {theme.accentColor.toUpperCase()}
+          <section>
+            <p className="mb-1.5 text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Layout
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <p className="mb-1 text-[10px] text-zinc-500">
+                  Width
+                </p>
+
+                <div className="grid grid-cols-3 overflow-hidden rounded-md border border-white/[0.06]">
+                  {(
+                    [
+                      {
+                        value: "compact",
+                        label: "Compact",
+                      },
+                      {
+                        value: "standard",
+                        label: "Standard",
+                      },
+                      {
+                        value: "wide",
+                        label: "Wide",
+                      },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() =>
+                        onThemeChange({
+                          ...theme,
+                          width:
+                            option.value,
+                        })
+                      }
+                      className={`h-7 border-r border-white/[0.05] text-[8px] last:border-r-0 ${
+                        theme.width ===
+                        option.value
+                          ? "bg-white/[0.08] text-zinc-200"
+                          : "text-zinc-600 hover:bg-white/[0.025] hover:text-zinc-400"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
+
+              <ThemeRangeControl
+                label="Section gap"
+                value={
+                  theme.sectionSpacing ??
+                  40
+                }
+                min={8}
+                max={120}
+                step={4}
+                onChange={(value) =>
+                  onThemeChange({
+                    ...theme,
+                    sectionSpacing:
+                      value,
+                  })
+                }
+              />
+
+              <ThemeRangeControl
+                label="Page gutter"
+                value={
+                  theme.pagePadding ??
+                  58
+                }
+                min={12}
+                max={100}
+                step={2}
+                onChange={(value) =>
+                  onThemeChange({
+                    ...theme,
+                    pagePadding:
+                      value,
+                  })
+                }
+              />
             </div>
-          </InspectorGroup>
+          </section>
 
-          <InspectorGroup title="Typography">
-            <SegmentedControl
-              label="Typeface"
-              value={theme.typography}
-              options={[
-                { label: "Sans", value: "sans" },
-                { label: "Serif", value: "serif" },
-                { label: "Mono", value: "mono" },
-              ]}
-              onChange={(typography) =>
-                onThemeChange({ ...theme, typography })
-              }
-            />
-          </InspectorGroup>
+          <section>
+            <p className="mb-1.5 text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Corners
+            </p>
 
-          <InspectorGroup title="Layout">
-            <SegmentedControl
-              label="Page width"
-              value={theme.width}
-              options={[
-                { label: "Compact", value: "compact" },
-                { label: "Standard", value: "standard" },
-                { label: "Wide", value: "wide" },
-              ]}
-              onChange={(width) =>
-                onThemeChange({ ...theme, width })
-              }
-            />
-
-            <SegmentedControl
-              label="Spacing"
-              value={theme.spacing}
-              options={[
-                { label: "Compact", value: "compact" },
-                { label: "Normal", value: "normal" },
-                { label: "Spacious", value: "spacious" },
-              ]}
-              onChange={(spacing) =>
-                onThemeChange({ ...theme, spacing })
-              }
-            />
-
-            <SegmentedControl
-              label="Corners"
-              value={theme.radius}
-              options={[
-                { label: "Sharp", value: "sharp" },
-                { label: "Soft", value: "soft" },
-                { label: "Rounded", value: "rounded" },
-              ]}
-              onChange={(radius) =>
-                onThemeChange({ ...theme, radius })
-              }
-            />
-          </InspectorGroup>
+            <div className="grid grid-cols-3 overflow-hidden rounded-md border border-white/[0.06]">
+              {(
+                [
+                  {
+                    value: "sharp",
+                    label: "Sharp",
+                  },
+                  {
+                    value: "soft",
+                    label: "Soft",
+                  },
+                  {
+                    value: "rounded",
+                    label: "Round",
+                  },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() =>
+                    onThemeChange({
+                      ...theme,
+                      radius:
+                        option.value,
+                    })
+                  }
+                  className={`h-7 border-r border-white/[0.05] text-[9px] last:border-r-0 ${
+                    theme.radius ===
+                    option.value
+                      ? "bg-white/[0.08] text-zinc-200"
+                      : "text-zinc-600 hover:bg-white/[0.025] hover:text-zinc-400"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
       </>
     );
@@ -3648,6 +5593,10 @@ export default function SiteBuilder() {
     );
   const [siteChromeSelection, setSiteChromeSelection] =
     useState<SiteChromeSelection | null>(null);
+  const [railMode, setRailMode] =
+    useState<SiteRailMode>("structure");
+  const [expandedSectionIds, setExpandedSectionIds] =
+    useState<Set<string>>(() => new Set());
   const [draftLoadStatus, setDraftLoadStatus] =
     useState<DraftLoadStatus>("loading");
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
@@ -3681,6 +5630,12 @@ export default function SiteBuilder() {
     "idle" | "loading" | "loaded" | "error"
   >("idle");
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [siteInquiries, setSiteInquiries] =
+    useState<SiteInquiry[]>([]);
+  const [inquiryLoadStatus, setInquiryLoadStatus] =
+    useState<InquiryLoadStatus>("idle");
+  const [inquiryLoadError, setInquiryLoadError] =
+    useState<string | null>(null);
   const latestSiteJsonRef = useRef(JSON.stringify(cloneInitialSite()));
   const lastPersistedSiteJsonRef = useRef("");
   const draftLoadRequestIdRef = useRef(0);
@@ -3734,6 +5689,46 @@ export default function SiteBuilder() {
     }
   }, []);
 
+  const loadSiteInquiries = useCallback(async () => {
+    setInquiryLoadStatus("loading");
+    setInquiryLoadError(null);
+
+    try {
+      const response = await fetch(
+        "/api/site-builder/inquiries",
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+          cache: "no-store",
+        },
+      );
+
+      const payload = (await response.json()) as {
+        inquiries?: SiteInquiry[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ??
+            "Unable to load Site inquiries.",
+        );
+      }
+
+      setSiteInquiries(payload.inquiries ?? []);
+      setInquiryLoadStatus("loaded");
+    } catch (error) {
+      setInquiryLoadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load Site inquiries.",
+      );
+      setInquiryLoadStatus("error");
+    }
+  }, []);
+
   const loadDraft = useCallback(async () => {
     const requestId = draftLoadRequestIdRef.current + 1;
     draftLoadRequestIdRef.current = requestId;
@@ -3760,21 +5755,44 @@ export default function SiteBuilder() {
         return;
       }
 
-      const nextSite = payload.site ?? cloneInitialSite();
-      const nextSelection = getInitialEditorSelection(nextSite);
+      const loadedSite =
+        payload.site ?? cloneInitialSite();
+
+      const nextSite =
+        migrateLegacyMackSite(
+          loadedSite,
+        );
+
+      const nextSelection =
+        getInitialEditorSelection(
+          nextSite,
+        );
       const nextPageId =
         nextSite.pages.find((page) => page.id === nextSite.homePageId)?.id ??
         nextSite.pages[0]?.id ??
         "";
-      const nextSiteJson = JSON.stringify(nextSite);
+      const loadedSiteJson =
+        JSON.stringify(
+          loadedSite,
+        );
+
+      const nextSiteJson =
+        JSON.stringify(
+          nextSite,
+        );
 
       setSite(nextSite);
       setSelectedPageId(nextPageId);
       setEditorSelection(nextSelection);
       setSiteChromeSelection(null);
+      setRailMode("structure");
+      setExpandedSectionIds(new Set());
       setExpandedPageIds(nextPageId ? new Set([nextPageId]) : new Set());
-      latestSiteJsonRef.current = nextSiteJson;
-      lastPersistedSiteJsonRef.current = nextSiteJson;
+      latestSiteJsonRef.current =
+        nextSiteJson;
+
+      lastPersistedSiteJsonRef.current =
+        loadedSiteJson;
       setDraftSaveStatus("idle");
       setDraftSaveError(null);
       setDraftLoadStatus("ready");
@@ -3808,6 +5826,12 @@ export default function SiteBuilder() {
 
     void loadPublicationState();
   }, [draftLoadStatus, loadPublicationState]);
+
+  useEffect(() => {
+    if (draftLoadStatus !== "ready") return;
+
+    void loadSiteInquiries();
+  }, [draftLoadStatus, loadSiteInquiries]);
 
   useEffect(() => {
     if (draftLoadStatus !== "ready") return;
@@ -3912,13 +5936,28 @@ export default function SiteBuilder() {
     (listing) => listing.type === "service",
   );
   const editorLocked = draftLoadStatus !== "ready";
+  const newInquiryCount = siteInquiries.filter(
+    (inquiry) => inquiry.status === "new",
+  ).length;
 
   function selectSiteChrome(selection: SiteChromeSelection) {
     if (editorLocked) return;
 
+    setRailMode(
+      selection === "design"
+        ? "design"
+        : "structure",
+    );
     setSiteChromeSelection(selection);
     setEditorSelection(null);
     setActiveInspectorMode("content");
+
+    if (
+      selection === "inquiries" &&
+      inquiryLoadStatus !== "loading"
+    ) {
+      void loadSiteInquiries();
+    }
   }
 
   function updateSiteName(value: string) {
@@ -3939,6 +5978,54 @@ export default function SiteBuilder() {
     }));
   }
 
+  function applyThemeToPreview(
+    theme: SiteThemeConfig,
+  ) {
+    const previewDocument =
+      previewIframeRef.current?.contentDocument;
+
+    const themeRoot =
+      previewDocument?.querySelector<HTMLElement>(
+        "[data-site-theme-root]",
+      );
+
+    if (!themeRoot) return;
+
+    const style =
+      getSiteThemeStyle(theme);
+
+    for (const [property, value] of Object.entries(style)) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      if (property.startsWith("--")) {
+        themeRoot.style.setProperty(
+          property,
+          String(value),
+        );
+        continue;
+      }
+
+      if (property === "backgroundColor") {
+        themeRoot.style.backgroundColor =
+          String(value);
+        continue;
+      }
+
+      if (property === "color") {
+        themeRoot.style.color =
+          String(value);
+        continue;
+      }
+
+      if (property === "fontFamily") {
+        themeRoot.style.fontFamily =
+          String(value);
+      }
+    }
+  }
+
   function updateSiteTheme(theme: SiteThemeConfig) {
     if (editorLocked) return;
 
@@ -3946,6 +6033,11 @@ export default function SiteBuilder() {
       ...current,
       theme,
     }));
+
+    // Same-origin preview: update design tokens immediately.
+    window.requestAnimationFrame(() => {
+      applyThemeToPreview(theme);
+    });
   }
 
   function updateSiteHeaderField(
@@ -4003,28 +6095,45 @@ export default function SiteBuilder() {
   }
 
   function selectPage(pageId: string) {
-    const page = site.pages.find((candidate) => candidate.id === pageId);
+    const page = site.pages.find(
+      (candidate) => candidate.id === pageId,
+    );
     if (!page) return;
 
+    setRailMode("structure");
     setSelectedPageId(page.id);
     setSiteChromeSelection(null);
-    setEditorSelection(
-      page.sections[0]
-        ? {
-            kind: "section",
-            pageId: page.id,
-            sectionId: page.sections[0].id,
-          }
-        : null,
+    setEditorSelection(null);
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(current).add(page.id),
     );
-    setExpandedPageIds((current) => new Set(current).add(page.id));
   }
 
-  function selectSection(pageId: string, sectionId: string) {
+  function selectSection(
+    pageId: string,
+    sectionId: string,
+  ) {
+    setRailMode("structure");
     setSelectedPageId(pageId);
     setSiteChromeSelection(null);
-    setEditorSelection({ kind: "section", pageId, sectionId });
-    setExpandedPageIds((current) => new Set(current).add(pageId));
+
+    setEditorSelection({
+      kind: "section",
+      pageId,
+      sectionId,
+    });
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(current).add(pageId),
+    );
+
+    setExpandedSectionIds(
+      (current) =>
+        new Set(current).add(sectionId),
+    );
   }
 
   function selectSectionContentChild(
@@ -4032,11 +6141,79 @@ export default function SiteBuilder() {
     sectionId: string,
     node: SiteContentNodeId,
   ) {
+    setRailMode("structure");
     setSelectedPageId(pageId);
     setSiteChromeSelection(null);
-    setEditorSelection({ kind: "content", pageId, sectionId, node });
+
+    setEditorSelection({
+      kind: "content",
+      pageId,
+      sectionId,
+      node,
+    });
+
     setActiveInspectorMode("content");
-    setExpandedPageIds((current) => new Set(current).add(pageId));
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(current).add(pageId),
+    );
+
+    setExpandedSectionIds(
+      (current) =>
+        new Set(current).add(sectionId),
+    );
+  }
+
+  function selectSectionBlock(
+    pageId: string,
+    sectionId: string,
+    blockId: string,
+  ) {
+    setRailMode("structure");
+    setSelectedPageId(pageId);
+    setSiteChromeSelection(null);
+
+    setEditorSelection({
+      kind: "block",
+      pageId,
+      sectionId,
+      blockId,
+    });
+
+    setActiveInspectorMode(
+      "content",
+    );
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(current).add(
+          pageId,
+        ),
+    );
+
+    setExpandedSectionIds(
+      (current) =>
+        new Set(current).add(
+          sectionId,
+        ),
+    );
+  }
+
+  function toggleSectionExpanded(
+    sectionId: string,
+  ) {
+    setExpandedSectionIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+
+      return next;
+    });
   }
 
   function togglePageExpanded(pageId: string) {
@@ -4769,10 +6946,10 @@ export default function SiteBuilder() {
     }
   }
 
-  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewStageRef = useRef<HTMLDivElement | null>(null);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [previewAvailableWidth, setPreviewAvailableWidth] = useState(0);
-  const [previewContentHeight, setPreviewContentHeight] = useState(720);
+  const [previewAvailableHeight, setPreviewAvailableHeight] = useState(0);
 
   const postPreviewState = useCallback(() => {
     const previewWindow = previewIframeRef.current?.contentWindow;
@@ -4801,27 +6978,54 @@ export default function SiteBuilder() {
   const postPreviewInitialMessages = useCallback(() => {
     postPreviewState();
     postPreviewActiveSelection();
-  }, [postPreviewActiveSelection, postPreviewState]);
+
+    window.requestAnimationFrame(() => {
+      applyThemeToPreview(
+        getSiteThemeConfig(site),
+      );
+    });
+  }, [
+    postPreviewActiveSelection,
+    postPreviewState,
+    site,
+  ]);
 
   useEffect(() => {
-    const viewportNode = previewViewportRef.current;
-    if (!viewportNode) return;
+    const stageNode = previewStageRef.current;
+    if (!stageNode) return;
 
     const updatePreviewMetrics = () => {
-      setPreviewAvailableWidth(Math.floor(viewportNode.clientWidth));
+      // Stage uses p-6 = 24px on each side.
+      setPreviewAvailableWidth(
+        Math.max(1, Math.floor(stageNode.clientWidth - 48)),
+      );
+      setPreviewAvailableHeight(
+        Math.max(1, Math.floor(stageNode.clientHeight - 48)),
+      );
     };
 
     updatePreviewMetrics();
 
     const observer = new ResizeObserver(updatePreviewMetrics);
-    observer.observe(viewportNode);
+    observer.observe(stageNode);
 
     return () => observer.disconnect();
-  }, [selectedPage?.sections.length]);
+  }, []);
 
   useEffect(() => {
     postPreviewState();
-  }, [postPreviewState, previewMode, selectedPage?.id]);
+
+    window.requestAnimationFrame(() => {
+      applyThemeToPreview(
+        getSiteThemeConfig(site),
+      );
+    });
+  }, [
+    postPreviewState,
+    previewMode,
+    selectedPage?.id,
+    site,
+  ]);
 
   useEffect(() => {
     postPreviewActiveSelection();
@@ -4832,10 +7036,6 @@ export default function SiteBuilder() {
       if (event.origin !== window.location.origin) return;
       if (event.source !== previewIframeRef.current?.contentWindow) return;
 
-      if (isSitePreviewHeightMessage(event.data)) {
-        setPreviewContentHeight(Math.ceil(event.data.payload.height));
-        return;
-      }
 
       if (isSitePreviewContentEditRequestMessage(event.data)) {
         const { pageId, sectionId, field, value } = event.data.payload;
@@ -4876,13 +7076,51 @@ export default function SiteBuilder() {
 
   const previewLogicalWidth = previewModes[previewMode].width;
   const previewLogicalHeight =
-    previewModes[previewMode].viewportHeight ?? previewContentHeight;
-  const previewScale =
+    previewModes[previewMode].viewportHeight ?? 900;
+
+  const previewWidthScale =
     previewAvailableWidth > 0
-      ? Math.min(1, previewAvailableWidth / previewLogicalWidth)
+      ? previewAvailableWidth / previewLogicalWidth
       : 1;
-  const previewFrameWidth = Math.ceil(previewLogicalWidth * previewScale);
-  const previewFrameHeight = Math.ceil(previewLogicalHeight * previewScale);
+
+  const previewHeightScale =
+    previewAvailableHeight > 0
+      ? previewAvailableHeight / previewLogicalHeight
+      : 1;
+
+  const previewScale =
+    previewMode === "desktop"
+      ? Math.min(1, previewWidthScale)
+      : Math.min(
+          1,
+          previewWidthScale,
+          previewHeightScale,
+        );
+
+  // Desktop should use the full available editor height instead of
+  // preserving a short fixed preview viewport. Keep the visual scale
+  // determined by width, then expand the iframe's logical viewport
+  // vertically to fill the remaining preview stage.
+  const previewRenderedLogicalHeight =
+    previewMode === "desktop" &&
+    previewAvailableHeight > 0 &&
+    previewScale > 0
+      ? Math.max(
+          previewLogicalHeight,
+          Math.floor(
+            previewAvailableHeight /
+              previewScale,
+          ),
+        )
+      : previewLogicalHeight;
+
+  const previewFrameWidth = Math.ceil(
+    previewLogicalWidth * previewScale,
+  );
+  const previewFrameHeight = Math.ceil(
+    previewRenderedLogicalHeight *
+      previewScale,
+  );
 
   const selectedProductIds =
     selectedSection?.source.kind === "source" &&
@@ -5035,7 +7273,7 @@ export default function SiteBuilder() {
       : "Publish this site.";
 
   return (
-    <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-screen lg:overflow-hidden">
+    <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-full lg:min-h-0 lg:overflow-hidden">
       <SectionLibrary
         open={showSectionLibrary && !editorLocked}
         insertionLabel={sectionInsertionLabel}
@@ -5135,47 +7373,134 @@ export default function SiteBuilder() {
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
-          <div className="border-b border-white/[0.07] p-2.5">
+          <div className="border-b border-white/[0.06] p-2.5">
             <button
               type="button"
-              onClick={() => selectSiteChrome("site")}
-              className={`w-full rounded-md px-2 py-2 text-left transition ${
+              onClick={() =>
+                selectSiteChrome("site")
+              }
+              className={`flex h-10 w-full items-center gap-2.5 rounded-md px-2 text-left transition ${
                 siteChromeSelection === "site"
-                  ? "bg-white/[0.06]"
-                  : "hover:bg-white/[0.03]"
+                  ? "bg-white/[0.055]"
+                  : "hover:bg-white/[0.025]"
               }`}
             >
-              <div className="flex items-center gap-2">
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${
+                  siteChromeSelection === "site"
+                    ? "border-white/[0.12] bg-white/[0.05]"
+                    : "border-white/[0.06] bg-white/[0.018]"
+                }`}
+              >
                 <Globe2
-                  className={`h-4 w-4 ${
+                  className={`h-3.5 w-3.5 ${
                     siteChromeSelection === "site"
                       ? "text-zinc-200"
-                      : "text-zinc-400"
+                      : "text-zinc-500"
                   }`}
                 />
-                <p className="text-[13px] font-semibold text-zinc-100">
-                  Site
-                </p>
               </div>
 
-              <p className="mt-1 truncate pl-6 text-[11px] text-zinc-500">
-                {site.name || "Untitled site"}
-              </p>
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium text-zinc-200">
+                  {site.name || "Untitled site"}
+                </p>
+
+                <p className="mt-0.5 text-[9px] uppercase tracking-[0.14em] text-zinc-700">
+                  Site settings
+                </p>
+              </div>
             </button>
           </div>
 
-          <div className="px-2.5 pt-3">
-            <button
+          <div className="border-b border-white/[0.06] p-2.5">
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-black/20 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setRailMode("structure");
+
+                  if (
+                    siteChromeSelection === "design"
+                  ) {
+                    setSiteChromeSelection(null);
+                    setEditorSelection(null);
+                  }
+                }}
+                className={`h-7 rounded text-[11px] font-medium transition ${
+                  railMode === "structure"
+                    ? "bg-white/[0.09] text-zinc-100 shadow-sm"
+                    : "text-zinc-600 hover:text-zinc-300"
+                }`}
+              >
+                Structure
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  selectSiteChrome("design")
+                }
+                className={`h-7 rounded text-[11px] font-medium transition ${
+                  railMode === "design"
+                    ? "bg-white/[0.09] text-zinc-100 shadow-sm"
+                    : "text-zinc-600 hover:text-zinc-300"
+                }`}
+              >
+                Design
+              </button>
+            </div>
+          </div>
+
+          {railMode === "design" ? (
+            <div className="p-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  selectSiteChrome("design")
+                }
+                className="flex w-full items-center gap-2.5 rounded-md bg-white/[0.05] px-2.5 py-2.5 text-left"
+              >
+                <Palette className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-zinc-100">
+                    Theme
+                  </p>
+
+                  <p className="mt-0.5 truncate text-[10px] text-zinc-600">
+                    Color, typography, layout
+                  </p>
+                </div>
+              </button>
+            </div>
+          ) : null}
+
+          <div
+            className={
+              railMode === "structure"
+                ? "px-2.5 pt-2"
+                : "hidden"
+            }
+          >
+<button
               type="button"
-              onClick={() => selectSiteChrome("design")}
+              onClick={() => selectSiteChrome("inquiries")}
               className={`mb-1 flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
-                siteChromeSelection === "design"
+                siteChromeSelection === "inquiries"
                   ? "bg-white/[0.06] text-zinc-100"
                   : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
               }`}
             >
-              <Palette className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="font-medium">Design</span>
+              <Mail className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="min-w-0 flex-1 font-medium">
+                Inquiries
+              </span>
+              {newInquiryCount > 0 ? (
+                <span className="rounded-full bg-white/[0.1] px-1.5 py-0.5 text-[9px] text-zinc-300">
+                  {newInquiryCount}
+                </span>
+              ) : null}
             </button>
 
             <button
@@ -5191,7 +7516,7 @@ export default function SiteBuilder() {
               <span className="font-medium">Header</span>
             </button>
 
-            <div className="ml-[15px] border-l border-white/[0.05] pl-2.5">
+            <div className="ml-[17px] border-l border-white/[0.05] pl-2">
               <button
                 type="button"
                 onClick={() => selectSiteChrome("header")}
@@ -5220,20 +7545,17 @@ export default function SiteBuilder() {
             </div>
           </div>
 
-          <div className="px-2.5 py-3">
-            <div className="flex h-7 items-center justify-between px-2">
+          <div
+            className={
+              railMode === "structure"
+                ? "px-2.5 py-3"
+                : "hidden"
+            }
+          >
+            <div className="flex h-7 items-center px-2">
               <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-600">
                 Pages
               </p>
-              <button
-                type="button"
-                onClick={openNewPageDialog}
-                className="flex h-6 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200"
-                title="New page"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>New</span>
-              </button>
             </div>
 
             <div className="mt-1 space-y-px">
@@ -5249,10 +7571,10 @@ export default function SiteBuilder() {
                     <div
                       className={`group flex h-8 items-center gap-1 rounded pr-1 transition ${
                         activePageRow
-                          ? "bg-white/[0.06] text-zinc-100"
+                          ? "bg-white/[0.065] text-zinc-100"
                           : activePage
-                          ? "text-zinc-100 hover:bg-white/[0.035]"
-                          : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+                          ? "bg-white/[0.018] text-zinc-200 hover:bg-white/[0.035]"
+                          : "text-zinc-500 hover:bg-white/[0.025] hover:text-zinc-200"
                       }`}
                     >
                       <button
@@ -5334,10 +7656,18 @@ export default function SiteBuilder() {
                           const activeSectionRow =
                             active && editorSelection?.kind === "section";
                           const activeSectionAncestor =
-                            active && editorSelection?.kind === "content";
+                            active &&
+                            (
+                              editorSelection?.kind === "content" ||
+                              editorSelection?.kind === "block"
+                            );
                           const canMoveUp = index > 0;
                           const canMoveDown = index < page.sections.length - 1;
                           const childNodes = getSectionNavigationChildren(section);
+                          const sectionExpanded =
+                            expandedSectionIds.has(section.id);
+                          const SectionIcon =
+                            getSectionTreeIcon(section.type);
 
                           return (
                             <div key={section.id}>
@@ -5345,11 +7675,11 @@ export default function SiteBuilder() {
                                 <button
                                   type="button"
                                   onClick={() => openSectionLibrary(page.id, index)}
-                                  className="group flex h-2 w-full items-center"
+                                  className="group flex h-3 w-full items-center"
                                   title="Add section here"
                                 >
                                   <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/[0.14]" />
-                                  <span className="mx-1 hidden h-4 w-4 items-center justify-center rounded-full border border-white/[0.14] bg-[#111214] text-zinc-500 group-hover:flex">
+                                  <span className="mx-1 hidden h-[18px] w-[18px] items-center justify-center rounded-full border border-white/[0.16] bg-[#111214] text-zinc-400 shadow-sm group-hover:flex">
                                     <Plus className="h-3 w-3" />
                                   </span>
                                   <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/[0.14]" />
@@ -5359,20 +7689,50 @@ export default function SiteBuilder() {
                               <div
                                 className={`group flex h-7 items-center gap-1 rounded pr-1 transition ${
                                   activeSectionRow
-                                    ? "bg-white/[0.05] text-zinc-100"
+                                    ? "bg-white/[0.055] text-zinc-100"
                                     : activeSectionAncestor
                                     ? "bg-white/[0.025] text-zinc-200"
                                     : section.visible
-                                    ? "text-zinc-500 hover:bg-white/[0.025] hover:text-zinc-300"
-                                    : "text-zinc-700 hover:bg-white/[0.02] hover:text-zinc-500"
+                                    ? "text-zinc-500 hover:bg-white/[0.022] hover:text-zinc-300"
+                                    : "text-zinc-700 hover:bg-white/[0.015] hover:text-zinc-500"
                                 }`}
                               >
+                                {childNodes.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleSectionExpanded(
+                                        section.id,
+                                      )
+                                    }
+                                    className="flex h-7 w-6 shrink-0 items-center justify-center text-zinc-700 transition hover:text-zinc-300"
+                                    title={
+                                      sectionExpanded
+                                        ? "Collapse section"
+                                        : "Expand section"
+                                    }
+                                  >
+                                    {sectionExpanded ? (
+                                      <ChevronDown className="h-3 w-3" />
+                                    ) : (
+                                      <ChevronRight className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="h-7 w-6 shrink-0" />
+                                )}
+
                                 <button
                                   type="button"
-                                  onClick={() => selectSection(page.id, section.id)}
-                                  className="flex min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11.5px]"
+                                  onClick={() =>
+                                    selectSection(
+                                      page.id,
+                                      section.id,
+                                    )
+                                  }
+                                  className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[11.5px]"
                                 >
-                                  <Package
+                                  <SectionIcon
                                     className={`h-3.5 w-3.5 shrink-0 ${
                                       activeSectionRow || activeSectionAncestor
                                         ? "text-zinc-300"
@@ -5435,26 +7795,52 @@ export default function SiteBuilder() {
                                 </details>
                               </div>
 
-                              {childNodes.length > 0 ? (
-                                <div className="ml-[15px] border-l border-white/[0.04] pl-2.5">
+                              {childNodes.length > 0 &&
+                              sectionExpanded ? (
+                                <div className="ml-[39px] border-l border-white/[0.04] pl-2">
                                   {childNodes.map((child) => {
                                     const ChildIcon = child.icon;
                                     const childActive =
                                       active &&
-                                      editorSelection?.kind === "content" &&
-                                      editorSelection.node === child.id;
+                                      (
+                                        child.kind === "block"
+                                          ? (
+                                              editorSelection?.kind ===
+                                                "block" &&
+                                              editorSelection.blockId ===
+                                                child.id
+                                            )
+                                          : (
+                                              editorSelection?.kind ===
+                                                "content" &&
+                                              editorSelection.node ===
+                                                child.id
+                                            )
+                                      );
 
                                     return (
                                       <button
                                         key={`${section.id}-${child.id}`}
                                         type="button"
-                                        onClick={() =>
+                                        onClick={() => {
+                                          if (
+                                            child.kind ===
+                                            "block"
+                                          ) {
+                                            selectSectionBlock(
+                                              page.id,
+                                              section.id,
+                                              child.id,
+                                            );
+                                            return;
+                                          }
+
                                           selectSectionContentChild(
                                             page.id,
                                             section.id,
                                             child.id,
-                                          )
-                                        }
+                                          );
+                                        }}
                                         className={`flex h-6 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
                                           childActive
                                             ? "bg-white/[0.04] text-zinc-100"
@@ -5488,25 +7874,51 @@ export default function SiteBuilder() {
 
                         <button
                           type="button"
-                          onClick={() => openSectionLibrary(page.id, page.sections.length)}
-                          className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] text-zinc-600 transition hover:bg-white/[0.025] hover:text-zinc-300"
+                          onClick={() =>
+                            openSectionLibrary(
+                              page.id,
+                              page.sections.length,
+                            )
+                          }
+                          className="group mt-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-zinc-600 transition hover:bg-white/[0.025] hover:text-zinc-300"
                         >
-                          <Plus className="h-3.5 w-3.5" />
-                          Add section
+                          <span className="flex h-4 w-4 items-center justify-center rounded border border-white/[0.07] transition group-hover:border-white/[0.14]">
+                            <Plus className="h-3 w-3" />
+                          </span>
+
+                          <span>Add section</span>
                         </button>
                       </div>
                     ) : null}
                   </div>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={openNewPageDialog}
+                className="group mt-2 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] text-zinc-600 transition hover:bg-white/[0.025] hover:text-zinc-300"
+              >
+                <span className="flex h-4 w-4 items-center justify-center rounded border border-white/[0.07] transition group-hover:border-white/[0.14]">
+                  <Plus className="h-3 w-3" />
+                </span>
+
+                <span>Add page</span>
+              </button>
             </div>
           </div>
 
-          <div className="border-t border-white/[0.05] px-2.5 py-3">
+          <div
+            className={
+              railMode === "structure"
+                ? "border-t border-white/[0.05] px-2.5 py-3"
+                : "hidden"
+            }
+          >
             <button
               type="button"
               onClick={() => selectSiteChrome("footer")}
-              className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+              className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-[12px] transition ${
                 siteChromeSelection === "footer"
                   ? "bg-white/[0.06] text-zinc-100"
                   : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
@@ -5519,7 +7931,7 @@ export default function SiteBuilder() {
         </aside>
 
         {/* CENTER: actual renderer */}
-        <main className="flex min-w-0 flex-col bg-[#0c0d0e]">
+        <main className="flex min-h-0 min-w-0 flex-col bg-[#0c0d0e]">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
             <div className="flex items-center gap-4 text-[11px] text-zinc-500">
               <span className="flex items-center gap-2">
@@ -5607,7 +8019,10 @@ export default function SiteBuilder() {
             </a>
           </div>
 
-          <div className="relative min-h-0 flex-1 overflow-auto p-6">
+          <div
+            ref={previewStageRef}
+            className="relative min-h-0 flex-1 overflow-hidden p-6"
+          >
             {selectedPage && selectedPage.sections.length === 0 ? (
               <div className="flex min-h-[620px] items-center justify-center rounded-md border border-dashed border-white/[0.1] bg-black/25">
                 <div className="text-center">
@@ -5633,10 +8048,7 @@ export default function SiteBuilder() {
                 </div>
               </div>
             ) : (
-              <div
-                ref={previewViewportRef}
-                className="mx-auto w-full max-w-[1440px]"
-              >
+              <div className="flex h-full w-full items-start justify-center">
                 <div
                   className="relative mx-auto overflow-hidden rounded-md border border-white/[0.08] bg-black shadow-[0_24px_80px_rgba(0,0,0,0.4)]"
                   style={{
@@ -5646,14 +8058,13 @@ export default function SiteBuilder() {
                 >
                   <iframe
                     ref={previewIframeRef}
-                    title={`${selectedPage?.title ?? "Site"} preview`}
-                    key={selectedPage?.id}
+                    key={`${selectedPage?.id ?? "site"}-${previewMode}`}
                     src="/site/preview"
                     onLoad={postPreviewInitialMessages}
                     className="absolute left-0 top-0 block origin-top-left border-0 bg-black"
                     style={{
                       width: previewLogicalWidth,
-                      height: previewLogicalHeight,
+                      height: previewRenderedLogicalHeight,
                       transform: `scale(${previewScale})`,
                     }}
                   />
@@ -5701,7 +8112,16 @@ export default function SiteBuilder() {
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
-          {siteChromeSelection ? (
+          {siteChromeSelection === "inquiries" ? (
+            <SiteInquiriesInspector
+              inquiries={siteInquiries}
+              status={inquiryLoadStatus}
+              error={inquiryLoadError}
+              onRefresh={() => {
+                void loadSiteInquiries();
+              }}
+            />
+          ) : siteChromeSelection ? (
             <SiteChromeInspector
               selection={siteChromeSelection}
               site={site}
@@ -5795,10 +8215,35 @@ export default function SiteBuilder() {
                 </div>
               </div>
             </>
+          ) : selectedPage ? (
+            <PageInspector
+              site={site}
+              page={selectedPage}
+              onOpenSettings={() =>
+                openPageSettings(
+                  selectedPage.id,
+                )
+              }
+              onDuplicate={() =>
+                duplicatePage(
+                  selectedPage.id,
+                )
+              }
+              onSetHomepage={() =>
+                setHomepage(
+                  selectedPage.id,
+                )
+              }
+              onDelete={() =>
+                deletePage(
+                  selectedPage.id,
+                )
+              }
+            />
           ) : (
             <div className="p-4">
               <p className="text-[12px] leading-5 text-zinc-500">
-                Select a section to edit.
+                Select something to edit.
               </p>
             </div>
           )}

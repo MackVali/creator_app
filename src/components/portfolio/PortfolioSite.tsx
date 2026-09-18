@@ -2,7 +2,6 @@
 
 /* eslint-disable @next/next/no-img-element -- Source listing images can be user-provided remote URLs. */
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   useEffect,
@@ -10,18 +9,16 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type CSSProperties,
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
 
 import { resolveListingImage } from "@/components/profile/detailSheetUtils";
-import PortfolioVisual from "@/components/portfolio/PortfolioVisual";
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
-import type {
-  PortfolioProject,
-  PortfolioSiteData,
-} from "@/lib/portfolio/types";
+import type { PortfolioSiteData } from "@/lib/portfolio/types";
 import type { SitePreviewInlineEditField } from "@/lib/site-builder/previewMessages";
 import {
   getSiteFooterConfig,
@@ -31,6 +28,11 @@ import {
   resolveSiteLinkHref,
   resolveSiteNavigationHref,
 } from "@/lib/site-builder/siteLinks";
+import { mackValiSiteDocument } from "@/lib/site-builder/mackValiSite";
+import { migrateLegacyMackSite } from "@/lib/site-builder/migrateLegacyMackSite";
+import {
+  resolveSiteEmbedUrl,
+} from "@/lib/site-builder/siteEmbeds";
 import {
   getSiteThemeConfig,
   getSiteThemeStyle,
@@ -354,32 +356,7 @@ function InlineEditableText({
   );
 }
 
-const creatorLogo = "/images/creator-logo.png";
-const scheduleImage =
-  "/images/portfolio/mackvali/software/creator-schedule-desktop.png";
-const commandMobile =
-  "/images/portfolio/mackvali/software/creator-mobile-command.webp";
-const ironPrairieImage =
-  "/images/portfolio/mackvali/software/iron-prairie-site.webp";
 const heroCover = "/images/portfolio/mackvali/hero-devices.png";
-
-function PillLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35"
-    >
-      {children}
-      <span className="text-xs">→</span>
-    </Link>
-  );
-}
 
 function SectionRule({
   number,
@@ -390,7 +367,7 @@ function SectionRule({
 }) {
   return (
     <div className="flex h-[30px] items-center gap-4">
-      <span className="text-[8px] text-white/25">{number}</span>
+      <span className="text-[8px] text-[var(--site-text-faint)]">{number}</span>
       <span
         className="text-[8px] font-medium uppercase tracking-[0.3em]"
         style={{ color: "var(--site-accent)" }}
@@ -441,274 +418,22 @@ function HeroStage({
   );
 }
 
-function CreatorCard({
-  project,
-  handle,
-}: {
-  project: PortfolioProject;
-  handle: string;
-}) {
-  return (
-    <article className="grid overflow-hidden lg:h-[165px] lg:grid-cols-[43%_57%]">
-      <div className="flex min-w-0 flex-col justify-between px-5 py-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="relative h-[44px] w-[44px] shrink-0 overflow-hidden rounded-[var(--site-radius)] border border-white/[0.1] bg-white/[0.018]">
-              <Image
-                src={creatorLogo}
-                alt=""
-                fill
-                sizes="44px"
-                className="object-contain p-2"
-              />
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="text-[18px] tracking-[-0.035em] text-white/92">
-                CREATOR
-              </h3>
-              <p className="text-[10px] text-white/52">
-                Plan. Create. Execute. Grow.
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-3 max-w-[330px] text-[8.5px] leading-[1.55] text-white/40">
-            A focused system for planning, scheduling, goals, health, money,
-            focus, creativity, and everyday execution — all in one place.
-          </p>
-        </div>
-
-        <PillLink href={`/portfolio/${handle}/work/${project.slug}`}>
-          View project
-        </PillLink>
-      </div>
-
-      <div className="grid min-w-0 grid-cols-[1fr_62px] items-center gap-3 px-3 py-3">
-        <div className="relative h-full min-h-[126px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
-          <Image
-            src={scheduleImage}
-            alt="CREATOR schedule"
-            fill
-            sizes="27vw"
-            className="object-cover"
-          />
-        </div>
-
-        <div className="space-y-[2px] text-[8px] leading-[1.35] text-white/34">
-          <p>Ideas</p>
-          <p>Plan</p>
-          <p>Schedule</p>
-          <p>Create</p>
-          <p>Analyze</p>
-          <p>Grow</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function IronPrairieCard({
-  project,
-  handle,
-}: {
-  project: PortfolioProject;
-  handle: string;
-}) {
-  return (
-    <article className="grid overflow-hidden lg:h-[165px] lg:grid-cols-[44%_56%]">
-      <div className="flex min-w-0 flex-col justify-between px-5 py-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[var(--site-radius)] bg-[#f0c400] text-[9px] font-black text-black">
-              IPL
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="text-[18px] tracking-[-0.035em] text-white/92">
-                Iron Prairie Logistics
-              </h3>
-              <p className="text-[10px] text-white/52">
-                Real work. Real results.
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-3 max-w-[330px] text-[8.5px] leading-[1.55] text-white/40">
-            A customer-facing service website and internal operations software
-            built around a real local moving, hauling, and handyman business.
-          </p>
-        </div>
-
-        <PillLink href={`/portfolio/${handle}/work/${project.slug}`}>
-          View project
-        </PillLink>
-      </div>
-
-      <div className="relative m-3 ml-0 min-h-[126px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
-        <Image
-          src={ironPrairieImage}
-          alt="Iron Prairie Logistics website"
-          fill
-          sizes="28vw"
-          className="object-cover object-center"
-        />
-      </div>
-    </article>
-  );
-}
-
-function ClothingCard({
-  project,
-  handle,
-}: {
-  project: PortfolioProject;
-  handle: string;
-}) {
-  const body = (
-    <div className="grid h-full grid-cols-[41%_59%]">
-      <div className="flex min-w-0 flex-col justify-between p-4">
-        <div>
-          <h3 className="text-[18px] font-medium tracking-[-0.04em] text-white/92">
-            {project.title}
-          </h3>
-
-          <p className="mt-3 max-w-[150px] text-[8.5px] leading-[1.55] text-white/40">
-            {project.description}
-          </p>
-        </div>
-
-        <span className="inline-flex h-7 w-fit items-center gap-3 rounded-full border border-white/[0.15] px-3 text-[7px] uppercase tracking-[0.14em] text-white/62">
-          View {project.title}
-          <span>→</span>
-        </span>
-      </div>
-
-      <PortfolioVisual
-        kind={project.visual}
-        className="h-full min-h-0 border-0 border-l border-white/[0.07]"
-      />
-    </div>
-  );
-
-  if (!project.detail) {
-    return <article className="h-full">{body}</article>;
-  }
+const defaultMackSections: SiteSection[] = (() => {
+  const migrated =
+    migrateLegacyMackSite(
+      mackValiSiteDocument,
+    );
 
   return (
-    <Link
-      href={`/portfolio/${handle}/work/${project.slug}`}
-      className="block h-full transition hover:bg-white/[0.012]"
-    >
-      {body}
-    </Link>
+    migrated.pages.find(
+      (page) =>
+        page.id ===
+        migrated.homePageId,
+    )?.sections ??
+    migrated.pages[0]?.sections ??
+    []
   );
-}
-
-type MackSectionKind =
-  | "hero"
-  | "software"
-  | "clothing"
-  | "visual"
-  | "studio"
-  | "contact"
-  | "products"
-  | "content"
-  | "split"
-  | "cards"
-  | "stats"
-  | "faq"
-  | "testimonials"
-  | "services"
-  | "gallery"
-  | "media"
-  | "cta";
-
-const defaultMackSections: Array<Pick<SiteSection, "id" | "label" | "type" | "visible" | "source" | "content">> =
-  [
-    {
-      id: "home-hero",
-      label: "Hero",
-      type: "hero",
-      visible: true,
-      source: { kind: "manual" },
-      content: {},
-    },
-    {
-      id: "home-software",
-      label: "Software",
-      type: "projects",
-      visible: true,
-      source: { kind: "manual" },
-      content: { templateKind: "software" },
-    },
-    {
-      id: "home-clothing",
-      label: "Clothing",
-      type: "projects",
-      visible: true,
-      source: { kind: "manual" },
-      content: { templateKind: "clothing" },
-    },
-    {
-      id: "home-visual",
-      label: "Visual",
-      type: "gallery",
-      visible: true,
-      source: { kind: "manual" },
-      content: { templateKind: "visual" },
-    },
-    {
-      id: "home-studio",
-      label: "Studio",
-      type: "media",
-      visible: true,
-      source: { kind: "manual" },
-      content: { templateKind: "studio" },
-    },
-    {
-      id: "home-contact",
-      label: "Contact",
-      type: "contact",
-      visible: true,
-      source: { kind: "manual" },
-      content: {},
-    },
-  ];
-
-function getTemplateKind(section: SiteSection): MackSectionKind {
-  const templateKind = section.content.templateKind;
-  if (
-    templateKind === "software" ||
-    templateKind === "clothing" ||
-    templateKind === "visual" ||
-    templateKind === "studio"
-  ) {
-    return templateKind;
-  }
-
-  if (section.type === "hero") return "hero";
-  if (section.type === "products") return "products";
-  if (section.type === "services") return "services";
-  if (section.type === "gallery") return "gallery";
-  if (section.type === "media") return "media";
-  if (section.type === "cta") return "cta";
-  if (section.type === "content") return "content";
-  if (section.type === "split") return "split";
-  if (section.type === "cards") return "cards";
-  if (section.type === "stats") return "stats";
-  if (section.type === "faq") return "faq";
-  if (section.type === "testimonials") return "testimonials";
-  if (section.type === "contact") return "contact";
-
-  return section.label.trim().toLowerCase() === "software"
-    ? "software"
-    : "content";
-}
-
-function isLowerWorkKind(kind: MackSectionKind) {
-  return kind === "clothing" || kind === "visual" || kind === "studio";
-}
+})();
 
 function readContentString(
   section: SiteSection | undefined,
@@ -947,32 +672,286 @@ function sectionWidthClass(section: SiteSection | undefined) {
   return "max-w-[620px]";
 }
 
-function sectionPaddingClass(section: SiteSection | undefined) {
-  if (section?.layout?.spacing === "compact") return "py-5";
-  if (section?.layout?.spacing === "spacious") return "py-12";
-  return "py-[var(--site-section-y)]";
+function sectionPaddingClass(
+  section: SiteSection | undefined,
+) {
+  const size =
+    section?.layout?.size ??
+    "default";
+
+  if (size === "compact") {
+    return "py-8";
+  }
+
+  if (size === "standard") {
+    return "py-12 md:py-16";
+  }
+
+  if (size === "large") {
+    return "py-20 md:py-24 lg:py-28";
+  }
+
+  const top =
+    section?.layout?.paddingTop;
+
+  const bottom =
+    section?.layout?.paddingBottom;
+
+  const resolvePadding = (
+    side: "top" | "bottom",
+    value:
+      | "none"
+      | "small"
+      | "medium"
+      | "large"
+      | "xlarge"
+      | undefined,
+  ) => {
+    const prefix =
+      side === "top" ? "pt" : "pb";
+
+    if (value === "none")
+      return `${prefix}-0`;
+
+    if (value === "small")
+      return `${prefix}-4`;
+
+    if (value === "medium")
+      return `${prefix}-8`;
+
+    if (value === "large")
+      return `${prefix}-12`;
+
+    if (value === "xlarge")
+      return `${prefix}-16`;
+
+    if (
+      section?.layout?.spacing ===
+      "compact"
+    ) {
+      return `${prefix}-5`;
+    }
+
+    if (
+      section?.layout?.spacing ===
+      "spacious"
+    ) {
+      return `${prefix}-12`;
+    }
+
+    return `${prefix}-[var(--site-section-y)]`;
+  };
+
+  return [
+    resolvePadding("top", top),
+    resolvePadding(
+      "bottom",
+      bottom,
+    ),
+  ].join(" ");
 }
 
-function sectionBackgroundClass(section: SiteSection | undefined) {
-  if (section?.style?.background === "plain") {
-    return "bg-[var(--site-surface)]";
+function cardsContentWidthStyle(section: SiteSection) {
+  const contentWidth =
+    section.layout?.contentWidth;
+
+  if (
+    typeof contentWidth === "number" &&
+    Number.isFinite(contentWidth)
+  ) {
+    return {
+      maxWidth: `${Math.max(320, contentWidth)}px`,
+    } satisfies CSSProperties;
+  }
+
+  const width =
+    section.layout?.width ?? "wide";
+
+  if (width === "narrow") {
+    return {
+      maxWidth: "900px",
+    } satisfies CSSProperties;
+  }
+
+  if (width === "normal") {
+    return {
+      maxWidth: "1180px",
+    } satisfies CSSProperties;
+  }
+
+  if (width === "full") {
+    return {
+      maxWidth: "min(100%, 1680px)",
+    } satisfies CSSProperties;
+  }
+
+  return {
+    maxWidth: "var(--site-page-width)",
+  } satisfies CSSProperties;
+}
+
+function cardsSectionStyle(section: SiteSection) {
+  const mode =
+    section.layout?.heightMode ?? "auto";
+
+  if (mode === "minimum") {
+    return {
+      minHeight: `${Math.max(
+        0,
+        section.layout?.minHeight ?? 560,
+      )}px`,
+    } satisfies CSSProperties;
+  }
+
+  if (mode === "screen") {
+    return {
+      minHeight: "100svh",
+      display: "flex",
+      alignItems: "center",
+    } satisfies CSSProperties;
+  }
+
+  return undefined;
+}
+
+function cardsContainerStyle(section: SiteSection) {
+  const style: CSSProperties =
+    cardsContentWidthStyle(section);
+  const layout = section.layout;
+
+  if (!layout) return style;
+
+  if (
+    typeof layout.paddingTopPx ===
+      "number" &&
+    Number.isFinite(
+      layout.paddingTopPx,
+    )
+  ) {
+    style.paddingTop = `${Math.max(
+      0,
+      layout.paddingTopPx,
+    )}px`;
   }
 
   if (
+    typeof layout.paddingRightPx ===
+      "number" &&
+    Number.isFinite(
+      layout.paddingRightPx,
+    )
+  ) {
+    style.paddingRight = `${Math.max(
+      0,
+      layout.paddingRightPx,
+    )}px`;
+  }
+
+  if (
+    typeof layout.paddingBottomPx ===
+      "number" &&
+    Number.isFinite(
+      layout.paddingBottomPx,
+    )
+  ) {
+    style.paddingBottom = `${Math.max(
+      0,
+      layout.paddingBottomPx,
+    )}px`;
+  }
+
+  if (
+    typeof layout.paddingLeftPx ===
+      "number" &&
+    Number.isFinite(
+      layout.paddingLeftPx,
+    )
+  ) {
+    style.paddingLeft = `${Math.max(
+      0,
+      layout.paddingLeftPx,
+    )}px`;
+  }
+
+  return style;
+}
+
+function cardsGridStyle(section: SiteSection) {
+  const gap = section.layout?.gap;
+
+  if (
+    typeof gap !== "number" ||
+    !Number.isFinite(gap)
+  ) {
+    return undefined;
+  }
+
+  return {
+    gap: `${Math.max(0, gap)}px`,
+  } satisfies CSSProperties;
+}
+
+function sectionDividerClass(
+  section: SiteSection | undefined,
+) {
+  const divider =
+    section?.style?.divider ??
+    "none";
+
+  if (divider === "none") {
+    return "";
+  }
+
+  const strength =
+    section?.style?.dividerStrength ??
+    "hairline";
+
+  const borderColor =
+    strength === "strong"
+      ? "border-[var(--site-border-strong)]"
+      : "border-[var(--site-border)]";
+
+  if (divider === "top") {
+    return `border-t ${borderColor}`;
+  }
+
+  if (divider === "bottom") {
+    return `border-b ${borderColor}`;
+  }
+
+  return `border-y ${borderColor}`;
+}
+
+function sectionBackgroundClass(
+  section: SiteSection | undefined,
+) {
+  let background = "";
+
+  if (
+    section?.style?.background === "plain"
+  ) {
+    background =
+      "bg-[var(--site-surface)]";
+  } else if (
     section?.style?.background === "dark" ||
     section?.style?.background === "contrast"
   ) {
-    return "bg-[var(--site-surface-strong)]";
-  }
-
-  if (
+    background =
+      "bg-[var(--site-surface-strong)]";
+  } else if (
     section?.style?.background === "muted" ||
     section?.style?.muted
   ) {
-    return "bg-[var(--site-surface-muted)]";
+    background =
+      "bg-[var(--site-surface-muted)]";
   }
 
-  return "";
+  return [
+    background,
+    sectionDividerClass(section),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function sectionVariant(section: SiteSection | undefined, fallback: string) {
@@ -980,6 +959,74 @@ function sectionVariant(section: SiteSection | undefined, fallback: string) {
   return typeof variant === "string" && variant.length > 0
     ? variant
     : fallback;
+}
+
+function HeroInlineMedia({
+  section,
+  editorContext,
+}: {
+  section?: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
+  const mediaUrl =
+    readContentString(
+      section,
+      "mediaUrl",
+      heroCover,
+    );
+
+  const mediaAlt =
+    readContentString(
+      section,
+      "mediaAlt",
+    );
+
+  const mediaFit =
+    readContentString(
+      section,
+      "mediaFit",
+    ) === "cover"
+      ? "cover"
+      : "contain";
+
+  return (
+    <div
+      data-creator-editor-node={
+        editorContext.editorPreview
+          ? "media"
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorNodeClick(
+          event,
+          editorContext,
+          section?.id,
+          "media",
+        )
+      }
+      className={`relative aspect-[16/9] overflow-hidden rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface-strong)] ${editorNodeClass(
+        editorContext,
+        section?.id,
+        "media",
+      )}`}
+    >
+      {mediaUrl ? (
+        <img
+          src={mediaUrl}
+          alt={mediaAlt}
+          className={`absolute inset-0 h-full w-full ${
+            mediaFit === "cover"
+              ? "object-cover"
+              : "object-contain"
+          }`}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
+          Add media
+        </div>
+      )}
+    </div>
+  );
 }
 
 function HeroSection({
@@ -1031,7 +1078,7 @@ function HeroSection({
     <section
       data-creator-editor-section={editorContext.editorPreview ? section?.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
-      className={`relative overflow-hidden border-b border-white/[0.08] ${
+      className={`relative overflow-hidden ${
         minimal ? "" : "lg:min-h-[410px]"
       } ${sectionBackgroundClass(
         section,
@@ -1040,11 +1087,11 @@ function HeroSection({
       <div
         className={`relative mx-auto max-w-[var(--site-page-width)] ${
           centered
-            ? "px-5 py-12 text-center sm:px-8 lg:px-[58px] lg:py-16"
+            ? "px-[var(--site-page-x)] py-[var(--site-section-y)] text-center"
             : editorial
-            ? "grid gap-8 px-5 py-10 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-[58px] lg:py-14"
+            ? "grid gap-8 px-[var(--site-page-x)] py-[var(--site-section-y)] lg:grid-cols-[1.1fr_0.9fr]"
             : minimal
-            ? "px-5 py-8 sm:px-8 lg:px-[58px]"
+            ? "px-[var(--site-page-x)] py-[var(--site-section-y)]"
             : "h-full"
         }`}
       >
@@ -1063,7 +1110,7 @@ function HeroSection({
               ? "min-h-[300px] max-w-[860px]"
               : minimal
               ? "max-w-[760px]"
-              : "min-h-[360px] px-5 py-10 sm:px-8 lg:h-[410px] lg:min-h-0 lg:w-[31%] lg:px-[58px] lg:py-0"
+              : "min-h-[360px] px-[var(--site-page-x)] py-[var(--site-section-y)] lg:h-[410px] lg:min-h-0 lg:w-[31%] lg:py-0"
           }`}
         >
           <div
@@ -1080,7 +1127,7 @@ function HeroSection({
               sectionId={section?.id}
               node="text"
               editorContext={editorContext}
-              className="text-[7px] font-medium uppercase tracking-[0.38em] text-white/38"
+              className="text-[7px] font-medium uppercase tracking-[0.38em] text-[var(--site-text-subtle)]"
             />
 
             <InlineEditableText
@@ -1090,7 +1137,7 @@ function HeroSection({
               sectionId={section?.id}
               node="text"
               editorContext={editorContext}
-              className={`mt-4 whitespace-pre-line leading-[0.93] tracking-[-0.065em] text-white/95 ${
+              className={`mt-4 whitespace-pre-line leading-[0.93] tracking-[-0.065em] text-[var(--site-text)] ${
                 editorial
                   ? "text-[clamp(3.5rem,7vw,7.5rem)]"
                   : minimal
@@ -1123,7 +1170,7 @@ function HeroSection({
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section?.id, "button")
             }
-            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
+            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-[var(--site-border-strong)] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
               centered ? "mx-auto" : ""
             } ${editorNodeClass(editorContext, section?.id, "button")}`}
           >
@@ -1139,277 +1186,21 @@ function HeroSection({
         </div>
 
         {minimal ? null : (
-        <div
-          className={`${
-            centered
-              ? "mx-auto mt-8 max-w-[880px]"
-              : editorial
-              ? "self-center"
-              : "px-5 pb-7 lg:hidden"
-          }`}
-        >
-          <div className="relative aspect-[16/9] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
-            <Image
-              src={scheduleImage}
-              alt="CREATOR schedule"
-              fill
-              priority
-              sizes="100vw"
-              className="object-cover"
+          <div
+            className={
+              centered
+                ? "mx-auto mt-8 w-full max-w-[980px]"
+                : editorial
+                ? "self-center"
+                : "px-[var(--site-page-x)] pb-[var(--site-section-y)] lg:hidden"
+            }
+          >
+            <HeroInlineMedia
+              section={section}
+              editorContext={editorContext}
             />
           </div>
-
-          <div className="mt-3 grid grid-cols-[0.58fr_1.42fr] gap-3">
-            <div className="relative aspect-[568/1220] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
-              <Image
-                src={commandMobile}
-                alt="CREATOR mobile dashboard"
-                fill
-                sizes="35vw"
-                className="object-cover"
-              />
-            </div>
-
-            <div className="relative min-h-[180px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]">
-              <Image
-                src={ironPrairieImage}
-                alt="Iron Prairie Logistics"
-                fill
-                sizes="65vw"
-                className="object-cover"
-              />
-            </div>
-          </div>
-        </div>
         )}
-      </div>
-    </section>
-  );
-}
-
-function SoftwareSection({
-  site,
-  section,
-  editorContext,
-}: {
-  site: PortfolioSiteData;
-  section: SiteSection;
-  editorContext: EditorSelectionContext;
-}) {
-  const creator =
-    site.software.find((project) => project.slug === "creator") ??
-    site.software[0];
-
-  const ironPrairie =
-    site.software.find((project) => project.slug === "small-business-sites") ??
-    site.software[1];
-
-  return (
-    <section
-      id="software"
-      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
-      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
-      className={`scroll-mt-16 border-b border-white/[0.08] ${editorSectionClass(
-        editorContext,
-        section.id,
-      )}`}
-    >
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
-        <SectionRule number="01" label="Software" />
-
-        <div className="grid overflow-hidden border-x border-t border-white/[0.08] lg:h-[165px] lg:grid-cols-2">
-          <div className="overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r">
-            <CreatorCard project={creator} handle={site.handle} />
-          </div>
-
-          <div className="overflow-hidden">
-            <IronPrairieCard project={ironPrairie} handle={site.handle} />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LowerWorkSection({
-  site,
-  sections,
-  editorContext,
-}: {
-  site: PortfolioSiteData;
-  sections: SiteSection[];
-  editorContext: EditorSelectionContext;
-}) {
-  const kinds = sections.map(getTemplateKind);
-  const visibleKinds = kinds.filter(isLowerWorkKind);
-  if (visibleKinds.length === 0) return null;
-  const clothingSection = sections.find(
-    (section) => getTemplateKind(section) === "clothing",
-  );
-  const visualSection = sections.find(
-    (section) => getTemplateKind(section) === "visual",
-  );
-  const studioSection = sections.find(
-    (section) => getTemplateKind(section) === "studio",
-  );
-
-  return (
-    <section className="border-b border-white/[0.08]">
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
-        <div className="grid lg:h-[164px] lg:grid-cols-[1.28fr_1.28fr_0.82fr_0.82fr]">
-          {visibleKinds.includes("clothing") ? (
-            <>
-              <div
-                id="clothing"
-                data-creator-editor-section={
-                  editorContext.editorPreview ? clothingSection?.id : undefined
-                }
-                onClick={(event) =>
-                  handleEditorSectionClick(
-                    event,
-                    editorContext,
-                    clothingSection?.id,
-                  )
-                }
-                className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
-                  editorContext,
-                  clothingSection?.id,
-                )}`}
-              >
-                <div className="h-[28px] px-0">
-                  <SectionRule number="03" label="Clothing" />
-                </div>
-
-                <div className="h-[136px]">
-                  {site.clothing[0] && (
-                    <ClothingCard
-                      project={site.clothing[0]}
-                      handle={site.handle}
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div
-                data-creator-editor-section={
-                  editorContext.editorPreview ? clothingSection?.id : undefined
-                }
-                onClick={(event) =>
-                  handleEditorSectionClick(
-                    event,
-                    editorContext,
-                    clothingSection?.id,
-                  )
-                }
-                className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
-                  editorContext,
-                  clothingSection?.id,
-                )}`}
-              >
-                <div className="h-[28px] border-b border-transparent" />
-
-                <div className="h-[136px]">
-                  {site.clothing[1] && (
-                    <ClothingCard
-                      project={site.clothing[1]}
-                      handle={site.handle}
-                    />
-                  )}
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          {visibleKinds.includes("visual") ? (
-            <div
-              id="visual"
-              data-creator-editor-section={
-                editorContext.editorPreview ? visualSection?.id : undefined
-              }
-              onClick={(event) =>
-                handleEditorSectionClick(event, editorContext, visualSection?.id)
-              }
-              className={`overflow-hidden border-b border-white/[0.08] lg:border-b-0 lg:border-r ${editorSectionClass(
-                editorContext,
-                visualSection?.id,
-              )}`}
-            >
-              <div className="h-[28px]">
-                <SectionRule number="04" label="Visual" />
-              </div>
-
-              <div className="grid h-[136px] grid-cols-[48%_52%]">
-                <div className="flex min-w-0 flex-col justify-between p-4">
-                  <div>
-                    <h3 className="text-[17px] tracking-[-0.04em] text-white/90">
-                      Visual Work
-                    </h3>
-                    <p className="mt-2 text-[8px] leading-[1.5] text-white/38">
-                      Designs, experiments, graphics, and creative exploration.
-                    </p>
-                  </div>
-
-                  <span className="text-[7px] uppercase tracking-[0.14em] text-white/55">
-                    View work →
-                  </span>
-                </div>
-
-                <PortfolioVisual
-                  kind={site.visual[0]?.visual ?? "visual-one"}
-                  className="h-full min-h-0 border-0 border-l border-white/[0.07]"
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {visibleKinds.includes("studio") ? (
-            <div
-              id="studio"
-              data-creator-editor-section={
-                editorContext.editorPreview ? studioSection?.id : undefined
-              }
-              onClick={(event) =>
-                handleEditorSectionClick(event, editorContext, studioSection?.id)
-              }
-              className={`overflow-hidden ${editorSectionClass(
-                editorContext,
-                studioSection?.id,
-              )}`}
-            >
-              <div className="h-[28px]">
-                <SectionRule number="05" label="Studio" />
-              </div>
-
-              <Link
-                href={`/portfolio/${site.handle}/studio`}
-                className="grid h-[136px] grid-cols-[45%_55%] transition hover:bg-white/[0.012]"
-              >
-                <div className="flex min-w-0 flex-col justify-between p-4">
-                  <div>
-                    <h3 className="text-[17px] leading-[1.02] tracking-[-0.04em] text-white/90">
-                      The Creative
-                      <br />
-                      Setup
-                    </h3>
-
-                    <p className="mt-2 text-[8px] leading-[1.5] text-white/38">
-                      Tools, process, and environment behind the work.
-                    </p>
-                  </div>
-
-                  <span className="text-[7px] uppercase tracking-[0.14em] text-white/55">
-                    View studio →
-                  </span>
-                </div>
-
-                <PortfolioVisual
-                  kind={site.studio.visual}
-                  className="h-full min-h-0 border-0 border-l border-white/[0.07]"
-                />
-              </Link>
-            </div>
-          ) : null}
-        </div>
       </div>
     </section>
   );
@@ -1450,12 +1241,12 @@ function ProductsSection({
   const featuredMode = variant === "featured";
   const editorialMode = variant === "editorial";
   const gridClass = listMode
-    ? "grid gap-3 border-x border-t border-white/[0.08] p-3"
+    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3"
     : featuredMode
-    ? "grid gap-3 border-x border-t border-white/[0.08] p-3 lg:grid-cols-[1.45fr_1fr]"
+    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3 lg:grid-cols-[1.45fr_1fr]"
     : editorialMode
-    ? "grid gap-3 border-x border-t border-white/[0.08] p-3 md:grid-cols-2"
-    : `grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${
+    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3 md:grid-cols-2"
+    : `grid gap-3 border-x border-t border-[var(--site-border)] p-3 sm:grid-cols-2 ${
         columns === 4
           ? "lg:grid-cols-4"
           : columns === 2
@@ -1469,14 +1260,14 @@ function ProductsSection({
     <section
       data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
-      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-6 sm:px-8 lg:px-[58px]">
         <SectionRule number="02" label={heading} />
         {intro ? (
-          <p className="mb-4 max-w-[620px] text-[11px] leading-[1.6] text-white/45">
+          <p className="mb-4 max-w-[620px] text-[11px] leading-[1.6] text-[var(--site-text-subtle)]">
             {intro}
           </p>
         ) : null}
@@ -1491,7 +1282,7 @@ function ProductsSection({
               return (
                 <article
                   key={product.id}
-                  className={`grid overflow-hidden border border-white/[0.08] bg-white/[0.018] ${
+                  className={`grid overflow-hidden border border-[var(--site-border)] bg-white/[0.018] ${
                     listMode
                       ? "min-h-[112px] sm:grid-cols-[180px_1fr]"
                       : editorialMode
@@ -1525,7 +1316,7 @@ function ProductsSection({
                         }`}
                       />
                     ) : (
-                      <div className="flex h-full min-h-[112px] items-center justify-center text-[8px] uppercase tracking-[0.24em] text-white/28">
+                      <div className="flex h-full min-h-[112px] items-center justify-center text-[8px] uppercase tracking-[0.24em] text-[var(--site-text-faint)]">
                         No image
                       </div>
                     )}
@@ -1542,12 +1333,12 @@ function ProductsSection({
                   >
                     <div>
                       {showPrice ? (
-                        <p className="text-[7px] font-medium uppercase tracking-[0.25em] text-white/35">
+                        <p className="text-[7px] font-medium uppercase tracking-[0.25em] text-[var(--site-text-subtle)]">
                         {card.priceLabel}
                         </p>
                       ) : null}
                       <h3
-                        className={`mt-2 leading-tight tracking-[-0.04em] text-white/92 ${
+                        className={`mt-2 leading-tight tracking-[-0.04em] text-[var(--site-text)] ${
                           editorialMode || featured
                             ? "text-[28px]"
                             : "text-[18px]"
@@ -1557,7 +1348,7 @@ function ProductsSection({
                       </h3>
                       {showDescription && product.description ? (
                         <p
-                          className={`mt-2 leading-[1.55] text-white/42 ${
+                          className={`mt-2 leading-[1.55] text-[var(--site-text-subtle)] ${
                             editorialMode || featured
                               ? "text-[11px]"
                               : "line-clamp-3 text-[8.5px]"
@@ -1568,7 +1359,7 @@ function ProductsSection({
                       ) : null}
                     </div>
 
-                    <span className="mt-4 text-[7px] uppercase tracking-[0.14em] text-white/55">
+                    <span className="mt-4 text-[7px] uppercase tracking-[0.14em] text-[var(--site-text-muted)]">
                       Source {isServices ? "service" : "product"}
                     </span>
                   </div>
@@ -1577,7 +1368,7 @@ function ProductsSection({
             })}
           </div>
         ) : (
-          <div className="border border-dashed border-white/[0.12] px-4 py-8 text-center text-[10px] uppercase tracking-[0.18em] text-white/35">
+          <div className="border border-dashed border-[var(--site-border-strong)] px-4 py-8 text-center text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
             Select Source {listingType} listings to preview this section
           </div>
         )}
@@ -1604,12 +1395,29 @@ function CardsSection({
     "heading",
     section.label,
   );
-  const intro = readContentString(section, "intro");
-  const items = readCardItems(section);
-  const variant = sectionVariant(section, "grid");
-  const columns = section.layout?.columns ?? 3;
 
-  if (items.length === 0 && !editorPreview) {
+  const intro =
+    readContentString(
+      section,
+      "intro",
+    );
+
+  const items =
+    readCardItems(section);
+
+  const variant =
+    sectionVariant(
+      section,
+      "grid",
+    );
+
+  const columns =
+    section.layout?.columns ?? 3;
+
+  if (
+    items.length === 0 &&
+    !editorPreview
+  ) {
     return null;
   }
 
@@ -1617,8 +1425,15 @@ function CardsSection({
     columns === 4
       ? "lg:grid-cols-4"
       : columns === 2
-      ? "lg:grid-cols-2"
-      : "lg:grid-cols-3";
+        ? "lg:grid-cols-2"
+        : "lg:grid-cols-3";
+
+  const sectionStyle =
+    cardsSectionStyle(section);
+  const containerStyle =
+    cardsContainerStyle(section);
+  const gridStyle =
+    cardsGridStyle(section);
 
   return (
     <section
@@ -1634,17 +1449,19 @@ function CardsSection({
           section.id,
         )
       }
-      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
         editorContext,
         section.id,
       )}`}
+      style={sectionStyle}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto w-full px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
+        style={containerStyle}
       >
         <div
           data-creator-editor-node={
@@ -1660,7 +1477,7 @@ function CardsSection({
               "text",
             )
           }
-          className={`mb-5 ${editorNodeClass(
+          className={`mb-8 md:mb-10 ${editorNodeClass(
             editorContext,
             section.id,
             "text",
@@ -1672,8 +1489,10 @@ function CardsSection({
             field="heading"
             sectionId={section.id}
             node="text"
-            editorContext={editorContext}
-            className="text-[clamp(2rem,4vw,3.75rem)] leading-[0.95] tracking-[-0.055em] text-white/92"
+            editorContext={
+              editorContext
+            }
+            className="max-w-[1000px] text-[clamp(2.75rem,5.5vw,5.75rem)] leading-[0.9] tracking-[-0.065em] text-[var(--site-text)]"
           />
 
           {intro ? (
@@ -1681,11 +1500,15 @@ function CardsSection({
               as="p"
               value={intro}
               field="intro"
-              sectionId={section.id}
+              sectionId={
+                section.id
+              }
               node="text"
-              editorContext={editorContext}
+              editorContext={
+                editorContext
+              }
               multiline
-              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+              className="mt-5 max-w-[680px] text-[13px] leading-[1.7] text-[var(--site-text-muted)]"
             />
           ) : null}
         </div>
@@ -1694,130 +1517,201 @@ function CardsSection({
           <div
             className={
               variant === "list"
-                ? "grid gap-3"
-                : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
+                ? "grid gap-5"
+                : variant ===
+                    "featured"
+                  ? `grid gap-5 sm:grid-cols-2 ${gridColumns}`
+                  : `grid gap-5 sm:grid-cols-2 ${gridColumns}`
             }
+            style={gridStyle}
           >
-            {items.map((item, index) => {
-              const featured =
-                variant === "featured" && index === 0;
-              const resolvedLink = resolveSiteLinkHref(
-                siteDocument,
-                siteHandle,
-                {
-                  href: item.linkHref,
-                  pageId:
-                    item.linkPageId || undefined,
-                },
-              );
+            {items.map(
+              (item, index) => {
+                const featured =
+                  variant ===
+                    "featured" &&
+                  index === 0;
 
-              const cardBody = (
-                <>
-                  {item.imageUrl ? (
-                    <div
-                      className={`overflow-hidden bg-[var(--site-surface-strong)] ${
-                        variant === "list"
-                          ? "min-h-[170px]"
-                          : featured
-                          ? "aspect-[16/8]"
-                          : "aspect-[4/3]"
-                      }`}
-                    >
+                const resolvedLink =
+                  resolveSiteLinkHref(
+                    siteDocument,
+                    siteHandle,
+                    {
+                      href:
+                        item.linkHref,
+                      pageId:
+                        item.linkPageId ||
+                        undefined,
+                    },
+                  );
+
+                const hasImage =
+                  Boolean(
+                    item.imageUrl,
+                  );
+
+                const media = (
+                  <div
+                    className={
+                      variant ===
+                      "list"
+                        ? "relative min-h-[220px] overflow-hidden bg-[var(--site-surface-strong)] md:min-h-[260px]"
+                        : featured
+                          ? "relative min-h-[320px] overflow-hidden bg-[var(--site-surface-strong)] lg:min-h-[460px]"
+                          : "relative aspect-[16/10] overflow-hidden bg-[var(--site-surface-strong)]"
+                    }
+                  >
+                    {hasImage ? (
                       <img
-                        src={item.imageUrl}
-                        alt={item.imageAlt}
-                        className="h-full w-full object-cover"
+                        src={
+                          item.imageUrl
+                        }
+                        alt={
+                          item.imageAlt
+                        }
+                        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
                       />
-                    </div>
-                  ) : (
-                    <div
-                      className={`flex items-center justify-center bg-[var(--site-surface-strong)] text-[8px] uppercase tracking-[0.2em] text-white/20 ${
-                        variant === "list"
-                          ? "min-h-[130px]"
-                          : featured
-                          ? "aspect-[16/8]"
-                          : "aspect-[4/3]"
-                      }`}
-                    >
-                      No image
-                    </div>
-                  )}
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.22em] text-[var(--site-text-faint)]">
+                        Add media
+                      </div>
+                    )}
+                  </div>
+                );
 
-                  <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
+                const copy = (
+                  <div
+                    className={`flex min-w-0 flex-1 flex-col justify-between ${
+                      featured
+                        ? "p-7 sm:p-8 lg:p-10"
+                        : variant ===
+                            "list"
+                          ? "p-6 sm:p-7"
+                          : "p-5 sm:p-6"
+                    }`}
+                  >
                     <div>
                       {item.eyebrow ? (
-                        <p
-                          className="text-[7px] font-medium uppercase tracking-[0.25em]"
-                          style={{
-                            color:
-                              "var(--site-accent)",
-                          }}
-                        >
-                          {item.eyebrow}
+                        <p className="text-[8px] font-medium uppercase tracking-[0.24em] text-[var(--site-accent)]">
+                          {
+                            item.eyebrow
+                          }
                         </p>
                       ) : null}
 
                       <h3
-                        className={`mt-2 leading-[1.02] tracking-[-0.04em] text-white/92 ${
+                        className={`leading-[0.98] tracking-[-0.05em] text-[var(--site-text)] ${
                           featured
-                            ? "text-[30px]"
-                            : "text-[20px]"
+                            ? "mt-4 max-w-[720px] text-[clamp(2.25rem,4.5vw,4.75rem)]"
+                            : variant ===
+                                "list"
+                              ? "mt-3 text-[clamp(1.75rem,3vw,3rem)]"
+                              : "mt-3 text-[clamp(1.5rem,2.2vw,2.4rem)]"
                         }`}
                       >
-                        {item.title || "Untitled card"}
+                        {item.title ||
+                          "Untitled"}
                       </h3>
 
                       {item.body ? (
-                        <p className="mt-3 text-[10px] leading-[1.6] text-white/45">
-                          {item.body}
+                        <p
+                          className={`text-[var(--site-text-muted)] ${
+                            featured
+                              ? "mt-5 max-w-[620px] text-[13px] leading-[1.75]"
+                              : "mt-4 max-w-[520px] text-[11px] leading-[1.7]"
+                          }`}
+                        >
+                          {
+                            item.body
+                          }
                         </p>
                       ) : null}
                     </div>
 
                     {item.linkLabel ? (
-                      <span className="mt-5 text-[7px] font-medium uppercase tracking-[0.16em] text-[var(--site-accent)]">
-                        {item.linkLabel} →
+                      <span className="mt-8 inline-flex items-center gap-3 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)]">
+                        {
+                          item.linkLabel
+                        }
+                        <span>→</span>
                       </span>
                     ) : null}
                   </div>
-                </>
-              );
-
-              const cardClass = `overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface)] rounded-[var(--site-radius)] ${
-                variant === "list"
-                  ? "grid md:grid-cols-[240px_1fr]"
-                  : featured
-                  ? "md:col-span-2"
-                  : ""
-              }`;
-
-              if (
-                resolvedLink &&
-                resolvedLink !== "#"
-              ) {
-                return (
-                  <a
-                    key={item.id}
-                    href={resolvedLink}
-                    className={`${cardClass} transition hover:-translate-y-px`}
-                  >
-                    {cardBody}
-                  </a>
                 );
-              }
 
-              return (
-                <article
-                  key={item.id}
-                  className={cardClass}
-                >
-                  {cardBody}
-                </article>
-              );
-            })}
+                const body =
+                  variant ===
+                  "list" ? (
+                    <div className="grid min-h-[260px] md:grid-cols-[38%_62%]">
+                      {media}
+                      {copy}
+                    </div>
+                  ) : featured ? (
+                    <div className="grid min-h-[460px] lg:grid-cols-[1.18fr_0.82fr]">
+                      {media}
+                      {copy}
+                    </div>
+                  ) : (
+                    <div className="flex h-full flex-col">
+                      {media}
+                      {copy}
+                    </div>
+                  );
+
+                const className = [
+                  "group overflow-hidden rounded-[var(--site-radius)]",
+                  "border border-[var(--site-border)]",
+                  "bg-[var(--site-surface)]",
+                  "transition duration-200",
+                  resolvedLink &&
+                  resolvedLink !== "#"
+                    ? "hover:-translate-y-[2px] hover:border-[var(--site-border-strong)]"
+                    : "",
+                  featured
+                    ? "sm:col-span-2 lg:col-span-full"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
+                if (
+                  resolvedLink &&
+                  resolvedLink !== "#"
+                ) {
+                  return (
+                    <a
+                      key={
+                        item.id
+                      }
+                      href={
+                        resolvedLink
+                      }
+                      className={
+                        className
+                      }
+                    >
+                      {body}
+                    </a>
+                  );
+                }
+
+                return (
+                  <article
+                    key={
+                      item.id
+                    }
+                    className={
+                      className
+                    }
+                  >
+                    {body}
+                  </article>
+                );
+              },
+            )}
           </div>
         ) : (
-          <div className="flex min-h-[180px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+          <div className="flex min-h-[260px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[9px] uppercase tracking-[0.2em] text-[var(--site-text-faint)]">
             Add cards
           </div>
         )}
@@ -1926,7 +1820,7 @@ function SplitSection({
         sectionId={section.id}
         node="text"
         editorContext={editorContext}
-        className="mt-3 max-w-[720px] text-[clamp(2rem,4.4vw,4.5rem)] leading-[0.94] tracking-[-0.06em] text-white/92"
+        className="mt-3 max-w-[720px] text-[clamp(2rem,4.4vw,4.5rem)] leading-[0.94] tracking-[-0.06em] text-[var(--site-text)]"
       />
 
       {body ? (
@@ -1938,7 +1832,7 @@ function SplitSection({
           node="text"
           editorContext={editorContext}
           multiline
-          className="mt-5 max-w-[620px] text-[11px] leading-[1.75] text-white/48"
+          className="mt-5 max-w-[620px] text-[11px] leading-[1.75] text-[var(--site-text-muted)]"
         />
       ) : null}
 
@@ -2009,7 +1903,7 @@ function SplitSection({
           }`}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.2em] text-white/25">
+        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.2em] text-[var(--site-text-faint)]">
           Add media
         </div>
       )}
@@ -2030,7 +1924,7 @@ function SplitSection({
           section.id,
         )
       }
-      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
         editorContext,
@@ -2038,7 +1932,7 @@ function SplitSection({
       )}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2117,7 +2011,7 @@ function StatsSection({
           section.id,
         )
       }
-      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
         editorContext,
@@ -2125,7 +2019,7 @@ function StatsSection({
       )}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2156,7 +2050,7 @@ function StatsSection({
             sectionId={section.id}
             node="text"
             editorContext={editorContext}
-            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-[var(--site-text)]"
           />
 
           {intro ? (
@@ -2168,7 +2062,7 @@ function StatsSection({
               node="text"
               editorContext={editorContext}
               multiline
-              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
             />
           ) : null}
         </div>
@@ -2203,7 +2097,7 @@ function StatsSection({
                 </p>
 
                 {item.label ? (
-                  <p className="mt-3 text-[9px] uppercase tracking-[0.16em] text-white/42">
+                  <p className="mt-3 text-[9px] uppercase tracking-[0.16em] text-[var(--site-text-subtle)]">
                     {item.label}
                   </p>
                 ) : null}
@@ -2211,7 +2105,7 @@ function StatsSection({
             ))}
           </div>
         ) : (
-          <div className="flex min-h-[140px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+          <div className="flex min-h-[140px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
             Add stats
           </div>
         )}
@@ -2259,7 +2153,7 @@ function FaqSection({
           section.id,
         )
       }
-      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
         editorContext,
@@ -2267,7 +2161,7 @@ function FaqSection({
       )}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2298,7 +2192,7 @@ function FaqSection({
             sectionId={section.id}
             node="text"
             editorContext={editorContext}
-            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-[var(--site-text)]"
           />
 
           {intro ? (
@@ -2310,7 +2204,7 @@ function FaqSection({
               node="text"
               editorContext={editorContext}
               multiline
-              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
             />
           ) : null}
         </div>
@@ -2329,9 +2223,9 @@ function FaqSection({
                   key={item.id}
                   className="group border-t border-[var(--site-border)] last:border-b"
                 >
-                  <summary className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-6 py-3 text-[13px] font-medium text-white/85 [&::-webkit-details-marker]:hidden">
+                  <summary className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-6 py-3 text-[13px] font-medium text-[var(--site-text)] [&::-webkit-details-marker]:hidden">
                     <span>{item.question}</span>
-                    <span className="text-[18px] font-light text-white/35 transition group-open:rotate-45">
+                    <span className="text-[18px] font-light text-[var(--site-text-subtle)] transition group-open:rotate-45">
                       +
                     </span>
                   </summary>
@@ -2351,7 +2245,7 @@ function FaqSection({
                       : "border-t py-5 last:border-b"
                   }`}
                 >
-                  <h3 className="text-[14px] font-medium tracking-[-0.02em] text-white/88">
+                  <h3 className="text-[14px] font-medium tracking-[-0.02em] text-[var(--site-text)]">
                     {item.question}
                   </h3>
                   {item.answer ? (
@@ -2364,7 +2258,7 @@ function FaqSection({
             )}
           </div>
         ) : (
-          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
             Add FAQ questions
           </div>
         )}
@@ -2417,7 +2311,7 @@ function TestimonialsSection({
           section.id,
         )
       }
-      className={`border-b border-[var(--site-border)] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
         editorContext,
@@ -2425,7 +2319,7 @@ function TestimonialsSection({
       )}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2456,7 +2350,7 @@ function TestimonialsSection({
             sectionId={section.id}
             node="text"
             editorContext={editorContext}
-            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-white/92"
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-[var(--site-text)]"
           />
 
           {intro ? (
@@ -2468,7 +2362,7 @@ function TestimonialsSection({
               node="text"
               editorContext={editorContext}
               multiline
-              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-white/48"
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
             />
           ) : null}
         </div>
@@ -2497,7 +2391,7 @@ function TestimonialsSection({
                   }`}
                 >
                   <p
-                    className={`leading-[1.45] tracking-[-0.025em] text-white/88 ${
+                    className={`leading-[1.45] tracking-[-0.025em] text-[var(--site-text)] ${
                       featured
                         ? "max-w-[900px] text-[clamp(1.8rem,3vw,3rem)]"
                         : "text-[18px]"
@@ -2511,7 +2405,7 @@ function TestimonialsSection({
                       {item.name}
                     </p>
                     {item.role ? (
-                      <p className="mt-1 text-[9px] text-white/35">
+                      <p className="mt-1 text-[9px] text-[var(--site-text-subtle)]">
                         {item.role}
                       </p>
                     ) : null}
@@ -2521,10 +2415,187 @@ function TestimonialsSection({
             })}
           </div>
         ) : (
-          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-white/30">
+          <div className="flex min-h-[150px] items-center justify-center rounded-[var(--site-radius)] border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
             Add testimonials
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function EmbedSection({
+  section,
+  editorPreview,
+  editorContext,
+}: {
+  section: SiteSection;
+  editorPreview: boolean;
+  editorContext: EditorSelectionContext;
+}) {
+  const heading = readContentString(
+    section,
+    "heading",
+    section.label,
+  );
+  const intro = readContentString(
+    section,
+    "intro",
+  );
+  const rawUrl = readContentString(
+    section,
+    "url",
+  );
+  const title =
+    readContentString(
+      section,
+      "title",
+      heading || "Embedded media",
+    ) || "Embedded media";
+
+  const embed =
+    resolveSiteEmbedUrl(rawUrl);
+
+  const variant = sectionVariant(
+    section,
+    "contained",
+  );
+
+  if (!embed && !editorPreview) {
+    return null;
+  }
+
+  const stageWidth =
+    variant === "wide"
+      ? "max-w-[var(--site-page-width)]"
+      : "max-w-[1100px]";
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-5 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            className="text-[clamp(2rem,4vw,3.5rem)] leading-[0.96] tracking-[-0.055em] text-[var(--site-text)]"
+          />
+
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={section.id}
+              node="text"
+              editorContext={editorContext}
+              multiline
+              className="mt-3 max-w-[620px] text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
+            />
+          ) : null}
+        </div>
+
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "media"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "media",
+            )
+          }
+          className={`mx-auto overflow-hidden rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface-strong)] ${stageWidth} ${editorNodeClass(
+            editorContext,
+            section.id,
+            "media",
+          )}`}
+        >
+          {embed?.kind === "video" ? (
+            <video
+              src={embed.src}
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-video w-full bg-black object-contain"
+            />
+          ) : embed?.kind === "iframe" ? (
+            <iframe
+              src={embed.src}
+              title={title}
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+              className={
+                embed.provider === "spotify"
+                  ? "h-[352px] w-full border-0"
+                  : "aspect-video w-full border-0"
+              }
+            />
+          ) : (
+            <div className="flex aspect-video items-center justify-center px-6 text-center">
+              <div>
+                <p className="text-[11px] font-medium text-[var(--site-text-muted)]">
+                  Add an embed URL
+                </p>
+                <p className="mt-2 text-[9px] leading-4 text-[var(--site-text-faint)]">
+                  YouTube, Vimeo, Spotify,
+                  MP4, WebM, OGG, or OGV
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -2553,12 +2624,12 @@ function StandaloneMediaSection({
       onClick={(event) =>
         handleEditorSectionClick(event, editorContext, section.id)
       }
-      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
-        className={`mx-auto px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )} ${
           variant === "wide"
@@ -2578,7 +2649,7 @@ function StandaloneMediaSection({
               "media",
             )
           }
-          className={`relative min-h-[220px] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)] ${editorNodeClass(
+          className={`relative min-h-[220px] overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface-strong)] ${editorNodeClass(
             editorContext,
             section.id,
             "media",
@@ -2595,7 +2666,7 @@ function StandaloneMediaSection({
               }`}
             />
           ) : (
-            <div className="flex min-h-[260px] items-center justify-center border border-dashed border-white/[0.08] text-[10px] uppercase tracking-[0.18em] text-white/30">
+            <div className="flex min-h-[260px] items-center justify-center border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
               Upload media
             </div>
           )}
@@ -2622,12 +2693,12 @@ function SimpleManualSection({
     <section
       data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
-      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2640,7 +2711,7 @@ function SimpleManualSection({
           }`}
         >
           <h2
-            className={`leading-none tracking-[-0.05em] text-white/92 ${
+            className={`leading-none tracking-[-0.05em] text-[var(--site-text)] ${
               split ? "text-[36px]" : "text-[28px]"
             }`}
           >
@@ -2648,7 +2719,7 @@ function SimpleManualSection({
           </h2>
           {body ? (
             <p
-              className={`text-[11px] leading-[1.65] text-white/48 ${
+              className={`text-[11px] leading-[1.65] text-[var(--site-text-muted)] ${
                 split ? "mt-1 max-w-[620px]" : "mt-3"
               }`}
             >
@@ -2691,7 +2762,7 @@ function GallerySection({
       onClick={(event) =>
         handleEditorSectionClick(event, editorContext, section.id)
       }
-      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
@@ -2718,12 +2789,12 @@ function GallerySection({
         >
           {items.length > 0 ? (
             <div
-              className={`grid gap-3 border-x border-t border-white/[0.08] p-3 sm:grid-cols-2 ${gridColumns}`}
+              className={`grid gap-3 border-x border-t border-[var(--site-border)] p-3 sm:grid-cols-2 ${gridColumns}`}
             >
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="relative aspect-[4/3] overflow-hidden border border-white/[0.08] bg-[var(--site-surface-strong)]"
+                  className="relative aspect-[4/3] overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface-strong)]"
                 >
                   <img
                     src={item.url}
@@ -2734,7 +2805,7 @@ function GallerySection({
               ))}
             </div>
           ) : (
-            <div className="flex min-h-[180px] items-center justify-center border border-dashed border-white/[0.12] text-[10px] uppercase tracking-[0.18em] text-white/35">
+            <div className="flex min-h-[180px] items-center justify-center border border-dashed border-[var(--site-border-strong)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
               Add gallery images
             </div>
           )}
@@ -2776,12 +2847,12 @@ function CtaSection({
     <section
       data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
-      className={`border-b border-white/[0.08] ${sectionBackgroundClass(
+      className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
-        className={`mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px] ${sectionPaddingClass(
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
@@ -2812,7 +2883,7 @@ function CtaSection({
               sectionId={section.id}
               node="text"
               editorContext={editorContext}
-              className={`leading-none tracking-[-0.055em] text-white/92 ${
+              className={`leading-none tracking-[-0.055em] text-[var(--site-text)] ${
                 minimal ? "text-[22px]" : "text-[32px]"
               }`}
             />
@@ -2825,7 +2896,7 @@ function CtaSection({
                 node="text"
                 editorContext={editorContext}
                 multiline
-                className="mt-3 text-[11px] leading-[1.65] text-white/48"
+                className="mt-3 text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
               />
             ) : null}
           </div>
@@ -2835,7 +2906,7 @@ function CtaSection({
             onClick={(event) =>
               handleEditorNodeClick(event, editorContext, section.id, "button")
             }
-            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-white/[0.18] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
+            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-[var(--site-border-strong)] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
               centered ? "mx-auto" : minimal ? "mt-0 shrink-0" : "mt-0 shrink-0"
             } ${editorNodeClass(editorContext, section.id, "button")}`}
           >
@@ -2865,6 +2936,15 @@ function ContactSection({
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
+  const [senderName, setSenderName] = useState("");
+  const [senderEmail, setSenderEmail] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitState, setSubmitState] = useState<
+    "idle" | "submitting" | "success" | "error"
+  >("idle");
+  const [submitError, setSubmitError] =
+    useState<string | null>(null);
+
   const heading = readContentString(
     section,
     "heading",
@@ -2875,9 +2955,28 @@ function ContactSection({
     "body",
     "Open to creative opportunities, collaborations, and interesting projects.",
   );
-  const label = readContentString(section, "buttonLabel", "Get in touch");
-  const href = readContentString(section, "buttonHref", "#contact");
-  const pageId = readContentString(section, "buttonPageId");
+
+  const formEnabled =
+    section?.content.formEnabled === true;
+
+  const label = readContentString(
+    section,
+    "buttonLabel",
+    formEnabled
+      ? "Send message"
+      : "Get in touch",
+  );
+
+  const href = readContentString(
+    section,
+    "buttonHref",
+    "#contact",
+  );
+  const pageId = readContentString(
+    section,
+    "buttonPageId",
+  );
+
   const resolvedHref = resolveSiteLinkHref(
     siteDocument,
     siteHandle,
@@ -2886,83 +2985,462 @@ function ContactSection({
       pageId: pageId || undefined,
     },
   );
-  const centered = sectionVariant(section, "standard") === "centered";
+
+  const nameLabel =
+    readContentString(
+      section,
+      "nameLabel",
+      "Name",
+    ) || "Name";
+
+  const emailLabel =
+    readContentString(
+      section,
+      "emailLabel",
+      "Email",
+    ) || "Email";
+
+  const messageLabel =
+    readContentString(
+      section,
+      "messageLabel",
+      "Message",
+    ) || "Message";
+
+  const successMessage =
+    readContentString(
+      section,
+      "successMessage",
+      "Thanks — your message was sent.",
+    ) || "Thanks — your message was sent.";
+
+  const centered =
+    sectionVariant(
+      section,
+      "standard",
+    ) === "centered";
+
+  async function submitInquiry(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (
+      editorContext.editorPreview ||
+      !section?.id ||
+      !formEnabled ||
+      submitState === "submitting"
+    ) {
+      return;
+    }
+
+    const formData = new FormData(
+      event.currentTarget,
+    );
+
+    const company =
+      formData.get("company");
+
+    setSubmitState("submitting");
+    setSubmitError(null);
+
+    try {
+      const response = await fetch(
+        `/api/site-builder/public/${encodeURIComponent(
+          siteHandle,
+        )}/inquiries`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            sectionId: section.id,
+            name: senderName,
+            email: senderEmail,
+            message,
+            company:
+              typeof company === "string"
+                ? company
+                : "",
+          }),
+        },
+      );
+
+      const payload = (await response
+        .json()
+        .catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ??
+            "Unable to send message.",
+        );
+      }
+
+      setSubmitState("success");
+      setSenderName("");
+      setSenderEmail("");
+      setMessage("");
+    } catch (error) {
+      setSubmitState("error");
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Unable to send message.",
+      );
+    }
+  }
+
+  if (!formEnabled) {
+    return (
+      <section
+        id="contact"
+        data-creator-editor-section={
+          editorContext.editorPreview
+            ? section?.id
+            : undefined
+        }
+        onClick={(event) =>
+          handleEditorSectionClick(
+            event,
+            editorContext,
+            section?.id,
+          )
+        }
+        className={editorSectionClass(
+          editorContext,
+          section?.id,
+        )}
+      >
+        <div className="mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)]">
+          <div
+            className={`grid items-center gap-4 border-b border-[var(--site-border)] ${
+              centered
+                ? "min-h-[180px] py-8 text-center"
+                : "min-h-[48px] lg:grid-cols-[210px_1fr_auto]"
+            }`}
+          >
+            <SectionRule
+              number="06"
+              label="Contact"
+            />
+
+            <div
+              data-creator-editor-node={
+                editorContext.editorPreview
+                  ? "text"
+                  : undefined
+              }
+              onClick={(event) =>
+                handleEditorNodeClick(
+                  event,
+                  editorContext,
+                  section?.id,
+                  "text",
+                )
+              }
+              className={`${
+                centered
+                  ? "mx-auto max-w-[620px]"
+                  : "flex items-baseline gap-7"
+              } ${editorNodeClass(
+                editorContext,
+                section?.id,
+                "text",
+              )}`}
+            >
+              <InlineEditableText
+                as="p"
+                value={heading}
+                field="heading"
+                sectionId={section?.id}
+                node="text"
+                editorContext={editorContext}
+                className="text-[13px] tracking-[-0.02em] text-[var(--site-text)]"
+              />
+
+              <InlineEditableText
+                as="p"
+                value={body}
+                field="body"
+                sectionId={section?.id}
+                node="text"
+                editorContext={editorContext}
+                multiline
+                className={`text-[var(--site-text-subtle)] ${
+                  centered
+                    ? "mt-3 text-[10px] leading-5"
+                    : "hidden text-[8px] xl:block"
+                }`}
+              />
+            </div>
+
+            <a
+              href={resolvedHref}
+              data-creator-editor-node={
+                editorContext.editorPreview
+                  ? "button"
+                  : undefined
+              }
+              onClick={(event) =>
+                handleEditorNodeClick(
+                  event,
+                  editorContext,
+                  section?.id,
+                  "button",
+                )
+              }
+              className={`inline-flex h-7 w-fit items-center gap-4 rounded-[var(--site-radius)] border border-[var(--site-border)] px-4 text-[7px] uppercase tracking-[0.17em] text-[var(--site-accent)] ${
+                centered ? "mx-auto" : ""
+              } ${editorNodeClass(
+                editorContext,
+                section?.id,
+                "button",
+              )}`}
+            >
+              <InlineEditableText
+                value={label}
+                field="buttonLabel"
+                sectionId={section?.id}
+                node="button"
+                editorContext={editorContext}
+              />
+              <span>→</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
       id="contact"
-      data-creator-editor-section={editorContext.editorPreview ? section?.id : undefined}
-      onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
-      className={editorSectionClass(editorContext, section?.id)}
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section?.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section?.id,
+        )
+      }
+      className={editorSectionClass(
+        editorContext,
+        section?.id,
+      )}
     >
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 sm:px-8 lg:px-[58px]">
+      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-[var(--site-section-y)] sm:px-8 lg:px-[58px]">
         <div
-          className={`grid items-center gap-4 border-b border-white/[0.08] ${
+          className={`grid gap-8 ${
             centered
-              ? "min-h-[180px] py-8 text-center"
-              : "min-h-[48px] lg:grid-cols-[210px_1fr_auto]"
+              ? "mx-auto max-w-[760px]"
+              : "lg:grid-cols-[0.85fr_1.15fr] lg:gap-14"
           }`}
         >
-          <SectionRule number="06" label="Contact" />
-
           <div
-            data-creator-editor-node={editorContext.editorPreview ? "text" : undefined}
-            onClick={(event) =>
-              handleEditorNodeClick(event, editorContext, section?.id, "text")
+            data-creator-editor-node={
+              editorContext.editorPreview
+                ? "text"
+                : undefined
             }
-            className={`${
-              centered
-                ? "mx-auto max-w-[620px]"
-                : "flex items-baseline gap-7"
-            } ${editorNodeClass(editorContext, section?.id, "text")}`}
+            onClick={(event) =>
+              handleEditorNodeClick(
+                event,
+                editorContext,
+                section?.id,
+                "text",
+              )
+            }
+            className={`${centered ? "text-center" : ""} ${editorNodeClass(
+              editorContext,
+              section?.id,
+              "text",
+            )}`}
           >
+            <SectionRule
+              number="06"
+              label="Contact"
+            />
+
             <InlineEditableText
-              as="p"
+              as="h2"
               value={heading}
               field="heading"
               sectionId={section?.id}
               node="text"
               editorContext={editorContext}
-              className="text-[13px] tracking-[-0.02em] text-white/80"
+              className="mt-6 text-[clamp(2.4rem,5vw,5rem)] leading-[0.93] tracking-[-0.06em] text-[var(--site-text)]"
             />
 
-            <InlineEditableText
-              as="p"
-              value={body}
-              field="body"
-              sectionId={section?.id}
-              node="text"
-              editorContext={editorContext}
-              multiline
-              className={`text-white/32 ${
-                centered
-                  ? "mt-3 text-[10px] leading-5"
-                  : "hidden text-[8px] xl:block"
-              }`}
-            />
+            {body ? (
+              <InlineEditableText
+                as="p"
+                value={body}
+                field="body"
+                sectionId={section?.id}
+                node="text"
+                editorContext={editorContext}
+                multiline
+                className={`mt-5 text-[11px] leading-[1.75] text-[var(--site-text-subtle)] ${
+                  centered
+                    ? "mx-auto max-w-[620px]"
+                    : "max-w-[520px]"
+                }`}
+              />
+            ) : null}
           </div>
 
-          <a
-            href={resolvedHref}
-            data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
-            onClick={(event) =>
-              handleEditorNodeClick(event, editorContext, section?.id, "button")
-            }
-            className={`inline-flex h-7 w-fit items-center gap-4 rounded-full border border-white/[0.17] px-4 text-[7px] uppercase tracking-[0.17em] text-[var(--site-accent)] ${
-              centered ? "mx-auto" : ""
-            } ${editorNodeClass(editorContext, section?.id, "button")}`}
+          <form
+            onSubmit={submitInquiry}
+            className="relative space-y-4 rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface)] p-5 sm:p-6"
           >
-            <InlineEditableText
-              value={label}
-              field="buttonLabel"
-              sectionId={section?.id}
-              node="button"
-              editorContext={editorContext}
-            />
-            <span>→</span>
-          </a>
-        </div>
+            <div
+              className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden"
+              aria-hidden="true"
+            >
+              <label>
+                Company
+                <input
+                  type="text"
+                  name="company"
+                  tabIndex={-1}
+                  autoComplete="off"
+                />
+              </label>
+            </div>
 
+            <label className="block">
+              <span className="text-[9px] font-medium uppercase tracking-[0.15em] text-[var(--site-text-subtle)]">
+                {nameLabel}
+              </span>
+              <input
+                name="name"
+                type="text"
+                required
+                maxLength={120}
+                autoComplete="name"
+                readOnly={
+                  editorContext.editorPreview
+                }
+                value={senderName}
+                onChange={(event) =>
+                  setSenderName(
+                    event.target.value,
+                  )
+                }
+                className="mt-2 h-10 w-full rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-bg)] px-3 text-[12px] text-[var(--site-text)] outline-none placeholder:text-[var(--site-text-faint)] focus:border-white/25"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-medium uppercase tracking-[0.15em] text-[var(--site-text-subtle)]">
+                {emailLabel}
+              </span>
+              <input
+                name="email"
+                type="email"
+                required
+                maxLength={254}
+                autoComplete="email"
+                readOnly={
+                  editorContext.editorPreview
+                }
+                value={senderEmail}
+                onChange={(event) =>
+                  setSenderEmail(
+                    event.target.value,
+                  )
+                }
+                className="mt-2 h-10 w-full rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-bg)] px-3 text-[12px] text-[var(--site-text)] outline-none placeholder:text-[var(--site-text-faint)] focus:border-white/25"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-medium uppercase tracking-[0.15em] text-[var(--site-text-subtle)]">
+                {messageLabel}
+              </span>
+              <textarea
+                name="message"
+                required
+                maxLength={5000}
+                rows={6}
+                readOnly={
+                  editorContext.editorPreview
+                }
+                value={message}
+                onChange={(event) =>
+                  setMessage(
+                    event.target.value,
+                  )
+                }
+                className="mt-2 w-full resize-y rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-bg)] px-3 py-3 text-[12px] leading-5 text-[var(--site-text)] outline-none placeholder:text-[var(--site-text-faint)] focus:border-white/25"
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={
+                submitState === "submitting"
+              }
+              data-creator-editor-node={
+                editorContext.editorPreview
+                  ? "button"
+                  : undefined
+              }
+              onClick={(event) => {
+                if (
+                  editorContext.editorPreview
+                ) {
+                  handleEditorNodeClick(
+                    event,
+                    editorContext,
+                    section?.id,
+                    "button",
+                  );
+                }
+              }}
+              className={`inline-flex h-10 items-center gap-4 rounded-[var(--site-radius)] border border-[var(--site-border)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/30 disabled:cursor-not-allowed disabled:opacity-50 ${editorNodeClass(
+                editorContext,
+                section?.id,
+                "button",
+              )}`}
+            >
+              {submitState === "submitting" ? (
+                <span>Sending…</span>
+              ) : (
+                <InlineEditableText
+                  value={label}
+                  field="buttonLabel"
+                  sectionId={section?.id}
+                  node="button"
+                  editorContext={editorContext}
+                />
+              )}
+              <span>→</span>
+            </button>
+
+            {submitState === "success" ? (
+              <p className="text-[11px] leading-5 text-[var(--site-accent)]">
+                {successMessage}
+              </p>
+            ) : null}
+
+            {submitState === "error" ? (
+              <p className="text-[11px] leading-5 text-red-200/80">
+                {submitError ??
+                  "Unable to send message."}
+              </p>
+            ) : null}
+          </form>
+        </div>
       </div>
     </section>
   );
@@ -2988,29 +3466,7 @@ function MackHomeSections({
 
   for (let index = 0; index < visibleSections.length; index += 1) {
     const section = visibleSections[index];
-    const kind = getTemplateKind(section);
-
-    if (isLowerWorkKind(kind)) {
-      const lowerSections: SiteSection[] = [section];
-
-      while (
-        visibleSections[index + 1] &&
-        isLowerWorkKind(getTemplateKind(visibleSections[index + 1]))
-      ) {
-        index += 1;
-        lowerSections.push(visibleSections[index]);
-      }
-
-      nodes.push(
-        <LowerWorkSection
-          key={`${section.id}-lower-work`}
-          site={site}
-          sections={lowerSections}
-          editorContext={editorContext}
-        />,
-      );
-      continue;
-    }
+    const kind = section.type;
 
     if (kind === "hero") {
       nodes.push(
@@ -3018,15 +3474,6 @@ function MackHomeSections({
           key={section.id}
           site={site}
           siteDocument={siteDocument}
-          section={section}
-          editorContext={editorContext}
-        />,
-      );
-    } else if (kind === "software") {
-      nodes.push(
-        <SoftwareSection
-          key={section.id}
-          site={site}
           section={section}
           editorContext={editorContext}
         />,
@@ -3128,6 +3575,15 @@ function MackHomeSections({
           editorContext={editorContext}
         />,
       );
+    } else if (kind === "embed") {
+      nodes.push(
+        <EmbedSection
+          key={section.id}
+          section={section}
+          editorPreview={editorPreview}
+          editorContext={editorContext}
+        />,
+      );
     } else if (kind === "media") {
       nodes.push(
         <StandaloneMediaSection
@@ -3174,6 +3630,11 @@ export default function PortfolioSite({
     theme: siteDocument?.theme,
   });
   const themeStyle = getSiteThemeStyle(themeConfig);
+  const visibleNavigation = headerConfig.navigation.filter(
+    (item) => item.visible,
+  );
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   const editorContext: EditorSelectionContext = {
     editorPreview,
     pageId: editorPageId,
@@ -3184,11 +3645,12 @@ export default function PortfolioSite({
 
   return (
     <div
+      data-site-theme-root
       style={themeStyle}
       className="min-h-screen bg-[var(--site-bg)] text-[var(--site-text)]"
     >
       <header className="sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl">
-        <div className="mx-auto flex h-[48px] max-w-[var(--site-page-width)] items-center justify-between px-5 sm:px-8 lg:px-[58px]">
+        <div className="mx-auto flex h-[48px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
           <Link
             href={`/portfolio/${site.handle}`}
             className="text-[10px] font-semibold tracking-[0.43em]"
@@ -3197,10 +3659,9 @@ export default function PortfolioSite({
             {headerConfig.brandLabel}
           </Link>
 
-          <nav className="hidden items-center gap-9 text-[9px] text-white/48 md:flex">
-            {headerConfig.navigation
-              .filter((item) => item.visible)
-              .map((item) => (
+          <div className="flex items-center gap-6">
+            <nav className="hidden items-center gap-9 text-[9px] text-[var(--site-text-muted)] md:flex">
+              {visibleNavigation.map((item) => (
                 <a
                   key={item.id}
                   href={resolveSiteNavigationHref(
@@ -3208,19 +3669,70 @@ export default function PortfolioSite({
                     site.handle,
                     item,
                   )}
-                  className="hover:text-white/82"
+                  className="transition hover:text-[var(--site-text)]"
                 >
                   {item.label}
                 </a>
               ))}
-          </nav>
+            </nav>
 
-          {headerConfig.tagline ? (
-            <p className="hidden text-[8px] text-white/40 xl:block">
-              • &nbsp; {headerConfig.tagline}
-            </p>
-          ) : null}
+            {headerConfig.tagline ? (
+              <p className="hidden text-[8px] text-[var(--site-text-subtle)] xl:block">
+                • &nbsp; {headerConfig.tagline}
+              </p>
+            ) : null}
+
+            {visibleNavigation.length > 0 ? (
+              <button
+                type="button"
+                aria-expanded={mobileNavOpen}
+                aria-controls="site-mobile-navigation"
+                onClick={() =>
+                  setMobileNavOpen((current) => !current)
+                }
+                className="text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-text-muted)] transition hover:text-[var(--site-text)] md:hidden"
+              >
+                {mobileNavOpen ? "Close" : "Menu"}
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {mobileNavOpen && visibleNavigation.length > 0 ? (
+          <nav
+            id="site-mobile-navigation"
+            className="border-t border-[var(--site-border)] md:hidden"
+          >
+            <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-3 sm:px-8">
+              {visibleNavigation.map((item) => (
+                <a
+                  key={item.id}
+                  href={resolveSiteNavigationHref(
+                    siteDocument,
+                    site.handle,
+                    item,
+                  )}
+                  onClick={(event) => {
+                    if (editorPreview) {
+                      event.preventDefault();
+                    }
+
+                    setMobileNavOpen(false);
+                  }}
+                  className="flex min-h-10 items-center border-b border-[var(--site-border)] text-[11px] text-[var(--site-text-muted)] transition last:border-b-0 hover:text-[var(--site-text)]"
+                >
+                  {item.label}
+                </a>
+              ))}
+
+              {headerConfig.tagline ? (
+                <p className="pt-3 text-[8px] leading-4 text-[var(--site-text-subtle)]">
+                  {headerConfig.tagline}
+                </p>
+              ) : null}
+            </div>
+          </nav>
+        ) : null}
       </header>
 
       <main id="work">
@@ -3235,7 +3747,7 @@ export default function PortfolioSite({
       </main>
 
       <footer className="border-t border-[var(--site-border)]">
-        <div className="mx-auto flex min-h-[42px] max-w-[var(--site-page-width)] items-center justify-between gap-4 px-5 sm:px-8 lg:px-[58px]">
+        <div className="mx-auto flex min-h-[42px] max-w-[var(--site-page-width)] items-center justify-between gap-4 px-[var(--site-page-x)]">
           <p
             className="text-[8px] font-semibold tracking-[0.42em]"
             style={{ color: "var(--site-accent)" }}
@@ -3244,7 +3756,7 @@ export default function PortfolioSite({
           </p>
 
           {footerConfig.tagline ? (
-            <p className="text-right text-[6px] uppercase tracking-[0.33em] text-white/17">
+            <p className="text-right text-[6px] uppercase tracking-[0.33em] text-[var(--site-text-faint)]">
               {footerConfig.tagline}
             </p>
           ) : null}

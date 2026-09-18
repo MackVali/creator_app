@@ -85,6 +85,34 @@ function isSiteFooterConfig(value: unknown) {
   );
 }
 
+function isHexColor(value: unknown) {
+  return (
+    isString(value) &&
+    /^#[0-9a-fA-F]{6}$/.test(value)
+  );
+}
+
+function isSiteThemeColorOverrides(
+  value: unknown,
+) {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+
+  const allowed = new Set([
+    "background",
+    "surface",
+    "text",
+    "mutedText",
+    "border",
+  ]);
+
+  return Object.entries(value).every(
+    ([key, color]) =>
+      allowed.has(key) &&
+      isHexColor(color),
+  );
+}
+
 function isSiteThemeConfig(value: unknown) {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
@@ -94,10 +122,27 @@ function isSiteThemeConfig(value: unknown) {
       value.palette === "graphite" ||
       value.palette === "ink" ||
       value.palette === "slate" ||
-      value.palette === "warm"
+      value.palette === "warm" ||
+      value.palette === "paper"
     ) &&
-    isString(value.accentColor) &&
-    /^#[0-9a-fA-F]{6}$/.test(value.accentColor) &&
+    isHexColor(value.accentColor) &&
+    isSiteThemeColorOverrides(value.colors) &&
+    (
+      value.sectionSpacing === undefined ||
+      (
+        typeof value.sectionSpacing === "number" &&
+        value.sectionSpacing >= 8 &&
+        value.sectionSpacing <= 160
+      )
+    ) &&
+    (
+      value.pagePadding === undefined ||
+      (
+        typeof value.pagePadding === "number" &&
+        value.pagePadding >= 12 &&
+        value.pagePadding <= 120
+      )
+    ) &&
     (
       value.typography === "sans" ||
       value.typography === "serif" ||
@@ -178,7 +223,8 @@ function isSiteSectionLayoutConfig(
     value.width !== undefined &&
     value.width !== "narrow" &&
     value.width !== "normal" &&
-    value.width !== "wide"
+    value.width !== "wide" &&
+    value.width !== "full"
   ) {
     return false;
   }
@@ -201,6 +247,34 @@ function isSiteSectionLayoutConfig(
     return false;
   }
 
+  for (const key of [
+    "paddingTop",
+    "paddingBottom",
+  ]) {
+    if (
+      key in value &&
+      value[key] !== undefined &&
+      value[key] !== "none" &&
+      value[key] !== "small" &&
+      value[key] !== "medium" &&
+      value[key] !== "large" &&
+      value[key] !== "xlarge"
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    "size" in value &&
+    value.size !== undefined &&
+    value.size !== "default" &&
+    value.size !== "compact" &&
+    value.size !== "standard" &&
+    value.size !== "large"
+  ) {
+    return false;
+  }
+
   return true;
 }
 
@@ -218,6 +292,26 @@ function isSiteSectionStyleConfig(
     value.background !== "dark" &&
     value.background !== "muted" &&
     value.background !== "contrast"
+  ) {
+    return false;
+  }
+
+  if (
+    "divider" in value &&
+    value.divider !== undefined &&
+    value.divider !== "none" &&
+    value.divider !== "top" &&
+    value.divider !== "bottom" &&
+    value.divider !== "both"
+  ) {
+    return false;
+  }
+
+  if (
+    "dividerStrength" in value &&
+    value.dividerStrength !== undefined &&
+    value.dividerStrength !== "hairline" &&
+    value.dividerStrength !== "strong"
   ) {
     return false;
   }
