@@ -1,4 +1,7 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+
+import { getSupabaseServer } from "@/lib/supabase";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(
@@ -10,14 +13,13 @@ export async function GET(
 
   if (!username) {
     return NextResponse.json(
-      { error: "Username is required to load friend stats." }, 
+      { error: "Username is required to load friend stats." },
       { status: 400 },
     );
   }
 
-  const supabase = createAdminClient();
-
-  if (!supabase) {
+  const admin = createAdminClient();
+  if (!admin) {
     if (process.env.NODE_ENV !== "production") {
       console.warn("[profile/friend-stats] admin client missing; responding with zero counts.");
     }
@@ -27,28 +29,56 @@ export async function GET(
     );
   }
 
-  const { data: targetId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: username },
-  );
+  const cookieStore = await cookies();
+  const serverSupabase = getSupabaseServer({
+    get: (name) => cookieStore.get(name),
+  });
+  let viewerId: string | null = null;
 
-  if (lookupError || !targetId) {
+  if (serverSupabase) {
+    const {
+      data: { user },
+      error: authError,
+    } = await serverSupabase.auth.getUser();
+
+    if (authError) {
+      console.error("Failed to resolve friend-stats viewer", authError);
+    }
+
+    viewerId = user?.id ?? null;
+  }
+
+  const { data: targetProfile, error: lookupError } = await admin
+    .from("profiles")
+    .select("user_id, is_private")
+    .ilike("username", username)
+    .maybeSingle();
+
+  if (lookupError) {
     console.error("Failed to resolve profile id", lookupError);
+    return NextResponse.json(
+      { error: "Unable to load friend stats." },
+      { status: 500 },
+    );
+  }
+
+  const targetId = targetProfile?.user_id ?? null;
+  if (
+    !targetId ||
+    (targetProfile?.is_private === true && viewerId !== targetId)
+  ) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 },
     );
   }
 
-  const [
-    followingResult,
-    followerResult,
-  ] = await Promise.all([
-    supabase
+  const [followingResult, followerResult] = await Promise.all([
+    admin
       .from("friend_connections")
       .select("friend_user_id")
       .eq("user_id", targetId),
-    supabase
+    admin
       .from("friend_connections")
       .select("user_id")
       .eq("friend_user_id", targetId),
