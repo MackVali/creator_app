@@ -569,71 +569,121 @@ function InspectorHeader({
   onMoveDown: () => void;
   onDelete: () => void;
 }) {
+  const contextLabel =
+    section.source.kind ===
+    "manual"
+      ? section.type
+      : sectionSourceLabel(
+          section,
+        );
+
   return (
-    <div className="border-b border-white/[0.07] px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-[15px] font-medium text-zinc-100">
-            {section.label}
-          </p>
-          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
-            {pageTitle} / {section.label}
-          </p>
-          {section.source.kind !== "manual" ? (
-            <p className="mt-1 text-[10px] text-zinc-600">
-              {sectionSourceLabel(section)}
+    <div className="border-b border-white/[0.045] px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-[13px] font-medium tracking-[-0.01em] text-zinc-200">
+              {section.label}
             </p>
-          ) : null}
+
+            {!section.visible ? (
+              <span className="shrink-0 rounded-full bg-white/[0.045] px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-zinc-600">
+                Hidden
+              </span>
+            ) : null}
+          </div>
+
+          <p className="mt-0.5 truncate text-[9px] capitalize text-zinc-600">
+            {pageTitle} ·{" "}
+            {contextLabel}
+          </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleVisible}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
-          title={section.visible ? "Hide section" : "Show section"}
-        >
-          {section.visible ? (
-            <Eye className="h-3.5 w-3.5" />
-          ) : (
-            <EyeOff className="h-3.5 w-3.5" />
-          )}
-        </button>
-
-        <details className="group relative shrink-0">
-          <summary
-            className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md border border-white/[0.09] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 [&::-webkit-details-marker]:hidden"
-            title="Section actions"
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={
+              onToggleVisible
+            }
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-600 transition-colors hover:text-zinc-400"
+            title={
+              section.visible
+                ? "Hide section"
+                : "Show section"
+            }
           >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </summary>
-          <div className="absolute right-0 top-8 z-20 w-40 rounded-md border border-white/[0.1] bg-[#111214] p-1 shadow-2xl">
-            <InspectorMenuButton icon={Copy} label="Duplicate" onClick={onDuplicate} />
-            <InspectorMenuButton
-              icon={ArrowUp}
-              label="Move up"
-              onClick={onMoveUp}
-              disabled={!canMoveUp}
-            />
-            <InspectorMenuButton
-              icon={ArrowDown}
-              label="Move down"
-              onClick={onMoveDown}
-              disabled={!canMoveDown}
-            />
-            <InspectorMenuButton
-              icon={section.visible ? EyeOff : Eye}
-              label={section.visible ? "Hide" : "Show"}
-              onClick={onToggleVisible}
-            />
-            <InspectorMenuButton
-              icon={Trash2}
-              label="Delete"
-              onClick={onDelete}
-              disabled={!canDelete}
-              danger
-            />
-          </div>
-        </details>
+            {section.visible ? (
+              <Eye className="h-3.5 w-3.5" />
+            ) : (
+              <EyeOff className="h-3.5 w-3.5" />
+            )}
+          </button>
+
+          <details className="group relative">
+            <summary
+              className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md text-zinc-600 transition-colors hover:text-zinc-400 [&::-webkit-details-marker]:hidden"
+              title="Section actions"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </summary>
+
+            <div className="absolute right-0 top-8 z-20 w-40 rounded-lg border border-white/[0.07] bg-[#17181a] p-1 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+              <InspectorMenuButton
+                icon={Copy}
+                label="Duplicate"
+                onClick={
+                  onDuplicate
+                }
+              />
+
+              <InspectorMenuButton
+                icon={ArrowUp}
+                label="Move up"
+                onClick={onMoveUp}
+                disabled={
+                  !canMoveUp
+                }
+              />
+
+              <InspectorMenuButton
+                icon={ArrowDown}
+                label="Move down"
+                onClick={
+                  onMoveDown
+                }
+                disabled={
+                  !canMoveDown
+                }
+              />
+
+              <InspectorMenuButton
+                icon={
+                  section.visible
+                    ? EyeOff
+                    : Eye
+                }
+                label={
+                  section.visible
+                    ? "Hide"
+                    : "Show"
+                }
+                onClick={
+                  onToggleVisible
+                }
+              />
+
+              <InspectorMenuButton
+                icon={Trash2}
+                label="Delete"
+                onClick={onDelete}
+                disabled={
+                  !canDelete
+                }
+                danger
+              />
+            </div>
+          </details>
+        </div>
       </div>
     </div>
   );
@@ -983,7 +1033,7 @@ function FieldLabel({
   return (
     <label
       htmlFor={htmlFor}
-      className="text-[11px] font-medium text-zinc-500"
+      className="text-[10px] font-medium text-zinc-500"
     >
       {children}
     </label>
@@ -1004,14 +1054,23 @@ function TextInput({
   placeholder?: string;
 }) {
   return (
-    <div>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    <div className="grid min-h-9 grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-[7px] px-2">
+      <FieldLabel htmlFor={id}>
+        {label}
+      </FieldLabel>
+
       <input
         id={id}
         value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 h-8 w-full rounded-md border border-white/[0.09] bg-black/30 px-2.5 text-[12px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-white/[0.18]"
+        placeholder={
+          placeholder
+        }
+        onChange={(event) =>
+          onChange(
+            event.target.value,
+          )
+        }
+        className="h-7 min-w-0 w-full rounded-[6px] border-0 bg-white/[0.03] px-2.5 text-[11px] text-zinc-300 outline-none ring-1 ring-inset ring-white/[0.035] transition-colors placeholder:text-zinc-700 focus:bg-white/[0.045] focus:ring-white/[0.075]"
       />
     </div>
   );
@@ -1031,14 +1090,21 @@ function TextAreaInput({
   rows?: number;
 }) {
   return (
-    <div>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    <div className="rounded-[7px] px-2 py-1.5">
+      <FieldLabel htmlFor={id}>
+        {label}
+      </FieldLabel>
+
       <textarea
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) =>
+          onChange(
+            event.target.value,
+          )
+        }
         rows={rows}
-        className="mt-1.5 w-full resize-none rounded-md border border-white/[0.09] bg-black/30 px-2.5 py-2 text-[12px] leading-5 text-zinc-100 outline-none transition focus:border-white/[0.18]"
+        className="mt-1.5 w-full resize-none rounded-[7px] border-0 bg-white/[0.03] px-2.5 py-2 text-[11px] leading-[1.55] text-zinc-300 outline-none ring-1 ring-inset ring-white/[0.035] transition-colors focus:bg-white/[0.045] focus:ring-white/[0.075]"
       />
     </div>
   );
@@ -1056,23 +1122,35 @@ function ToggleRow({
   description?: string;
 }) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-3 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2">
-      <span>
-        <span className="block text-[12px] font-medium text-zinc-300">
+    <label className="group flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[7px] px-2 py-1.5">
+      <span className="min-w-0">
+        <span className="block text-[10px] font-medium text-zinc-400">
           {label}
         </span>
+
         {description ? (
-          <span className="mt-1 block text-[10px] leading-4 text-zinc-600">
+          <span className="mt-0.5 block text-[9px] leading-4 text-zinc-600">
             {description}
           </span>
         ) : null}
       </span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 h-4 w-4 accent-zinc-100"
-      />
+
+      <span className="relative shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) =>
+            onChange(
+              event.target.checked,
+            )
+          }
+          className="peer sr-only"
+        />
+
+        <span className="block h-[18px] w-[30px] rounded-full bg-white/[0.055] ring-1 ring-inset ring-white/[0.045] transition peer-checked:bg-zinc-600/70" />
+
+        <span className="pointer-events-none absolute left-[2px] top-[2px] h-[14px] w-[14px] rounded-full bg-zinc-500 shadow-sm transition-transform peer-checked:translate-x-3 peer-checked:bg-zinc-300" />
+      </span>
     </label>
   );
 }
@@ -1085,9 +1163,16 @@ function InspectorGroup({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-3 border-b border-white/[0.06] pb-4 last:border-b-0 last:pb-0">
-      <h3 className="text-[12px] font-medium text-zinc-300">{title}</h3>
-      <div className="space-y-3">{children}</div>
+    <section className="space-y-1.5">
+      <h3 className="px-1 text-[9px] font-medium uppercase tracking-[0.11em] text-zinc-600">
+        {title}
+      </h3>
+
+      <div className="rounded-[10px] bg-white/[0.018] p-1.5 ring-1 ring-inset ring-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.018)]">
+        <div className="space-y-1">
+          {children}
+        </div>
+      </div>
     </section>
   );
 }
@@ -1572,7 +1657,7 @@ function MediaEditor({
             : "16 / 9";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
         <div
           className={`relative overflow-hidden bg-black/25 ${
@@ -3488,7 +3573,7 @@ function InspectorContentPanel({
 }) {
   if (section.type === "hero") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Text">
           <TextInput
             id="site-hero-eyebrow"
@@ -3537,7 +3622,7 @@ function InspectorContentPanel({
 
   if (section.type === "split") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Text">
           <TextInput
             id="site-split-eyebrow"
@@ -3605,7 +3690,7 @@ function InspectorContentPanel({
         : "source";
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Content">
           <TextInput
             id="site-section-heading"
@@ -3724,7 +3809,7 @@ function InspectorContentPanel({
     "services"
   ) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Content">
           <TextInput
             id="site-section-heading"
@@ -3791,7 +3876,7 @@ function InspectorContentPanel({
 
   if (section.type === "cards") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Section">
           <TextInput
             id="site-cards-heading"
@@ -3826,7 +3911,7 @@ function InspectorContentPanel({
 
   if (section.type === "stats") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Section">
           <TextInput
             id="site-stats-heading"
@@ -3860,7 +3945,7 @@ function InspectorContentPanel({
 
   if (section.type === "faq") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Section">
           <TextInput
             id="site-faq-heading"
@@ -3894,7 +3979,7 @@ function InspectorContentPanel({
 
   if (section.type === "testimonials") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Section">
           <TextInput
             id="site-testimonials-heading"
@@ -3948,7 +4033,7 @@ function InspectorContentPanel({
 
   if (section.type === "gallery") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Content">
           <TextInput
             id="site-gallery-heading"
@@ -3970,7 +4055,7 @@ function InspectorContentPanel({
 
   if (section.type === "embed") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Section">
           <TextInput
             id="site-embed-heading"
@@ -4032,7 +4117,7 @@ function InspectorContentPanel({
       section.content.formEnabled === true;
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         <InspectorGroup title="Contact">
           <TextInput
             id="site-contact-heading"
@@ -4992,16 +5077,16 @@ function InspectorSelectRow<T extends string>({
     ) ?? options[0];
 
   return (
-    <label className="group relative flex h-8 cursor-pointer items-center gap-3 border-b border-white/[0.045] px-1 last:border-b-0">
-      <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500 transition group-hover:text-zinc-400">
+    <label className="group relative flex min-h-9 cursor-pointer items-center gap-2 rounded-[7px] px-2">
+      <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500">
         {label}
       </span>
 
-      <span className="max-w-[140px] truncate text-right text-[10px] text-zinc-300">
+      <span className="max-w-[132px] truncate text-right text-[10px] font-medium text-zinc-400">
         {active?.label ?? value}
       </span>
 
-      <ChevronRight className="h-3 w-3 shrink-0 text-zinc-700 transition group-hover:text-zinc-500" />
+      <ChevronRight className="h-3 w-3 shrink-0 text-zinc-700" />
 
       <select
         value={value}
@@ -5041,32 +5126,40 @@ function InspectorSegmentedControl<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="px-1 py-2">
-      <div className="mb-2 text-[10px] text-zinc-500">
+    <div className="grid min-h-9 grid-cols-[84px_minmax(0,1fr)] items-center gap-2 rounded-[7px] px-2 py-1">
+      <div className="truncate text-[10px] text-zinc-500">
         {label}
       </div>
-      <div className="grid grid-flow-col auto-cols-fr overflow-hidden rounded-md border border-white/[0.08] bg-black/25 p-0.5">
-        {options.map((option) => {
-          const selected =
-            option.value === value;
 
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() =>
-                onChange(option.value)
-              }
-              className={`h-7 min-w-0 rounded-[4px] px-2 text-[10px] transition ${
-                selected
-                  ? "bg-white text-black"
-                  : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300"
-              }`}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+      <div className="grid grid-flow-col auto-cols-fr overflow-hidden rounded-[7px] bg-black/20 p-[2px] ring-1 ring-inset ring-white/[0.035]">
+        {options.map(
+          (option) => {
+            const selected =
+              option.value ===
+              value;
+
+            return (
+              <button
+                key={
+                  option.value
+                }
+                type="button"
+                onClick={() =>
+                  onChange(
+                    option.value,
+                  )
+                }
+                className={`h-6 min-w-0 truncate rounded-[5px] px-1.5 text-[9px] font-medium transition ${
+                  selected
+                    ? "bg-zinc-600/40 text-zinc-200"
+                    : "text-zinc-600 hover:text-zinc-400"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          },
+        )}
       </div>
     </div>
   );
@@ -5105,33 +5198,11 @@ function InspectorRangeField({
   }
 
   return (
-    <div className="px-1 py-2.5">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500">
-          {label}
-        </span>
-        <span className="flex h-6 items-center rounded-md border border-white/[0.08] bg-black/25 px-2">
-          <input
-            value={clampedValue}
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            onChange={(event) =>
-              commit(
-                Number(event.target.value),
-              )
-            }
-            className="w-12 bg-transparent text-right text-[10px] tabular-nums text-zinc-200 outline-none"
-            aria-label={label}
-          />
-          {unit ? (
-            <span className="ml-1 text-[9px] text-zinc-600">
-              {unit}
-            </span>
-          ) : null}
-        </span>
-      </div>
+    <div className="grid min-h-10 grid-cols-[76px_minmax(0,1fr)_56px] items-center gap-2 rounded-[7px] px-2 py-1">
+      <span className="min-w-0 truncate text-[10px] text-zinc-500">
+        {label}
+      </span>
+
       <input
         value={clampedValue}
         min={min}
@@ -5139,11 +5210,51 @@ function InspectorRangeField({
         step={step}
         type="range"
         onChange={(event) =>
-          commit(Number(event.target.value))
+          commit(
+            Number(
+              event.target.value,
+            ),
+          )
         }
-        className="h-1.5 w-full accent-zinc-100"
+        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.055]
+          [&::-webkit-slider-thumb]:h-3
+          [&::-webkit-slider-thumb]:w-3
+          [&::-webkit-slider-thumb]:appearance-none
+          [&::-webkit-slider-thumb]:rounded-full
+          [&::-webkit-slider-thumb]:bg-zinc-500
+          [&::-webkit-slider-thumb]:shadow-none
+          [&::-moz-range-thumb]:h-3
+          [&::-moz-range-thumb]:w-3
+          [&::-moz-range-thumb]:rounded-full
+          [&::-moz-range-thumb]:border-0
+          [&::-moz-range-thumb]:bg-zinc-500"
         aria-label={label}
       />
+
+      <span className="flex h-6 min-w-0 items-center rounded-[6px] bg-white/[0.035] px-1.5 ring-1 ring-inset ring-white/[0.035]">
+        <input
+          value={clampedValue}
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          onChange={(event) =>
+            commit(
+              Number(
+                event.target.value,
+              ),
+            )
+          }
+          className="min-w-0 flex-1 bg-transparent text-right text-[9px] tabular-nums text-zinc-500 outline-none focus:text-zinc-300"
+          aria-label={label}
+        />
+
+        {unit ? (
+          <span className="ml-0.5 shrink-0 text-[8px] text-zinc-700">
+            {unit}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -5171,42 +5282,35 @@ function InspectorSpacingControl({
   ] as const;
 
   return (
-    <div className="px-1 py-2.5">
-      <div className="mb-2 text-[10px] text-zinc-500">
+    <div className="rounded-[7px] px-2 py-1.5">
+      <div className="mb-1.5 text-[10px] text-zinc-500">
         Padding
       </div>
-      <div className="rounded-md border border-white/[0.08] bg-black/25 p-2">
-        <div className="relative mx-auto mb-3 h-16 w-24 rounded-sm border border-dashed border-white/20">
-          <div className="absolute left-1/2 top-1 -translate-x-1/2 text-[9px] tabular-nums text-zinc-400">
-            {values.top}
-          </div>
-          <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] tabular-nums text-zinc-400">
-            {values.right}
-          </div>
-          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] tabular-nums text-zinc-400">
-            {values.bottom}
-          </div>
-          <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[9px] tabular-nums text-zinc-400">
-            {values.left}
-          </div>
-          <div className="absolute inset-5 rounded-[3px] bg-white/[0.08]" />
-        </div>
-        <div className="grid grid-cols-4 gap-1.5">
-          {sides.map((side) => (
+
+      <div className="grid grid-cols-4 gap-1">
+        {sides.map(
+          (side) => (
             <label
               key={side.id}
               className="min-w-0"
             >
-              <span className="mb-1 block text-center text-[8px] text-zinc-600">
+              <span className="mb-1 block text-center text-[8px] font-medium text-zinc-700">
                 {side.label}
               </span>
+
               <input
-                value={values[side.id]}
+                value={
+                  values[
+                    side.id
+                  ]
+                }
                 type="number"
                 min={0}
                 max={240}
                 step={1}
-                onChange={(event) =>
+                onChange={(
+                  event,
+                ) =>
                   onChange(
                     side.id,
                     Math.max(
@@ -5214,18 +5318,20 @@ function InspectorSpacingControl({
                       Math.min(
                         240,
                         Number(
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                         ) || 0,
                       ),
                     ),
                   )
                 }
-                className="h-7 w-full rounded-[4px] border border-white/[0.08] bg-black/25 px-1 text-center text-[10px] tabular-nums text-zinc-200 outline-none focus:border-white/20"
+                className="h-6 w-full rounded-[5px] border-0 bg-white/[0.03] px-1 text-center text-[9px] tabular-nums text-zinc-500 outline-none ring-1 ring-inset ring-white/[0.03] transition-colors focus:bg-white/[0.045] focus:text-zinc-300 focus:ring-white/[0.075]"
                 aria-label={`${side.label} padding`}
               />
             </label>
-          ))}
-        </div>
+          ),
+        )}
       </div>
     </div>
   );
@@ -5437,7 +5543,7 @@ function InspectorDesignPanel({
     };
 
     return (
-      <div className="space-y-5">
+      <div className="space-y-3">
         <InspectorGroup title="Layout">
           <div>
             {supportsVariant &&
@@ -5894,7 +6000,7 @@ function InspectorDesignPanel({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
 
       {/* APPEARANCE */}
       <InspectorGroup title="Appearance">
@@ -11226,7 +11332,7 @@ export default function SiteBuilder() {
 
         {/* RIGHT: selected section inspector */}
         <aside
-          className={`h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y border-l border-white/[0.07] bg-[#090a0b] [-webkit-overflow-scrolling:touch] ${
+          className={`h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y border-l border-white/[0.045] bg-[#101113] [-webkit-overflow-scrolling:touch] ${
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
@@ -11295,34 +11401,52 @@ export default function SiteBuilder() {
                 onDelete={deleteSelectedSection}
               />
 
-              <div className="p-4">
-                <div className="grid grid-cols-2 gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
-                  {inspectorModes.map((mode) => {
-                    const disabled =
-                      mode.id === "design" &&
-                      !sectionHasDesignControls(selectedSection);
+              <div className="px-3 pb-4 pt-2.5">
+                <div className="grid grid-cols-2 gap-0.5 rounded-[8px] bg-black/20 p-[2px] ring-1 ring-inset ring-white/[0.035]">
+                  {inspectorModes.map(
+                    (mode) => {
+                      const disabled =
+                        mode.id ===
+                          "design" &&
+                        !sectionHasDesignControls(
+                          selectedSection,
+                        );
 
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => {
-                          if (!disabled) setActiveInspectorMode(mode.id);
-                        }}
-                        disabled={disabled}
-                        className={`h-7 rounded text-[11px] transition disabled:cursor-not-allowed disabled:text-zinc-700 ${
-                          activeInspectorMode === mode.id
-                            ? "bg-white/[0.1] text-zinc-100"
-                            : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
-                        }`}
-                      >
-                        {mode.label}
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={
+                            mode.id
+                          }
+                          type="button"
+                          onClick={() => {
+                            if (
+                              !disabled
+                            ) {
+                              setActiveInspectorMode(
+                                mode.id,
+                              );
+                            }
+                          }}
+                          disabled={
+                            disabled
+                          }
+                          className={`h-7 rounded-[6px] text-[10px] font-medium transition disabled:cursor-not-allowed disabled:text-zinc-800 ${
+                            activeInspectorMode ===
+                            mode.id
+                              ? "bg-zinc-600/40 text-zinc-200"
+                              : "text-zinc-600 hover:text-zinc-400"
+                          }`}
+                        >
+                          {
+                            mode.label
+                          }
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-3">
                   {activeInspectorMode === "content" ? (
                     <InspectorContentPanel
                       site={site}

@@ -34872,7 +34872,7 @@ export function Fab({
                         },
                       }}
                     >
-                      <OperatorAiSheet />
+                      <OperatorAiSheet onBack={closeAiOverlay} />
                     </motion.div>
                   </motion.div>
                 </motion.div>
