@@ -65,6 +65,10 @@ type PortfolioSiteProps = {
     field: SitePreviewInlineEditField;
     value: string;
   }) => void;
+  onEditorSectionInsertRequest?: (request: {
+    pageId: string;
+    insertionIndex: number;
+  }) => void;
 };
 
 type EditorNodeId = SiteContentNodeId;
@@ -85,7 +89,58 @@ type EditorSelectionContext = {
     field: SitePreviewInlineEditField;
     value: string;
   }) => void;
+  onSectionInsertRequest?: (request: {
+    pageId: string;
+    insertionIndex: number;
+  }) => void;
 };
+
+function EditorSectionInsertControl({
+  editorContext,
+  insertionIndex,
+}: {
+  editorContext:
+    EditorSelectionContext;
+  insertionIndex: number;
+}) {
+  if (
+    !editorContext.editorPreview ||
+    !editorContext.onSectionInsertRequest
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="group relative z-40 -my-2 h-4">
+      <div className="absolute inset-0 flex items-center px-[var(--site-page-x)]">
+        <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/15" />
+
+        <button
+          type="button"
+          title="Add section here"
+          aria-label="Add section here"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            editorContext
+              .onSectionInsertRequest?.({
+                pageId:
+                  editorContext.pageId,
+                insertionIndex,
+              });
+          }}
+          className="mx-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[#111214] text-[17px] font-light leading-none text-white/60 opacity-0 shadow-xl transition group-hover:opacity-100 hover:border-white/35 hover:bg-[#1a1b1d] hover:text-white focus:opacity-100"
+        >
+          +
+        </button>
+
+        <span className="h-px flex-1 bg-transparent transition group-hover:bg-white/15" />
+      </div>
+    </div>
+  );
+}
+
 
 function getSectionSelectionState(
   context: EditorSelectionContext,
@@ -401,27 +456,6 @@ function InlineEditableText({
 
 const heroCover = "/images/portfolio/mackvali/hero-devices.png";
 
-function SectionRule({
-  number,
-  label,
-}: {
-  number: string;
-  label: string;
-}) {
-  return (
-    <div className="flex h-[30px] items-center gap-4">
-      <span className="text-[8px] text-[var(--site-text-faint)]">{number}</span>
-      <span
-        className="text-[8px] font-medium uppercase tracking-[0.3em]"
-        style={{ color: "var(--site-accent)" }}
-      >
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-white/[0.08]" />
-    </div>
-  );
-}
-
 const defaultMackSections: SiteSection[] = (() => {
   const migrated =
     migrateLegacyMackSite(
@@ -590,7 +624,92 @@ function mediaFrameClass(
   }
 
   if (frame === "surface") {
-    return "border border-[var(--site-border)] bg-[var(--site-surface-strong)]";
+    return "bg-[var(--site-surface-strong)]";
+  }
+
+  return "";
+}
+
+
+function sectionItemFrame(
+  section: SiteSection | undefined,
+) {
+  const value =
+    section?.style?.itemFrame;
+
+  return value === "outline" ||
+    value === "surface"
+    ? value
+    : "none";
+}
+
+function sectionItemRadius(
+  section: SiteSection | undefined,
+  fallback = 12,
+) {
+  const value =
+    section?.style?.itemRadius;
+
+  return typeof value === "number" &&
+    Number.isFinite(value)
+    ? Math.max(
+        0,
+        Math.min(48, value),
+      )
+    : fallback;
+}
+
+function sectionItemMediaFit(
+  section: SiteSection | undefined,
+) {
+  return section?.style?.itemMediaFit ===
+    "contain"
+    ? "contain"
+    : "cover";
+}
+
+function sectionItemMediaRatio(
+  section: SiteSection | undefined,
+  fallback: string,
+) {
+  const value =
+    section?.style?.itemMediaRatio;
+
+  return value === "auto" ||
+    value === "16:9" ||
+    value === "3:2" ||
+    value === "4:3" ||
+    value === "1:1" ||
+    value === "4:5"
+    ? value
+    : fallback;
+}
+
+function sectionItemPadding(
+  section: SiteSection | undefined,
+  fallback = 20,
+) {
+  const value =
+    section?.style?.itemPadding;
+
+  return typeof value === "number" &&
+    Number.isFinite(value)
+    ? Math.max(
+        0,
+        Math.min(96, value),
+      )
+    : fallback;
+}
+
+function itemFrameClass(
+  frame: string,
+) {
+  if (frame === "outline") {
+    return "border border-[var(--site-border)]";
+  }
+
+  if (frame === "surface") {
+    return "bg-[var(--site-surface)]";
   }
 
   return "";
@@ -1852,169 +1971,602 @@ function HeroSection({
 }
 
 function ProductsSection({
+  siteDocument,
   section,
   listings,
   editorPreview,
   editorContext,
 }: {
+  siteDocument?: SiteDocument;
   section: SiteSection;
   listings: SourceListing[];
   editorPreview: boolean;
   editorContext: EditorSelectionContext;
 }) {
-  const selectedIds =
-    section.source.kind === "source" && section.source.mode === "selected"
-      ? section.source.listingIds ?? []
-      : [];
-  const listingType =
-    section.source.kind === "source" ? section.source.listingType : "product";
-  const products = listings.filter(
-    (listing) =>
-      listing.type === listingType &&
-      (section.source.kind !== "source" ||
-        section.source.mode !== "selected" ||
-        selectedIds.includes(listing.id)),
-  );
-  const heading = readContentString(section, "heading", section.label);
-  const intro = readContentString(section, "intro");
-  const showPrice = section.style?.showPrice !== false;
-  const showDescription = section.style?.showDescription !== false;
-  const columns = section.layout?.columns ?? 3;
-  const variant = sectionVariant(section, "grid");
-  const isServices = listingType === "service";
-  const listMode = variant === "list";
-  const featuredMode = variant === "featured";
-  const editorialMode = variant === "editorial";
-  const gridClass = listMode
-    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3"
-    : featuredMode
-    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3 lg:grid-cols-[1.45fr_1fr]"
-    : editorialMode
-    ? "grid gap-3 border-x border-t border-[var(--site-border)] p-3 md:grid-cols-2"
-    : `grid gap-3 border-x border-t border-[var(--site-border)] p-3 sm:grid-cols-2 ${
-        columns === 4
-          ? "lg:grid-cols-4"
-          : columns === 2
-          ? "lg:grid-cols-2"
-          : "lg:grid-cols-3"
-      }`;
+  type DisplayProduct = {
+    id: string;
+    title: string;
+    description: string;
+    image: string;
+    priceLabel: string;
+    metaLabel: string;
+    href: string;
+  };
 
-  if (products.length === 0 && !editorPreview) return null;
+  const heading =
+    readContentString(
+      section,
+      "heading",
+      section.label,
+    );
+
+  const intro =
+    readContentString(
+      section,
+      "intro",
+    );
+
+  const showPrice =
+    section.style?.showPrice !==
+    false;
+
+  const showDescription =
+    section.style?.showDescription ===
+    true;
+
+  const columns =
+    section.layout?.columns ??
+    3;
+
+  const gap =
+    section.layout?.gap ??
+    20;
+
+  const variant =
+    sectionVariant(
+      section,
+      "grid",
+    );
+
+  const listMode =
+    variant === "list";
+
+  const featuredMode =
+    variant === "featured";
+
+  const editorialMode =
+    variant === "editorial";
+
+  const frame =
+    sectionItemFrame(
+      section,
+    );
+
+  const radius =
+    sectionItemRadius(
+      section,
+      0,
+    );
+
+  const mediaFit =
+    sectionItemMediaFit(
+      section,
+    );
+
+  const mediaRatio =
+    sectionItemMediaRatio(
+      section,
+      "4:5",
+    );
+
+  const cardPadding =
+    sectionItemPadding(
+      section,
+      0,
+    );
+
+  const catalog =
+    siteDocument?.catalog;
+
+  const catalogCollections =
+    catalog?.collections ??
+    [];
+
+  const catalogItems =
+    catalog?.items ??
+    [];
+
+  const products:
+    DisplayProduct[] =
+    section.source.kind ===
+    "catalog"
+      ? catalogItems
+          .filter(
+            (item) =>
+              item.visible,
+          )
+          .filter(
+            (item) => {
+              if (
+                section.source.kind !==
+                "catalog"
+              ) {
+                return false;
+              }
+
+              if (
+                section.source.mode ===
+                "collection"
+              ) {
+                return (
+                  Boolean(
+                    section.source
+                      .collectionId,
+                  ) &&
+                  item.collectionId ===
+                    section.source
+                      .collectionId
+                );
+              }
+
+              if (
+                section.source.mode ===
+                "selected"
+              ) {
+                return (
+                  section.source
+                    .itemIds ??
+                  []
+                ).includes(
+                  item.id,
+                );
+              }
+
+              return true;
+            },
+          )
+          .slice()
+          .sort(
+            (a, b) =>
+              a.sortOrder -
+              b.sortOrder,
+          )
+          .map((item) => {
+            const collection =
+              catalogCollections.find(
+                (candidate) =>
+                  candidate.id ===
+                  item.collectionId,
+              );
+
+            const statusLabel =
+              item.status ===
+              "coming-soon"
+                ? "Coming soon"
+                : item.status ===
+                    "available"
+                  ? "Available"
+                  : "";
+
+            return {
+              id: item.id,
+              title: item.title,
+              description:
+                item.subtitle ??
+                "",
+              image:
+                item.imageUrl,
+              priceLabel:
+                item.priceLabel ??
+                "",
+              metaLabel: [
+                collection?.title,
+                statusLabel,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              href:
+                item.href ?? "",
+            };
+          })
+      : section.source.kind ===
+          "source"
+        ? listings
+            .filter(
+              (listing) =>
+                listing.type ===
+                  section.source
+                    .listingType &&
+                (
+                  section.source
+                    .mode !==
+                    "selected" ||
+                  (
+                    section.source
+                      .listingIds ??
+                    []
+                  ).includes(
+                    listing.id,
+                  )
+                ),
+            )
+            .map(
+              (listing) => {
+                const card =
+                  normalizeSourceListingCardProps(
+                    listing,
+                  );
+
+                return {
+                  id:
+                    listing.id,
+                  title:
+                    listing.title,
+                  description:
+                    listing.description ??
+                    "",
+                  image:
+                    resolveListingImage(
+                      listing,
+                    ) ??
+                    card.image ??
+                    "",
+                  priceLabel:
+                    card.priceLabel ??
+                    "",
+                  metaLabel: "",
+                  href: "",
+                };
+              },
+            )
+        : [];
+
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 48,
+      headingWidth: 900,
+      bodySize: 14,
+      bodyWidth: 640,
+      textGap: 16,
+    };
+
+  const desktopColumns =
+    columns === 4
+      ? "lg:grid-cols-4"
+      : columns === 2
+        ? "lg:grid-cols-2"
+        : "lg:grid-cols-3";
+
+  const gridClass =
+    listMode
+      ? "grid"
+      : editorialMode
+        ? "grid grid-cols-1 md:grid-cols-2"
+        : `grid grid-cols-2 ${desktopColumns}`;
+
+  if (
+    products.length === 0 &&
+    !editorPreview
+  ) {
+    return null;
+  }
 
   return (
     <section
-      data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
-      onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      style={
+        sectionShellOuterStyle(
+          section,
+        )
+      }
       className={`${sectionBackgroundClass(
         section,
-      )} ${editorSectionClass(editorContext, section.id)}`}
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
     >
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-6 sm:px-8 lg:px-[58px]">
-        <SectionRule number="02" label={heading} />
-        {intro ? (
-          <p className="mb-4 max-w-[620px] text-[11px] leading-[1.6] text-[var(--site-text-subtle)]">
-            {intro}
-          </p>
-        ) : null}
+      <div
+        style={
+          sectionShellContainerStyle(
+            section,
+          )
+        }
+        className={`mx-auto w-full max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-8 md:mb-10 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={
+              section.id
+            }
+            node="text"
+            editorContext={
+              editorContext
+            }
+            style={
+              sectionHeadingTextStyle(
+                section,
+                textDefaults,
+              )
+            }
+            className="leading-[0.96] tracking-[-0.05em] text-[var(--site-text)]"
+          />
 
-        {products.length > 0 ? (
-          <div className={gridClass}>
-            {products.map((product, index) => {
-              const card = normalizeSourceListingCardProps(product);
-              const image = resolveListingImage(product) ?? card.image;
-              const featured = featuredMode && index === 0;
+          {intro ? (
+            <InlineEditableText
+              as="p"
+              value={intro}
+              field="intro"
+              sectionId={
+                section.id
+              }
+              node="text"
+              editorContext={
+                editorContext
+              }
+              multiline
+              style={{
+                ...sectionBodyTextStyle(
+                  section,
+                  textDefaults,
+                ),
+                marginTop:
+                  `${sectionTextGap(
+                    section,
+                    textDefaults,
+                  )}px`,
+              }}
+              className="leading-[1.7] text-[var(--site-text-muted)]"
+            />
+          ) : null}
+        </div>
 
-              return (
-                <article
-                  key={product.id}
-                  className={`grid overflow-hidden border border-[var(--site-border)] bg-white/[0.018] ${
-                    listMode
-                      ? "min-h-[112px] sm:grid-cols-[180px_1fr]"
-                      : editorialMode
-                      ? "min-h-[190px]"
-                      : featured
-                      ? "min-h-[260px] lg:row-span-2"
-                      : "min-h-[132px] sm:grid-cols-[42%_58%]"
-                  }`}
-                >
+        {products.length >
+        0 ? (
+          <div
+            className={
+              gridClass
+            }
+            style={{
+              gap:
+                `${gap}px`,
+            }}
+          >
+            {products.map(
+              (
+                product,
+                index,
+              ) => {
+                const featured =
+                  featuredMode &&
+                  index === 0;
+
+                const sideLayout =
+                  listMode ||
+                  featured;
+
+                const fixedRatio =
+                  mediaRatio !==
+                  "auto";
+
+                const media = (
                   <div
-                    className={`relative bg-[var(--site-surface-strong)] ${
-                      listMode
-                        ? "min-h-[112px]"
-                        : editorialMode
-                        ? "hidden"
-                        : featured
+                    className={`relative overflow-hidden bg-[var(--site-surface-strong)] ${
+                      sideLayout
                         ? "min-h-[220px]"
-                        : "min-h-[128px]"
+                        : ""
                     }`}
+                    style={
+                      !sideLayout &&
+                      fixedRatio
+                        ? {
+                            aspectRatio:
+                              mediaAspectRatio(
+                                mediaRatio,
+                              ),
+                          }
+                        : undefined
+                    }
                   >
-                    {image ? (
+                    {product.image ? (
                       <img
-                        src={image}
-                        alt={product.title}
-                        className={`h-full w-full object-cover ${
-                          listMode
-                            ? "min-h-[112px]"
-                            : featured
-                            ? "min-h-[220px]"
-                            : "min-h-[128px]"
-                        }`}
+                        src={
+                          product.image
+                        }
+                        alt={
+                          product.title
+                        }
+                        className={
+                          sideLayout ||
+                          fixedRatio
+                            ? "absolute inset-0 h-full w-full"
+                            : "block h-auto w-full"
+                        }
+                        style={
+                          sideLayout ||
+                          fixedRatio
+                            ? {
+                                objectFit:
+                                  mediaFit,
+                                objectPosition:
+                                  "50% 50%",
+                              }
+                            : undefined
+                        }
                       />
                     ) : (
-                      <div className="flex h-full min-h-[112px] items-center justify-center text-[8px] uppercase tracking-[0.24em] text-[var(--site-text-faint)]">
+                      <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
                         No image
                       </div>
                     )}
                   </div>
+                );
 
+                const copy = (
                   <div
-                    className={`flex min-w-0 flex-col justify-between ${
-                      editorialMode
-                        ? "p-6"
-                        : featured
-                        ? "p-5"
-                        : "p-4"
+                    className={`flex min-w-0 flex-1 flex-col ${
+                      frame ===
+                      "none"
+                        ? "pt-3"
+                        : ""
                     }`}
+                    style={
+                      frame ===
+                      "none"
+                        ? undefined
+                        : {
+                            padding:
+                              `${cardPadding || 16}px`,
+                          }
+                    }
                   >
-                    <div>
-                      {showPrice ? (
-                        <p className="text-[7px] font-medium uppercase tracking-[0.25em] text-[var(--site-text-subtle)]">
-                        {card.priceLabel}
-                        </p>
-                      ) : null}
-                      <h3
-                        className={`mt-2 leading-tight tracking-[-0.04em] text-[var(--site-text)] ${
-                          editorialMode || featured
-                            ? "text-[28px]"
-                            : "text-[18px]"
-                        }`}
-                      >
-                        {product.title}
-                      </h3>
-                      {showDescription && product.description ? (
-                        <p
-                          className={`mt-2 leading-[1.55] text-[var(--site-text-subtle)] ${
-                            editorialMode || featured
-                              ? "text-[11px]"
-                              : "line-clamp-3 text-[8.5px]"
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3
+                          className={`leading-[1.15] tracking-[-0.025em] text-[var(--site-text)] ${
+                            sideLayout ||
+                            editorialMode
+                              ? "text-[20px] sm:text-[24px]"
+                              : "text-[13px] sm:text-[14px]"
                           }`}
                         >
-                          {product.description}
+                          {
+                            product.title
+                          }
+                        </h3>
+
+                        {product.metaLabel ? (
+                          <p className="mt-1 truncate text-[9px] leading-4 text-[var(--site-text-muted)] sm:text-[10px]">
+                            {
+                              product.metaLabel
+                            }
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {showPrice &&
+                      product.priceLabel ? (
+                        <p className="shrink-0 text-[10px] tabular-nums text-[var(--site-text-subtle)] sm:text-[11px]">
+                          {
+                            product.priceLabel
+                          }
                         </p>
                       ) : null}
                     </div>
 
-                    <span className="mt-4 text-[7px] uppercase tracking-[0.14em] text-[var(--site-text-muted)]">
-                      Source {isServices ? "service" : "product"}
-                    </span>
+                    {showDescription &&
+                    product.description ? (
+                      <p
+                        className={`mt-2 leading-[1.55] text-[var(--site-text-muted)] ${
+                          sideLayout ||
+                          editorialMode
+                            ? "text-[13px]"
+                            : "line-clamp-2 text-[10px]"
+                        }`}
+                      >
+                        {
+                          product.description
+                        }
+                      </p>
+                    ) : null}
                   </div>
-                </article>
-              );
-            })}
+                );
+
+                return (
+                  <article
+                    key={
+                      product.id
+                    }
+                    className={[
+                      "overflow-hidden",
+                      itemFrameClass(
+                        frame,
+                      ),
+                      featured
+                        ? "col-span-2"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={{
+                      borderRadius:
+                        `${radius}px`,
+                    }}
+                  >
+                    {sideLayout ? (
+                      <div
+                        className="flex flex-col md:grid"
+                        style={{
+                          gridTemplateColumns:
+                            listMode
+                              ? "minmax(160px, 28%) minmax(0, 1fr)"
+                              : "minmax(0, 1.35fr) minmax(0, 0.65fr)",
+                        }}
+                      >
+                        {media}
+                        {copy}
+                      </div>
+                    ) : (
+                      <div className="flex h-full flex-col">
+                        {media}
+                        {copy}
+                      </div>
+                    )}
+                  </article>
+                );
+              },
+            )}
           </div>
         ) : (
-          <div className="border border-dashed border-[var(--site-border-strong)] px-4 py-8 text-center text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
-            Select Source {listingType} listings to preview this section
+          <div className="flex min-h-[220px] items-center justify-center border border-dashed border-[var(--site-border-strong)] px-6 text-center">
+            <div>
+              <p className="text-[11px] font-medium text-[var(--site-text-muted)]">
+                No products to
+                show
+              </p>
+
+              <p className="mt-2 text-[9px] leading-4 text-[var(--site-text-faint)]">
+                {section.source.kind ===
+                "catalog"
+                  ? "Add Catalog items or change this section’s Catalog scope."
+                  : "Select Source products for this section."}
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -2061,6 +2613,15 @@ function CardsSection({
     section.layout?.columns ??
     3;
 
+  const sectionTextDefaults:
+    SectionTextDefaults = {
+      headingSize: 64,
+      headingWidth: 1000,
+      bodySize: 14,
+      bodyWidth: 680,
+      textGap: 18,
+    };
+
   if (
     items.length === 0 &&
     !editorPreview
@@ -2088,6 +2649,17 @@ function CardsSection({
   const gridStyle =
     cardsGridStyle(
       section,
+    );
+
+  const cardFrame =
+    sectionItemFrame(
+      section,
+    );
+
+  const cardRadius =
+    sectionItemRadius(
+      section,
+      12,
     );
 
   return (
@@ -2488,9 +3060,10 @@ function CardsSection({
                         : "";
 
                 const className = [
-                  "group relative overflow-hidden rounded-[var(--site-radius)]",
-                  "border border-[var(--site-border)]",
-                  "bg-[var(--site-surface)]",
+                  "group relative overflow-hidden",
+                  itemFrameClass(
+                    cardFrame,
+                  ),
                   "transition duration-200",
                   editorBlockClass(
                     editorContext,
@@ -2542,6 +3115,10 @@ function CardsSection({
                       className={
                         className
                       }
+                      style={{
+                        borderRadius:
+                          `${cardRadius}px`,
+                      }}
                     >
                       {editorLabel}
                       {body}
@@ -2570,6 +3147,10 @@ function CardsSection({
                     className={
                       className
                     }
+                    style={{
+                      borderRadius:
+                        `${cardRadius}px`,
+                    }}
                   >
                     {editorLabel}
                     {body}
@@ -3789,37 +4370,152 @@ function GallerySection({
   editorPreview: boolean;
   editorContext: EditorSelectionContext;
 }) {
-  const heading = readContentString(section, "heading", section.label);
-  const items = readGalleryItems(section);
-  const columns = section.layout?.columns ?? 3;
+  const heading =
+    readContentString(
+      section,
+      "heading",
+      section.label,
+    );
 
-  if (items.length === 0 && !editorPreview) return null;
+  const items =
+    readGalleryItems(
+      section,
+    );
+
+  const columns =
+    section.layout?.columns ??
+    3;
+
+  const gap =
+    section.layout?.gap ??
+    28;
+
+  const frame =
+    sectionItemFrame(
+      section,
+    );
+
+  const radius =
+    sectionItemRadius(
+      section,
+      12,
+    );
+
+  const mediaFit =
+    sectionItemMediaFit(
+      section,
+    );
+
+  const mediaRatio =
+    sectionItemMediaRatio(
+      section,
+      "auto",
+    );
+
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 48,
+      headingWidth: 900,
+      bodySize: 14,
+      bodyWidth: 620,
+      textGap: 18,
+    };
+
+  if (
+    items.length === 0 &&
+    !editorPreview
+  ) {
+    return null;
+  }
 
   const gridColumns =
     columns === 4
       ? "lg:grid-cols-4"
       : columns === 2
-      ? "lg:grid-cols-2"
-      : "lg:grid-cols-3";
+        ? "lg:grid-cols-2"
+        : "lg:grid-cols-3";
+
+  const fixedRatio =
+    mediaRatio !== "auto";
 
   return (
     <section
       data-creator-editor-section={
-        editorContext.editorPreview ? section.id : undefined
+        editorContext.editorPreview
+          ? section.id
+          : undefined
       }
       onClick={(event) =>
-        handleEditorSectionClick(event, editorContext, section.id)
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      style={
+        sectionShellOuterStyle(
+          section,
+        )
       }
       className={`${sectionBackgroundClass(
         section,
-      )} ${editorSectionClass(editorContext, section.id)}`}
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
     >
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-6 sm:px-8 lg:px-[58px]">
-        <SectionRule number="02" label={heading} />
+      <div
+        style={
+          sectionShellContainerStyle(
+            section,
+          )
+        }
+        className={`mx-auto w-full max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        <div
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "text"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section.id,
+              "text",
+            )
+          }
+          className={`mb-8 md:mb-10 ${editorNodeClass(
+            editorContext,
+            section.id,
+            "text",
+          )}`}
+        >
+          <InlineEditableText
+            as="h2"
+            value={heading}
+            field="heading"
+            sectionId={section.id}
+            node="text"
+            editorContext={editorContext}
+            style={
+              sectionHeadingTextStyle(
+                section,
+                textDefaults,
+              )
+            }
+            className="leading-[0.96] tracking-[-0.05em] text-[var(--site-text)]"
+          />
+        </div>
 
         <div
           data-creator-editor-node={
-            editorContext.editorPreview ? "media" : undefined
+            editorContext.editorPreview
+              ? "media"
+              : undefined
           }
           onClick={(event) =>
             handleEditorNodeClick(
@@ -3829,31 +4525,76 @@ function GallerySection({
               "media",
             )
           }
-          className={`mt-3 ${editorNodeClass(
-            editorContext,
-            section.id,
-            "media",
-          )}`}
+          className={
+            editorNodeClass(
+              editorContext,
+              section.id,
+              "media",
+            )
+          }
         >
           {items.length > 0 ? (
             <div
-              className={`grid gap-3 border-x border-t border-[var(--site-border)] p-3 sm:grid-cols-2 ${gridColumns}`}
+              className={`grid sm:grid-cols-2 ${gridColumns}`}
+              style={{
+                gap: `${gap}px`,
+              }}
             >
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="relative aspect-[4/3] overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface-strong)]"
-                >
-                  <img
-                    src={item.url}
-                    alt={item.alt}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              ))}
+              {items.map(
+                (item) => (
+                  <div
+                    key={item.id}
+                    className={`relative overflow-hidden ${itemFrameClass(
+                      frame,
+                    )} ${
+                      fixedRatio ||
+                      mediaFit ===
+                        "contain"
+                        ? "bg-[var(--site-surface-strong)]"
+                        : ""
+                    }`}
+                    style={{
+                      borderRadius:
+                        `${radius}px`,
+                      aspectRatio:
+                        fixedRatio
+                          ? mediaAspectRatio(
+                              mediaRatio,
+                            )
+                          : undefined,
+                    }}
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.alt}
+                      className={
+                        fixedRatio
+                          ? "absolute inset-0 h-full w-full"
+                          : "block h-auto w-full"
+                      }
+                      style={
+                        fixedRatio
+                          ? {
+                              objectFit:
+                                mediaFit,
+                              objectPosition:
+                                "50% 50%",
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+                ),
+              )}
             </div>
           ) : (
-            <div className="flex min-h-[180px] items-center justify-center border border-dashed border-[var(--site-border-strong)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
+            <div
+              className="flex min-h-[180px] items-center justify-center border border-dashed border-[var(--site-border-strong)] text-[10px] uppercase tracking-[0.16em] text-[var(--site-text-subtle)]"
+              style={{
+                borderRadius:
+                  `${radius}px`,
+              }}
+            >
               Add gallery images
             </div>
           )}
@@ -4605,6 +5346,27 @@ function MackHomeSections({
     const section = visibleSections[index];
     const kind = section.type;
 
+    const originalIndex =
+      sections.findIndex(
+        (candidate) =>
+          candidate.id ===
+          section.id,
+      );
+
+    nodes.push(
+      <EditorSectionInsertControl
+        key={`insert-before-${section.id}`}
+        editorContext={
+          editorContext
+        }
+        insertionIndex={
+          originalIndex < 0
+            ? index
+            : originalIndex
+        }
+      />,
+    );
+
     if (kind === "hero") {
       nodes.push(
         <HeroSection
@@ -4619,6 +5381,7 @@ function MackHomeSections({
       nodes.push(
         <ProductsSection
           key={section.id}
+          siteDocument={siteDocument}
           section={section}
           listings={sourceListings}
           editorPreview={editorPreview}
@@ -4629,6 +5392,7 @@ function MackHomeSections({
       nodes.push(
         <ProductsSection
           key={section.id}
+          siteDocument={siteDocument}
           section={section}
           listings={sourceListings}
           editorPreview={editorPreview}
@@ -4740,6 +5504,18 @@ function MackHomeSections({
     }
   }
 
+  nodes.push(
+    <EditorSectionInsertControl
+      key="insert-at-end"
+      editorContext={
+        editorContext
+      }
+      insertionIndex={
+        sections.length
+      }
+    />,
+  );
+
   return <>{nodes}</>;
 }
 
@@ -4753,6 +5529,7 @@ export default function PortfolioSite({
   editorSelection = null,
   onEditorSelectionRequest,
   onEditorContentEditRequest,
+  onEditorSectionInsertRequest,
 }: PortfolioSiteProps) {
   const renderSections = (sections ?? defaultMackSections) as SiteSection[];
   const headerConfig = getSiteHeaderConfig({
@@ -4776,8 +5553,12 @@ export default function PortfolioSite({
     editorPreview,
     pageId: editorPageId,
     activeSelection: editorSelection,
-    onSelectionRequest: onEditorSelectionRequest,
-    onContentEditRequest: onEditorContentEditRequest,
+    onSelectionRequest:
+      onEditorSelectionRequest,
+    onContentEditRequest:
+      onEditorContentEditRequest,
+    onSectionInsertRequest:
+      onEditorSectionInsertRequest,
   };
 
   return (

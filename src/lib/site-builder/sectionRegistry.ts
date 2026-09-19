@@ -467,26 +467,30 @@ const sectionDefinitions = [
   {
     type: "products",
     label: "Products",
-    description: "Show selected public Source products.",
+    description: "Show visual Catalog items or real Source products.",
     category: "Commerce",
     defaultContent: {
       heading: "Products",
       intro: "",
     },
     defaultSource: {
-      kind: "source",
-      listingType: "product",
-      mode: "selected",
-      listingIds: [],
+      kind: "catalog",
+      mode: "all",
     },
     defaultLayout: {
       variant: "grid",
       columns: 3,
+      gap: 20,
     },
     defaultStyle: {
       background: "default",
       showPrice: true,
-      showDescription: true,
+      showDescription: false,
+      itemFrame: "none",
+      itemRadius: 0,
+      itemMediaFit: "cover",
+      itemMediaRatio: "4:5",
+      itemPadding: 0,
     },
     variants: [
       { id: "grid", label: "Grid", description: "Responsive product card grid." },

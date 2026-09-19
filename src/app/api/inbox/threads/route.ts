@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getSafeProfileIdentitiesByUserIds } from "@/lib/friends/safeProfileIdentity";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 type ThreadMessage = {
@@ -9,13 +10,6 @@ type ThreadMessage = {
   recipient_id: string;
   created_at: string;
   read_at: string | null;
-};
-
-type ThreadProfile = {
-  user_id: string;
-  username: string | null;
-  name: string | null;
-  avatar_url: string | null;
 };
 
 type FriendConnectionRow = {
@@ -123,21 +117,25 @@ export async function GET(request: NextRequest) {
         )
       );
 
-      const { data: profileRows, error: profileError } =
-        participantIds.length > 0
-          ? await supabase
-              .from("profiles")
-              .select("user_id, username, name, avatar_url")
-              .in("user_id", participantIds)
-          : { data: [], error: null };
+      let profiles = [];
 
-      if (profileError) {
-        console.error("Failed to load inbox search profile data", profileError);
+      try {
+        profiles =
+          await getSafeProfileIdentitiesByUserIds(
+            participantIds,
+          );
+      } catch (error) {
+        console.error(
+          "Failed to load inbox search profile data",
+          error,
+        );
       }
 
-      const profiles = (profileRows ?? []) as ThreadProfile[];
       const profilesByUserId = new Map(
-        profiles.map((profile) => [profile.user_id, profile])
+        profiles.map((profile) => [
+          profile.userId,
+          profile,
+        ]),
       );
       const results: InboxThread[] = connections
         .map((connection) => {
@@ -163,7 +161,7 @@ export async function GET(request: NextRequest) {
               username,
               displayName,
               avatarUrl:
-                profile?.avatar_url ?? connection.friend_avatar_url ?? null,
+                profile?.avatarUrl ?? connection.friend_avatar_url ?? null,
             },
             latestMessage: null,
             hasMessages: false,
@@ -257,18 +255,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ threads: [], currentUserId: user.id });
     }
 
-    const { data: profileRows, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, username, name, avatar_url")
-      .in("user_id", participantIds);
+    let profiles = [];
 
-    if (profileError) {
-      console.error("Failed to load inbox profile data", profileError);
+    try {
+      profiles =
+        await getSafeProfileIdentitiesByUserIds(
+          participantIds,
+        );
+    } catch (error) {
+      console.error(
+        "Failed to load inbox profile data",
+        error,
+      );
     }
 
-    const profiles = (profileRows ?? []) as ThreadProfile[];
     const profilesByUserId = new Map(
-      profiles.map((profile) => [profile.user_id, profile])
+      profiles.map((profile) => [
+        profile.userId,
+        profile,
+      ]),
     );
     const outgoingConnectionsByUserId = new Map(
       outgoingConnections
@@ -296,7 +301,7 @@ export async function GET(request: NextRequest) {
             username,
             displayName,
             avatarUrl:
-              profile?.avatar_url ?? connection?.friend_avatar_url ?? null,
+              profile?.avatarUrl ?? connection?.friend_avatar_url ?? null,
           },
           latestMessage: latestMessage
             ? {

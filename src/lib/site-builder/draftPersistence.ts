@@ -174,26 +174,81 @@ function isPersistableSectionType(value: unknown): value is SiteSectionType {
   );
 }
 
-function isSiteDataSource(value: unknown): value is SiteDataSource {
-  if (!isRecord(value)) return false;
-
-  if (value.kind === "manual") {
-    return Object.keys(value).every((key) => key === "kind");
+function isSiteDataSource(
+  value: unknown,
+): value is SiteDataSource {
+  if (!isRecord(value)) {
+    return false;
   }
 
-  if (value.kind !== "source") return false;
+  if (value.kind === "manual") {
+    return Object.keys(
+      value,
+    ).every(
+      (key) => key === "kind",
+    );
+  }
+
+  if (value.kind === "catalog") {
+    if (
+      value.mode !== "all" &&
+      value.mode !== "collection" &&
+      value.mode !== "selected"
+    ) {
+      return false;
+    }
+
+    if (
+      value.collectionId !==
+        undefined &&
+      !isString(
+        value.collectionId,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      value.itemIds !==
+        undefined &&
+      !isStringArray(
+        value.itemIds,
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  if (value.kind !== "source") {
+    return false;
+  }
+
   if (
-    value.listingType !== "product" &&
-    value.listingType !== "service" &&
-    value.listingType !== "post"
+    value.listingType !==
+      "product" &&
+    value.listingType !==
+      "service" &&
+    value.listingType !==
+      "post"
   ) {
     return false;
   }
-  if (value.mode !== "latest" && value.mode !== "selected") return false;
+
   if (
-    "listingIds" in value &&
-    value.listingIds !== undefined &&
-    !isStringArray(value.listingIds)
+    value.mode !== "latest" &&
+    value.mode !== "selected"
+  ) {
+    return false;
+  }
+
+  if (
+    value.listingIds !==
+      undefined &&
+    !isStringArray(
+      value.listingIds,
+    )
   ) {
     return false;
   }
@@ -330,45 +385,156 @@ function isSiteSectionLayoutConfig(
 function isSiteSectionStyleConfig(
   value: unknown,
 ): value is SiteSectionStyleConfig {
-  if (value === undefined) return true;
-  if (!isRecord(value)) return false;
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
 
   if (
     "background" in value &&
-    value.background !== undefined &&
-    value.background !== "default" &&
-    value.background !== "plain" &&
-    value.background !== "dark" &&
-    value.background !== "muted" &&
-    value.background !== "contrast"
+    value.background !==
+      undefined &&
+    value.background !==
+      "default" &&
+    value.background !==
+      "plain" &&
+    value.background !==
+      "dark" &&
+    value.background !==
+      "muted" &&
+    value.background !==
+      "contrast"
   ) {
     return false;
   }
 
   if (
     "divider" in value &&
-    value.divider !== undefined &&
-    value.divider !== "none" &&
-    value.divider !== "top" &&
-    value.divider !== "bottom" &&
-    value.divider !== "both"
+    value.divider !==
+      undefined &&
+    value.divider !==
+      "none" &&
+    value.divider !==
+      "top" &&
+    value.divider !==
+      "bottom" &&
+    value.divider !==
+      "both"
   ) {
     return false;
   }
 
   if (
-    "dividerStrength" in value &&
-    value.dividerStrength !== undefined &&
-    value.dividerStrength !== "hairline" &&
-    value.dividerStrength !== "strong"
+    "dividerStrength" in
+      value &&
+    value.dividerStrength !==
+      undefined &&
+    value.dividerStrength !==
+      "hairline" &&
+    value.dividerStrength !==
+      "strong"
   ) {
     return false;
   }
 
-  for (const key of ["muted", "showPrice", "showDescription"]) {
-    if (key in value && value[key] !== undefined && typeof value[key] !== "boolean") {
+  for (
+    const key of [
+      "muted",
+      "showPrice",
+      "showDescription",
+    ]
+  ) {
+    if (
+      key in value &&
+      value[key] !==
+        undefined &&
+      typeof value[key] !==
+        "boolean"
+    ) {
       return false;
     }
+  }
+
+  if (
+    "itemFrame" in value &&
+    value.itemFrame !==
+      undefined &&
+    value.itemFrame !==
+      "none" &&
+    value.itemFrame !==
+      "outline" &&
+    value.itemFrame !==
+      "surface"
+  ) {
+    return false;
+  }
+
+  if (
+    "itemMediaFit" in value &&
+    value.itemMediaFit !==
+      undefined &&
+    value.itemMediaFit !==
+      "cover" &&
+    value.itemMediaFit !==
+      "contain"
+  ) {
+    return false;
+  }
+
+  if (
+    "itemMediaRatio" in
+      value &&
+    value.itemMediaRatio !==
+      undefined &&
+    value.itemMediaRatio !==
+      "auto" &&
+    value.itemMediaRatio !==
+      "16:9" &&
+    value.itemMediaRatio !==
+      "3:2" &&
+    value.itemMediaRatio !==
+      "4:3" &&
+    value.itemMediaRatio !==
+      "1:1" &&
+    value.itemMediaRatio !==
+      "4:5"
+  ) {
+    return false;
+  }
+
+  if (
+    value.itemRadius !==
+      undefined &&
+    (
+      typeof value.itemRadius !==
+        "number" ||
+      !Number.isFinite(
+        value.itemRadius,
+      ) ||
+      value.itemRadius < 0 ||
+      value.itemRadius > 48
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    value.itemPadding !==
+      undefined &&
+    (
+      typeof value.itemPadding !==
+        "number" ||
+      !Number.isFinite(
+        value.itemPadding,
+      ) ||
+      value.itemPadding < 0 ||
+      value.itemPadding > 96
+    )
+  ) {
+    return false;
   }
 
   return true;
@@ -402,6 +568,143 @@ function isSitePage(value: unknown): value is SitePage {
   );
 }
 
+function isSiteCatalog(
+  value: unknown,
+) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    !Array.isArray(
+      value.collections,
+    ) ||
+    !Array.isArray(
+      value.items,
+    )
+  ) {
+    return false;
+  }
+
+  const collectionsValid =
+    value.collections.every(
+      (collection) => {
+        if (
+          !isRecord(
+            collection,
+          )
+        ) {
+          return false;
+        }
+
+        return (
+          isString(
+            collection.id,
+          ) &&
+          isString(
+            collection.title,
+          ) &&
+          isString(
+            collection.slug,
+          ) &&
+          typeof collection.sortOrder ===
+            "number" &&
+          Number.isFinite(
+            collection.sortOrder,
+          ) &&
+          (
+            collection.description ===
+              undefined ||
+            isString(
+              collection.description,
+            )
+          ) &&
+          (
+            collection.coverImageUrl ===
+              undefined ||
+            isString(
+              collection.coverImageUrl,
+            )
+          )
+        );
+      },
+    );
+
+  if (!collectionsValid) {
+    return false;
+  }
+
+  return value.items.every(
+    (item) => {
+      if (!isRecord(item)) {
+        return false;
+      }
+
+      return (
+        isString(item.id) &&
+        isString(item.title) &&
+        isString(
+          item.imageUrl,
+        ) &&
+        isString(
+          item.imagePath,
+        ) &&
+        isString(
+          item.imageAlt,
+        ) &&
+        typeof item.visible ===
+          "boolean" &&
+        typeof item.sortOrder ===
+          "number" &&
+        Number.isFinite(
+          item.sortOrder,
+        ) &&
+        (
+          item.collectionId ===
+            undefined ||
+          isString(
+            item.collectionId,
+          )
+        ) &&
+        (
+          item.subtitle ===
+            undefined ||
+          isString(
+            item.subtitle,
+          )
+        ) &&
+        (
+          item.priceLabel ===
+            undefined ||
+          isString(
+            item.priceLabel,
+          )
+        ) &&
+        (
+          item.href ===
+            undefined ||
+          isString(
+            item.href,
+          )
+        ) &&
+        (
+          item.status ===
+            "concept" ||
+          item.status ===
+            "coming-soon" ||
+          item.status ===
+            "available"
+        )
+      );
+    },
+  );
+}
+
+
 export function isSiteDocument(value: unknown): value is SiteDocument {
   if (!isRecord(value)) return false;
   if (
@@ -412,6 +715,7 @@ export function isSiteDocument(value: unknown): value is SiteDocument {
     !isSiteHeaderConfig(value.header) ||
     !isSiteFooterConfig(value.footer) ||
     !isSiteThemeConfig(value.theme) ||
+    !isSiteCatalog(value.catalog) ||
     !Array.isArray(value.pages) ||
     !value.pages.every(isSitePage)
   ) {

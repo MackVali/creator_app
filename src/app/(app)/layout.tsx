@@ -8,6 +8,7 @@ import { AppCartProvider } from "@/components/cart/AppCartProvider";
 import { FabCreationProvider } from "@/components/ui/FabCreationContext";
 import AppShellNavVisibility from "@/components/AppShellNavVisibility";
 import { CreatorXpSurgeProvider } from "@/components/xp/CreatorXpSurgeHud";
+import IlavCheckInNotificationSync from "@/components/ai/IlavCheckInNotificationSync";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +20,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <CreatorXpSurgeProvider>
                 <LevelUpListener />
                 <SchedulerActivityHeartbeat />
+                <IlavCheckInNotificationSync />
                 <ProfileSetupPrompt />
                 <AppShellNavVisibility>{children}</AppShellNavVisibility>
               </CreatorXpSurgeProvider>

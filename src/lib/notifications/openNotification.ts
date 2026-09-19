@@ -7,6 +7,11 @@ import {
   OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
   OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION,
 } from "@/lib/notifications/notificationOpenIntents";
+import {
+  ILAV_CHECK_IN_NOTIFICATION_TYPE,
+  ILAV_CHECK_IN_QUERY_PARAM,
+  isIlavCheckInType,
+} from "@/lib/ai/ilavCheckInSchedule";
 
 type NotificationPayload = Record<string, unknown>;
 
@@ -88,6 +93,22 @@ export function scheduleNutritionLogUrlForNotificationPayload(
   return `/schedule?${params.toString()}`;
 }
 
+export function ilavCheckInUrlForNotificationPayload(input: unknown): string | null {
+  const payload = readPayload(input);
+  if (!payload) return null;
+
+  const type = readString(payload.type);
+  if (type !== ILAV_CHECK_IN_NOTIFICATION_TYPE) return null;
+
+  const checkInType = readString(payload.checkInType);
+  if (!isIlavCheckInType(checkInType)) return null;
+
+  const params = new URLSearchParams();
+  params.set(ILAV_CHECK_IN_QUERY_PARAM, checkInType);
+  appendParam(params, "creatorDayDate", readString(payload.creatorDayDate));
+  return `/schedule?${params.toString()}`;
+}
+
 function storePendingNutritionLogOpenIntent() {
   if (typeof window === "undefined") return;
 
@@ -102,6 +123,12 @@ function storePendingNutritionLogOpenIntent() {
 }
 
 export function openNotificationPayload(input: unknown): boolean {
+  const ilavCheckInUrl = ilavCheckInUrlForNotificationPayload(input);
+  if (ilavCheckInUrl && typeof window !== "undefined") {
+    window.location.assign(ilavCheckInUrl);
+    return true;
+  }
+
   const scheduleNutritionLogUrl =
     scheduleNutritionLogUrlForNotificationPayload(input);
   if (scheduleNutritionLogUrl && typeof window !== "undefined") {

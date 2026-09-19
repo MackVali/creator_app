@@ -1839,7 +1839,6 @@ export function MonumentRelatedHabits({
       const { pointerId } = event;
       cancelRelatedHabitLongPress();
       setPressedRelatedHabitId(habit.id);
-      lastRelatedHabitTapRef.current = null;
 
       try {
         element.setPointerCapture?.(pointerId);

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ApiRateLimitRpcRow = Record<string, unknown> & {
@@ -19,6 +21,13 @@ export type ApiRateLimitDecision = {
 
 type CheckApiRateLimitOptions = {
   userId: string;
+  action: string;
+  windowSeconds: number;
+  maxRequests: number;
+};
+
+type CheckApiSubjectRateLimitOptions = {
+  subjectHash: string;
   action: string;
   windowSeconds: number;
   maxRequests: number;
@@ -79,4 +88,87 @@ export async function checkApiRateLimit({
   const fallbackResetAt = new Date(Date.now() + windowSeconds * 1000);
 
   return normalizeRpcRow(row ?? null, fallbackResetAt);
+}
+
+export function hashRateLimitSubject(value: string) {
+  return createHash("sha256")
+    .update(value)
+    .digest("hex");
+}
+
+export function buildRequestSubjectHash(
+  request: Request,
+  namespace: string,
+  userId?: string | null,
+) {
+  if (userId) {
+    return hashRateLimitSubject(
+      `${namespace}:user:${userId}`,
+    );
+  }
+
+  const forwardedFor =
+    request.headers.get("x-forwarded-for") ?? "";
+
+  const clientIp =
+    forwardedFor.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    "";
+
+  if (clientIp) {
+    return hashRateLimitSubject(
+      `${namespace}:ip:${clientIp}`,
+    );
+  }
+
+  const userAgent =
+    request.headers.get("user-agent")?.slice(0, 256) ??
+    "unknown";
+
+  return hashRateLimitSubject(
+    `${namespace}:fallback:${userAgent}`,
+  );
+}
+
+export async function checkApiSubjectRateLimit({
+  subjectHash,
+  action,
+  windowSeconds,
+  maxRequests,
+}: CheckApiSubjectRateLimitOptions): Promise<ApiRateLimitDecision> {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    throw new Error(
+      "Supabase admin client not initialized",
+    );
+  }
+
+  const { data, error } = await admin.rpc(
+    "check_api_subject_rate_limit",
+    {
+      p_subject_hash: subjectHash,
+      p_action: action,
+      p_window_seconds: windowSeconds,
+      p_max_requests: maxRequests,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  const row = Array.isArray(data)
+    ? (data[0] as ApiRateLimitRpcRow | undefined)
+    : (data as ApiRateLimitRpcRow | null);
+
+  const fallbackResetAt = new Date(
+    Date.now() + windowSeconds * 1000,
+  );
+
+  return normalizeRpcRow(
+    row ?? null,
+    fallbackResetAt,
+  );
 }

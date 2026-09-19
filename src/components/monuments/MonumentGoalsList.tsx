@@ -2966,10 +2966,27 @@ export function MonumentGoalsList({
     };
   }, [loading, monumentView]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setGoalPanelDragOffset(0);
-    setGoalPanelTransitionEnabled(true);
-  }, []);
+
+    if (goalsGridLoading) {
+      setGoalPanelTransitionEnabled(false);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      setGoalPanelTransitionEnabled(true);
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setGoalPanelTransitionEnabled(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [goalsGridLoading, goalsSourceKey]);
 
   useLayoutEffect(() => {
     const viewportElement = goalsRoadmapViewportRef.current;
@@ -5758,7 +5775,9 @@ export function MonumentGoalsList({
         <section
           className={cn(
             GOAL_REVEAL_CLASS,
-            isGoalLibraryListView ? "space-y-2" : "space-y-3"
+            isGoalLibraryListView
+              ? "space-y-2 pb-[calc(7.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0"
+              : "space-y-3"
           )}
         >
           <div className={cn(
@@ -5803,7 +5822,12 @@ export function MonumentGoalsList({
             </div>
           </div>
           <div
-            className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className={cn(
+              "relative w-full overflow-hidden touch-pan-y",
+              goalPanelTransitionEnabled
+                ? "transition-[height] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                : "transition-none"
+            )}
             style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
             onPointerDown={handleGoalPanelPointerDown}
             onPointerMove={handleGoalPanelPointerMove}
@@ -5818,20 +5842,25 @@ export function MonumentGoalsList({
               <div
                 className={`${goalGridClass} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
               >
-                {Array.from({ length: 8 }).map((_, i) =>
+                {Array.from({ length: isGoalLibraryListView ? 5 : 8 }).map((_, i) =>
                   isGoalLibraryListView ? (
                     <div
                       key={i}
-                      className="flex min-h-[62px] w-full items-center gap-2 rounded-[10px] border border-white/[0.055] bg-white/[0.03] px-3 py-1.5 sm:min-h-[64px]"
+                      className="flex min-h-[48px] w-full items-center gap-1.5 rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 px-2 py-0.5 sm:min-h-[50px]"
                     >
-                      <Skeleton className="h-[34px] w-[34px] shrink-0 rounded-full bg-white/[0.06]" />
-                      <Skeleton className="h-6 w-6 shrink-0 rounded bg-white/[0.045]" />
-                      <div className="min-w-0 flex-1 space-y-1.5">
-                        <Skeleton className="h-3.5 w-2/3 rounded bg-white/[0.07]" />
-                        <Skeleton className="h-2.5 w-20 rounded bg-white/[0.05]" />
+                      <Skeleton className="h-[30px] w-[30px] shrink-0 rounded-full bg-white/[0.07]" />
+
+                      <Skeleton className="h-[18px] w-[18px] shrink-0 rounded-[5px] bg-white/[0.05]" />
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <Skeleton className="h-[13px] w-[58%] max-w-[15rem] rounded bg-white/[0.07]" />
+                        <Skeleton className="h-[9px] w-16 rounded bg-white/[0.045]" />
                       </div>
-                      <Skeleton className="h-3.5 w-9 shrink-0 rounded bg-white/[0.06]" />
-                      <Skeleton className="h-3.5 w-3.5 shrink-0 rounded bg-white/[0.05]" />
+
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <Skeleton className="h-3 w-8 rounded bg-white/[0.06]" />
+                        <Skeleton className="h-3.5 w-3.5 rounded bg-white/[0.045]" />
+                      </div>
                     </div>
                   ) : (
                     <Skeleton
@@ -6662,7 +6691,12 @@ export function MonumentGoalsList({
           </div>
         </div>
         <div
-          className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+          className={cn(
+              "relative w-full overflow-hidden touch-pan-y",
+              goalPanelTransitionEnabled
+                ? "transition-[height] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                : "transition-none"
+            )}
           style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
           onPointerDown={handleGoalPanelPointerDown}
           onPointerMove={handleGoalPanelPointerMove}

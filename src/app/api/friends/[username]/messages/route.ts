@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getSafeProfileIdentityByUsername } from "@/lib/friends/safeProfileIdentity";
 import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,8 +14,6 @@ const sendMessageSchema = z.object({
     .trim()
     .min(1, "Message body is required")
     .max(2000, "Message is too long"),
-  senderId: z.string().min(1, "Missing sender"),
-  recipientId: z.string().min(1, "Missing recipient"),
 });
 
 function truncatePushBody(body: string) {
@@ -106,9 +105,25 @@ async function sendFriendMessagePush({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { username: string } }
+  context: {
+    params: Promise<{ username?: string }>;
+  }
 ) {
   try {
+    const {
+      username: rawUsername = "",
+    } = await context.params;
+
+    const username =
+      rawUsername.trim().toLowerCase();
+
+    if (!username) {
+      return NextResponse.json(
+        { error: "Recipient is required" },
+        { status: 400 },
+      );
+    }
+
     const supabase = await createSupabaseServerClient();
     if (!supabase) {
       return NextResponse.json(
@@ -126,7 +141,10 @@ export async function POST(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const parsedBody = sendMessageSchema.safeParse(await request.json());
+    const parsedBody =
+      sendMessageSchema.safeParse(
+        await request.json().catch(() => null),
+      );
     if (!parsedBody.success) {
       return NextResponse.json(
         { error: "Invalid request", details: parsedBody.error.flatten() },
@@ -134,43 +152,36 @@ export async function POST(
       );
     }
 
-    const { body, senderId, recipientId } = parsedBody.data;
+    const { body } = parsedBody.data;
 
-    if (senderId !== user.id) {
-      return NextResponse.json(
-        { error: "Sender mismatch" },
-        { status: 403 }
-      );
-    }
+    let recipient;
 
-    const {
-      data: recipientUserId,
-      error: recipientLookupError,
-    } = await supabase.rpc("get_profile_user_id", {
-      p_username: params.username,
-    });
-
-    if (recipientLookupError) {
+    try {
+      recipient =
+        await getSafeProfileIdentityByUsername(
+          username,
+        );
+    } catch (error) {
       console.error(
         "Error looking up recipient profile",
-        recipientLookupError
+        error,
       );
+
       return NextResponse.json(
         { error: "Failed to resolve recipient" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    if (!recipientUserId) {
-      return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
-    }
-
-    if (recipientUserId !== recipientId) {
+    if (!recipient) {
       return NextResponse.json(
-        { error: "Recipient mismatch" },
-        { status: 400 }
+        { error: "Recipient not found" },
+        { status: 404 },
       );
     }
+
+    const senderId = user.id;
+    const recipientId = recipient.userId;
 
     const { data, error } = await supabase
       .from("friend_messages")

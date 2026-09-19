@@ -30,13 +30,13 @@ describe("site builder section registry", () => {
     expect(section.visible).toBe(true);
     expect(section.layout?.variant).toBe("featured");
     expect(section.source).toEqual({
-      kind: "source",
-      listingType: "product",
-      mode: "selected",
-      listingIds: [],
+      kind: "catalog",
+      mode: "all",
     });
     expect(section.style?.showPrice).toBe(true);
-    expect(section.style?.showDescription).toBe(true);
+    expect(section.style?.showDescription).toBe(false);
+    expect(section.style?.itemFrame).toBe("none");
+    expect(section.style?.itemMediaRatio).toBe("4:5");
   });
 
   it("creates split sections with media and an action", () => {

@@ -328,6 +328,42 @@ export default function InboxPage() {
 
   const visibleRows = isSearching ? searchResults : threads;
 
+  const ilavRow = (
+    <Link
+      href="/inbox/ilav"
+      className="group flex w-full items-center gap-3 border-b border-white/10 px-1 py-3 text-left transition hover:bg-white/[0.04] active:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+    >
+      <Avatar className="h-11 w-11 border border-white/10 bg-white/[0.05]">
+        <AvatarFallback className="bg-white/[0.05]">
+          <span
+            aria-hidden="true"
+            className="text-[1rem] leading-none grayscale saturate-0 contrast-125"
+          >
+            💠
+          </span>
+        </AvatarFallback>
+      </Avatar>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">
+              Ilav
+            </p>
+          </div>
+
+          <span className="shrink-0 text-[0.62rem] font-medium text-white/30">
+            CREATOR
+          </span>
+        </div>
+
+        <p className="mt-1 line-clamp-1 text-[0.72rem] text-white/65">
+          Hit me up
+        </p>
+      </div>
+    </Link>
+  );
+
   const threadRows = useMemo(
     () =>
       visibleRows.map((thread) => {
@@ -563,6 +599,8 @@ export default function InboxPage() {
           hidden={tab !== "primary"}
           className="space-y-3"
         >
+          {!isSearching ? ilavRow : null}
+
           {showInitialLoading ? (
             <div className="space-y-0 px-1 py-4">
               {Array.from({ length: 5 }).map((_, index) => (

@@ -1,12 +1,14 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  LISTING_FIELDS,
-  serializeListing,
-  type ListingRow,
-} from "@/lib/source/listings/shared";
+  toPublicSourceListing,
+  type PublicSourceListingRow,
+} from "@/lib/site-builder/publicListingProjection";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { SourceListing } from "@/types/source";
+
+const PUBLIC_SOURCE_LISTING_FIELDS =
+  "id, type, title, description, price, currency, status, metadata, published_at, created_at, updated_at";
 
 export async function getPublishedSiteSourceListings(
   userId: string,
@@ -22,7 +24,7 @@ export async function getPublishedSiteSourceListings(
 
   const { data, error } = await admin
     .from("source_listings")
-    .select(LISTING_FIELDS)
+    .select(PUBLIC_SOURCE_LISTING_FIELDS)
     .eq("user_id", userId)
     .eq("status", "published")
     .in("type", ["product", "service"])
@@ -30,14 +32,19 @@ export async function getPublishedSiteSourceListings(
     .limit(100);
 
   if (error) {
-    console.error("Failed to load public Site Builder Source listings", {
-      userId,
-      error,
-    });
+    console.error(
+      "Failed to load public Site Builder Source listings",
+      {
+        userId,
+        error,
+      },
+    );
     return [];
   }
 
   return (data ?? []).map((row) =>
-    serializeListing(row as ListingRow),
+    toPublicSourceListing(
+      row as PublicSourceListingRow,
+    ),
   );
 }

@@ -34857,25 +34857,7 @@ export function Fab({
                         backgroundImage: aiOverlayOrigin.backgroundImage,
                       }}
                     />
-                    <motion.button
-                      type="button"
-                      onClick={closeAiOverlay}
-                      aria-label="Close ILAV"
-                      className="absolute right-4 top-4 z-10 rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                      variants={{
-                        closed: { opacity: 0 },
-                        open: {
-                          opacity: 1,
-                          transition: {
-                            duration: prefersReducedMotion ? 0.08 : 0.18,
-                            delay: prefersReducedMotion ? 0 : 0.16,
-                            ease: "easeOut",
-                          },
-                        },
-                      }}
-                    >
-                      <X className="h-5 w-5" aria-hidden="true" />
-                    </motion.button>
+                    
                     <motion.div
                       className="relative flex min-h-[240px] flex-1 flex-col text-left"
                       variants={{

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getSafeProfileIdentityByUserId } from "@/lib/friends/safeProfileIdentity";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 type ThreadMessage = {
@@ -9,13 +10,6 @@ type ThreadMessage = {
   recipient_id: string;
   created_at: string;
   read_at: string | null;
-};
-
-type ThreadProfile = {
-  user_id: string;
-  username: string | null;
-  name: string | null;
-  avatar_url: string | null;
 };
 
 const FRIEND_MESSAGE_TTL_HOURS = 24;
@@ -55,11 +49,18 @@ export async function GET(
       .order("created_at", { ascending: true })
       .limit(500);
 
-    const profileQuery = supabase
-      .from("profiles")
-      .select("user_id, username, name, avatar_url")
-      .eq("user_id", participantId)
-      .single();
+    const profileQuery =
+      getSafeProfileIdentityByUserId(
+        participantId,
+      )
+        .then((data) => ({
+          data,
+          error: null,
+        }))
+        .catch((error: unknown) => ({
+          data: null,
+          error,
+        }));
 
     const viewerFriendQuery = supabase
       .from("friend_connections")
@@ -113,7 +114,7 @@ export async function GET(
       );
     }
 
-    const participantProfile = profile as ThreadProfile | null;
+    const participantProfile = profile;
     const isMutualFriend = Boolean(viewerFriend && participantFriend);
     const fallbackLabel = `User ${participantId.slice(0, 6)}`;
     const displayName =
@@ -151,7 +152,7 @@ export async function GET(
         userId: participantId,
         username: participantProfile?.username ?? null,
         displayName,
-        avatarUrl: participantProfile?.avatar_url ?? null,
+        avatarUrl: participantProfile?.avatarUrl ?? null,
         canStartVoiceCall: isMutualFriend,
       },
       messages:
