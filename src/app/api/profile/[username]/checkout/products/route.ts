@@ -1,6 +1,11 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 
+import {
+  buildRequestSubjectHash,
+  checkApiSubjectRateLimit,
+  hashRateLimitSubject,
+} from "@/lib/server/rateLimit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
@@ -11,9 +16,98 @@ import {
 import type { ProductCheckoutItemInput, ProductCheckoutResponse } from "@/types/checkout";
 
 const MINIMUM_QUANTITY = 1;
+const MAX_REQUEST_BYTES = 20_000;
+const MAX_DISTINCT_ITEMS = 25;
+const MAX_QUANTITY_PER_ITEM = 100;
+const MAX_TOTAL_QUANTITY = 250;
 
-function buildErrorResponse(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+const VISITOR_MINUTE_LIMIT = 5;
+const VISITOR_HOUR_LIMIT = 20;
+const GLOBAL_MINUTE_LIMIT = 50;
+const GLOBAL_HOUR_LIMIT = 500;
+
+const GLOBAL_CHECKOUT_SUBJECT_HASH =
+  hashRateLimitSubject("checkout-create:global");
+
+function buildErrorResponse(
+  message: string,
+  status: number,
+) {
+  return NextResponse.json(
+    { error: message },
+    { status },
+  );
+}
+
+function buildRateLimitResponse(
+  retryAfterSeconds: number,
+) {
+  return NextResponse.json(
+    {
+      error:
+        "Too many checkout attempts. Try again shortly.",
+    },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(
+          retryAfterSeconds,
+        ),
+      },
+    },
+  );
+}
+
+async function enforceCheckoutRateLimit(
+  request: Request,
+  buyerUserId: string | null,
+) {
+  const visitorSubjectHash =
+    buildRequestSubjectHash(
+      request,
+      "checkout-create",
+      buyerUserId,
+    );
+
+  const checks = [
+    {
+      subjectHash: visitorSubjectHash,
+      action: "checkout-create-visitor-minute",
+      windowSeconds: 60,
+      maxRequests: VISITOR_MINUTE_LIMIT,
+    },
+    {
+      subjectHash: visitorSubjectHash,
+      action: "checkout-create-visitor-hour",
+      windowSeconds: 3600,
+      maxRequests: VISITOR_HOUR_LIMIT,
+    },
+    {
+      subjectHash: GLOBAL_CHECKOUT_SUBJECT_HASH,
+      action: "checkout-create-global-minute",
+      windowSeconds: 60,
+      maxRequests: GLOBAL_MINUTE_LIMIT,
+    },
+    {
+      subjectHash: GLOBAL_CHECKOUT_SUBJECT_HASH,
+      action: "checkout-create-global-hour",
+      windowSeconds: 3600,
+      maxRequests: GLOBAL_HOUR_LIMIT,
+    },
+  ];
+
+  for (const check of checks) {
+    const decision =
+      await checkApiSubjectRateLimit(check);
+
+    if (!decision.allowed) {
+      return buildRateLimitResponse(
+        decision.retryAfterSeconds,
+      );
+    }
+  }
+
+  return null;
 }
 
 function normalizeItems(payload: unknown): ProductCheckoutItemInput[] {
@@ -69,6 +163,20 @@ export async function POST(
     return buildErrorResponse("Username is required to start checkout.", 400);
   }
 
+  const contentLength = Number(
+    request.headers.get("content-length") ?? "0",
+  );
+
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > MAX_REQUEST_BYTES
+  ) {
+    return buildErrorResponse(
+      "Checkout request is too large.",
+      413,
+    );
+  }
+
   const supabase = createAdminClient();
   if (!supabase) {
     return buildErrorResponse("Checkout service currently unavailable.", 503);
@@ -82,19 +190,85 @@ export async function POST(
   const { data: viewerAuth } = serverSupabase
     ? await serverSupabase.auth.getUser()
     : { data: { user: null } };
-  const buyerUserId = viewerAuth?.user?.id ?? null;
+  const buyerUserId =
+    viewerAuth?.user?.id ?? null;
+
+  try {
+    const rateLimitResponse =
+      await enforceCheckoutRateLimit(
+        request,
+        buyerUserId,
+      );
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+  } catch (error) {
+    console.error(
+      "Failed to enforce checkout rate limit",
+      error,
+    );
+
+    return buildErrorResponse(
+      "Checkout service currently unavailable.",
+      503,
+    );
+  }
 
   let normalizedItems: ProductCheckoutItemInput[];
+
   try {
-    const payload = await request.json().catch(() => null);
+    const rawBody = await request.text();
+
+    if (
+      new TextEncoder()
+        .encode(rawBody)
+        .byteLength > MAX_REQUEST_BYTES
+    ) {
+      return buildErrorResponse(
+        "Checkout request is too large.",
+        413,
+      );
+    }
+
+    const payload = JSON.parse(rawBody);
     normalizedItems = normalizeItems(payload);
   } catch (error) {
-    console.error("Failed to parse checkout payload", error);
-    return buildErrorResponse("Invalid checkout payload.", 400);
+    console.error(
+      "Failed to parse checkout payload",
+      error,
+    );
+
+    return buildErrorResponse(
+      "Invalid checkout payload.",
+      400,
+    );
   }
 
   if (normalizedItems.length === 0) {
-    return buildErrorResponse("At least one cart item is required.", 400);
+    return buildErrorResponse(
+      "At least one cart item is required.",
+      400,
+    );
+  }
+
+  const totalQuantity = normalizedItems.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
+
+  if (
+    normalizedItems.length > MAX_DISTINCT_ITEMS ||
+    normalizedItems.some(
+      (item) =>
+        item.quantity > MAX_QUANTITY_PER_ITEM,
+    ) ||
+    totalQuantity > MAX_TOTAL_QUANTITY
+  ) {
+    return buildErrorResponse(
+      "Cart exceeds checkout limits.",
+      400,
+    );
   }
 
   const { data: sellerUserId, error: lookupError } = await supabase.rpc(
