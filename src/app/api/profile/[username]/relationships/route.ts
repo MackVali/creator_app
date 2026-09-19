@@ -106,13 +106,25 @@ export async function GET(
     return NextResponse.json({ users: [] }, { status: 200 });
   }
 
-  const { data: targetId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: username },
-  );
+  const { data: targetProfile, error: lookupError } = await supabase
+    .from("profiles")
+    .select("user_id, is_private")
+    .ilike("username", username)
+    .maybeSingle();
 
-  if (lookupError || !targetId) {
+  if (lookupError) {
     console.error("Failed to resolve profile id", lookupError);
+    return NextResponse.json(
+      { error: "Unable to load relationships." },
+      { status: 500 },
+    );
+  }
+
+  const targetId = targetProfile?.user_id ?? null;
+  if (
+    !targetId ||
+    (targetProfile?.is_private === true && viewerId !== targetId)
+  ) {
     return NextResponse.json(
       { error: "Profile not found." },
       { status: 404 },
@@ -156,8 +168,9 @@ export async function GET(
 
   const profilesQuery = supabase
     .from("profiles")
-    .select("user_id, username, name, avatar_url")
+    .select("user_id, username, name, avatar_url, is_private")
     .in("user_id", relatedIds)
+    .or(viewerId ? `is_private.eq.false,is_private.is.null,user_id.eq.${viewerId}` : "is_private.eq.false,is_private.is.null")
     .order("name", { ascending: true });
   const viewerFollowingQuery = viewerId
     ? supabase

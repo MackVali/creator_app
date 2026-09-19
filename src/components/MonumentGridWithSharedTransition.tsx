@@ -232,7 +232,7 @@ function SortableMonumentCard({
       className={cn(
         density === "compact"
           ? "card app-dashboard-monument-card flex min-h-[46px] w-full select-none items-center justify-center rounded-2xl px-2.5 py-1.5 transition-colors hover:bg-[var(--subtle-surface)]"
-          : "card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]",
+          : "card app-dashboard-monument-card flex aspect-square lg:aspect-auto lg:h-[112px] w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]",
         (isDragging || isActiveDrag) && "pointer-events-none opacity-0",
         isHidden && "pointer-events-none opacity-0"
       )}
@@ -306,9 +306,52 @@ function getDashboardDetailViewport(): MonumentDetailViewportRect {
   };
 }
 
+function getDesktopCommandMonumentDetailRect(): MeasuredMonumentRect | null {
+  if (typeof window === "undefined" || window.innerWidth < 1024) {
+    return null;
+  }
+
+  const centerPanel = document.querySelector<HTMLElement>(
+    "[data-command-center-panel]"
+  );
+
+  if (!centerPanel) {
+    return null;
+  }
+
+  const centerRect = centerPanel.getBoundingClientRect();
+  const rightRail =
+    document.querySelector<HTMLElement>("[data-my-list-sheet]");
+  const rightRailRect = rightRail?.getBoundingClientRect() ?? null;
+
+  const left = Math.max(0, centerRect.left);
+  const right =
+    rightRailRect &&
+    rightRailRect.width > 0 &&
+    rightRailRect.left > left
+      ? Math.min(centerRect.right, rightRailRect.left)
+      : centerRect.right;
+
+  const top = Math.max(0, centerRect.top);
+  const viewportHeight = Math.max(window.innerHeight || 0, 0);
+  const width = Math.max(0, right - left);
+  const height = Math.max(0, viewportHeight - top);
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { top, left, width, height };
+}
+
 function getDashboardDetailPopupRect(
   appViewportRect = getDashboardDetailViewport()
 ): MeasuredMonumentRect {
+  const commandCenterRect = getDesktopCommandMonumentDetailRect();
+
+  if (commandCenterRect) {
+    return commandCenterRect;
+  }
   const viewportWidth = window.innerWidth || 0;
   const horizontalInset =
     viewportWidth >= 1280
@@ -728,14 +771,38 @@ export function MonumentGridWithSharedTransition({
     }, 0);
   }, []);
 
+  const isMonumentCommandCenterDetail =
+    Boolean(monumentTransition && getDesktopCommandMonumentDetailRect());
+
+  const effectiveMonumentDetailHeight =
+    isMonumentCommandCenterDetail && monumentTransition
+      ? monumentTransition.targetRect.height
+      : detailOverlayHeight;
+
   const detailOverlayStyle = {
-    "--monument-detail-overlay-height": detailOverlayHeight
-      ? `${detailOverlayHeight}px`
+    "--monument-detail-overlay-height": effectiveMonumentDetailHeight
+      ? `${effectiveMonumentDetailHeight}px`
       : "100dvh",
   } as CSSProperties;
+
   const detailOverlayScrollStyle = {
-    top: `${detailOverlayTop}px`,
-    height: detailOverlayHeight ? `${detailOverlayHeight}px` : "100dvh",
+    top:
+      isMonumentCommandCenterDetail && monumentTransition
+        ? `${monumentTransition.targetRect.top}px`
+        : `${detailOverlayTop}px`,
+    height:
+      isMonumentCommandCenterDetail && monumentTransition
+        ? `${monumentTransition.targetRect.height}px`
+        : detailOverlayHeight
+          ? `${detailOverlayHeight}px`
+          : "100dvh",
+    ...(isMonumentCommandCenterDetail && monumentTransition
+      ? {
+          left: `${monumentTransition.targetRect.left}px`,
+          right: "auto",
+          width: `${monumentTransition.targetRect.width}px`,
+        }
+      : {}),
   } as CSSProperties;
   const monumentShellRect =
     monumentTransition?.phase === "closing"
@@ -759,7 +826,7 @@ export function MonumentGridWithSharedTransition({
       type="button"
       data-tour="new-monument"
       onClick={openDialog}
-      className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
+      className="card app-dashboard-monument-card flex aspect-square lg:aspect-auto lg:h-[112px] w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
     >
       <div className="mb-1 text-lg leading-none">🏛️</div>
       <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -792,7 +859,10 @@ export function MonumentGridWithSharedTransition({
               style={detailOverlayScrollStyle}
             >
               <motion.div
-                className="pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-md"
+                className={cn(
+                  "pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-md",
+                  isMonumentCommandCenterDetail && "hidden"
+                )}
                 initial={{ opacity: 0 }}
                 animate={{
                   opacity: monumentTransition.phase === "closing" ? 0 : 1,
@@ -801,7 +871,7 @@ export function MonumentGridWithSharedTransition({
               />
               <motion.div
                 role="dialog"
-                aria-modal="true"
+                aria-modal={!isMonumentCommandCenterDetail}
                 className={`app-card relative z-10 mx-auto flex min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] flex-col rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)] ${
                   monumentTransition.phase === "open"
                     ? "overflow-visible"
@@ -810,6 +880,9 @@ export function MonumentGridWithSharedTransition({
                 style={{
                   ...detailOverlayStyle,
                   width: monumentTransition.targetRect.width,
+                  maxWidth: isMonumentCommandCenterDetail ? "none" : undefined,
+                  marginLeft: isMonumentCommandCenterDetail ? 0 : undefined,
+                  marginRight: isMonumentCommandCenterDetail ? 0 : undefined,
                   transformOrigin: "top left",
                 }}
                 initial={{
@@ -881,7 +954,7 @@ export function MonumentGridWithSharedTransition({
                 key={`empty-${index}`}
                 data-tour="new-monument"
                 onClick={openDialog}
-                className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
+                className="card app-dashboard-monument-card flex aspect-square lg:aspect-auto lg:h-[112px] w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
               >
                 <div className="mb-1 text-lg opacity-60">🏛️</div>
                 <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -919,7 +992,7 @@ export function MonumentGridWithSharedTransition({
                 <DragOverlay adjustScale={false} dropAnimation={null}>
                   {activeDragMonument ? (
                     <div
-                      className="card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 shadow-[0_14px_28px_rgba(0,0,0,0.34)] ring-1 ring-white/20"
+                      className="card app-dashboard-monument-card flex aspect-square lg:aspect-auto lg:h-[112px] w-full select-none flex-col items-center justify-center p-1 shadow-[0_14px_28px_rgba(0,0,0,0.34)] ring-1 ring-white/20"
                       style={{
                         ...monumentCardNoSelectStyle,
                         height: activeDragRect?.height,

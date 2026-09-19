@@ -13,6 +13,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { MouseEvent } from "react";
+
+import { CLOSE_ACTIVE_AREA_DETAIL_EVENT } from "@/components/areas/events";
+import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 
 const primaryItems = [
   {
@@ -150,6 +154,34 @@ export default function DesktopShellNav() {
   const pathname = usePathname();
   const forceExpanded = pathname === "/dashboard" || pathname === "/command";
 
+  const handlePrimaryNavClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
+    if (
+      href !== "/dashboard" ||
+      pathname !== "/dashboard" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+
+    if (document.body.classList.contains("area-detail-open")) {
+      event.preventDefault();
+      window.dispatchEvent(
+        new CustomEvent(CLOSE_ACTIVE_AREA_DETAIL_EVENT)
+      );
+      return;
+    }
+
+    if (document.body.classList.contains("monument-detail-open")) {
+      event.preventDefault();
+      window.dispatchEvent(
+        new CustomEvent(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT)
+      );
+    }
+  };
+
   return (
     <div className="group pointer-events-none fixed inset-y-0 left-0 z-50 hidden w-52 lg:block">
       <div
@@ -179,6 +211,7 @@ export default function DesktopShellNav() {
               <Link
                 key={href}
                 href={href}
+                onClick={(event) => handlePrimaryNavClick(event, href)}
                 aria-current={active ? "page" : undefined}
                 className={`flex h-10 items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium transition ${
                   active

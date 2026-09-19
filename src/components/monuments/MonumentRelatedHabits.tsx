@@ -682,12 +682,16 @@ export function MonumentRelatedHabits({
     >()
   );
   const loadedRelatedHabitsMonumentIdRef = useRef<string | null>(null);
-  const relatedHabitGridClass =
-    relatedHabitCardDensity === "small"
+  const isRelatedHabitListView =
+    sourceType === "area" || sourceType === "monument";
+  const relatedHabitGridClass = isRelatedHabitListView
+    ? "flex w-full flex-col gap-0.5"
+    : relatedHabitCardDensity === "small"
       ? RELATED_HABIT_SMALL_GRID_CLASS
       : RELATED_HABIT_GRID_CLASS;
-  const relatedHabitPageGridClass =
-    relatedHabitCardDensity === "small"
+  const relatedHabitPageGridClass = isRelatedHabitListView
+    ? "flex w-full flex-col gap-0.5"
+    : relatedHabitCardDensity === "small"
       ? RELATED_HABIT_SMALL_PAGE_GRID_CLASS
       : RELATED_HABIT_PAGE_GRID_CLASS;
   const isSmallRelatedHabitDensity = relatedHabitCardDensity === "small";
@@ -2170,17 +2174,16 @@ export function MonumentRelatedHabits({
 
   return (
     <>
-    <Card className="relative gap-0 overflow-hidden rounded-2xl border-white/[0.08] bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_18px_46px_-38px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur sm:rounded-3xl">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
-      <CardHeader className="relative px-3 pt-2 pb-1 sm:px-6 sm:pt-3">
+    <Card className="relative gap-0 overflow-visible rounded-none border-0 bg-transparent py-0 shadow-none">
+      <CardHeader className="relative px-1 pt-1 pb-1 sm:px-1.5 sm:pt-1.5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/48">
               HABITS
             </CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <span className="rounded-full border border-white/8 bg-white/[0.035] px-2 py-0.5 text-[9px] font-semibold leading-none text-white/48">
               {standaloneDecoratedHabits.length + relatedRoutines.length}
             </span>
             {(
@@ -2219,7 +2222,7 @@ export function MonumentRelatedHabits({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="relative px-3 pt-0 pb-2.5 sm:px-6 sm:pb-4">
+      <CardContent className="relative px-1 pt-0 pb-0 sm:px-1.5">
         {habitsLoading || (completionLoading && relatedHabits.length === 0) ? (
           <div className={relatedHabitGridClass}>
             {Array.from({ length: 3 }).map((_, index) => (
@@ -2227,9 +2230,11 @@ export function MonumentRelatedHabits({
                 key={index}
                 className={clsx(
                   "bg-white/[0.06]",
-                  isSmallRelatedHabitDensity
-                    ? "h-11 rounded-xl sm:aspect-[5/6] sm:h-auto sm:min-h-[82px]"
-                    : "aspect-[5/6] min-h-[96px] rounded-2xl"
+                  isRelatedHabitListView
+                    ? "h-[48px] w-full rounded-[8px]"
+                    : isSmallRelatedHabitDensity
+                      ? "h-11 rounded-xl sm:aspect-[5/6] sm:h-auto sm:min-h-[82px]"
+                      : "aspect-[5/6] min-h-[96px] rounded-2xl"
                 )}
               />
             ))}
@@ -2302,7 +2307,7 @@ export function MonumentRelatedHabits({
                                 key={`${page.id}-routine-${item.routine.id}`}
                                 routine={item.routine}
                                 density={relatedHabitCardDensity}
-                                areaHubCompact={sourceType === "area"}
+                                areaHubCompact={isRelatedHabitListView}
                                 onHabitCompletionToggle={
                                   handleRoutineHabitCompletionToggle
                                 }
@@ -2350,11 +2355,6 @@ export function MonumentRelatedHabits({
                             !isHabitCompletedToday && isHabitOverdue
                               ? "related-habit-due-border"
                               : null;
-                          const habitPillClass = isHabitCompletedToday
-                            ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                            : isHabitOverdue
-                              ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
-                              : "border-white/10 bg-white/[0.06] text-white/65";
 
                           const habitCard = (
                             <div
@@ -2363,8 +2363,8 @@ export function MonumentRelatedHabits({
                                 isHabitCompletedToday
                                   ? "group relative flex w-full transform-gpu flex-col border-[3px] border-[#1c1f25] text-white transition duration-200 select-none"
                                   : "goal-card group relative flex w-full transform-gpu flex-col text-white transition duration-200 select-none",
-                                sourceType === "area"
-                                  ? "min-h-[46px] rounded-[10px] px-2 py-1.5"
+                                isRelatedHabitListView
+                                  ? "min-h-[48px] rounded-[8px] px-2 py-1.5"
                                   : isSmallRelatedHabitDensity
                                     ? "min-h-11 rounded-xl p-1.5 sm:aspect-[5/6] sm:min-h-[82px] sm:p-2"
                                     : "aspect-[5/6] min-h-[96px] rounded-2xl p-3 sm:p-4",
@@ -2451,8 +2451,8 @@ export function MonumentRelatedHabits({
                               <div
                                 className={clsx(
                                   "relative z-[2] flex min-h-0 flex-1 text-center",
-                                  sourceType === "area"
-                                    ? "justify-start"
+                                  isRelatedHabitListView
+                                    ? "flex-row items-center justify-start gap-1.5"
                                     : isSmallRelatedHabitDensity
                                       ? "flex-row items-center justify-start gap-1.5 sm:flex-col sm:justify-between sm:gap-1"
                                       : "flex-col items-center justify-between gap-1"
@@ -2461,8 +2461,8 @@ export function MonumentRelatedHabits({
                                 <span
                                   className={clsx(
                                     "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-                                    sourceType === "area"
-                                      ? "mt-0 h-6 w-6 shrink-0 rounded-md text-[13px]"
+                                    isRelatedHabitListView
+                                      ? "mt-0 h-[18px] w-[18px] shrink-0 border-0 bg-transparent text-[14px] shadow-none"
                                       : isSmallRelatedHabitDensity
                                         ? "mt-0 h-6 w-6 shrink-0 text-[11px] sm:mt-1 sm:h-7 sm:w-7"
                                         : "h-7 w-7 text-xs sm:h-8 sm:w-8",
@@ -2478,7 +2478,7 @@ export function MonumentRelatedHabits({
                                 <div
                                   className={clsx(
                                     "flex min-h-0 w-full min-w-0 flex-1 items-center",
-                                    sourceType === "area"
+                                    isRelatedHabitListView
                                       ? "justify-start"
                                       : isSmallRelatedHabitDensity
                                         ? "justify-start sm:justify-center"
@@ -2488,19 +2488,20 @@ export function MonumentRelatedHabits({
                                   <span
                                     className={clsx(
                                       "line-clamp-3 w-full min-w-0 break-words px-0.5 font-semibold leading-tight text-white whitespace-normal",
-                                      sourceType === "area"
-                                        ? "line-clamp-2 text-left text-[12px] font-semibold leading-[14px]"
+                                      isRelatedHabitListView
+                                        ? "line-clamp-1 text-left text-[13.5px] font-semibold leading-tight sm:text-[14px]"
                                         : isSmallRelatedHabitDensity
                                           ? "line-clamp-2 text-left text-[10px] sm:text-center sm:text-[9px]"
                                           : "text-[9px] sm:text-[10px]"
                                     )}
                                     style={{
-                                      hyphens: sourceType === "area" ? "none" : "auto",
+                                      hyphens: isRelatedHabitListView ? "none" : "auto",
                                     }}
                                   >
                                     {habit.name}
                                   </span>
                                 </div>
+
                               </div>
                             </div>
                           );

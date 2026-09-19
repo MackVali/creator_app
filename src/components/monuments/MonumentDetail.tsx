@@ -715,16 +715,9 @@ export function MonumentDetail({
         source={focusPomoSource}
         onClose={() => setFocusPomoSource(null)}
       />
-      <div className="relative z-20 mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
-        <section
-          className={cn(
-            containerShell,
-            overviewBackground,
-            "overflow-hidden px-3 py-3 text-white sm:p-7",
-            "min-h-0 sm:min-h-[210px]"
-          )}
-        >
-          <div className="relative z-40 flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
+      <div className="relative z-20 mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-2 overflow-x-hidden sm:gap-3">
+        <section className="relative w-full px-3 py-1.5 text-white sm:px-4 sm:py-2">
+          <div className="relative z-40 flex items-center gap-4 sm:gap-5">
             {inlineEditOpen ? (
               <InlineMonumentHeaderEditor
                 monument={displayMonument}
@@ -794,7 +787,7 @@ export function MonumentDetail({
                     </div>
                   </div>
                   <div
-                    className="relative grid h-[11px] max-w-[220px] grid-cols-5 gap-1.5 overflow-hidden sm:max-w-[260px]"
+                    className="hidden"
                     aria-label={`EVO charge stage ${summary.evoLabel}`}
                   >
                     {CHARGE_MILESTONES.map((milestone, index) => {
@@ -857,13 +850,11 @@ export function MonumentDetail({
           </div>
         </section>
 
-        <div className="grid w-full grid-cols-1 items-start gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="grid w-full grid-cols-1 items-start gap-1 xl:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <section
             className={cn(
-              containerShell,
-              sectionBackground,
-              "px-3 py-4 sm:p-7",
-              "min-h-[260px]",
+              "relative w-full px-2 pt-2 pb-0 sm:px-0 sm:py-0",
+              "min-h-0 xl:min-h-[260px]",
               "z-0 overflow-visible"
             )}
           >
@@ -874,7 +865,7 @@ export function MonumentDetail({
               >
                 {(
                   [
-                    { value: "goals", label: "GOAL GRID" },
+                    { value: "goals", label: "GOALS" },
                     { value: "roadmap", label: "ROADMAP" },
                   ] as const
                 ).map((option) => (
@@ -910,17 +901,8 @@ export function MonumentDetail({
           <div className="relative z-[1] flex min-w-0 flex-col gap-5 lg:gap-6">
             <MonumentRelatedHabits monumentId={id} />
 
-            <section
-              className={cn(
-                containerShell,
-                sectionBackground,
-                "p-4 sm:p-5",
-                "z-[1] overflow-visible"
-              )}
-            >
-              <div className="relative z-10">
-                <MonumentNotesGrid monumentId={id} initialNotes={notes} />
-              </div>
+            <section className="relative z-[1] w-full overflow-visible">
+              <MonumentNotesGrid monumentId={id} initialNotes={notes} />
             </section>
           </div>
 

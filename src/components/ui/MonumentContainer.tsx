@@ -78,14 +78,14 @@ export const MonumentContainer = forwardRef<
         embedded && paginated ? (
           <div
             ref={getEmbeddedPageRef(0)}
-            className="w-full shrink-0 snap-start lg:hidden"
+            className="w-full shrink-0 snap-start"
           >
             <div className="app-dashboard-monuments-panel px-4">
               <div className="grid grid-cols-4 gap-1">
                 {Array.from({ length: Math.max(1, pageSize) }).map((_, i) => (
                   <Skeleton
                     key={i}
-                    className="app-dashboard-monument-skeleton aspect-square w-full rounded-2xl bg-white/[0.06]"
+                    className="app-dashboard-monument-skeleton aspect-square w-full lg:aspect-auto lg:h-[112px] rounded-2xl bg-white/[0.06]"
                   />
                 ))}
               </div>
@@ -124,7 +124,7 @@ export const MonumentContainer = forwardRef<
                   <div
                     key={`monument-page-${pageIndex}`}
                     ref={getEmbeddedPageRef(pageIndex)}
-                    className="w-full shrink-0 snap-start lg:hidden"
+                    className="w-full shrink-0 snap-start"
                   >
                     <div className="app-dashboard-monuments-panel px-4">
                       <MonumentGridWithSharedTransition

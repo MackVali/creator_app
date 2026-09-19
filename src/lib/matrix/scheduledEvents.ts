@@ -56,11 +56,16 @@ export type ProjectRow = Pick<
     name: string;
     skill_id: string | null;
     priority: string | null;
+    completed_at?: string | null;
   }[];
   project_skills?: {
     skill_id: string | null;
   }[];
 };
+export type TaskRow = Pick<
+  Database["public"]["Tables"]["tasks"]["Row"],
+  "id" | "project_id" | "name" | "stage" | "skill_id" | "priority" | "completed_at"
+>;
 export type GoalRow = Pick<
   Database["public"]["Tables"]["goals"]["Row"],
   "id" | "name" | "monument_id"
@@ -148,6 +153,18 @@ export type MatrixRoutine = Omit<RelatedRoutineCardRoutine, "habits"> & {
   totalDueDurationMinutes: number | null;
   sortRank: number;
 };
+export type MatrixProjectTask = {
+  id: string;
+  name: string;
+  stage: string;
+  skillId: string | null;
+  skillIcon: string | null;
+  priorityCode: string | null;
+  completed: boolean;
+  sourceTask: TaskRow;
+  sourceInstance: ScheduleInstance;
+  durationMinutes: number | null;
+};
 export type MatrixEvent = {
   instance: ScheduleInstance;
   title: string;
@@ -159,6 +176,7 @@ export type MatrixEvent = {
   goal: Goal | null;
   habit: MatrixHabit | null;
   routine: MatrixRoutine | null;
+  projectTasks: MatrixProjectTask[];
   inferredMeal: MatrixInferredMealEventData | null;
   scheduledMeal: MatrixScheduledMealEventData | null;
 };
@@ -184,6 +202,12 @@ export type LoadMatrixScheduledEventsResult = {
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+export const MATRIX_SCHEDULED_SOURCE_TYPES = [
+  "PROJECT",
+  "TASK",
+  "HABIT",
+  "EVENT",
+] as const;
 
 export function resolveMatrixCreatorDay(timeZone: string, instant = new Date()) {
   return resolveCreatorDay({ instant, profileTimezone: timeZone });
@@ -195,6 +219,40 @@ export function getMatrixCreatorDayDisplayDate(creatorDay: CreatorDay) {
 
 export function normalizeMatrixSourceId(value: string | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function collectMatrixScheduledTaskIds(
+  instances: readonly Pick<ScheduleInstance, "source_type" | "source_id">[],
+) {
+  return Array.from(
+    new Set(
+      instances
+        .filter((item) => item.source_type === "TASK")
+        .map((item) => normalizeMatrixSourceId(item.source_id))
+        .filter(Boolean),
+    ),
+  );
+}
+
+export function collectMatrixScheduledProjectIds({
+  instances,
+  tasks,
+}: {
+  instances: readonly Pick<ScheduleInstance, "source_type" | "source_id">[];
+  tasks: readonly Pick<TaskRow, "project_id">[];
+}) {
+  return Array.from(
+    new Set(
+      [
+        ...instances
+          .filter((item) => item.source_type === "PROJECT")
+          .map((item) => item.source_id),
+        ...tasks.map((task) => task.project_id),
+      ]
+        .map(normalizeMatrixSourceId)
+        .filter(Boolean),
+    ),
+  );
 }
 
 function parseOptionalDate(value: string | null | undefined): Date | null {
@@ -596,6 +654,83 @@ function buildProjectGoal({
   };
 }
 
+function isUnfinishedMatrixTask(
+  task: { stage?: string | null; completed_at?: string | null },
+) {
+  const completedAt = task.completed_at?.trim();
+  if (completedAt) return false;
+  return task.stage?.toString().trim().toUpperCase() !== "PERFECT";
+}
+
+function isMatrixTaskCompleted(instance: ScheduleInstance, task: TaskRow) {
+  if (instance.status?.trim().toLowerCase() === "completed") return true;
+  return !isUnfinishedMatrixTask(task);
+}
+
+function buildMatrixProjectTask({
+  event,
+  task,
+  skillIdToIcon,
+}: {
+  event: MatrixEvent;
+  task: TaskRow;
+  skillIdToIcon: Map<string, string>;
+}): MatrixProjectTask {
+  return {
+    id: task.id,
+    name: task.name,
+    stage: task.stage,
+    skillId: task.skill_id ?? null,
+    skillIcon: task.skill_id ? (skillIdToIcon.get(task.skill_id) ?? null) : null,
+    priorityCode: task.priority ?? null,
+    completed: isMatrixTaskCompleted(event.instance, task),
+    sourceTask: task,
+    sourceInstance: event.instance,
+    durationMinutes:
+      typeof event.instance.duration_min === "number" &&
+      Number.isFinite(event.instance.duration_min)
+        ? event.instance.duration_min
+        : null,
+  };
+}
+
+function buildMatrixProjectEntityTask({
+  event,
+  project,
+  task,
+  skillIdToIcon,
+}: {
+  event: MatrixEvent;
+  project: ProjectRow;
+  task: TaskRow;
+  skillIdToIcon: Map<string, string>;
+}): MatrixProjectTask {
+  const sourceInstance =
+    event.instance.source_type === "TASK"
+      ? ({
+          ...event.instance,
+          id: `matrix-project-entity-task:${project.id}:${task.id}`,
+          source_type: "PROJECT",
+          source_id: project.id,
+          event_name: project.name,
+          project_name: project.name,
+        } as ScheduleInstance)
+      : event.instance;
+
+  return {
+    id: task.id,
+    name: task.name,
+    stage: task.stage,
+    skillId: task.skill_id ?? null,
+    skillIcon: task.skill_id ? (skillIdToIcon.get(task.skill_id) ?? null) : null,
+    priorityCode: task.priority ?? null,
+    completed: isMatrixTaskCompleted(event.instance, task),
+    sourceTask: task,
+    sourceInstance,
+    durationMinutes: null,
+  };
+}
+
 function buildLegacyMatrixFitnessOccurrenceOffsets(
   instances: readonly ScheduleInstance[],
   habits: Map<string, HabitRow>,
@@ -636,6 +771,7 @@ function buildLegacyMatrixFitnessOccurrenceOffsets(
 export function buildMatrixEvents({
   instances,
   projects,
+  tasks,
   habits,
   goals,
   skillIdToMonumentId,
@@ -649,6 +785,7 @@ export function buildMatrixEvents({
 }: {
   instances: ScheduleInstance[];
   projects: Map<string, ProjectRow>;
+  tasks: Map<string, TaskRow>;
   habits: Map<string, HabitRow>;
   goals: Map<string, GoalRow>;
   skillIdToMonumentId: Map<string, string>;
@@ -690,6 +827,7 @@ export function buildMatrixEvents({
           goal: null,
           habit: null,
           routine: null,
+          projectTasks: [],
           inferredMeal: null,
           scheduledMeal: mealWindow
             ? {
@@ -743,6 +881,46 @@ export function buildMatrixEvents({
           goal: projectGoal,
           habit: null,
           routine: null,
+          projectTasks: [],
+          inferredMeal: null,
+          scheduledMeal: null,
+        },
+      ];
+    }
+
+    if (instance.source_type === "TASK") {
+      const task = tasks.get(instance.source_id);
+      const project = task?.project_id ? projects.get(task.project_id) : null;
+      const goal = project?.goal_id ? goals.get(project.goal_id) : null;
+      const monumentId =
+        goal?.monument_id ??
+        (task?.skill_id ? (skillIdToMonumentId.get(task.skill_id) ?? null) : null);
+      const skillIds = task?.skill_id
+        ? [task.skill_id]
+        : project
+          ? getProjectSkillIds(project)
+          : [];
+      const glyph = task?.skill_id
+        ? (skillIdToIcon.get(task.skill_id) ??
+          (monumentId ? (monumentIdToEmoji.get(monumentId) ?? null) : null) ??
+          "◇")
+        : monumentId
+          ? (monumentIdToEmoji.get(monumentId) ?? "◇")
+          : "◇";
+
+      return [
+        {
+          instance,
+          title: instance.event_name ?? task?.name ?? "Untitled task",
+          subtitle: project?.name ?? null,
+          monumentId,
+          skillIds,
+          skillResolverSource: task?.skill_id ? "task.skill_id" : null,
+          glyph,
+          goal: null,
+          habit: null,
+          routine: null,
+          projectTasks: [],
           inferredMeal: null,
           scheduledMeal: null,
         },
@@ -795,6 +973,7 @@ export function buildMatrixEvents({
           }
         : null,
       routine: null,
+      projectTasks: [],
       inferredMeal: null,
       scheduledMeal: null,
     };
@@ -863,6 +1042,7 @@ export function buildMatrixInferredMealMatrixEvents({
       goal: null,
       habit: null,
       routine: null,
+      projectTasks: [],
       inferredMeal,
       scheduledMeal: null,
     };
@@ -884,14 +1064,43 @@ function isMatrixScheduledRoutineCompleted(habits: readonly MatrixRoutineHabit[]
 export function buildMatrixScheduledEvents({
   events,
   routines,
+  projects,
+  goals,
+  tasks,
+  skillIdToIcon,
+  monumentIdToEmoji,
 }: {
   events: MatrixEvent[];
   routines: Map<string, RoutineRow>;
+  projects: Map<string, ProjectRow>;
+  goals: Map<string, GoalRow>;
+  tasks: Map<string, TaskRow>;
+  skillIdToIcon: Map<string, string>;
+  monumentIdToEmoji: Map<string, string>;
 }): MatrixEvent[] {
   const scheduledEvents: MatrixEvent[] = [];
   const routineEventGroups = new Map<string, MatrixEvent[]>();
+  const projectEvents = new Map<string, MatrixEvent>();
+  const taskEventsByProject = new Map<string, MatrixEvent[]>();
+  const consumedTaskEventIds = new Set<string>();
 
   for (const event of events) {
+    if (event.instance.source_type === "PROJECT") {
+      const projectId = normalizeMatrixSourceId(event.instance.source_id);
+      if (projectId) projectEvents.set(projectId, event);
+    }
+
+    if (event.instance.source_type === "TASK") {
+      const task = tasks.get(event.instance.source_id);
+      const projectId = normalizeMatrixSourceId(task?.project_id);
+      if (projectId) {
+        const group = taskEventsByProject.get(projectId);
+        if (group) group.push(event);
+        else taskEventsByProject.set(projectId, [event]);
+      }
+      continue;
+    }
+
     const routineId = event.habit?.routine_id?.trim();
     if (!routineId) {
       scheduledEvents.push(event);
@@ -1006,12 +1215,183 @@ export function buildMatrixScheduledEvents({
       goal: null,
       habit: null,
       routine: routineItem,
+      projectTasks: [],
       inferredMeal: null,
       scheduledMeal: null,
     });
   }
 
-  return scheduledEvents;
+  const projectIdsWithTaskDetails = new Set([
+    ...projectEvents.keys(),
+    ...taskEventsByProject.keys(),
+  ]);
+
+  for (const projectId of projectIdsWithTaskDetails) {
+    const taskEvents = taskEventsByProject.get(projectId) ?? [];
+    const project = projects.get(projectId);
+    if (!project) continue;
+
+    const realProjectEvent = projectEvents.get(projectId) ?? null;
+    const candidateTaskEvents = [...taskEvents].sort(
+      (a, b) => getMatrixEventStartTime(a) - getMatrixEventStartTime(b),
+    );
+
+    const representativeEvent = realProjectEvent ?? candidateTaskEvents[0];
+    if (!representativeEvent) continue;
+
+    const goal = project.goal_id ? (goals.get(project.goal_id) ?? null) : null;
+    const projectGoal = buildProjectGoal({
+      project,
+      goal,
+      skillIdToIcon,
+      monumentIdToEmoji,
+    });
+    const scheduledProjectTasks = candidateTaskEvents
+      .map((event) => {
+        const task = tasks.get(event.instance.source_id);
+        if (!task) return null;
+        consumedTaskEventIds.add(event.instance.id);
+        return buildMatrixProjectTask({ event, task, skillIdToIcon });
+      })
+      .filter((task): task is MatrixProjectTask => Boolean(task));
+    const scheduledProjectTaskById = new Map(
+      scheduledProjectTasks.map((task) => [task.id, task]),
+    );
+    const entityProjectTasks = (project.tasks ?? [])
+      .filter((task) => task.id)
+      .map((task) => {
+        const scheduledTask = scheduledProjectTaskById.get(task.id);
+        if (scheduledTask) return scheduledTask;
+        return buildMatrixProjectEntityTask({
+          event: representativeEvent,
+          project,
+          task: task as TaskRow,
+          skillIdToIcon,
+        });
+      });
+    const entityTaskIds = new Set(entityProjectTasks.map((task) => task.id));
+    const matrixProjectTasks = [
+      ...entityProjectTasks,
+      ...scheduledProjectTasks.filter((task) => !entityTaskIds.has(task.id)),
+    ];
+    if (matrixProjectTasks.length === 0) continue;
+    const projectTaskById = new Map(
+      matrixProjectTasks.map((task) => [task.id, task]),
+    );
+    const displayProjectGoal: Goal = {
+      ...projectGoal,
+      projects: projectGoal.projects.map((goalProject) =>
+        goalProject.id !== project.id
+          ? goalProject
+          : {
+              ...goalProject,
+              tasks: goalProject.tasks.map((task) => {
+                const scheduledTask = projectTaskById.get(task.id);
+                if (!scheduledTask) return task;
+                return {
+                  ...task,
+                  completedAt:
+                    scheduledTask.sourceInstance.completed_at ??
+                    (scheduledTask.completed
+                      ? (scheduledTask.sourceInstance.end_utc ??
+                        scheduledTask.sourceInstance.start_utc)
+                      : null),
+                  stage: scheduledTask.completed ? "PERFECT" : task.stage,
+                };
+              }),
+            },
+      ),
+    };
+
+    const firstTaskStart = Math.min(
+      ...candidateTaskEvents.map((event) => getMatrixEventStartTime(event)),
+    );
+    const lastTaskEnd = Math.max(
+      ...candidateTaskEvents.map((event) => getMatrixEventEndTime(event)),
+    );
+    const instance =
+      realProjectEvent?.instance ??
+      ({
+        ...representativeEvent.instance,
+        id: `matrix-task-project:${projectId}:${matrixProjectTasks
+          .map((task) => task.sourceInstance.id)
+          .join(":")}`,
+        source_type: "PROJECT",
+        source_id: projectId,
+        event_name: project.name,
+        project_name: project.name,
+        start_utc: Number.isFinite(firstTaskStart)
+          ? new Date(firstTaskStart).toISOString()
+          : representativeEvent.instance.start_utc,
+        end_utc: Number.isFinite(lastTaskEnd)
+          ? new Date(lastTaskEnd).toISOString()
+          : representativeEvent.instance.end_utc,
+        duration_min:
+          Number.isFinite(firstTaskStart) && Number.isFinite(lastTaskEnd)
+            ? Math.max(1, Math.round((lastTaskEnd - firstTaskStart) / 60000))
+            : representativeEvent.instance.duration_min,
+        status: matrixProjectTasks.every((task) => task.completed)
+          ? "completed"
+          : "scheduled",
+        completed_at: matrixProjectTasks.every((task) => task.completed)
+          ? (matrixProjectTasks
+              .map((task) => task.sourceInstance.completed_at)
+              .filter((value): value is string => Boolean(value))
+              .sort()
+              .at(-1) ?? null)
+          : null,
+        metadata: {
+          ...(typeof representativeEvent.instance.metadata === "object" &&
+          representativeEvent.instance.metadata !== null
+            ? representativeEvent.instance.metadata
+            : {}),
+          matrixTaskProjectPresentation: true,
+          groupedTaskInstanceIds: matrixProjectTasks.map(
+            (task) => task.sourceInstance.id,
+          ),
+        },
+      } as ScheduleInstance);
+
+    const projectEvent: MatrixEvent = {
+      ...representativeEvent,
+      instance,
+      title: project.name,
+      subtitle: null,
+      monumentId: goal?.monument_id ?? representativeEvent.monumentId,
+      skillIds: Array.from(
+        new Set([
+          ...getProjectSkillIds(project),
+          ...matrixProjectTasks
+            .map((task) => task.skillId)
+            .filter((skillId): skillId is string => Boolean(skillId)),
+        ]),
+      ),
+      skillResolverSource: null,
+      glyph: goal?.monument_id
+        ? (monumentIdToEmoji.get(goal.monument_id) ?? "◇")
+        : representativeEvent.glyph,
+      goal: displayProjectGoal,
+      habit: null,
+      routine: null,
+      projectTasks: matrixProjectTasks,
+      inferredMeal: null,
+      scheduledMeal: null,
+    };
+
+    if (realProjectEvent) {
+      const index = scheduledEvents.findIndex(
+        (event) => event.instance.id === realProjectEvent.instance.id,
+      );
+      if (index >= 0) scheduledEvents[index] = projectEvent;
+      else scheduledEvents.push(projectEvent);
+    } else {
+      scheduledEvents.push(projectEvent);
+    }
+  }
+
+  return scheduledEvents.filter(
+    (event) => !consumedTaskEventIds.has(event.instance.id),
+  );
 }
 
 export function sortMatrixScheduledItems(
@@ -1102,10 +1482,10 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   const { data: instanceData, error: instanceError } = await supabase
     .from("schedule_instances")
     .select(
-      "id, source_id, source_type, start_utc, end_utc, status, completed_at, weight_snapshot, event_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata",
+      "id, source_id, source_type, start_utc, end_utc, duration_min, status, completed_at, weight_snapshot, event_name, project_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata",
     )
     .eq("user_id", userId)
-    .in("source_type", ["PROJECT", "HABIT", "EVENT"])
+    .in("source_type", MATRIX_SCHEDULED_SOURCE_TYPES)
     .in("status", ["scheduled", "in_progress", "completed"])
     .lt("start_utc", dayEnd.toISOString())
     .gt("end_utc", dayStart.toISOString())
@@ -1114,6 +1494,18 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   if (instanceError) throw instanceError;
 
   const instances = (instanceData ?? []) as ScheduleInstance[];
+  const taskIds = collectMatrixScheduledTaskIds(instances);
+  const taskResult = taskIds.length
+    ? await supabase
+        .from("tasks")
+        .select("id, project_id, name, stage, skill_id, priority, completed_at")
+        .eq("user_id", userId)
+        .in("id", taskIds)
+    : { data: [], error: null };
+
+  if (taskResult.error) throw taskResult.error;
+
+  const scheduledTasks = (taskResult.data ?? []) as TaskRow[];
   const matrixWindowsPromise = fetchMatrixWindowsForCreatorDay({
     creatorDay,
     timeZone,
@@ -1129,9 +1521,10 @@ export async function loadMatrixScheduledEventsForCreatorDay({
     return [] as MatrixNutritionMealCompletionRow[];
   });
 
-  const projectIds = instances
-    .filter((item) => item.source_type === "PROJECT")
-    .map((item) => item.source_id);
+  const projectIds = collectMatrixScheduledProjectIds({
+    instances,
+    tasks: scheduledTasks,
+  });
   const scheduledHabitIds = new Set(
     instances
       .filter((item) => item.source_type === "HABIT")
@@ -1159,7 +1552,6 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   });
 
   const [
-    habitResult,
     allHabitsResult,
     goalResult,
     skillResult,
@@ -1170,16 +1562,6 @@ export async function loadMatrixScheduledEventsForCreatorDay({
     matrixWindowsForDate,
     nutritionMeals,
   ] = await Promise.all([
-    scheduledHabitIds.size
-      ? supabase
-          .from("habits")
-          .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override, routine_id, routine_position",
-          )
-          .eq("user_id", userId)
-          .is("circle_id", null)
-          .in("id", Array.from(scheduledHabitIds))
-      : Promise.resolve({ data: [], error: null }),
     supabase
       .from("habits")
       .select(
@@ -1215,7 +1597,6 @@ export async function loadMatrixScheduledEventsForCreatorDay({
     nutritionMealsPromise,
   ]);
 
-  if (habitResult.error) throw habitResult.error;
   if (allHabitsResult.error) throw allHabitsResult.error;
   if (goalResult.error) throw goalResult.error;
   if (skillResult.error) throw skillResult.error;
@@ -1233,51 +1614,50 @@ export async function loadMatrixScheduledEventsForCreatorDay({
         .filter((routineId): routineId is string => Boolean(routineId?.trim())),
     ),
   );
-  const routineResult = routineIds.length
-    ? await supabase
-        .from("habit_routines")
-        .select("id, name, description, icon")
-        .eq("user_id", userId)
-        .in("id", routineIds)
-    : { data: [], error: null };
-
-  if (routineResult.error) throw routineResult.error;
-
-  const allProjectIds = Array.from(new Set(projectIds));
-  const projectResult = allProjectIds.length
-    ? await supabase
-        .from("projects")
-        .select(
-          `
-            id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
-            priority,
-            energy,
-            tasks (
-              id, project_id, stage, name, skill_id, priority
-            ),
-            project_skills (
-              skill_id
-            )
-          `,
-        )
-        .eq("user_id", userId)
-        .in("id", allProjectIds)
-    : { data: [], error: null };
-
-  if (projectResult.error) throw projectResult.error;
-
+  const allProjectIds = projectIds;
   const allHabitIds = Array.from(
     new Set(allHabits.map((habit) => habit.id).filter((id): id is string => Boolean(id))),
   );
-  const habitCompletionResult = allHabitIds.length
-    ? await supabase
-        .from("habit_completion_days")
-        .select("habit_id")
-        .eq("user_id", userId)
-        .eq("completion_day", creatorDay.creatorDayDate)
-        .in("habit_id", allHabitIds)
-    : { data: [], error: null };
+  const [routineResult, projectResult, habitCompletionResult] =
+    await Promise.all([
+      routineIds.length
+        ? supabase
+            .from("habit_routines")
+            .select("id, name, description, icon")
+            .eq("user_id", userId)
+            .in("id", routineIds)
+        : Promise.resolve({ data: [], error: null }),
+      allProjectIds.length
+        ? supabase
+            .from("projects")
+            .select(
+              `
+                id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
+                priority,
+                energy,
+                tasks (
+                  id, project_id, stage, name, skill_id, priority, completed_at
+                ),
+                project_skills (
+                  skill_id
+                )
+              `,
+            )
+            .eq("user_id", userId)
+            .in("id", allProjectIds)
+        : Promise.resolve({ data: [], error: null }),
+      allHabitIds.length
+        ? supabase
+            .from("habit_completion_days")
+            .select("habit_id")
+            .eq("user_id", userId)
+            .eq("completion_day", creatorDay.creatorDayDate)
+            .in("habit_id", allHabitIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
+  if (routineResult.error) throw routineResult.error;
+  if (projectResult.error) throw projectResult.error;
   if (habitCompletionResult.error) throw habitCompletionResult.error;
 
   const completedHabitIdsForCreatorDay = new Set(
@@ -1304,8 +1684,11 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   const projects = (projectResult.data ?? []) as ProjectRow[];
   const goals = (goalResult.data ?? []) as GoalRow[];
   const routines = (routineResult.data ?? []) as RoutineRow[];
-  const scheduledHabits = (habitResult.data ?? []) as HabitRow[];
+  const scheduledHabits = allHabits.filter((habit) =>
+    scheduledHabitIds.has(normalizeMatrixSourceId(habit.id)),
+  );
   const projectMap = new Map(projects.map((project) => [project.id, project]));
+  const taskMap = new Map(scheduledTasks.map((task) => [task.id, task]));
   const habitMap = new Map(scheduledHabits.map((habit) => [habit.id, habit]));
   const goalMap = new Map(goals.map((goal) => [goal.id, goal]));
   const routineMap = new Map(routines.map((routine) => [routine.id, routine]));
@@ -1313,6 +1696,7 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   const rawEvents = buildMatrixEvents({
     instances,
     projects: projectMap,
+    tasks: taskMap,
     habits: habitMap,
     goals: goalMap,
     skillIdToMonumentId,
@@ -1327,6 +1711,11 @@ export async function loadMatrixScheduledEventsForCreatorDay({
   const events = buildMatrixScheduledEvents({
     events: rawEvents,
     routines: routineMap,
+    projects: projectMap,
+    goals: goalMap,
+    tasks: taskMap,
+    skillIdToIcon,
+    monumentIdToEmoji,
   });
   const inferredMealEvents = buildMatrixInferredMealMatrixEvents({
     inferredMeals: buildMatrixInferredMealEvents({

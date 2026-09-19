@@ -14,6 +14,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  ChevronRight,
   MoreVertical,
   Pause,
   PencilLine,
@@ -81,7 +82,7 @@ interface GoalCardProps {
   showEmojiPrefix?: boolean;
   hideEnergyPill?: boolean;
   monumentContext?: boolean;
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "library-list";
   selected?: boolean;
   drawerCompact?: boolean;
   showEnergyInCompact?: boolean;
@@ -125,6 +126,7 @@ interface GoalCardProps {
   newProjectRevealId?: string | null;
   onNewProjectRevealComplete?: (projectId: string) => void;
   suppressDrawerOpenAnimation?: boolean;
+  sourceCampaignId?: string | null;
 }
 
 function isProjectComplete(project: Project) {
@@ -188,6 +190,65 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 type MotionDivProps = ComponentProps<typeof motion.div>;
+
+function ProgressRing({ progress }: { progress: number }) {
+  const size = 29;
+  const stroke = 2.4;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safeProgress = Math.round(clamp(Number(progress) || 0, 0, 100));
+  const offset = circumference - (safeProgress / 100) * circumference;
+
+  if (safeProgress >= 100) {
+    return (
+      <div
+        data-complete-progress-disc
+        className="h-[30px] w-[30px] shrink-0 rounded-full border border-emerald-50/28 bg-[linear-gradient(155deg,rgba(34,197,94,0.98)_0%,rgba(22,163,74,0.99)_48%,rgba(21,128,61,1)_100%)] shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-2px_8px_rgba(0,0,0,0.12)]"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <div className="relative grid h-[30px] w-[30px] shrink-0 place-items-center">
+      <svg
+        className="-rotate-90"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        aria-hidden="true"
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill={
+            safeProgress >= 100
+              ? "rgba(5,150,105,0.92)"
+              : "none"
+          }
+          stroke={
+            safeProgress >= 100
+              ? "rgba(110,231,183,0.92)"
+              : "rgba(244,244,245,0.11)"
+          }
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(52,211,153,0.78)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+      </svg>
+    </div>
+  );
+}
 
 const detailRevealVariant = {
   hidden: { opacity: 0, height: 0, y: 6 },
@@ -270,6 +331,7 @@ function GoalCardImpl({
   onProjectHoldComplete,
   completeWhenProjectsDone = false,
   completionTheme = "auto",
+  sourceCampaignId = null,
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = typeof openProp === "boolean";
@@ -602,11 +664,30 @@ function GoalCardImpl({
         await onAddTask?.(goal.id);
         return;
       }
-      fabCreation?.requestProjectCreation(goal.id, originRect ?? null);
+      fabCreation?.requestProjectCreation(
+        goal.id,
+        originRect ?? null,
+        sourceCampaignId
+          ? {
+              preserveDrawer: {
+                type: "goal",
+                id: goal.id,
+                parentId: sourceCampaignId,
+              },
+            }
+          : undefined
+      );
     } finally {
       setAddingProject(false);
     }
-  }, [addingProject, fabCreation, goal.id, onAddTask, projectDropdownMode]);
+  }, [
+    addingProject,
+    fabCreation,
+    goal.id,
+    onAddTask,
+    projectDropdownMode,
+    sourceCampaignId,
+  ]);
   const canAddProjectFromHeader =
     projectDropdownMode === "tasks-only" ? Boolean(onAddTask) : Boolean(fabCreation);
 
@@ -780,6 +861,173 @@ function GoalCardImpl({
     ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
     : "";
   const isOpenWorkspacePresentation = open && !isDrawerCompactDefault;
+
+  if (variant === "library-list") {
+    const progress = Math.round(clamp(Number(goal.progress) || 0, 0, 100));
+    const isListCompleted = normalizedStatus === "COMPLETED";
+    const isListReadyToComplete =
+      !isListCompleted &&
+      progress >= 100 &&
+      allProjectsCompleted &&
+      Boolean(onManualComplete);
+    const projectCount = goal.projects.length;
+    const itemIcon = goal.emoji?.trim() || goal.monumentEmoji?.trim() || ".";
+    const displayTitle = goal.title;
+    const listCompletedClass = isListCompleted
+      ? "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 !overflow-hidden !border-green-900/45 !bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] !text-white !ring-1 !ring-green-900/45 !shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]"
+      : "";
+    const listContainerClass = [
+      "group relative w-full overflow-hidden rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-[#101116]",
+      selected ? "goal-card-emerald-outline" : "",
+      listCompletedClass,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return (
+      <>
+        <div className={listContainerClass} data-variant="library-list">
+          <motion.button
+            type="button"
+            onClick={handleShellClick}
+            aria-expanded={onCardClick ? undefined : open}
+            aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
+            onPointerDown={handleShellPointerDown}
+            onPointerUp={handleShellPointerUp}
+            onPointerCancel={handleShellPointerCancel}
+            onPointerLeave={handleShellPointerCancel}
+            onContextMenu={handleShellContextMenu}
+            className={`flex min-h-[48px] w-full items-center gap-1.5 px-2 py-0.5 text-left sm:min-h-[50px] sm:px-2 ${defaultLongPressEditClass}`}
+            {...shellMotionProps}
+          >
+            {isListCompleted ? (
+            <span
+              className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full border border-emerald-200/45 bg-emerald-500 text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.24)]"
+              aria-label="Goal completed"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m5 12 4 4L19 6" />
+              </svg>
+            </span>
+          ) : isListReadyToComplete ? (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={`Complete ${goal.title}`}
+              title="Complete goal"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const sourceRect =
+                  event.currentTarget.getBoundingClientRect();
+
+                void onManualComplete?.(goal, sourceRect);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const sourceRect =
+                  event.currentTarget.getBoundingClientRect();
+
+                void onManualComplete?.(goal, sourceRect);
+              }}
+              className="shrink-0 cursor-pointer rounded-full transition hover:brightness-125 active:scale-95"
+            >
+              <ProgressRing progress={progress} />
+            </span>
+          ) : (
+            <ProgressRing progress={progress} />
+          )}
+            <div
+              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-[14px] leading-none opacity-65 grayscale"
+              aria-hidden="true"
+            >
+              {itemIcon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3
+                id={`goal-${goal.id}-label`}
+                className={`truncate text-[13.5px] font-semibold leading-tight sm:text-[14px] ${isListCompleted ? "text-emerald-50" : "text-zinc-100/88"}`}
+                title={goal.title}
+              >
+                {displayTitle}
+              </h3>
+              <p className={`mt-px text-[10px] font-normal leading-none ${isListCompleted ? "text-emerald-100/65" : "text-white/38"}`}>
+                {projectCount} {projectCount === 1 ? "project" : "projects"}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <span className={`min-w-[1.75rem] text-right text-[12.5px] font-medium tabular-nums ${isListCompleted ? "text-emerald-50/90" : "text-white/58"}`}>
+                {progress}%
+              </span>
+              <ChevronRight className={`h-3.5 w-3.5 ${isListCompleted ? "text-emerald-100/70" : "text-white/24"}`} aria-hidden />
+            </div>
+          </motion.button>
+
+          <AnimatePresence initial={false}>
+            {open ? (
+              <motion.div
+                id={`goal-${goal.id}`}
+                key={`goal-library-list-workspace-${goal.id}`}
+                className="overflow-hidden border-t border-white/[0.06] bg-black/[0.12]"
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                variants={detailRevealVariant}
+              >
+                <motion.div
+                  className="px-3 pb-3 pt-2 sm:px-4 sm:pb-4"
+                  variants={detailContentVariant}
+                >
+                  <GoalWorkspace
+                    goal={goal}
+                    loading={loading}
+                    alwaysShowNotes={projectDropdownMode !== "tasks-only"}
+                    onProjectLongPress={handleProjectLongPress}
+                    onProjectUpdated={onProjectUpdated}
+                    projectDropdownMode={projectDropdownMode}
+                    onAddProject={handleAddProject}
+                    addingProject={addingProject}
+                    onTaskEditOpen={onTaskEditOpen}
+                    onTaskToggleCompletion={onTaskToggleCompletion}
+                  />
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        {!onProjectEditOpen ? (
+          <ProjectQuickEditDialog
+            project={editingProject}
+            goalId={goal.id}
+            origin={editingProjectOrigin}
+            onClose={closeProjectEditor}
+            onUpdated={(projectId, updates) =>
+              onProjectUpdated?.(projectId, updates)
+            }
+            onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+          />
+        ) : null}
+      </>
+    );
+  }
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {

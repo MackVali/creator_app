@@ -24,7 +24,7 @@ interface MonumentNotesGridProps {
 }
 
 const monumentNoteListSurfaceClass =
-  "-mx-3 overflow-hidden border-y border-white/[0.06] bg-white/[0.025] sm:mx-0 sm:rounded-xl sm:border-x";
+  "flex w-full min-w-0 flex-col gap-0.5";
 
 function getMonumentNoteTitle(note: MonumentNote) {
   return (
@@ -121,7 +121,7 @@ export function MonumentNotesGrid({
   }
 
   return (
-    <div className="max-w-full space-y-3">
+    <div className="w-full min-w-0 space-y-1.5">
       <NotesHeaderControls
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -132,11 +132,11 @@ export function MonumentNotesGrid({
         }
       />
       {hasAnyNotes && !hasVisibleNotes && !isLoading ? (
-        <div className="w-full rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-3 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
-          <p className="text-sm font-semibold tracking-tight text-white/90">
+        <div className="w-full px-2 py-3 text-slate-50">
+          <p className="text-[13px] font-semibold text-white/75">
             No matching notes
           </p>
-          <p className="text-xs leading-5 text-white/50">
+          <p className="mt-0.5 text-[10px] text-white/38">
             Try a different search.
           </p>
         </div>
@@ -152,18 +152,20 @@ export function MonumentNotesGrid({
                 ? `/areas/${areaId}/notes/${note.id}`
                 : `/monuments/${monumentId}/notes/${note.id}`
             }
-            className="group flex min-h-[54px] items-center gap-2.5 border-b border-white/[0.06] px-3 py-2 text-white transition last:border-b-0 hover:bg-white/[0.045] active:bg-white/[0.065]"
+            className="group relative flex min-h-[48px] w-full items-center gap-1.5 overflow-hidden rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 px-2 py-0.5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-[#101116] active:bg-[#131419] sm:min-h-[50px] sm:px-2"
           >
-            <FileText
-              className="h-3.5 w-3.5 shrink-0 text-white/45"
-              strokeWidth={1.8}
-              aria-hidden="true"
-            />
+            <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-white/48">
+              <FileText
+                className="h-[14px] w-[14px]"
+                strokeWidth={1.8}
+                aria-hidden="true"
+              />
+            </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium leading-5 text-white/88">
+              <p className="truncate text-[13.5px] font-semibold leading-tight text-zinc-100/88 sm:text-[14px]">
                 {getMonumentNoteTitle(note)}
               </p>
-              <p className="truncate text-[11px] leading-4 text-white/42">
+              <p className="mt-px truncate text-[10px] font-normal leading-none text-white/38">
                 {getMonumentNotePreview(note)}
               </p>
             </div>
@@ -173,20 +175,22 @@ export function MonumentNotesGrid({
                 event.preventDefault();
                 handleToggleBookmark(note.id);
               }}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/32 transition hover:bg-white/[0.06] hover:text-white/70"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/28 transition hover:bg-white/[0.055] hover:text-white/68"
               aria-label={note.isBookmarked ? "Unbookmark note" : "Bookmark note"}
             >
               <Bookmark
                 className={cn(
                   "h-3.5 w-3.5",
-                  note.isBookmarked ? "fill-white/72 text-white/72" : ""
+                  note.isBookmarked
+                    ? "fill-white/70 text-white/70"
+                    : "text-white/28"
                 )}
                 strokeWidth={1.8}
                 aria-hidden="true"
               />
             </button>
             <ChevronRight
-              className="h-3.5 w-3.5 shrink-0 text-white/24 transition group-hover:text-white/45"
+              className="h-3.5 w-3.5 shrink-0 text-white/22 transition group-hover:text-white/42"
               strokeWidth={1.8}
               aria-hidden="true"
             />

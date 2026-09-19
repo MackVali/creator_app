@@ -129,9 +129,52 @@ function getAreaDetailViewport(): AreaDetailViewportRect {
   };
 }
 
+function getDesktopCommandAreaDetailRect(): MeasuredAreaRect | null {
+  if (typeof window === "undefined" || window.innerWidth < 1024) {
+    return null;
+  }
+
+  const centerPanel = document.querySelector<HTMLElement>(
+    "[data-command-center-panel]"
+  );
+
+  if (!centerPanel) {
+    return null;
+  }
+
+  const centerRect = centerPanel.getBoundingClientRect();
+  const rightRail =
+    document.querySelector<HTMLElement>("[data-my-list-sheet]");
+  const rightRailRect = rightRail?.getBoundingClientRect() ?? null;
+
+  const left = Math.max(0, centerRect.left);
+  const right =
+    rightRailRect &&
+    rightRailRect.width > 0 &&
+    rightRailRect.left > left
+      ? Math.min(centerRect.right, rightRailRect.left)
+      : centerRect.right;
+
+  const top = Math.max(0, centerRect.top);
+  const viewportHeight = Math.max(window.innerHeight || 0, 0);
+  const width = Math.max(0, right - left);
+  const height = Math.max(0, viewportHeight - top);
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { top, left, width, height };
+}
+
 function getAreaDetailPopupRect(
   viewportRect = getAreaDetailViewport()
 ): MeasuredAreaRect {
+  const commandCenterRect = getDesktopCommandAreaDetailRect();
+
+  if (commandCenterRect) {
+    return commandCenterRect;
+  }
   const viewportWidth = window.innerWidth || 0;
   const horizontalInset =
     viewportWidth >= 1280
@@ -601,14 +644,38 @@ function AreasGrid() {
     setActiveAreaId(areaId);
   };
 
+  const isAreaCommandCenterDetail =
+    Boolean(areaTransition && getDesktopCommandAreaDetailRect());
+
+  const effectiveAreaDetailHeight =
+    isAreaCommandCenterDetail && areaTransition
+      ? areaTransition.targetRect.height
+      : detailOverlayHeight;
+
   const detailOverlayStyle = {
-    "--area-detail-overlay-height": detailOverlayHeight
-      ? `${detailOverlayHeight}px`
+    "--area-detail-overlay-height": effectiveAreaDetailHeight
+      ? `${effectiveAreaDetailHeight}px`
       : "100dvh",
   } as CSSProperties;
+
   const detailOverlayScrollStyle = {
-    top: `${detailOverlayTop}px`,
-    height: detailOverlayHeight ? `${detailOverlayHeight}px` : "100dvh",
+    top:
+      isAreaCommandCenterDetail && areaTransition
+        ? `${areaTransition.targetRect.top}px`
+        : `${detailOverlayTop}px`,
+    height:
+      isAreaCommandCenterDetail && areaTransition
+        ? `${areaTransition.targetRect.height}px`
+        : detailOverlayHeight
+          ? `${detailOverlayHeight}px`
+          : "100dvh",
+    ...(isAreaCommandCenterDetail && areaTransition
+      ? {
+          left: `${areaTransition.targetRect.left}px`,
+          right: "auto",
+          width: `${areaTransition.targetRect.width}px`,
+        }
+      : {}),
   } as CSSProperties;
   const areaShellRect =
     areaTransition?.phase === "closing"
@@ -649,7 +716,10 @@ function AreasGrid() {
               style={detailOverlayScrollStyle}
             >
               <motion.div
-                className="pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-md"
+                className={cn(
+                  "pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-md",
+                  isAreaCommandCenterDetail && "hidden"
+                )}
                 initial={{ opacity: 0 }}
                 animate={{
                   opacity: areaTransition.phase === "closing" ? 0 : 1,
@@ -658,7 +728,7 @@ function AreasGrid() {
               />
               <motion.div
                 role="dialog"
-                aria-modal="true"
+                aria-modal={!isAreaCommandCenterDetail}
                 aria-label={`${selectedArea.label} area dashboard`}
                 className={cn(
                   "app-card relative z-10 mx-auto flex min-h-[var(--area-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] flex-col shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
@@ -669,6 +739,9 @@ function AreasGrid() {
                 style={{
                   ...detailOverlayStyle,
                   width: areaTransition.targetRect.width,
+                  maxWidth: isAreaCommandCenterDetail ? "none" : undefined,
+                  marginLeft: isAreaCommandCenterDetail ? 0 : undefined,
+                  marginRight: isAreaCommandCenterDetail ? 0 : undefined,
                   transformOrigin: "top left",
                 }}
                 initial={{

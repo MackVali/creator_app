@@ -1784,7 +1784,7 @@ export function RelatedRoutineCard({
         className={clsx(
           "goal-card group relative flex w-full transform-gpu overflow-hidden text-white transition duration-200 select-none",
           areaHubCompact
-            ? "h-[46px] min-h-[46px] flex-row rounded-[10px] border border-yellow-400/50 bg-[linear-gradient(135deg,rgba(61,45,8,0.78)_0%,rgba(31,27,17,0.96)_46%,rgba(14,15,17,0.98)_100%)] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_16px_-14px_rgba(0,0,0,0.9)]"
+            ? "h-[48px] min-h-[48px] flex-row rounded-[8px] border border-yellow-400/50 bg-[linear-gradient(135deg,rgba(61,45,8,0.78)_0%,rgba(31,27,17,0.96)_46%,rgba(14,15,17,0.98)_100%)] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_16px_-14px_rgba(0,0,0,0.9)]"
             : "shimmer-border aspect-[5/6] flex-col border-2 border-yellow-400 shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)] hover:-translate-y-0.5",
           areaHubCompact
             ? null
@@ -1800,7 +1800,7 @@ export function RelatedRoutineCard({
           className={clsx(
             "relative z-[2] flex h-full min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/50",
             areaHubCompact
-              ? "flex-row items-center gap-2 text-left"
+              ? "flex-row items-center gap-1.5 text-left focus-visible:ring-white/25"
               : "flex-col items-center gap-1 text-center"
           )}
           aria-expanded={open}
@@ -1829,7 +1829,7 @@ export function RelatedRoutineCard({
             className={clsx(
               "font-semibold",
               areaHubCompact
-                ? "min-w-0 flex-1 truncate px-0 text-left text-[11px] leading-[13px]"
+                ? "min-w-0 flex-1 truncate px-0 text-left text-[13.5px] font-semibold leading-tight text-zinc-100/88 sm:text-[14px]"
                 : clsx(
                     "max-w-full break-words px-1 text-center leading-snug",
                     isSmall
@@ -1845,7 +1845,7 @@ export function RelatedRoutineCard({
           <div
             className={clsx(
               areaHubCompact
-                ? "shrink-0 whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.06em] text-yellow-100/60"
+                ? "shrink-0 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.06em] text-yellow-100/60"
                 : clsx(
                     "text-white/60",
                     isSmall ? "text-[7px]" : "text-[8px]"

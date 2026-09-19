@@ -2007,11 +2007,11 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
             className="app-dashboard-skill-carousel-glow pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"
             aria-hidden
           />
-          <div className="relative flex gap-5 overflow-hidden px-2 sm:px-3">
+          <div className="relative flex gap-5 overflow-hidden px-2 sm:px-3 lg:gap-3">
             {skeletonCategoryPlaceholders.map((placeholder) => (
               <div
                 key={placeholder}
-                className="w-[85vw] shrink-0 sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                className="w-[85vw] shrink-0 sm:w-[70vw] lg:w-[calc(50%_-_0.375rem)]"
                 style={{ scrollMarginInline: "12px" }}
               >
                 <article className="relative flex h-full animate-pulse flex-col rounded-[26px] border border-white/10 bg-white/[0.055] px-3 pb-4 pt-5 shadow-lg backdrop-blur-lg sm:px-4">
@@ -2201,7 +2201,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                   }}
                   role="group"
                   aria-label={`Category ${idx + 1} of ${categories.length}`}
-                  className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[320px] xl:w-[340px]"
+                  className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[calc(50%_-_0.375rem)]"
                   style={{ scrollMarginInline: "12px" }}
                 >
                   <CategoryCard
@@ -2266,7 +2266,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
             <div
               role="group"
               aria-label={communitySkillPickerOpen ? "Community skills picker" : "Add skill"}
-              className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[320px] xl:w-[340px]"
+              className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[calc(50%_-_0.375rem)]"
               style={{ scrollMarginInline: "12px" }}
             >
               {communitySkillPickerOpen ? (
