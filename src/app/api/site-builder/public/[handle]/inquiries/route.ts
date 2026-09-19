@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import {
   NextResponse,
   type NextRequest,
@@ -8,6 +9,11 @@ import { getPublishedSiteRecordByHandle } from "@/lib/site-builder/publicPersist
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
+
+const VISITOR_MINUTE_LIMIT = 5;
+const VISITOR_HOUR_LIMIT = 20;
+const SITE_MINUTE_LIMIT = 50;
+const SITE_HOUR_LIMIT = 500;
 
 type RouteContext = {
   params: Promise<{
@@ -49,6 +55,44 @@ function validEmail(value: string) {
   return (
     value.length <= 254 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  );
+}
+
+function getVisitorRateLimitKey(
+  request: NextRequest,
+  handle: string,
+) {
+  const forwardedFor =
+    request.headers.get("x-forwarded-for") ?? "";
+  const clientIp =
+    forwardedFor.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    "unknown";
+  const userAgent =
+    request.headers.get("user-agent")?.slice(0, 256) ??
+    "unknown";
+
+  return createHash("sha256")
+    .update(
+      [handle.toLowerCase(), clientIp, userAgent].join("|"),
+    )
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function rateLimitResponse(
+  retryAfterSeconds: number,
+  message: string,
+) {
+  return NextResponse.json(
+    { error: message },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(retryAfterSeconds),
+      },
+    },
   );
 }
 
@@ -164,45 +208,64 @@ export async function POST(
   }
 
   try {
-    const minuteLimit = await checkApiRateLimit({
+    const visitorKey = getVisitorRateLimitKey(
+      request,
+      published.handle,
+    );
+
+    const visitorMinuteLimit = await checkApiRateLimit({
       userId: published.userId,
-      action: `site-inquiry-minute:${published.handle}`,
+      action: `site-inquiry-visitor-minute:${published.handle}:${visitorKey}`,
       windowSeconds: 60,
-      maxRequests: 20,
+      maxRequests: VISITOR_MINUTE_LIMIT,
     });
 
-    if (!minuteLimit.allowed) {
-      return NextResponse.json(
-        { error: "Too many messages. Try again shortly." },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(
-              minuteLimit.retryAfterSeconds,
-            ),
-          },
-        },
+    if (!visitorMinuteLimit.allowed) {
+      return rateLimitResponse(
+        visitorMinuteLimit.retryAfterSeconds,
+        "Too many messages. Try again shortly.",
       );
     }
 
-    const hourLimit = await checkApiRateLimit({
+    const visitorHourLimit = await checkApiRateLimit({
       userId: published.userId,
-      action: `site-inquiry-hour:${published.handle}`,
+      action: `site-inquiry-visitor-hour:${published.handle}:${visitorKey}`,
       windowSeconds: 3600,
-      maxRequests: 200,
+      maxRequests: VISITOR_HOUR_LIMIT,
     });
 
-    if (!hourLimit.allowed) {
-      return NextResponse.json(
-        { error: "Too many messages. Try again later." },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(
-              hourLimit.retryAfterSeconds,
-            ),
-          },
-        },
+    if (!visitorHourLimit.allowed) {
+      return rateLimitResponse(
+        visitorHourLimit.retryAfterSeconds,
+        "Too many messages. Try again later.",
+      );
+    }
+
+    const siteMinuteLimit = await checkApiRateLimit({
+      userId: published.userId,
+      action: `site-inquiry-site-minute:${published.handle}`,
+      windowSeconds: 60,
+      maxRequests: SITE_MINUTE_LIMIT,
+    });
+
+    if (!siteMinuteLimit.allowed) {
+      return rateLimitResponse(
+        siteMinuteLimit.retryAfterSeconds,
+        "This contact form is receiving too many messages. Try again shortly.",
+      );
+    }
+
+    const siteHourLimit = await checkApiRateLimit({
+      userId: published.userId,
+      action: `site-inquiry-site-hour:${published.handle}`,
+      windowSeconds: 3600,
+      maxRequests: SITE_HOUR_LIMIT,
+    });
+
+    if (!siteHourLimit.allowed) {
+      return rateLimitResponse(
+        siteHourLimit.retryAfterSeconds,
+        "This contact form is receiving too many messages. Try again later.",
       );
     }
   } catch (error) {
