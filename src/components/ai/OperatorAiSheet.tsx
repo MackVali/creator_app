@@ -212,7 +212,105 @@ function readMyListManualRowsSnapshot(): ClientMyListManualRow[] {
   }
 }
 
-export default function OperatorAiSheet() {
+
+function optimisticallyCompleteCheckIn(
+  checkIn: IlavCheckIn,
+  body: CheckInCompletionRequest,
+  completedAt: string
+): IlavCheckIn {
+  if (body.itemType === "due_habit") {
+    const dueUnscheduledHabits = checkIn.dueUnscheduledHabits.filter(
+      (habit) => habit.sourceId !== body.habitId
+    );
+
+    if (
+      dueUnscheduledHabits.length === checkIn.dueUnscheduledHabits.length
+    ) {
+      return checkIn;
+    }
+
+    return {
+      ...checkIn,
+      dueUnscheduledHabits,
+      counts: {
+        ...checkIn.counts,
+        dueUnscheduledHabits: dueUnscheduledHabits.length,
+      },
+    };
+  }
+
+  const instanceId = body.scheduleInstanceId;
+
+  const sourceItem =
+    checkIn.scheduled.find(
+      (item) => item.scheduleInstanceId === instanceId
+    ) ??
+    checkIn.completed.find(
+      (item) => item.scheduleInstanceId === instanceId
+    ) ??
+    checkIn.missed.find(
+      (item) => item.scheduleInstanceId === instanceId
+    ) ??
+    checkIn.upcoming.find(
+      (item) => item.scheduleInstanceId === instanceId
+    );
+
+  if (!sourceItem) return checkIn;
+
+  const completedItem: IlavCheckInItem = {
+    ...sourceItem,
+    isCompleted: true,
+    canComplete: false,
+    status: "completed",
+    completedAt,
+  };
+
+  const scheduled = checkIn.scheduled.map((item) =>
+    item.scheduleInstanceId === instanceId ? completedItem : item
+  );
+
+  const completed = checkIn.completed.some(
+    (item) => item.scheduleInstanceId === instanceId
+  )
+    ? checkIn.completed.map((item) =>
+        item.scheduleInstanceId === instanceId ? completedItem : item
+      )
+    : [...checkIn.completed, completedItem].sort((a, b) => {
+        const aTime = a.startUtc ? Date.parse(a.startUtc) : Number.MAX_SAFE_INTEGER;
+        const bTime = b.startUtc ? Date.parse(b.startUtc) : Number.MAX_SAFE_INTEGER;
+        return aTime - bTime;
+      });
+
+  const missed = checkIn.missed.filter(
+    (item) => item.scheduleInstanceId !== instanceId
+  );
+
+  const upcoming = checkIn.upcoming.filter(
+    (item) => item.scheduleInstanceId !== instanceId
+  );
+
+  return {
+    ...checkIn,
+    scheduled,
+    completed,
+    missed,
+    upcoming,
+    counts: {
+      ...checkIn.counts,
+      scheduled: scheduled.length,
+      completed: completed.length,
+      missed: missed.length,
+      upcoming: upcoming.length,
+    },
+  };
+}
+
+
+export default function OperatorAiSheet({
+  onBack,
+}: {
+  onBack?: () => void;
+}) {
   const [message, setMessage] = React.useState("");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -304,12 +402,52 @@ export default function OperatorAiSheet() {
     ) => {
       if (pendingCheckInCompletionKeysRef.current.has(completionKey)) return;
       pendingCheckInCompletionKeysRef.current.add(completionKey);
+
+      const optimisticCompletedAt = new Date().toISOString();
+
+      // Reconcile every visible checkpoint for this Creator day immediately.
+      // Persistence and XP can finish behind the UI.
+      setMessages((current) =>
+        current.map((message) => {
+          if (
+            !message.checkIn ||
+            message.checkIn.creatorDayDate !== checkIn.creatorDayDate
+          ) {
+            return message;
+          }
+
+          const optimisticCheckIn = optimisticallyCompleteCheckIn(
+            message.checkIn,
+            body,
+            optimisticCompletedAt
+          );
+
+          if (optimisticCheckIn === message.checkIn) return message;
+
+          return {
+            ...message,
+            content: formatCheckInThreadContext(optimisticCheckIn),
+            checkIn: optimisticCheckIn,
+          };
+        })
+      );
+
+      // Make the checkbox feel immediate. Persistence still happens below;
+      // this optimistic state is rolled back if the request fails.
+      setCompletedCheckInCompletionKeys((current) => {
+        if (current.has(completionKey)) return current;
+        const next = new Set(current);
+        next.add(completionKey);
+        return next;
+      });
+
       setPendingCheckInCompletionKeys((current) => {
         if (current.has(completionKey)) return current;
         const next = new Set(current);
         next.add(completionKey);
         return next;
       });
+
       setCheckInCompletionErrors((current) => {
         const next = { ...current };
         delete next[completionKey];
@@ -320,7 +458,10 @@ export default function OperatorAiSheet() {
         const response = await fetch("/api/ai/operator/check-in/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            ...body,
+            completedAt: optimisticCompletedAt,
+          }),
         });
         const payload = (await response.json().catch(() => null)) as
           | { success?: boolean; error?: string }
@@ -328,12 +469,6 @@ export default function OperatorAiSheet() {
         if (!response.ok || !payload?.success) {
           throw new Error(payload?.error ?? "Could not complete this item.");
         }
-
-        setCompletedCheckInCompletionKeys((current) => {
-          const next = new Set(current);
-          next.add(completionKey);
-          return next;
-        });
 
         // A Creator completion is global, not local to the chat card that
         // initiated it. Refresh every check-in checkpoint currently shown
@@ -365,7 +500,10 @@ export default function OperatorAiSheet() {
           IlavCheckIn
         >();
 
-        await Promise.all(
+        // The completion itself is already persisted at this point.
+        // Reconcile any visible checkpoint cards in the background so this
+        // network work never controls how long the checkbox feels pending.
+        void Promise.all(
           visibleTypes.map(async (type) => {
             const refreshed = await fetchCheckIn(
               type,
@@ -373,29 +511,34 @@ export default function OperatorAiSheet() {
             );
             refreshedByType.set(type, refreshed);
           })
-        );
+        )
+          .then(() => {
+            setMessages((current) =>
+              current.map((message) => {
+                const currentCheckIn = message.checkIn;
 
-        setMessages((current) =>
-          current.map((message) => {
-            const currentCheckIn = message.checkIn;
+                if (
+                  !currentCheckIn ||
+                  currentCheckIn.creatorDayDate !== checkIn.creatorDayDate
+                ) {
+                  return message;
+                }
 
-            if (
-              !currentCheckIn ||
-              currentCheckIn.creatorDayDate !== checkIn.creatorDayDate
-            ) {
-              return message;
-            }
+                const refreshed = refreshedByType.get(currentCheckIn.type);
+                if (!refreshed) return message;
 
-            const refreshed = refreshedByType.get(currentCheckIn.type);
-            if (!refreshed) return message;
-
-            return {
-              ...message,
-              content: formatCheckInThreadContext(refreshed),
-              checkIn: refreshed,
-            };
+                return {
+                  ...message,
+                  content: formatCheckInThreadContext(refreshed),
+                  checkIn: refreshed,
+                };
+              })
+            );
           })
-        );
+          .catch(() => {
+            // The completion succeeded. A failed background reconciliation
+            // should not make the completed checkbox look like it failed.
+          });
       } catch (completionError) {
         const message =
           completionError instanceof Error
@@ -411,6 +554,43 @@ export default function OperatorAiSheet() {
           ...current,
           [completionKey]: message,
         }));
+
+        // The optimistic UI may have moved/removed the row. If persistence
+        // failed, restore the authoritative Creator state.
+        void Promise.all(
+          ILAV_CHECK_IN_TYPES.map(async (type) => ({
+            type,
+            checkIn: await fetchCheckIn(type, checkIn.creatorDayDate),
+          }))
+        )
+          .then((results) => {
+            const restoredByType = new Map(
+              results.map((result) => [result.type, result.checkIn])
+            );
+
+            setMessages((current) =>
+              current.map((threadMessage) => {
+                const currentCheckIn = threadMessage.checkIn;
+
+                if (
+                  !currentCheckIn ||
+                  currentCheckIn.creatorDayDate !== checkIn.creatorDayDate
+                ) {
+                  return threadMessage;
+                }
+
+                const restored = restoredByType.get(currentCheckIn.type);
+                if (!restored) return threadMessage;
+
+                return {
+                  ...threadMessage,
+                  content: formatCheckInThreadContext(restored),
+                  checkIn: restored,
+                };
+              })
+            );
+          })
+          .catch(() => null);
       } finally {
         setPendingCheckInCompletionKeys((current) => {
           if (!current.has(completionKey)) return current;
@@ -421,7 +601,7 @@ export default function OperatorAiSheet() {
         pendingCheckInCompletionKeysRef.current.delete(completionKey);
       }
     },
-    [fetchCheckIn]
+    [fetchCheckIn, messages]
   );
 
   React.useEffect(() => {
@@ -541,7 +721,14 @@ export default function OperatorAiSheet() {
           <button
             type="button"
             aria-label="Back"
-            onClick={() => window.history.back()}
+            onClick={() => {
+              if (onBack) {
+                onBack();
+                return;
+              }
+
+              window.history.back();
+            }}
             className="-ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/58 transition hover:bg-white/[0.05] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
           >
             <svg
@@ -879,9 +1066,32 @@ function CheckInList({
         </div>
       ) : null}
 
-      <div className="space-y-px">
+      <div className="space-y-px overflow-x-auto overscroll-x-contain">
         {items.length ? (
-          items.map((item) => {
+          items.map((item, index) => {
+            const previousItem = index > 0 ? items[index - 1] : null;
+
+            const timeBlockLabel =
+              timed &&
+              "timeBlockLabel" in item &&
+              typeof item.timeBlockLabel === "string" &&
+              item.timeBlockLabel.trim()
+                ? item.timeBlockLabel.trim()
+                : null;
+
+            const previousTimeBlockLabel =
+              timed &&
+              previousItem &&
+              "timeBlockLabel" in previousItem &&
+              typeof previousItem.timeBlockLabel === "string" &&
+              previousItem.timeBlockLabel.trim()
+                ? previousItem.timeBlockLabel.trim()
+                : null;
+
+            const showTimeBlockLabel =
+              Boolean(timeBlockLabel) &&
+              timeBlockLabel !== previousTimeBlockLabel;
+
             const completion = buildCheckInCompletion(
               item,
               checkIn,
@@ -910,11 +1120,17 @@ function CheckInList({
                 : null;
 
             return (
-              <div
-                key={item.id}
-                className="group min-w-0 rounded-md px-0.5 py-[3px] transition-colors hover:bg-white/[0.025]"
-              >
-                <div className="flex min-w-0 items-center gap-2">
+              <React.Fragment key={item.id}>
+                {showTimeBlockLabel ? (
+                  <div className="pl-[22px] pb-[1px] pt-[2px] text-[0.62rem] font-semibold leading-4 text-white/46">
+                    {timeBlockLabel}
+                  </div>
+                ) : null}
+
+                <div
+                  className="group w-max min-w-full rounded-md px-0.5 py-[3px] transition-colors hover:bg-white/[0.025]"
+                >
+                <div className="flex w-max min-w-full items-center gap-2">
                   {completion && checkIn && messageId && onComplete ? (
                     <button
                       type="button"
@@ -933,19 +1149,19 @@ function CheckInList({
                         isCompleted
                           ? "border-emerald-400/80 bg-emerald-500/90 text-white ring-1 ring-emerald-300/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_5px_rgba(16,185,129,0.18)]"
                           : "border-white/22 bg-transparent text-white/42 hover:border-white/48 hover:bg-white/[0.05]",
-                        isPending ? "cursor-wait opacity-65" : "",
+                        isPending ? "cursor-default" : "",
                         rowError
                           ? "border-red-300/65 bg-red-400/[0.07] text-red-100"
                           : ""
                       )}
                     >
-                      {isPending ? (
+                      {isCompleted ? (
+                        "✓"
+                      ) : isPending ? (
                         <Loader2
                           className="h-3 w-3 animate-spin"
                           aria-hidden="true"
                         />
-                      ) : isCompleted ? (
-                        "✓"
                       ) : null}
                     </button>
                   ) : (
@@ -976,7 +1192,7 @@ function CheckInList({
 
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate text-[0.75rem] leading-[1.15rem] text-white/76",
+                      "whitespace-nowrap text-[0.75rem] leading-[1.15rem] text-white/76",
                       isCompleted ? "text-white/42 line-through" : ""
                     )}
                   >
@@ -989,7 +1205,8 @@ function CheckInList({
                     {rowError}
                   </div>
                 ) : null}
-              </div>
+                </div>
+              </React.Fragment>
             );
           })
         ) : (

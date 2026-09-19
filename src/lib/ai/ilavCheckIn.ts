@@ -14,6 +14,13 @@ import type { Database } from "@/types/supabase";
 
 type CheckInClient = SupabaseClient<Database>;
 
+export type IlavCheckInProjectTask = {
+  id: string;
+  title: string;
+  isCompleted: boolean;
+  completedAt: string | null;
+};
+
 export type IlavCheckInItem = {
   id: string;
   scheduleInstanceId: string;
@@ -32,6 +39,9 @@ export type IlavCheckInItem = {
   status: string | null;
   completedAt: string | null;
   glyph: string | null;
+  projectTasks: IlavCheckInProjectTask[];
+  timeBlockId: string | null;
+  timeBlockLabel: string | null;
 };
 
 export type IlavCheckInHabit = {
@@ -80,6 +90,15 @@ export type BuildIlavCheckInPayloadArgs = {
   displayGlyphs?: {
     scheduleInstanceGlyphById: Map<string, string>;
     habitGlyphById: Map<string, string>;
+  };
+  displayTimeBlocks?: {
+    timeBlockByInstanceId: Map<
+      string,
+      { id: string | null; label: string | null }
+    >;
+  };
+  displayProjectTasks?: {
+    projectTasksByProjectId: Map<string, IlavCheckInProjectTask[]>;
   };
 };
 
@@ -164,7 +183,9 @@ function instanceTitle(instance: ScheduleInstance) {
 function mapInstance(
   instance: ScheduleInstance,
   timeZone: string,
-  glyph: string | null = null
+  glyph: string | null = null,
+  timeBlock: { id: string | null; label: string | null } | null = null,
+  projectTasks: IlavCheckInProjectTask[] = []
 ): IlavCheckInItem {
   const startLabel = formatLocalTime(instance.start_utc, timeZone);
   const endLabel = formatLocalTime(instance.end_utc, timeZone);
@@ -186,6 +207,9 @@ function mapInstance(
     status: instance.status ?? null,
     completedAt: instance.completed_at ?? null,
     glyph,
+    timeBlockId: timeBlock?.id ?? instance.time_block_id ?? null,
+    timeBlockLabel: timeBlock?.label ?? null,
+    projectTasks,
   };
 }
 
@@ -211,6 +235,8 @@ export function buildIlavCheckInPayload({
   habits,
   completedHabitIds,
   displayGlyphs,
+  displayTimeBlocks,
+  displayProjectTasks,
 }: BuildIlavCheckInPayloadArgs): IlavCheckIn {
   const nowMs = generatedAt.getTime();
   const visibleInstances = instances
@@ -312,28 +338,44 @@ export function buildIlavCheckInPayload({
       mapInstance(
         instance,
         timeZone,
-        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null
+        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null,
+        displayTimeBlocks?.timeBlockByInstanceId.get(instance.id) ?? null,
+        instance.source_type === "PROJECT" && instance.source_id
+          ? displayProjectTasks?.projectTasksByProjectId.get(instance.source_id) ?? []
+          : []
       )
     ),
     completed: completed.map((instance) =>
       mapInstance(
         instance,
         timeZone,
-        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null
+        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null,
+        displayTimeBlocks?.timeBlockByInstanceId.get(instance.id) ?? null,
+        instance.source_type === "PROJECT" && instance.source_id
+          ? displayProjectTasks?.projectTasksByProjectId.get(instance.source_id) ?? []
+          : []
       )
     ),
     missed: missed.map((instance) =>
       mapInstance(
         instance,
         timeZone,
-        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null
+        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null,
+        displayTimeBlocks?.timeBlockByInstanceId.get(instance.id) ?? null,
+        instance.source_type === "PROJECT" && instance.source_id
+          ? displayProjectTasks?.projectTasksByProjectId.get(instance.source_id) ?? []
+          : []
       )
     ),
     upcoming: upcoming.map((instance) =>
       mapInstance(
         instance,
         timeZone,
-        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null
+        displayGlyphs?.scheduleInstanceGlyphById.get(instance.id) ?? null,
+        displayTimeBlocks?.timeBlockByInstanceId.get(instance.id) ?? null,
+        instance.source_type === "PROJECT" && instance.source_id
+          ? displayProjectTasks?.projectTasksByProjectId.get(instance.source_id) ?? []
+          : []
       )
     ),
     dueUnscheduledHabits,
@@ -738,6 +780,165 @@ async function resolveIlavDisplayGlyphs({
   };
 }
 
+
+async function resolveIlavDisplayTimeBlocks({
+  supabase,
+  userId,
+  instances,
+}: {
+  supabase: CheckInClient;
+  userId: string;
+  instances: ScheduleInstance[];
+}) {
+  const dayTypeBlockIds = Array.from(
+    new Set(
+      instances
+        .map((instance) => instance.day_type_time_block_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  const directTimeBlockIds = Array.from(
+    new Set(
+      instances
+        .map((instance) => instance.time_block_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  const [dayTypeBlocksResult, timeBlocksResult] = await Promise.all([
+    dayTypeBlockIds.length
+      ? supabase
+          .from("day_type_time_blocks")
+          .select("id, time_block_id, time_block_label")
+          .eq("user_id", userId)
+          .in("id", dayTypeBlockIds)
+      : Promise.resolve({ data: [], error: null }),
+
+    directTimeBlockIds.length
+      ? supabase
+          .from("time_blocks")
+          .select("id, label")
+          .eq("user_id", userId)
+          .in("id", directTimeBlockIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (dayTypeBlocksResult.error) throw dayTypeBlocksResult.error;
+  if (timeBlocksResult.error) throw timeBlocksResult.error;
+
+  const dayTypeBlockById = new Map(
+    (dayTypeBlocksResult.data ?? []).map((row) => [
+      row.id,
+      {
+        id: row.time_block_id ?? null,
+        label: row.time_block_label?.trim() || null,
+      },
+    ])
+  );
+
+  const timeBlockLabelById = new Map(
+    (timeBlocksResult.data ?? []).map((row) => [
+      row.id,
+      row.label?.trim() || null,
+    ])
+  );
+
+  const timeBlockByInstanceId = new Map<
+    string,
+    { id: string | null; label: string | null }
+  >();
+
+  for (const instance of instances) {
+    const dayTypeBlock = instance.day_type_time_block_id
+      ? dayTypeBlockById.get(instance.day_type_time_block_id)
+      : null;
+
+    const timeBlockId =
+      dayTypeBlock?.id ??
+      instance.time_block_id ??
+      null;
+
+    const label =
+      dayTypeBlock?.label ??
+      (timeBlockId ? timeBlockLabelById.get(timeBlockId) ?? null : null);
+
+    if (!timeBlockId && !label) continue;
+
+    timeBlockByInstanceId.set(instance.id, {
+      id: timeBlockId,
+      label,
+    });
+  }
+
+  return {
+    timeBlockByInstanceId,
+  };
+}
+
+
+
+async function resolveIlavProjectTasks({
+  supabase,
+  userId,
+  instances,
+}: {
+  supabase: CheckInClient;
+  userId: string;
+  instances: ScheduleInstance[];
+}) {
+  const projectIds = Array.from(
+    new Set(
+      instances
+        .filter((instance) => instance.source_type === "PROJECT")
+        .map((instance) => instance.source_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  if (projectIds.length === 0) {
+    return {
+      projectTasksByProjectId: new Map<string, IlavCheckInProjectTask[]>(),
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id, project_id, name, stage, completed_at, created_at")
+    .eq("user_id", userId)
+    .in("project_id", projectIds)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const projectTasksByProjectId = new Map<
+    string,
+    IlavCheckInProjectTask[]
+  >();
+
+  for (const task of data ?? []) {
+    if (!task.project_id) continue;
+
+    const tasks = projectTasksByProjectId.get(task.project_id) ?? [];
+
+    tasks.push({
+      id: task.id,
+      title: task.name?.trim() || "Untitled task",
+      isCompleted:
+        Boolean(task.completed_at) ||
+        task.stage === "PERFECT",
+      completedAt: task.completed_at ?? null,
+    });
+
+    projectTasksByProjectId.set(task.project_id, tasks);
+  }
+
+  return {
+    projectTasksByProjectId,
+  };
+}
+
+
 export async function buildIlavCheckInForUser({
   supabase,
   userId,
@@ -783,12 +984,25 @@ export async function buildIlavCheckInForUser({
 
   if (instancesResponse.error) throw instancesResponse.error;
 
-  const displayGlyphs = await resolveIlavDisplayGlyphs({
-    supabase,
-    userId,
-    instances: instancesResponse.data ?? [],
-    habits,
-  });
+  const [displayGlyphs, displayTimeBlocks, displayProjectTasks] =
+    await Promise.all([
+      resolveIlavDisplayGlyphs({
+        supabase,
+        userId,
+        instances: instancesResponse.data ?? [],
+        habits,
+      }),
+      resolveIlavDisplayTimeBlocks({
+        supabase,
+        userId,
+        instances: instancesResponse.data ?? [],
+      }),
+      resolveIlavProjectTasks({
+        supabase,
+        userId,
+        instances: instancesResponse.data ?? [],
+      }),
+    ]);
 
   return buildIlavCheckInPayload({
     type,
@@ -799,6 +1013,8 @@ export async function buildIlavCheckInForUser({
     habits,
     completedHabitIds,
     displayGlyphs,
+    displayTimeBlocks,
+    displayProjectTasks,
   });
 }
 
