@@ -59,6 +59,8 @@ import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
   isSitePreviewContentEditRequestMessage,
+  isSitePreviewReadyMessage,
+  isSitePreviewSectionInsertRequestMessage,
   isSitePreviewSelectionRequestMessage,
   sectionTypeSupportsInlineEditField,
 } from "@/lib/site-builder/previewMessages";
@@ -69,7 +71,11 @@ import {
   type AddableSiteSectionType,
 } from "@/lib/site-builder/sectionRegistry";
 import type {
+  SiteCatalog,
+  SiteCatalogCollection,
+  SiteCatalogItem,
   SiteContentNodeId,
+  SiteDataSource,
   SiteDocument,
   SiteEditorSelection,
   SiteNavigationItem,
@@ -94,6 +100,7 @@ type SiteChromeSelection =
   | "site"
   | "design"
   | "inquiries"
+  | "catalog"
   | "header"
   | "navigation"
   | "footer";
@@ -275,6 +282,19 @@ function isDuplicateSlug(
   return pages.some(
     (page) => page.id !== ignoredPageId && page.slug === slug,
   );
+}
+
+function getDraftPreviewHref(
+  site: SiteDocument,
+  pageId: string | undefined,
+) {
+  const resolvedPageId =
+    pageId ??
+    site.homePageId;
+
+  return `/site/preview?standalone=1&page=${encodeURIComponent(
+    resolvedPageId,
+  )}`;
 }
 
 function getPublicPageHref(
@@ -1810,6 +1830,36 @@ function MediaEditor({
 }
 
 
+function createBlankSiteCardItem(): SiteCardItem {
+  return {
+    id:
+      crypto.randomUUID(),
+    eyebrow: "",
+    title: "",
+    body: "",
+    imageUrl: "",
+    imagePath: "",
+    imageAlt: "",
+    linkLabel: "",
+    linkHref: "",
+    linkPageId: "",
+
+    span: "one",
+    mediaPosition: "top",
+    mediaFit: "cover",
+    mediaRatio: "16:9",
+    mediaShare: 50,
+    mediaZoom: 100,
+    mediaPositionX: 50,
+    mediaPositionY: 50,
+    padding: 24,
+    titleSize: 30,
+    bodySize: 13,
+    textWidth: 520,
+  };
+}
+
+
 function CardsNavigator({
   section,
   onContentChange,
@@ -1867,31 +1917,8 @@ function CardsNavigator({
   }
 
   function addItem() {
-    const item: SiteCardItem = {
-      id: crypto.randomUUID(),
-      eyebrow: "Project",
-      title: "New card",
-      body: "Describe this item.",
-      imageUrl: "",
-      imagePath: "",
-      imageAlt: "",
-      linkLabel: "View",
-      linkHref: "#",
-      linkPageId: "",
-
-      span: "one",
-      mediaPosition: "top",
-      mediaFit: "cover",
-      mediaRatio: "16:9",
-      mediaShare: 50,
-      mediaZoom: 100,
-      mediaPositionX: 50,
-      mediaPositionY: 50,
-      padding: 24,
-      titleSize: 30,
-      bodySize: 11,
-      textWidth: 520,
-    };
+    const item =
+      createBlankSiteCardItem();
 
     setItems([
       ...items,
@@ -3430,6 +3457,7 @@ function InspectorContentPanel({
   section,
   onContentChange,
   onSelectBlock,
+  onSourceChange,
   sourceStatus,
   sourceError,
   sourceProducts,
@@ -3443,6 +3471,9 @@ function InspectorContentPanel({
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
   onSelectBlock: (blockId: string) => void;
+  onSourceChange: (
+    source: SiteDataSource,
+  ) => void;
   sourceStatus: "idle" | "loading" | "loaded" | "error";
   sourceError: string | null;
   sourceProducts: SourceListing[];
@@ -3563,34 +3594,196 @@ function InspectorContentPanel({
     );
   }
 
-  if (section.type === "products" || section.type === "services") {
+  if (
+    section.type ===
+    "products"
+  ) {
+    const sourceKind =
+      section.source.kind ===
+      "catalog"
+        ? "catalog"
+        : "source";
+
     return (
       <div className="space-y-4">
         <InspectorGroup title="Content">
           <TextInput
             id="site-section-heading"
             label="Heading"
-            value={getContentString(section, "heading")}
-            onChange={(value) => onContentChange("heading", value)}
+            value={getContentString(
+              section,
+              "heading",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "heading",
+                value,
+              )
+            }
           />
+
           <TextAreaInput
             id="site-section-intro"
             label="Intro"
-            value={getContentString(section, "intro")}
-            onChange={(value) => onContentChange("intro", value)}
+            value={getContentString(
+              section,
+              "intro",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "intro",
+                value,
+              )
+            }
             rows={3}
           />
         </InspectorGroup>
+
+        <InspectorGroup title="Product source">
+          <InspectorSegmentedControl
+            label="Source"
+            value={sourceKind}
+            options={[
+              {
+                label: "Catalog",
+                value: "catalog",
+              },
+              {
+                label: "Source",
+                value: "source",
+              },
+            ]}
+            onChange={(value) => {
+              if (
+                value ===
+                "catalog"
+              ) {
+                onSourceChange({
+                  kind: "catalog",
+                  mode: "all",
+                });
+                return;
+              }
+
+              onSourceChange({
+                kind: "source",
+                listingType:
+                  "product",
+                mode:
+                  "selected",
+                listingIds: [],
+              });
+            }}
+          />
+        </InspectorGroup>
+
+        {section.source.kind ===
+        "catalog" ? (
+          <CatalogProductSelector
+            site={site}
+            section={section}
+            onSourceChange={
+              onSourceChange
+            }
+          />
+        ) : (
+          <SourceListingSelector
+            section={section}
+            sourceStatus={
+              sourceStatus
+            }
+            sourceError={
+              sourceError
+            }
+            sourceProducts={
+              sourceProducts
+            }
+            sourceServices={
+              sourceServices
+            }
+            selectedProductIds={
+              selectedProductIds
+            }
+            selectedServiceIds={
+              selectedServiceIds
+            }
+            onLoadSourceListings={
+              onLoadSourceListings
+            }
+            onToggleSourceListing={
+              onToggleSourceListing
+            }
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (
+    section.type ===
+    "services"
+  ) {
+    return (
+      <div className="space-y-4">
+        <InspectorGroup title="Content">
+          <TextInput
+            id="site-section-heading"
+            label="Heading"
+            value={getContentString(
+              section,
+              "heading",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "heading",
+                value,
+              )
+            }
+          />
+
+          <TextAreaInput
+            id="site-section-intro"
+            label="Intro"
+            value={getContentString(
+              section,
+              "intro",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "intro",
+                value,
+              )
+            }
+            rows={3}
+          />
+        </InspectorGroup>
+
         <SourceListingSelector
           section={section}
-          sourceStatus={sourceStatus}
-          sourceError={sourceError}
-          sourceProducts={sourceProducts}
-          sourceServices={sourceServices}
-          selectedProductIds={selectedProductIds}
-          selectedServiceIds={selectedServiceIds}
-          onLoadSourceListings={onLoadSourceListings}
-          onToggleSourceListing={onToggleSourceListing}
+          sourceStatus={
+            sourceStatus
+          }
+          sourceError={
+            sourceError
+          }
+          sourceProducts={
+            sourceProducts
+          }
+          sourceServices={
+            sourceServices
+          }
+          selectedProductIds={
+            selectedProductIds
+          }
+          selectedServiceIds={
+            selectedServiceIds
+          }
+          onLoadSourceListings={
+            onLoadSourceListings
+          }
+          onToggleSourceListing={
+            onToggleSourceListing
+          }
         />
       </div>
     );
@@ -4376,6 +4569,271 @@ function ContentNodeInspectorPanel({
   );
 }
 
+
+function CatalogProductSelector({
+  site,
+  section,
+  onSourceChange,
+}: {
+  site: SiteDocument;
+  section: SiteSection;
+  onSourceChange: (
+    source: SiteDataSource,
+  ) => void;
+}) {
+  if (
+    section.source.kind !==
+    "catalog"
+  ) {
+    return null;
+  }
+
+  const source =
+    section.source;
+
+  const catalog =
+    site.catalog ?? {
+      collections: [],
+      items: [],
+    };
+
+  const selectedIds =
+    source.itemIds ?? [];
+
+  const visibleItems =
+    catalog.items
+      .slice()
+      .sort(
+        (a, b) =>
+          a.sortOrder -
+          b.sortOrder,
+      );
+
+  return (
+    <InspectorGroup title="Catalog">
+      <div>
+        <InspectorSegmentedControl
+          label="Show"
+          value={source.mode}
+          options={[
+            {
+              label: "All",
+              value: "all",
+            },
+            {
+              label: "Collection",
+              value: "collection",
+            },
+            {
+              label: "Selected",
+              value: "selected",
+            },
+          ]}
+          onChange={(mode) => {
+            if (
+              mode ===
+              "collection"
+            ) {
+              onSourceChange({
+                kind: "catalog",
+                mode,
+                collectionId:
+                  source.collectionId ??
+                  catalog
+                    .collections[0]
+                    ?.id,
+              });
+              return;
+            }
+
+            if (
+              mode ===
+              "selected"
+            ) {
+              onSourceChange({
+                kind: "catalog",
+                mode,
+                itemIds:
+                  source.itemIds ??
+                  [],
+              });
+              return;
+            }
+
+            onSourceChange({
+              kind: "catalog",
+              mode: "all",
+            });
+          }}
+        />
+
+        {source.mode ===
+        "collection" ? (
+          catalog.collections
+            .length > 0 ? (
+            <InspectorSelectRow
+              label="Collection"
+              value={
+                source.collectionId ??
+                catalog
+                  .collections[0]
+                  ?.id ??
+                ""
+              }
+              options={catalog.collections
+                .slice()
+                .sort(
+                  (a, b) =>
+                    a.sortOrder -
+                    b.sortOrder,
+                )
+                .map(
+                  (
+                    collection,
+                  ) => ({
+                    label:
+                      collection.title,
+                    value:
+                      collection.id,
+                  }),
+                )}
+              onChange={(
+                collectionId,
+              ) =>
+                onSourceChange({
+                  kind: "catalog",
+                  mode:
+                    "collection",
+                  collectionId,
+                })
+              }
+            />
+          ) : (
+            <p className="px-1 py-3 text-[10px] leading-4 text-zinc-600">
+              Create a Catalog
+              collection first.
+            </p>
+          )
+        ) : null}
+
+        {source.mode ===
+        "selected" ? (
+          <div className="mt-2 space-y-1.5">
+            {visibleItems.length >
+            0 ? (
+              visibleItems.map(
+                (item) => {
+                  const selected =
+                    selectedIds.includes(
+                      item.id,
+                    );
+
+                  const collection =
+                    catalog.collections.find(
+                      (
+                        candidate,
+                      ) =>
+                        candidate.id ===
+                        item.collectionId,
+                    );
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        const itemIds =
+                          selected
+                            ? selectedIds.filter(
+                                (
+                                  id,
+                                ) =>
+                                  id !==
+                                  item.id,
+                              )
+                            : [
+                                ...selectedIds,
+                                item.id,
+                              ];
+
+                        onSourceChange({
+                          kind:
+                            "catalog",
+                          mode:
+                            "selected",
+                          itemIds,
+                        });
+                      }}
+                      className={`flex w-full items-center gap-2.5 rounded-md border p-2 text-left transition ${
+                        selected
+                          ? "border-white/20 bg-white/[0.055]"
+                          : "border-white/[0.06] bg-black/15 hover:border-white/[0.12]"
+                      }`}
+                    >
+                      <span
+                        className="h-10 w-8 shrink-0 rounded-[3px] bg-white/[0.04] bg-cover bg-center"
+                        style={{
+                          backgroundImage:
+                            item.imageUrl
+                              ? `url(${item.imageUrl})`
+                              : undefined,
+                        }}
+                      />
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[10px] font-medium text-zinc-300">
+                          {
+                            item.title
+                          }
+                        </span>
+
+                        <span className="mt-0.5 block truncate text-[9px] text-zinc-700">
+                          {collection?.title ??
+                            "Unsorted"}
+                        </span>
+                      </span>
+
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+                          selected
+                            ? "border-white/60 bg-white"
+                            : "border-white/15"
+                        }`}
+                      >
+                        {selected ? (
+                          <span className="h-1.5 w-1.5 rounded-[1px] bg-black" />
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                },
+              )
+            ) : (
+              <p className="px-1 py-3 text-[10px] leading-4 text-zinc-600">
+                Add products to
+                Catalog first.
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="mt-3 border-t border-white/[0.045] pt-3">
+          <p className="text-[9px] leading-4 text-zinc-700">
+            {catalog.items.length}{" "}
+            Catalog item
+            {catalog.items.length ===
+            1
+              ? ""
+              : "s"}{" "}
+            available
+          </p>
+        </div>
+      </div>
+    </InspectorGroup>
+  );
+}
+
+
 function SourceListingSelector({
   section,
   sourceStatus,
@@ -4933,6 +5391,11 @@ function InspectorDesignPanel({
       section,
     );
 
+  const supportsItemAppearance =
+    section.type === "gallery" ||
+    section.type === "products" ||
+    section.type === "services";
+
   const sectionLayout =
     section.layout ?? {};
 
@@ -5286,6 +5749,52 @@ function InspectorDesignPanel({
 
         <InspectorGroup title="Appearance">
           <div>
+            <InspectorSegmentedControl
+              label="Card frame"
+              value={
+                section.style?.itemFrame ??
+                "none"
+              }
+              options={[
+                {
+                  label: "None",
+                  value: "none",
+                },
+                {
+                  label: "Outline",
+                  value: "outline",
+                },
+                {
+                  label: "Surface",
+                  value: "surface",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "itemFrame",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Card corners"
+              value={
+                section.style?.itemRadius ??
+                12
+              }
+              min={0}
+              max={48}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onStyleChange(
+                  "itemRadius",
+                  value,
+                )
+              }
+            />
+
             <InspectorSelectRow
               label="Background"
               value={
@@ -5641,6 +6150,173 @@ function InspectorDesignPanel({
         </InspectorGroup>
       ) : null}
 
+
+      {supportsItemAppearance ? (
+        <InspectorGroup
+          title={
+            section.type === "gallery"
+              ? "Images"
+              : section.type === "services"
+                ? "Service cards"
+                : "Product cards"
+          }
+        >
+          <div>
+            <InspectorSegmentedControl
+              label="Frame"
+              value={
+                section.style?.itemFrame ??
+                "none"
+              }
+              options={[
+                {
+                  label: "None",
+                  value: "none",
+                },
+                {
+                  label: "Outline",
+                  value: "outline",
+                },
+                {
+                  label: "Surface",
+                  value: "surface",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "itemFrame",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Corners"
+              value={
+                section.style?.itemRadius ??
+                12
+              }
+              min={0}
+              max={48}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onStyleChange(
+                  "itemRadius",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSegmentedControl
+              label="Media fit"
+              value={
+                section.style?.itemMediaFit ??
+                "cover"
+              }
+              options={[
+                {
+                  label: "Contain",
+                  value: "contain",
+                },
+                {
+                  label: "Cover",
+                  value: "cover",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "itemMediaFit",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSelectRow
+              label="Media ratio"
+              value={
+                section.style?.itemMediaRatio ??
+                (
+                  section.type === "gallery"
+                    ? "auto"
+                    : "4:3"
+                )
+              }
+              options={[
+                {
+                  label: "Auto",
+                  value: "auto",
+                },
+                {
+                  label: "Wide 16:9",
+                  value: "16:9",
+                },
+                {
+                  label: "Photo 3:2",
+                  value: "3:2",
+                },
+                {
+                  label: "Standard 4:3",
+                  value: "4:3",
+                },
+                {
+                  label: "Square 1:1",
+                  value: "1:1",
+                },
+                {
+                  label: "Portrait 4:5",
+                  value: "4:5",
+                },
+              ]}
+              onChange={(value) =>
+                onStyleChange(
+                  "itemMediaRatio",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Gap"
+              value={
+                sectionLayout.gap ??
+                28
+              }
+              min={0}
+              max={96}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "gap",
+                  value,
+                )
+              }
+            />
+
+            {section.type === "products" ||
+            section.type === "services" ? (
+              <InspectorRangeField
+                label="Card padding"
+                value={
+                  section.style?.itemPadding ??
+                  20
+                }
+                min={0}
+                max={64}
+                step={1}
+                unit="px"
+                onChange={(value) =>
+                  onStyleChange(
+                    "itemPadding",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+          </div>
+        </InspectorGroup>
+      ) : null}
 
       {/* PRECISE SECTION SHELL */}
       {preciseSectionControls ? (
@@ -6327,6 +7003,648 @@ function SiteInquiriesInspector({
     </>
   );
 }
+
+
+function SiteCatalogInspector({
+  site,
+  onCatalogChange,
+  mobile = false,
+}: {
+  site: SiteDocument;
+  onCatalogChange: (
+    catalog: SiteCatalog,
+  ) => void;
+  mobile?: boolean;
+}) {
+  const catalog: SiteCatalog =
+    site.catalog ?? {
+      collections: [],
+      items: [],
+    };
+
+  const [title, setTitle] =
+    useState("");
+
+  const [
+    collectionName,
+    setCollectionName,
+  ] = useState("");
+
+  const [
+    uploadResult,
+    setUploadResult,
+  ] = useState<{
+    path: string;
+    url: string;
+  } | null>(null);
+
+  const [
+    uploadStatus,
+    setUploadStatus,
+  ] = useState<
+    "idle" | "uploading" | "error"
+  >("idle");
+
+  const [
+    uploadError,
+    setUploadError,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const itemCount =
+    catalog.items.length;
+
+  const visibleItemCount =
+    catalog.items.filter(
+      (item) => item.visible,
+    ).length;
+
+  async function uploadImage(
+    file: File,
+  ) {
+    setUploadStatus(
+      "uploading",
+    );
+    setUploadError(null);
+
+    try {
+      const result =
+        await uploadSiteImage(
+          file,
+        );
+
+      setUploadResult(result);
+      setUploadStatus("idle");
+    } catch (error) {
+      setUploadStatus("error");
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload image.",
+      );
+    }
+  }
+
+  function resolveCollection() {
+    const trimmed =
+      collectionName.trim();
+
+    if (!trimmed) {
+      return {
+        collections:
+          catalog.collections,
+        collectionId:
+          undefined,
+      };
+    }
+
+    const existing =
+      catalog.collections.find(
+        (collection) =>
+          collection.title
+            .trim()
+            .toLowerCase() ===
+          trimmed.toLowerCase(),
+      );
+
+    if (existing) {
+      return {
+        collections:
+          catalog.collections,
+        collectionId:
+          existing.id,
+      };
+    }
+
+    const collection:
+      SiteCatalogCollection = {
+        id:
+          `catalog-collection-${crypto.randomUUID()}`,
+        title: trimmed,
+        slug:
+          slugifyPageTitle(
+            trimmed,
+          ) ||
+          `collection-${catalog.collections.length + 1}`,
+        sortOrder:
+          catalog.collections.reduce(
+            (
+              highest,
+              candidate,
+            ) =>
+              Math.max(
+                highest,
+                candidate.sortOrder,
+              ),
+            -1,
+          ) + 1,
+      };
+
+    return {
+      collections: [
+        ...catalog.collections,
+        collection,
+      ],
+      collectionId:
+        collection.id,
+    };
+  }
+
+  function addItem() {
+    const trimmedTitle =
+      title.trim();
+
+    if (
+      !trimmedTitle ||
+      !uploadResult
+    ) {
+      return;
+    }
+
+    const {
+      collections,
+      collectionId,
+    } =
+      resolveCollection();
+
+    const item:
+      SiteCatalogItem = {
+        id:
+          `catalog-item-${crypto.randomUUID()}`,
+        title:
+          trimmedTitle,
+
+        imageUrl:
+          uploadResult.url,
+        imagePath:
+          uploadResult.path,
+        imageAlt:
+          trimmedTitle,
+
+        collectionId,
+
+        status:
+          "concept",
+
+        visible: true,
+        sortOrder:
+          catalog.items.reduce(
+            (
+              highest,
+              candidate,
+            ) =>
+              Math.max(
+                highest,
+                candidate.sortOrder,
+              ),
+            -1,
+          ) + 1,
+      };
+
+    onCatalogChange({
+      collections,
+      items: [
+        ...catalog.items,
+        item,
+      ],
+    });
+
+    setTitle("");
+    setCollectionName("");
+    setUploadResult(null);
+    setUploadStatus("idle");
+    setUploadError(null);
+  }
+
+  function updateItem(
+    itemId: string,
+    updater: (
+      item: SiteCatalogItem,
+    ) => SiteCatalogItem,
+  ) {
+    onCatalogChange({
+      ...catalog,
+      items:
+        catalog.items.map(
+          (item) =>
+            item.id === itemId
+              ? updater(item)
+              : item,
+        ),
+    });
+  }
+
+  function deleteItem(
+    itemId: string,
+  ) {
+    onCatalogChange({
+      ...catalog,
+      items:
+        catalog.items.filter(
+          (item) =>
+            item.id !== itemId,
+        ),
+    });
+  }
+
+  return (
+    <>
+      <div
+        className={
+          mobile
+            ? "border-b border-white/[0.07] px-4 pb-4 pt-5"
+            : "border-b border-white/[0.07] px-4 py-3"
+        }
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p
+              className={
+                mobile
+                  ? "text-[20px] font-medium tracking-[-0.02em] text-zinc-100"
+                  : "text-[15px] font-medium text-zinc-100"
+              }
+            >
+              Catalog
+            </p>
+
+            <p className="mt-1 text-[11px] text-zinc-600">
+              {itemCount} item
+              {itemCount === 1
+                ? ""
+                : "s"}{" "}
+              · {visibleItemCount} visible
+            </p>
+          </div>
+
+          <Package
+            className={
+              mobile
+                ? "mt-1 h-5 w-5 text-zinc-600"
+                : "mt-0.5 h-4 w-4 text-zinc-600"
+            }
+          />
+        </div>
+      </div>
+
+      <div
+        className={
+          mobile
+            ? "space-y-6 p-4 pb-24"
+            : "space-y-5 p-4"
+        }
+      >
+        <InspectorGroup title="Quick add">
+          <div className="space-y-3">
+            <div
+              className={`relative overflow-hidden rounded-lg border border-white/[0.08] bg-black/25 ${
+                mobile
+                  ? "aspect-[4/5]"
+                  : "aspect-[4/3]"
+              }`}
+            >
+              {uploadResult ? (
+                <img
+                  src={
+                    uploadResult.url
+                  }
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="text-[10px] uppercase tracking-[0.14em]">
+                    Product image
+                  </span>
+                </div>
+              )}
+
+              <label className="absolute inset-0 cursor-pointer">
+                <span className="sr-only">
+                  Upload product
+                  image
+                </span>
+
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  disabled={
+                    uploadStatus ===
+                    "uploading"
+                  }
+                  className="hidden"
+                  onChange={(
+                    event,
+                  ) => {
+                    const input =
+                      event.currentTarget;
+
+                    const file =
+                      input.files?.[0];
+
+                    if (!file) {
+                      return;
+                    }
+
+                    void uploadImage(
+                      file,
+                    ).finally(
+                      () => {
+                        input.value =
+                          "";
+                      },
+                    );
+                  }}
+                />
+              </label>
+
+              <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-black/70 px-2.5 py-1.5 text-[10px] font-medium text-zinc-200 backdrop-blur">
+                {uploadStatus ===
+                "uploading"
+                  ? "Uploading…"
+                  : uploadResult
+                    ? "Tap to replace"
+                    : "Tap to add photo"}
+              </div>
+            </div>
+
+            {uploadError ? (
+              <p className="rounded-md border border-red-300/15 bg-red-300/[0.04] px-3 py-2 text-[10px] leading-4 text-red-200/80">
+                {uploadError}
+              </p>
+            ) : null}
+
+            <TextInput
+              id={
+                mobile
+                  ? "mobile-catalog-item-name"
+                  : "catalog-item-name"
+              }
+              label="Product name"
+              value={title}
+              onChange={setTitle}
+              placeholder="Washed Logo Hoodie"
+            />
+
+            <div>
+              <TextInput
+                id={
+                  mobile
+                    ? "mobile-catalog-collection"
+                    : "catalog-collection"
+                }
+                label="Collection"
+                value={
+                  collectionName
+                }
+                onChange={
+                  setCollectionName
+                }
+                placeholder="Collection 01"
+              />
+
+              {catalog.collections
+                .length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {catalog.collections
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        a.sortOrder -
+                        b.sortOrder,
+                    )
+                    .map(
+                      (
+                        collection,
+                      ) => (
+                        <button
+                          key={
+                            collection.id
+                          }
+                          type="button"
+                          onClick={() =>
+                            setCollectionName(
+                              collection.title,
+                            )
+                          }
+                          className={`rounded-full border px-2.5 py-1 text-[9px] transition ${
+                            collectionName
+                              .trim()
+                              .toLowerCase() ===
+                            collection.title
+                              .trim()
+                              .toLowerCase()
+                              ? "border-white/20 bg-white/[0.08] text-zinc-200"
+                              : "border-white/[0.07] text-zinc-600 hover:border-white/[0.14] hover:text-zinc-300"
+                          }`}
+                        >
+                          {
+                            collection.title
+                          }
+                        </button>
+                      ),
+                    )}
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              onClick={addItem}
+              disabled={
+                !title.trim() ||
+                !uploadResult ||
+                uploadStatus ===
+                  "uploading"
+              }
+              className={`flex w-full items-center justify-center gap-2 rounded-md bg-zinc-100 font-medium text-black transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 ${
+                mobile
+                  ? "h-11 text-[13px]"
+                  : "h-9 text-[11px]"
+              }`}
+            >
+              <Plus className="h-4 w-4" />
+              Add to catalog
+            </button>
+          </div>
+        </InspectorGroup>
+
+        <InspectorGroup title="Products">
+          {catalog.items.length >
+          0 ? (
+            <div className="space-y-2">
+              {catalog.items
+                .slice()
+                .sort(
+                  (a, b) =>
+                    a.sortOrder -
+                    b.sortOrder,
+                )
+                .map((item) => {
+                  const collection =
+                    catalog.collections.find(
+                      (
+                        candidate,
+                      ) =>
+                        candidate.id ===
+                        item.collectionId,
+                    );
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="group flex gap-3 rounded-md border border-white/[0.07] bg-white/[0.015] p-2"
+                    >
+                      <div className="relative h-[74px] w-[60px] shrink-0 overflow-hidden rounded-[5px] bg-white/[0.03]">
+                        <img
+                          src={
+                            item.imageUrl
+                          }
+                          alt={
+                            item.imageAlt
+                          }
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      </div>
+
+                      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-medium text-zinc-200">
+                            {
+                              item.title
+                            }
+                          </p>
+
+                          <p className="mt-1 truncate text-[9px] text-zinc-600">
+                            {collection?.title ??
+                              "Unsorted"}{" "}
+                            ·{" "}
+                            {
+                              item.status
+                            }
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateItem(
+                                item.id,
+                                (
+                                  current,
+                                ) => ({
+                                  ...current,
+                                  visible:
+                                    !current.visible,
+                                }),
+                              )
+                            }
+                            className={`flex h-6 items-center gap-1 rounded px-1.5 text-[9px] transition ${
+                              item.visible
+                                ? "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
+                                : "text-zinc-700 hover:bg-white/[0.03] hover:text-zinc-400"
+                            }`}
+                          >
+                            {item.visible ? (
+                              <Eye className="h-3 w-3" />
+                            ) : (
+                              <EyeOff className="h-3 w-3" />
+                            )}
+
+                            {item.visible
+                              ? "Visible"
+                              : "Hidden"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteItem(
+                                item.id,
+                              )
+                            }
+                            className="flex h-6 items-center gap-1 rounded px-1.5 text-[9px] text-zinc-700 transition hover:bg-red-300/[0.04] hover:text-red-200"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-white/[0.08] px-4 py-8 text-center">
+              <Package className="mx-auto h-5 w-5 text-zinc-700" />
+
+              <p className="mt-3 text-[11px] text-zinc-400">
+                Your catalog is
+                empty.
+              </p>
+
+              <p className="mt-1 text-[10px] leading-4 text-zinc-700">
+                Upload a concept,
+                mockup, sample, or
+                future product.
+              </p>
+            </div>
+          )}
+        </InspectorGroup>
+
+        {catalog.collections
+          .length > 0 ? (
+          <InspectorGroup title="Collections">
+            <div className="space-y-1">
+              {catalog.collections
+                .slice()
+                .sort(
+                  (a, b) =>
+                    a.sortOrder -
+                    b.sortOrder,
+                )
+                .map(
+                  (
+                    collection,
+                  ) => {
+                    const count =
+                      catalog.items.filter(
+                        (item) =>
+                          item.collectionId ===
+                          collection.id,
+                      ).length;
+
+                    return (
+                      <div
+                        key={
+                          collection.id
+                        }
+                        className="flex h-8 items-center gap-2 border-b border-white/[0.045] px-1 last:border-b-0"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">
+                          {
+                            collection.title
+                          }
+                        </span>
+
+                        <span className="text-[9px] tabular-nums text-zinc-700">
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  },
+                )}
+            </div>
+          </InspectorGroup>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 
 function SiteChromeInspector({
   selection,
@@ -7585,6 +8903,17 @@ export default function SiteBuilder() {
     });
   }
 
+  function updateSiteCatalog(
+    catalog: SiteCatalog,
+  ) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      catalog,
+    }));
+  }
+
   function selectPage(pageId: string) {
     const page = site.pages.find(
       (candidate) => candidate.id === pageId,
@@ -7922,6 +9251,109 @@ export default function SiteBuilder() {
           : null,
       );
     }
+  }
+
+  function addCardToSection(
+    pageId: string,
+    sectionId: string,
+  ) {
+    if (editorLocked) {
+      return;
+    }
+
+    const item =
+      createBlankSiteCardItem();
+
+    setSite((current) => ({
+      ...current,
+      pages:
+        current.pages.map(
+          (page) => {
+            if (
+              page.id !== pageId
+            ) {
+              return page;
+            }
+
+            return {
+              ...page,
+              sections:
+                page.sections.map(
+                  (section) => {
+                    if (
+                      section.id !==
+                        sectionId ||
+                      section.type !==
+                        "cards"
+                    ) {
+                      return section;
+                    }
+
+                    const items =
+                      Array.isArray(
+                        section
+                          .content
+                          .items,
+                      )
+                        ? section
+                            .content
+                            .items
+                        : [];
+
+                    return {
+                      ...section,
+                      content: {
+                        ...section
+                          .content,
+                        items: [
+                          ...items,
+                          item,
+                        ],
+                      },
+                    };
+                  },
+                ),
+            };
+          },
+        ),
+    }));
+
+    setSelectedPageId(
+      pageId,
+    );
+
+    setSiteChromeSelection(
+      null,
+    );
+
+    setEditorSelection({
+      kind: "block",
+      pageId,
+      sectionId,
+      blockId: item.id,
+    });
+
+    setActiveInspectorMode(
+      "content",
+    );
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(
+          current,
+        ).add(
+          pageId,
+        ),
+    );
+
+    setExpandedSectionIds(
+      (current) =>
+        new Set(
+          current,
+        ).add(
+          sectionId,
+        ),
+    );
   }
 
   function updateSelectedSectionContent(
@@ -8334,6 +9766,21 @@ export default function SiteBuilder() {
     }
   }
 
+  function updateSelectedSectionSource(
+    source: SiteDataSource,
+  ) {
+    if (editorLocked) {
+      return;
+    }
+
+    updateSelectedSection(
+      (section) => ({
+        ...section,
+        source,
+      }),
+    );
+  }
+
   function updateSelectedSectionLayout(
     key: keyof SiteSectionLayoutConfig,
     value: SiteSectionLayoutConfig[keyof SiteSectionLayoutConfig],
@@ -8527,6 +9974,73 @@ export default function SiteBuilder() {
       if (event.origin !== window.location.origin) return;
       if (event.source !== previewIframeRef.current?.contentWindow) return;
 
+      if (
+        isSitePreviewReadyMessage(
+          event.data,
+        )
+      ) {
+        postPreviewInitialMessages();
+        return;
+      }
+
+      if (
+        isSitePreviewSectionInsertRequestMessage(
+          event.data,
+        )
+      ) {
+        const {
+          pageId,
+          insertionIndex,
+        } =
+          event.data.payload;
+
+        const page =
+          site.pages.find(
+            (candidate) =>
+              candidate.id ===
+              pageId,
+          );
+
+        if (!page) {
+          return;
+        }
+
+        const boundedIndex =
+          Math.max(
+            0,
+            Math.min(
+              insertionIndex,
+              page.sections.length,
+            ),
+          );
+
+        setSelectedPageId(
+          page.id,
+        );
+
+        setExpandedPageIds(
+          (current) =>
+            new Set(
+              current,
+            ).add(
+              page.id,
+            ),
+        );
+
+        setSectionInsertionPageId(
+          page.id,
+        );
+
+        setSectionInsertionIndex(
+          boundedIndex,
+        );
+
+        setShowSectionLibrary(
+          true,
+        );
+
+        return;
+      }
 
       if (isSitePreviewContentEditRequestMessage(event.data)) {
         const { pageId, sectionId, field, value } = event.data.payload;
@@ -8588,7 +10102,11 @@ export default function SiteBuilder() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [site.pages, updateSectionContent]);
+  }, [
+    postPreviewInitialMessages,
+    site.pages,
+    updateSectionContent,
+  ]);
 
   const previewLogicalWidth = previewModes[previewMode].width;
   const previewLogicalHeight =
@@ -8789,7 +10307,7 @@ export default function SiteBuilder() {
       : "Publish this site.";
 
   return (
-    <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-full lg:min-h-0 lg:overflow-hidden">
+    <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
       <SectionLibrary
         open={showSectionLibrary && !editorLocked}
         insertionLabel={sectionInsertionLabel}
@@ -8875,17 +10393,20 @@ export default function SiteBuilder() {
         </div>
       ) : null}
 
-      <div className="border-b border-white/[0.07] bg-[#090a0b] px-4 py-3 lg:hidden">
-        <p className="text-sm font-medium">Site</p>
-        <p className="mt-1 text-xs text-zinc-500">
-          Desktop editor shell is the first implementation slice.
-        </p>
+      <div className="min-h-[100dvh] bg-[#090a0b] lg:hidden">
+        <SiteCatalogInspector
+          site={site}
+          onCatalogChange={
+            updateSiteCatalog
+          }
+          mobile
+        />
       </div>
 
-      <div className="hidden h-full min-h-0 lg:grid lg:grid-cols-[240px_minmax(0,1fr)_310px]">
+      <div className="hidden h-full min-h-0 overflow-hidden lg:grid lg:grid-cols-[240px_minmax(0,1fr)_310px]">
         {/* LEFT: site tree */}
         <aside
-          className={`min-h-0 overflow-y-auto border-r border-white/[0.07] bg-[#090a0b] ${
+          className={`h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y border-r border-white/[0.07] bg-[#090a0b] [-webkit-overflow-scrolling:touch] ${
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
@@ -9015,6 +10536,37 @@ export default function SiteBuilder() {
               {newInquiryCount > 0 ? (
                 <span className="rounded-full bg-white/[0.1] px-1.5 py-0.5 text-[9px] text-zinc-300">
                   {newInquiryCount}
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                selectSiteChrome(
+                  "catalog",
+                )
+              }
+              className={`mb-1 flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+                siteChromeSelection ===
+                "catalog"
+                  ? "bg-white/[0.06] text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+              }`}
+            >
+              <Package className="h-3.5 w-3.5 text-zinc-500" />
+
+              <span className="min-w-0 flex-1 font-medium">
+                Catalog
+              </span>
+
+              {site.catalog?.items
+                .length ? (
+                <span className="text-[9px] tabular-nums text-zinc-700">
+                  {
+                    site.catalog
+                      .items.length
+                  }
                 </span>
               ) : null}
             </button>
@@ -9382,6 +10934,26 @@ export default function SiteBuilder() {
                                       </button>
                                     );
                                   })}
+
+                                  {section.type ===
+                                  "cards" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        addCardToSection(
+                                          page.id,
+                                          section.id,
+                                        )
+                                      }
+                                      className="mt-1 flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-[10px] text-zinc-700 transition hover:bg-white/[0.025] hover:text-zinc-300"
+                                    >
+                                      <Plus className="h-3 w-3" />
+
+                                      <span>
+                                        Add card
+                                      </span>
+                                    </button>
+                                  ) : null}
                                 </div>
                               ) : null}
                             </div>
@@ -9447,7 +11019,7 @@ export default function SiteBuilder() {
         </aside>
 
         {/* CENTER: actual renderer */}
-        <main className="flex min-h-0 min-w-0 flex-col bg-[#0c0d0e]">
+        <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0c0d0e]">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
             <div className="flex items-center gap-4 text-[11px] text-zinc-500">
               <span className="flex items-center gap-2">
@@ -9524,15 +11096,45 @@ export default function SiteBuilder() {
               {publishLabel}
             </button>
 
-            <a
-              href={getPublicPageHref(site, selectedPage?.id)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 text-[11px] text-zinc-500 transition hover:text-zinc-200"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Open public page
-            </a>
+            <div className="flex items-center gap-4">
+              <a
+                href={getDraftPreviewHref(
+                  site,
+                  selectedPage?.id,
+                )}
+                target="_blank"
+                rel="noreferrer"
+                title="Open the latest saved draft as a real website"
+                className="flex items-center gap-2 text-[11px] text-zinc-300 transition hover:text-white"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Preview draft
+              </a>
+
+              {siteIsPublished ? (
+                <a
+                  href={getPublicPageHref(
+                    site,
+                    selectedPage?.id,
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open the currently published website"
+                  className="flex items-center gap-2 text-[11px] text-zinc-600 transition hover:text-zinc-300"
+                >
+                  <Globe2 className="h-3.5 w-3.5" />
+                  Published site
+                </a>
+              ) : (
+                <span
+                  title="Publish the site before opening the public version"
+                  className="flex items-center gap-2 text-[11px] text-zinc-700"
+                >
+                  <Globe2 className="h-3.5 w-3.5" />
+                  Not published
+                </span>
+              )}
+            </div>
           </div>
 
           <div
@@ -9624,7 +11226,7 @@ export default function SiteBuilder() {
 
         {/* RIGHT: selected section inspector */}
         <aside
-          className={`min-h-0 overflow-y-auto border-l border-white/[0.07] bg-[#090a0b] ${
+          className={`h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y border-l border-white/[0.07] bg-[#090a0b] [-webkit-overflow-scrolling:touch] ${
             editorLocked ? "pointer-events-none select-none opacity-60" : ""
           }`}
         >
@@ -9636,6 +11238,13 @@ export default function SiteBuilder() {
               onRefresh={() => {
                 void loadSiteInquiries();
               }}
+            />
+          ) : siteChromeSelection === "catalog" ? (
+            <SiteCatalogInspector
+              site={site}
+              onCatalogChange={
+                updateSiteCatalog
+              }
             />
           ) : siteChromeSelection ? (
             <SiteChromeInspector
@@ -9725,6 +11334,9 @@ export default function SiteBuilder() {
                           selectedSection.id,
                           blockId,
                         )
+                      }
+                      onSourceChange={
+                        updateSelectedSectionSource
                       }
                       sourceStatus={sourceStatus}
                       sourceError={sourceError}

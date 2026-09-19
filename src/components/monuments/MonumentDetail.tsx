@@ -27,7 +27,6 @@ import {
   X,
 } from "lucide-react";
 
-import ActivityPanel from "./ActivityPanel";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { MonumentRelatedHabits } from "@/components/monuments/MonumentRelatedHabits";
@@ -45,7 +44,6 @@ import {
   normalizeMonumentIconInput,
 } from "@/lib/monuments/icon";
 import { AREAS } from "@/config/areas";
-import { useMonumentActivity } from "@/lib/hooks/useMonumentActivity";
 import {
   segmentedToggleActiveClassName,
   segmentedToggleButtonClassName,
@@ -78,13 +76,6 @@ const PULL_EXIT_TOUCH_ACTIVATION_PX = 5;
 const PULL_EXIT_THRESHOLD_PX = 128;
 const PULL_EXIT_FLICK_VELOCITY = 0.65;
 const PULL_EXIT_FLICK_MIN_DISTANCE_PX = 32;
-const CHARGE_MILESTONES = [
-  { label: "Lit", threshold: 1 },
-  { label: "EVO", threshold: 25 },
-  { label: "EVO 2", threshold: 75 },
-  { label: "EVO 3", threshold: 125 },
-  { label: "EVO 4", threshold: 225 },
-] as const;
 
 function getScrollParent(element: HTMLElement | null) {
   let current = element?.parentElement ?? null;
@@ -362,7 +353,6 @@ export function MonumentDetail({
 }: MonumentDetailProps) {
   const { id } = monument;
   const router = useRouter();
-  const { summary } = useMonumentActivity(id);
   const [displayMonument, setDisplayMonument] =
     useState<MonumentDetailMonument>(monument);
   const [inlineEditOpen, setInlineEditOpen] = useState(false);
@@ -426,36 +416,6 @@ export function MonumentDetail({
       pullSnapAnimationRef.current?.stop();
     };
   }, []);
-
-  const containerShell =
-    "relative w-full rounded-3xl border border-white/[0.08]";
-  const sectionBackground =
-    "bg-[#0D0E11] shadow-[0_24px_70px_-52px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.48)]";
-  const overviewBackground =
-    "bg-[#111216] shadow-[0_34px_110px_-50px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(255,255,255,0.018)]";
-  const activeChargeStageIndex = Math.max(
-    CHARGE_MILESTONES.findIndex(
-      (milestone) => milestone.label === summary.evoLabel
-    ),
-    0
-  );
-  const activeChargeCellFill = Math.min(
-    Math.max(summary.chargeProgressPercent, 0),
-    100
-  );
-  const getChargeCellFill = (index: number) => {
-    if (index < activeChargeStageIndex) return 100;
-    if (index === activeChargeStageIndex) return activeChargeCellFill;
-    return 0;
-  };
-  const totalChargeFilledCellUnits = Math.min(
-    Math.max(activeChargeStageIndex + activeChargeCellFill / 100, 0),
-    CHARGE_MILESTONES.length
-  );
-  const totalChargeCompletedGapCount = Math.min(
-    Math.max(activeChargeStageIndex, 0),
-    CHARGE_MILESTONES.length - 1
-  );
 
   const handleStartFocusPomo = () => {
     const source: FocusPomoSource = {
@@ -786,63 +746,6 @@ export function MonumentDetail({
                       </DropdownMenu>
                     </div>
                   </div>
-                  <div
-                    className="hidden"
-                    aria-label={`EVO charge stage ${summary.evoLabel}`}
-                  >
-                    {CHARGE_MILESTONES.map((milestone, index) => {
-                      const cellFill = getChargeCellFill(index);
-                      const isCompleted = cellFill >= 100;
-                      const isActive = cellFill > 0 && cellFill < 100;
-
-                      return (
-                        <div
-                          key={milestone.label}
-                          className="relative min-w-0 overflow-hidden rounded-[3px] border border-white/[0.095] bg-[linear-gradient(180deg,#22252b_0%,#15171c_48%,#08090d_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.58),inset_0_0_8px_rgba(0,0,0,0.45)]"
-                          aria-current={isActive ? "step" : undefined}
-                        >
-                          <span
-                            className="pointer-events-none absolute inset-x-[1px] top-[1px] z-[1] h-[38%] rounded-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.075)_0%,rgba(255,255,255,0)_100%)]"
-                            aria-hidden="true"
-                          />
-                          <span
-                            className="pointer-events-none absolute inset-0 z-[1] rounded-[3px] bg-[radial-gradient(circle_at_50%_115%,rgba(255,255,255,0.035)_0%,rgba(255,255,255,0)_46%)]"
-                            aria-hidden="true"
-                          />
-                          {isCompleted ? (
-                            <span className="absolute inset-0 z-[2] rounded-[3px] border border-zinc-200/[0.11] bg-[linear-gradient(90deg,#4d535c_0%,#646b75_52%,#535a63_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.30),0_0_5px_rgba(161,161,170,0.055)]" />
-                          ) : null}
-                          {isActive ? (
-                            <span
-                              className="absolute inset-y-0 left-0 isolate z-[3] block overflow-hidden rounded-[3px] border border-zinc-200/[0.13] bg-[linear-gradient(90deg,#505761_0%,#68707a_54%,#58606a_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-1px_0_rgba(0,0,0,0.31),0_0_6px_rgba(161,161,170,0.075)] transition-[width] duration-700 ease-out"
-                              style={{ width: `${cellFill}%` }}
-                            >
-                              <span
-                                className="pointer-events-none absolute inset-y-[-1px] right-0 z-[4] w-[3px] rounded-[3px] bg-[linear-gradient(180deg,rgba(212,212,216,0.48)_0%,rgba(161,161,170,0.46)_45%,rgba(63,63,70,0.52)_100%)] shadow-[0_0_5px_rgba(212,212,216,0.18),-3px_0_6px_rgba(228,228,231,0.07)]"
-                                aria-hidden="true"
-                              />
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                      {totalChargeFilledCellUnits > 0 ? (
-                        <span
-                          className="pointer-events-none absolute inset-y-0 left-0 z-[6] overflow-hidden rounded-[3px] opacity-30"
-                          style={{
-                            width: `calc(((100% - 1.5rem) * ${
-                              totalChargeFilledCellUnits / CHARGE_MILESTONES.length
-                            }) + (${totalChargeCompletedGapCount} * 0.375rem))`,
-                          }}
-                          aria-hidden="true"
-                        >
-                          <span
-                            className="progress-bar-glint-sweep level-progress-bar-glint-sweep"
-                            aria-hidden="true"
-                          />
-                        </span>
-                      ) : null}
-                  </div>
 
                 </div>
               </>
@@ -906,9 +809,6 @@ export function MonumentDetail({
             </section>
           </div>
 
-          <div className="relative z-[1] w-full xl:col-span-2">
-            <ActivityPanel monumentId={id} />
-          </div>
         </div>
       </div>
     </motion.main>

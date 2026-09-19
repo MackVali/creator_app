@@ -47,7 +47,6 @@ jobs:
               "node_modules/",
               ".next/",
               "coverage/",
-              "testsprite_tests/tmp/",
           )
 
           tracked = subprocess.check_output(

@@ -510,7 +510,8 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        {!hideAddProjectControl && !workspaceEmbedded ? (
+        {!hideAddProjectControl &&
+        (!workspaceEmbedded || projects.length === 0) ? (
           <div className={workspaceEmbedded ? "pt-0.5" : "pt-1"}>
             <button
               type="button"

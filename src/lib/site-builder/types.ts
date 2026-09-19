@@ -24,6 +24,12 @@ export type SiteDataSource =
       listingType: "product" | "service" | "post";
       mode: "latest" | "selected";
       listingIds?: string[];
+    }
+  | {
+      kind: "catalog";
+      mode: "all" | "collection" | "selected";
+      collectionId?: string;
+      itemIds?: string[];
     };
 
 export type SiteSectionPadding =
@@ -91,6 +97,15 @@ export type SiteSectionStyleConfig = {
   dividerStrength?: SiteSectionDividerStrength;
 
   muted?: boolean;
+
+  // Shared appearance language for repeated visual items such as
+  // cards, gallery images, products, and services.
+  itemFrame?: "none" | "outline" | "surface";
+  itemRadius?: number;
+  itemMediaFit?: "cover" | "contain";
+  itemMediaRatio?: "auto" | "16:9" | "3:2" | "4:3" | "1:1" | "4:5";
+  itemPadding?: number;
+
   showPrice?: boolean;
   showDescription?: boolean;
 };
@@ -207,6 +222,44 @@ export type SiteThemeConfig = {
   radius: SiteThemeRadius;
 };
 
+export type SiteCatalogItemStatus =
+  | "concept"
+  | "coming-soon"
+  | "available";
+
+export type SiteCatalogCollection = {
+  id: string;
+  title: string;
+  slug: string;
+  description?: string;
+  coverImageUrl?: string;
+  sortOrder: number;
+};
+
+export type SiteCatalogItem = {
+  id: string;
+  title: string;
+
+  imageUrl: string;
+  imagePath: string;
+  imageAlt: string;
+
+  collectionId?: string;
+
+  subtitle?: string;
+  priceLabel?: string;
+  status: SiteCatalogItemStatus;
+  href?: string;
+
+  visible: boolean;
+  sortOrder: number;
+};
+
+export type SiteCatalog = {
+  collections: SiteCatalogCollection[];
+  items: SiteCatalogItem[];
+};
+
 export type SiteDocument = {
   id: string;
   name: string;
@@ -215,5 +268,10 @@ export type SiteDocument = {
   header?: SiteHeaderConfig;
   footer?: SiteFooterConfig;
   theme?: SiteThemeConfig;
+
+  // Site-first visual catalog. Items may exist before they become
+  // real Source products or commerce listings.
+  catalog?: SiteCatalog;
+
   pages: SitePage[];
 };

@@ -14,6 +14,11 @@ export type SitePreviewStatePayload = {
   sourceListings: SourceListing[];
 };
 
+export type SitePreviewReadyMessage = {
+  namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
+  type: "ready";
+};
+
 export type SitePreviewStateMessage = {
   namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
   type: "state";
@@ -39,6 +44,17 @@ export type SitePreviewSelectionRequestMessage = {
   namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
   type: "selection-request";
   payload: SitePreviewSelectionRequestPayload;
+};
+
+export type SitePreviewSectionInsertRequestPayload = {
+  pageId: string;
+  insertionIndex: number;
+};
+
+export type SitePreviewSectionInsertRequestMessage = {
+  namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
+  type: "section-insert-request";
+  payload: SitePreviewSectionInsertRequestPayload;
 };
 
 export const SITE_PREVIEW_INLINE_EDIT_FIELDS = {
@@ -80,9 +96,11 @@ export type SitePreviewActiveSelectionMessage = {
 };
 
 export type SitePreviewMessage =
+  | SitePreviewReadyMessage
   | SitePreviewStateMessage
   | SitePreviewHeightMessage
   | SitePreviewSelectionRequestMessage
+  | SitePreviewSectionInsertRequestMessage
   | SitePreviewContentEditRequestMessage
   | SitePreviewActiveSelectionMessage;
 
@@ -164,6 +182,25 @@ function isSiteEditorSelection(value: unknown): value is SiteEditorSelection {
   return false;
 }
 
+export function createSitePreviewReadyMessage(): SitePreviewReadyMessage {
+  return {
+    namespace: SITE_PREVIEW_MESSAGE_NAMESPACE,
+    type: "ready",
+  };
+}
+
+export function createSitePreviewSectionInsertRequestMessage(
+  payload: SitePreviewSectionInsertRequestPayload,
+): SitePreviewSectionInsertRequestMessage {
+  return {
+    namespace:
+      SITE_PREVIEW_MESSAGE_NAMESPACE,
+    type:
+      "section-insert-request",
+    payload,
+  };
+}
+
 export function createSitePreviewStateMessage(
   payload: SitePreviewStatePayload,
 ): SitePreviewStateMessage {
@@ -216,6 +253,50 @@ export function createSitePreviewActiveSelectionMessage(
       selection,
     },
   };
+}
+
+export function isSitePreviewReadyMessage(
+  value: unknown,
+): value is SitePreviewReadyMessage {
+  if (!isRecord(value)) return false;
+
+  return (
+    value.namespace ===
+      SITE_PREVIEW_MESSAGE_NAMESPACE &&
+    value.type === "ready"
+  );
+}
+
+export function isSitePreviewSectionInsertRequestMessage(
+  value: unknown,
+): value is SitePreviewSectionInsertRequestMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    value.namespace !==
+      SITE_PREVIEW_MESSAGE_NAMESPACE ||
+    value.type !==
+      "section-insert-request"
+  ) {
+    return false;
+  }
+
+  if (!isRecord(value.payload)) {
+    return false;
+  }
+
+  return (
+    typeof value.payload.pageId ===
+      "string" &&
+    typeof value.payload.insertionIndex ===
+      "number" &&
+    Number.isInteger(
+      value.payload.insertionIndex,
+    ) &&
+    value.payload.insertionIndex >= 0
+  );
 }
 
 export function isSitePreviewStateMessage(
