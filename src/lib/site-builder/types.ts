@@ -71,6 +71,17 @@ export type SiteSectionLayoutConfig = {
   paddingLeftPx?: number;
 
   gap?: number;
+
+  // Shared section composition / typography controls.
+  mediaShare?: number;
+
+  headingSize?: number;
+  headingWidth?: number;
+
+  bodySize?: number;
+  bodyWidth?: number;
+
+  textGap?: number;
 };
 
 export type SiteSectionStyleConfig = {

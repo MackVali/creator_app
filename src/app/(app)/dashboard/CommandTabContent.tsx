@@ -39,7 +39,7 @@ export default function CommandTabContent() {
 
         <div className="lg:flex lg:w-full lg:items-start">
 
-          <div className="min-w-0 flex-1">
+          <div data-command-center-panel className="min-w-0 flex-1">
             <LevelBanner ref={levelBannerRef} />
 
             <AreasContainer />

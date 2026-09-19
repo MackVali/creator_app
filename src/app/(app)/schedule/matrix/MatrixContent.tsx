@@ -37,7 +37,6 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import type {
   RelatedRoutineCardHabit,
   RelatedRoutineCardRoutine,
@@ -88,6 +87,9 @@ import {
   buildMatrixEvents as buildSharedMatrixEvents,
   buildMatrixInferredMealMatrixEvents as buildSharedMatrixInferredMealMatrixEvents,
   buildMatrixScheduledEvents as buildSharedMatrixScheduledEvents,
+  collectMatrixScheduledProjectIds,
+  collectMatrixScheduledTaskIds,
+  MATRIX_SCHEDULED_SOURCE_TYPES,
   sortMatrixScheduledItems as sortSharedMatrixScheduledItems,
 } from "@/lib/matrix/scheduledEvents";
 import {
@@ -138,11 +140,16 @@ type ProjectRow = Pick<
     name: string;
     skill_id: string | null;
     priority: string | null;
+    completed_at?: string | null;
   }[];
   project_skills?: {
     skill_id: string | null;
   }[];
 };
+type TaskRow = Pick<
+  Database["public"]["Tables"]["tasks"]["Row"],
+  "id" | "project_id" | "name" | "stage" | "skill_id" | "priority" | "completed_at"
+>;
 type GoalRow = Pick<
   Database["public"]["Tables"]["goals"]["Row"],
   "id" | "name" | "monument_id"
@@ -198,6 +205,19 @@ type HabitCompletionDayRow = Pick<
   "habit_id"
 >;
 
+type MatrixProjectTask = {
+  id: string;
+  name: string;
+  stage: string;
+  skillId: string | null;
+  skillIcon: string | null;
+  priorityCode: string | null;
+  completed: boolean;
+  sourceTask: TaskRow;
+  sourceInstance: ScheduleInstance;
+  durationMinutes: number | null;
+};
+
 type MatrixEvent = {
   instance: ScheduleInstance;
   title: string;
@@ -209,6 +229,7 @@ type MatrixEvent = {
   goal: Goal | null;
   habit: MatrixHabit | null;
   routine: MatrixRoutine | null;
+  projectTasks: MatrixProjectTask[];
   inferredMeal: MatrixInferredMealEventData | null;
   scheduledMeal: MatrixScheduledMealEventData | null;
 };
@@ -487,7 +508,7 @@ const MATRIX_REORDER_LAYOUT_TRANSITION = {
 };
 const MATRIX_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 const MATRIX_CARD_INTERACTIVE_ACTION_SELECTOR =
-  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action], [data-matrix-fitness-workout-action], [data-matrix-routine-details-action]";
+  "[data-matrix-checkbox], [data-matrix-meal-nutrition-action], [data-matrix-fitness-workout-action], [data-matrix-routine-details-action], [data-matrix-project-details-action]";
 
 type MatrixXpSourceCapture = {
   rect: CreatorXpBurstRect | null;
@@ -628,6 +649,28 @@ function findMatrixEventInState(
             goal: null,
             habit: routineHabit.sourceHabit,
             routine: null,
+            projectTasks: [],
+            inferredMeal: null,
+            scheduledMeal: null,
+          };
+        }
+
+        const projectTask = event.projectTasks.find(
+          (task) => task.sourceInstance.id === instanceId
+        );
+        if (projectTask) {
+          return {
+            instance: projectTask.sourceInstance,
+            title: projectTask.name,
+            subtitle: event.title,
+            monumentId: event.monumentId,
+            skillIds: projectTask.skillId ? [projectTask.skillId] : event.skillIds,
+            skillResolverSource: projectTask.skillId ? "task.skill_id" : null,
+            glyph: projectTask.skillIcon ?? event.glyph,
+            goal: null,
+            habit: null,
+            routine: null,
+            projectTasks: [],
             inferredMeal: null,
             scheduledMeal: null,
           };
@@ -1054,13 +1097,49 @@ function applyMatrixScheduledCompletionOverridesToEvents(
           completed_at: eventOverride.completedAt,
         }
       : event.instance;
+    let projectTasksChanged = false;
+    const nextProjectTasks = event.projectTasks.map((task) => {
+      const taskOverride = overrides.get(task.sourceInstance.id);
+      if (!taskOverride) return task;
+
+      projectTasksChanged = true;
+      const nextSourceInstance = {
+        ...task.sourceInstance,
+        status: taskOverride.status,
+        completed_at: taskOverride.completedAt,
+      };
+
+      return {
+        ...task,
+        completed: taskOverride.status === "completed",
+        sourceInstance: nextSourceInstance,
+      };
+    });
+    const projectTasksCompleted =
+      nextProjectTasks.length > 0 &&
+      nextProjectTasks.every((task) => task.completed);
+    const nextInstanceWithProjectTasks =
+      projectTasksChanged && !eventOverride
+        ? {
+            ...nextInstance,
+            status: projectTasksCompleted ? "completed" : "scheduled",
+            completed_at: projectTasksCompleted
+              ? (nextProjectTasks
+                  .map((task) => task.sourceInstance.completed_at)
+                  .filter((value): value is string => Boolean(value))
+                  .sort()
+                  .at(-1) ?? null)
+              : null,
+          }
+        : nextInstance;
 
     if (!event.routine) {
-      return nextInstance === event.instance
+      return nextInstanceWithProjectTasks === event.instance && !projectTasksChanged
         ? event
         : {
             ...event,
-            instance: nextInstance,
+            instance: nextInstanceWithProjectTasks,
+            projectTasks: nextProjectTasks,
           };
     }
 
@@ -1089,16 +1168,17 @@ function applyMatrixScheduledCompletionOverridesToEvents(
       };
     });
 
-    if (!eventOverride && !routineChanged) return event;
+    if (!eventOverride && !routineChanged && !projectTasksChanged) return event;
 
     return {
       ...event,
-      instance: nextInstance,
+      instance: nextInstanceWithProjectTasks,
       routine: {
         ...event.routine,
         habits: nextHabits,
         completed: isMatrixScheduledRoutineCompleted(nextHabits),
       },
+      projectTasks: nextProjectTasks,
     };
   });
 }
@@ -2600,6 +2680,233 @@ function MatrixHabitCard({
 }
 
 
+function MatrixProjectTaskDetails({
+  tasks,
+  density,
+  todoRowDensity = "default",
+  open,
+  glyph,
+  completingInstanceIds,
+  onCompleteTask,
+}: {
+  tasks: MatrixProjectTask[];
+  density: MatrixCardDensity;
+  todoRowDensity?: MatrixTodoRowDensity;
+  open: boolean;
+  glyph: string;
+  completingInstanceIds?: ReadonlySet<string>;
+  onCompleteTask?: (
+    task: MatrixProjectTask,
+    source?: MatrixXpSourceCapture | null
+  ) => void;
+}) {
+  const projectTaskTouchStartRef = useRef<{
+    taskId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const projectTaskLastTapRef = useRef<{
+    taskId: string;
+    time: number;
+  } | null>(null);
+  const completeProjectTask = useCallback(
+    (task: MatrixProjectTask, source?: MatrixXpSourceCapture | null) => {
+      if (task.sourceInstance.source_type !== "TASK") {
+        void hapticWarningPattern();
+        return;
+      }
+      if (completingInstanceIds?.has(task.sourceInstance.id)) {
+        void hapticWarningPattern();
+        return;
+      }
+      onCompleteTask?.(task, source);
+    },
+    [completingInstanceIds, onCompleteTask]
+  );
+  const handleProjectTaskDoubleClick = useCallback(
+    (task: MatrixProjectTask, event: MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      completeProjectTask(
+        task,
+        getMatrixXpSourceFromInteraction(event, {
+          clientX: event.clientX,
+          clientY: event.clientY,
+        })
+      );
+    },
+    [completeProjectTask]
+  );
+  const handleProjectTaskKeyDown = useCallback(
+    (task: MatrixProjectTask, event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      completeProjectTask(task, {
+        rect: getUsableMatrixXpRect(event.currentTarget),
+        origin: "card",
+      });
+    },
+    [completeProjectTask]
+  );
+  const handleProjectTaskTouchStart = useCallback(
+    (task: MatrixProjectTask, event: TouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      if (
+        task.sourceInstance.source_type !== "TASK" ||
+        completingInstanceIds?.has(task.sourceInstance.id) ||
+        event.touches.length !== 1
+      ) {
+        projectTaskTouchStartRef.current = null;
+        return;
+      }
+
+      const touch = event.touches[0];
+      projectTaskTouchStartRef.current = {
+        taskId: task.id,
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+    },
+    [completingInstanceIds]
+  );
+  const handleProjectTaskTouchEnd = useCallback(
+    (task: MatrixProjectTask, event: TouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      const start = projectTaskTouchStartRef.current;
+      projectTaskTouchStartRef.current = null;
+      if (!start || start.taskId !== task.id) return;
+      if (event.changedTouches.length !== 1) return;
+
+      const touch = event.changedTouches[0];
+      const deltaX = Math.abs(touch.clientX - start.x);
+      const deltaY = Math.abs(touch.clientY - start.y);
+      if (deltaX > 12 || deltaY > 12) return;
+
+      const now = Date.now();
+      const lastTap = projectTaskLastTapRef.current;
+      if (
+        lastTap?.taskId === task.id &&
+        now - lastTap.time <= SCHEDULED_EVENT_DOUBLE_TAP_MS
+      ) {
+        projectTaskLastTapRef.current = null;
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        completeProjectTask(
+          task,
+          getMatrixXpSourceFromInteraction(event, {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+          })
+        );
+        return;
+      }
+
+      projectTaskLastTapRef.current = {
+        taskId: task.id,
+        time: now,
+      };
+    },
+    [completeProjectTask]
+  );
+
+  return (
+    <AnimatePresence initial={false}>
+      {open ? (
+        <motion.div
+          key="project-inline-details"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden"
+        >
+          <div
+            className={cn(
+              "flex flex-col",
+              density === "todo"
+                ? todoRowDensity === "compact"
+                  ? "gap-0.5 pt-0.5 pl-5"
+                  : "gap-0.5 pt-1 pl-6"
+                : density === "row"
+                  ? "mt-1 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  : "mt-1.5 gap-1.5 rounded-2xl border border-white/[0.08] bg-black/20 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+            )}
+          >
+            {density === "todo"
+              ? tasks.map((task) => {
+                  const disabled =
+                    task.sourceInstance.source_type !== "TASK" ||
+                    Boolean(completingInstanceIds?.has(task.sourceInstance.id));
+                  return (
+                    <MatrixTodoRow
+                      key={task.id}
+                      title={task.name}
+                      glyph={task.skillIcon || glyph}
+                      completed={task.completed}
+                      disabled={disabled}
+                      density={todoRowDensity}
+                      meta={task.completed ? "Complete" : "Task"}
+                      onToggle={(source) => completeProjectTask(task, source)}
+                    />
+                  );
+                })
+              : tasks.map((task) => {
+                  const disabled =
+                    task.sourceInstance.source_type !== "TASK" ||
+                    Boolean(completingInstanceIds?.has(task.sourceInstance.id));
+                  return (
+                    <div
+                      key={task.id}
+                      role="button"
+                      tabIndex={disabled ? undefined : 0}
+                      aria-disabled={disabled || undefined}
+                      data-matrix-project-details-action="true"
+                      data-creator-xp-source="matrix-card"
+                      data-creator-xp-kind="task"
+                      data-creator-xp-source-id={task.sourceInstance.id}
+                      data-matrix-entity-id={task.id}
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onPointerUp={(event) => event.stopPropagation()}
+                      onPointerCancel={(event) => event.stopPropagation()}
+                      onTouchStart={(event) =>
+                        handleProjectTaskTouchStart(task, event)
+                      }
+                      onTouchEnd={(event) =>
+                        handleProjectTaskTouchEnd(task, event)
+                      }
+                      onDoubleClick={(event) =>
+                        handleProjectTaskDoubleClick(task, event)
+                      }
+                      onKeyDown={(event) =>
+                        handleProjectTaskKeyDown(task, event)
+                      }
+                      className={cn(
+                        "min-w-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                        disabled ? "opacity-70" : "cursor-pointer"
+                      )}
+                    >
+                      <MatrixHabitCard
+                        glyph={task.skillIcon || glyph}
+                        title={task.name}
+                        pill={task.completed ? "COMPLETE" : "TASK"}
+                        habitType="TASK"
+                        overdue={false}
+                        completed={task.completed}
+                        density={density}
+                      />
+                    </div>
+                  );
+                })}
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 function MatrixProjectCard({
   goal,
   glyph,
@@ -2607,6 +2914,11 @@ function MatrixProjectCard({
   density = "small",
   open = false,
   onOpenChange,
+  tasks = [],
+  completingInstanceIds,
+  todoRowDensity = "default",
+  onCompleteTask,
+  onToggleProject,
 }: {
   goal: Goal;
   glyph: string;
@@ -2614,6 +2926,14 @@ function MatrixProjectCard({
   density?: MatrixCardDensity;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  tasks?: MatrixProjectTask[];
+  completingInstanceIds?: ReadonlySet<string>;
+  todoRowDensity?: MatrixTodoRowDensity;
+  onCompleteTask?: (
+    task: MatrixProjectTask,
+    source?: MatrixXpSourceCapture | null
+  ) => void;
+  onToggleProject?: (source?: MatrixXpSourceCapture | null) => void;
 }) {
   const progress = completed
     ? 100
@@ -2623,70 +2943,161 @@ function MatrixProjectCard({
     goal.emoji ||
     goal.monumentEmoji ||
     goal.title.slice(0, 2).toUpperCase();
+  const hasProjectDetails = tasks.length > 0;
+  const toggleProjectDetails = useCallback(() => {
+    if (!hasProjectDetails) return;
+    onOpenChange?.(!open);
+  }, [hasProjectDetails, onOpenChange, open]);
+  const handleProjectKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleProjectDetails();
+    },
+    [toggleProjectDetails]
+  );
+  const projectDetails = hasProjectDetails ? (
+    <MatrixProjectTaskDetails
+      tasks={tasks}
+      density={density}
+      todoRowDensity={todoRowDensity}
+      open={open}
+      glyph={displayGlyph}
+      completingInstanceIds={completingInstanceIds}
+      onCompleteTask={onCompleteTask}
+    />
+  ) : null;
 
   if (density === "row") {
     return (
-      <MatrixEventRowCard
-        glyph={displayGlyph}
-        title={goal.title}
-        completed={completed}
-        status={completed ? "Completed" : null}
-        open={open}
-        onOpenChange={onOpenChange}
-        className={MATRIX_ROW_PROJECT_CARD_CLASS}
-        meta={
-          <>
-            <span
-              className={cn(
-                "rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em]",
-                completed
-                  ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                  : "border-white/10 bg-white/[0.06] text-white/65"
-              )}
-            >
-              {completed ? "Complete" : "Project"}
-            </span>
-            <span className="flex min-w-[5.5rem] max-w-[8rem] flex-1 items-center gap-1.5">
-              <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full border border-white/[0.06] bg-black/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.45)]">
-                <span
-                  className="block h-full rounded-full bg-emerald-400/55 shadow-[inset_0_1px_0_rgba(209,250,229,0.18),inset_0_-1px_0_rgba(0,0,0,0.24)] transition-[width] duration-200"
-                  style={{ width: `${progress}%` }}
-                />
+      <div className="min-w-0">
+        <MatrixEventRowCard
+          glyph={displayGlyph}
+          title={goal.title}
+          completed={completed}
+          status={completed ? "Completed" : null}
+          open={open}
+          onOpenChange={hasProjectDetails ? onOpenChange : undefined}
+          className={MATRIX_ROW_PROJECT_CARD_CLASS}
+          meta={
+            <>
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em]",
+                  completed
+                    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                    : "border-white/10 bg-white/[0.06] text-white/65"
+                )}
+              >
+                {completed ? "Complete" : "Project"}
               </span>
-              <span className="shrink-0 text-[8px] tracking-normal text-white/45">
-                {progress}%
+              <span className="flex min-w-[5.5rem] max-w-[8rem] flex-1 items-center gap-1.5">
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full border border-white/[0.06] bg-black/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.45)]">
+                  <span
+                    className="block h-full rounded-full bg-emerald-400/55 shadow-[inset_0_1px_0_rgba(209,250,229,0.18),inset_0_-1px_0_rgba(0,0,0,0.24)] transition-[width] duration-200"
+                    style={{ width: `${progress}%` }}
+                  />
+                </span>
+                <span className="shrink-0 text-[8px] tracking-normal text-white/45">
+                  {progress}%
+                </span>
               </span>
-            </span>
-          </>
-        }
-      />
+            </>
+          }
+        >
+          {projectDetails}
+        </MatrixEventRowCard>
+      </div>
     );
   }
 
-  if (density === "large" && completed) {
+  if (density === "todo") {
     return (
       <div
-        role={onOpenChange ? "button" : undefined}
-        tabIndex={onOpenChange ? 0 : undefined}
-        aria-expanded={onOpenChange ? open : undefined}
-        aria-controls={onOpenChange ? `goal-${goal.id}` : undefined}
-        onClick={() => onOpenChange?.(!open)}
-        onKeyDown={(event) => {
-          if (!onOpenChange) return;
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          onOpenChange(!open);
-        }}
+        data-matrix-project-expanded={open ? "true" : undefined}
+        className={cn(
+          "matrix-event-card-shell group/project-card relative min-w-0",
+          hasProjectDetails
+            ? todoRowDensity === "compact"
+              ? "pr-7"
+              : "pr-8"
+            : null
+        )}
+      >
+        <MatrixTodoRow
+          title={goal.title}
+          glyph={displayGlyph}
+          completed={completed}
+          density={todoRowDensity}
+          meta={completed ? "Complete" : "Project"}
+          onToggle={(source) => {
+            const schedulableTasks = tasks.filter(
+              (task) => task.sourceInstance.source_type === "TASK"
+            );
+            const targetTask = completed
+              ? [...schedulableTasks].reverse().find((task) => task.completed)
+              : schedulableTasks.find((task) => !task.completed);
+            if (!targetTask) {
+              onToggleProject?.(source);
+              return;
+            }
+            onCompleteTask?.(targetTask, source);
+          }}
+          onOpen={hasProjectDetails ? toggleProjectDetails : undefined}
+        />
+        {hasProjectDetails ? (
+          <button
+            type="button"
+            aria-label={open ? "Hide project tasks" : "Show project tasks"}
+            aria-expanded={open}
+            data-matrix-project-details-action="true"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleProjectDetails();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            className={cn(
+              "absolute z-20 flex shrink-0 items-center justify-center rounded-full text-white/46 transition hover:bg-white/[0.055] hover:text-white/78 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+              todoRowDensity === "compact"
+                ? "right-0.5 top-0.5 h-7 w-7"
+                : "right-1 top-1 h-8 w-8"
+            )}
+          >
+            {open ? (
+              <ChevronUp className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden="true" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
+        {projectDetails}
+      </div>
+    );
+  }
+
+  if (density === "large") {
+    return (
+      <div
+        role={hasProjectDetails ? "button" : undefined}
+        tabIndex={hasProjectDetails ? 0 : undefined}
+        aria-expanded={hasProjectDetails ? open : undefined}
+        onClick={hasProjectDetails ? toggleProjectDetails : undefined}
+        onKeyDown={hasProjectDetails ? handleProjectKeyDown : undefined}
         className={cn(
           "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
-          "min-h-[96px]",
-          onOpenChange ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25" : null,
-          "emerald-completed-compact",
-          "shimmer-border-complete",
-          "scale-[0.98]",
-          "origin-center"
+          open && hasProjectDetails ? "h-auto aspect-auto min-h-[96px]" : "min-h-[96px]",
+          hasProjectDetails ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25" : null,
+          completed
+            ? "emerald-completed-compact shimmer-border-complete scale-[0.98] origin-center"
+            : MATRIX_ROW_PROJECT_CARD_CLASS
         )}
-        style={getMatrixCompleteShimmerStyle()}
+        style={completed ? getMatrixCompleteShimmerStyle() : undefined}
       >
         <div className="relative z-[2] flex h-full min-w-0 flex-1 flex-col items-stretch">
           <div className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center">
@@ -2710,34 +3121,51 @@ function MatrixProjectCard({
               </div>
             </div>
           </div>
+          {projectDetails}
         </div>
       </div>
     );
   }
 
   return (
-    <MatrixSmallEventCard
-      glyph={displayGlyph}
-      title={goal.title}
-      completed={completed}
-      className={completed ? ["emerald-completed-compact", "shimmer-border-complete"].join(" ") : null}
-      meta={
-        <div className={cn(
-          "w-full overflow-hidden rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]",
-          "h-2 border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)]"
-        )}>
-          <div
-            className={cn(
-              "relative h-full rounded-full transition-[width] duration-200",
-              "bg-[linear-gradient(90deg,#0b7a5c,#059669,#0b8060)] shadow-[0_0_9px_rgba(16,185,129,0.26),inset_0_1px_0_rgba(209,250,229,0.28),inset_0_-1px_0_rgba(0,0,0,0.24)]"
-            )}
-            style={{ width: `${progress}%` }}
-          >
-            <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-emerald-50/30" />
+    <div
+      role={hasProjectDetails ? "button" : undefined}
+      tabIndex={hasProjectDetails ? 0 : undefined}
+      aria-expanded={hasProjectDetails ? open : undefined}
+      onClick={hasProjectDetails ? toggleProjectDetails : undefined}
+      onKeyDown={hasProjectDetails ? handleProjectKeyDown : undefined}
+      className={cn(
+        "min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        hasProjectDetails ? "cursor-pointer" : null
+      )}
+      data-matrix-project-expanded={open ? "true" : undefined}
+    >
+      <MatrixSmallEventCard
+        glyph={displayGlyph}
+        title={goal.title}
+        completed={completed}
+        expanded={open}
+        className={completed ? ["emerald-completed-compact", "shimmer-border-complete"].join(" ") : null}
+        meta={
+          <div className={cn(
+            "w-full overflow-hidden rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]",
+            "h-2 border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)]"
+          )}>
+            <div
+              className={cn(
+                "relative h-full rounded-full transition-[width] duration-200",
+                "bg-[linear-gradient(90deg,#0b7a5c,#059669,#0b8060)] shadow-[0_0_9px_rgba(16,185,129,0.26),inset_0_1px_0_rgba(209,250,229,0.28),inset_0_-1px_0_rgba(0,0,0,0.24)]"
+              )}
+              style={{ width: `${progress}%` }}
+            >
+              <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-emerald-50/30" />
+            </div>
           </div>
-        </div>
-      }
-    />
+        }
+      >
+        {projectDetails}
+      </MatrixSmallEventCard>
+    </div>
   );
 }
 
@@ -3222,6 +3650,28 @@ function ScheduledEventCard({
       return;
     }
 
+    if (event.projectTasks.length > 0) {
+      const targetTask = isCompleted
+        ? [...event.projectTasks].reverse().find((task) => task.completed)
+        : event.projectTasks.find((task) => !task.completed);
+      const instanceId = targetTask?.sourceInstance.id;
+      if (!instanceId) {
+        void hapticWarningPattern();
+        return;
+      }
+      if (completingInstanceIds.has(instanceId)) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      onComplete(instanceId, isCompleted ? "scheduled" : "completed", {
+        hapticOnComplete: true,
+        xpSourceRect: source?.rect ?? null,
+        xpSourceOrigin: source?.origin,
+      });
+      return;
+    }
+
     if (completingInstanceIds.has(event.instance.id)) {
       void hapticWarningPattern();
       return;
@@ -3234,6 +3684,7 @@ function ScheduledEventCard({
   }, [
     completingInstanceIds,
     event.instance.id,
+    event.projectTasks,
     event.routine,
     isCompleted,
     onComplete,
@@ -3445,6 +3896,30 @@ function ScheduledEventCard({
       active: false,
     };
   }, [event.goal, isCompleted]);
+  const completeProjectTask = useCallback(
+    (task: MatrixProjectTask, source?: MatrixXpSourceCapture | null) => {
+      const instanceId = task.sourceInstance.id;
+      if (task.sourceInstance.source_type !== "TASK") {
+        void hapticWarningPattern();
+        return;
+      }
+      if (completingInstanceIds.has(instanceId)) {
+        void hapticWarningPattern();
+        return;
+      }
+
+      void onComplete(
+        instanceId,
+        task.completed ? "scheduled" : "completed",
+        {
+          hapticOnComplete: true,
+          xpSourceRect: source?.rect ?? null,
+          xpSourceOrigin: source?.origin,
+        }
+      );
+    },
+    [completingInstanceIds, onComplete]
+  );
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
   const usesCheckboxOnlyTrailingAction =
     density === "todo" && presentationMode === "checkbox-only";
@@ -3533,6 +4008,20 @@ function ScheduledEventCard({
         });
       }}
     />
+  ) : density === "todo" && scheduledGoal ? (
+    <MatrixProjectCard
+      goal={scheduledGoal}
+      glyph={event.glyph}
+      completed={isCompleted}
+      density={density}
+      open={open}
+      onOpenChange={onOpenChange}
+      tasks={event.projectTasks}
+      completingInstanceIds={completingInstanceIds}
+      todoRowDensity={todoRowDensity}
+      onCompleteTask={completeProjectTask}
+      onToggleProject={completeEvent}
+    />
   ) : density === "todo" ? (
     <MatrixTodoRow
       title={event.title}
@@ -3549,13 +4038,14 @@ function ScheduledEventCard({
               ? `${event.routine.dueHabitCount} ${event.routine.dueHabitCount === 1 ? "habit" : "habits"}`
               : event.instance.source_type === "PROJECT"
                 ? "Project"
+                : event.instance.source_type === "TASK"
+                  ? "Task"
                 : event.instance.source_type === "EVENT"
                   ? "Event"
                   : scheduledHabitPill
       }
       trailingAction={todoTrailingAction}
       onToggle={(source) => completeEvent(source)}
-      onOpen={scheduledGoal ? () => onOpenChange(!open) : undefined}
     />
   ) : event.routine ? (
     <MatrixRoutineCard
@@ -3583,13 +4073,24 @@ function ScheduledEventCard({
         });
       }}
     />
-  ) : density === "row" && (scheduledGoal || event.habit) ? (
+  ) : density === "row" && scheduledGoal ? (
+    <MatrixProjectCard
+      goal={scheduledGoal}
+      glyph={event.glyph}
+      completed={isCompleted}
+      density={density}
+      open={open}
+      onOpenChange={onOpenChange}
+      tasks={event.projectTasks}
+      completingInstanceIds={completingInstanceIds}
+      onCompleteTask={completeProjectTask}
+      onToggleProject={completeEvent}
+    />
+  ) : density === "row" && event.habit ? (
     <MatrixScheduledEventRowCard
       event={event}
       completed={isCompleted}
       status={cleanStatus}
-      open={open}
-      onOpenChange={scheduledGoal ? onOpenChange : undefined}
       onOpenMealNutritionLog={onOpenMealNutritionLog}
       onOpenFitnessWorkout={onOpenFitnessWorkout}
     />
@@ -3602,18 +4103,25 @@ function ScheduledEventCard({
         density={density}
         open={open}
         onOpenChange={onOpenChange}
+        tasks={event.projectTasks}
+        completingInstanceIds={completingInstanceIds}
+        todoRowDensity={todoRowDensity}
+        onCompleteTask={completeProjectTask}
+        onToggleProject={completeEvent}
       />
     ) : (
-      <GoalCard
+      <MatrixProjectCard
         goal={scheduledGoal}
-        showWeight={false}
-        showCreatedAt={false}
-        showEmojiPrefix={false}
-        variant="compact"
-        completionTheme="emerald"
-        projectDropdownMode="tasks-only"
+        glyph={event.glyph}
+        completed={isCompleted}
+        density={density}
         open={open}
         onOpenChange={onOpenChange}
+        tasks={event.projectTasks}
+        completingInstanceIds={completingInstanceIds}
+        todoRowDensity={todoRowDensity}
+        onCompleteTask={completeProjectTask}
+        onToggleProject={completeEvent}
       />
     )
   ) : event.habit ? (
@@ -3638,6 +4146,18 @@ function ScheduledEventCard({
       title={event.title}
       pill={isCompleted ? "COMPLETE" : (cleanStatus ?? "EVENT")}
       habitType="EVENT"
+      overdue={false}
+      status={cleanStatus}
+      completed={isCompleted}
+      density={density}
+    />
+  ) : event.instance.source_type === "TASK" ? (
+    <MatrixHabitCard
+      glyph={event.glyph}
+      title={event.title}
+      subtitle={event.subtitle ?? null}
+      pill={isCompleted ? "COMPLETE" : (cleanStatus ?? "TASK")}
+      habitType="TASK"
       overdue={false}
       status={cleanStatus}
       completed={isCompleted}
@@ -4894,10 +5414,10 @@ function MatrixGroupLabel({
   );
 }
 
-const MATRIX_GROUP_REVEAL_BASE_DELAY_SECONDS = 1.15;
-const MATRIX_GROUP_REVEAL_STAGGER_SECONDS = 0.85;
-const MATRIX_GROUP_REVEAL_DURATION_SECONDS = 1.25;
-const MATRIX_GROUP_REVEAL_BUFFER_SECONDS = 0.28;
+const MATRIX_GROUP_REVEAL_BASE_DELAY_SECONDS = 0;
+const MATRIX_GROUP_REVEAL_STAGGER_SECONDS = 0.035;
+const MATRIX_GROUP_REVEAL_DURATION_SECONDS = 0.18;
+const MATRIX_GROUP_REVEAL_BUFFER_SECONDS = 0.04;
 
 function MatrixRevealGroupSection({
   index,
@@ -6329,6 +6849,15 @@ export function MatrixContent({
             )
           ) {
             itemIds.add(event.instance.id);
+            continue;
+          }
+
+          if (
+            event.projectTasks.some(
+              (task) => task.sourceInstance.id === instanceId
+            )
+          ) {
+            itemIds.add(event.instance.id);
           }
         }
       }
@@ -7120,9 +7649,47 @@ export function MatrixContent({
                     }
                   : event;
 
-              if (!nextEvent.routine) return nextEvent;
+              const nextProjectTasks = nextEvent.projectTasks.map((task) => {
+                if (task.sourceInstance.id !== instanceId) return task;
 
-              const nextHabits = nextEvent.routine.habits.map((habit) => {
+                const sourceInstance = {
+                  ...task.sourceInstance,
+                  status: persistedStatus,
+                  completed_at: completedAt,
+                };
+
+                return {
+                  ...task,
+                  completed: persistedStatus === "completed",
+                  sourceInstance,
+                };
+              });
+              const projectTasksChanged = nextProjectTasks.some(
+                (task, index) => task !== nextEvent.projectTasks[index]
+              );
+              const nextEventWithProjectTasks = projectTasksChanged
+                ? {
+                    ...nextEvent,
+                    instance: {
+                      ...nextEvent.instance,
+                      status: nextProjectTasks.every((task) => task.completed)
+                        ? "completed"
+                        : "scheduled",
+                      completed_at: nextProjectTasks.every((task) => task.completed)
+                        ? (nextProjectTasks
+                            .map((task) => task.sourceInstance.completed_at)
+                            .filter((value): value is string => Boolean(value))
+                            .sort()
+                            .at(-1) ?? null)
+                        : null,
+                    },
+                    projectTasks: nextProjectTasks,
+                  }
+                : nextEvent;
+
+              if (!nextEventWithProjectTasks.routine) return nextEventWithProjectTasks;
+
+              const nextHabits = nextEventWithProjectTasks.routine.habits.map((habit) => {
                 if (habit.sourceInstance?.id !== instanceId) return habit;
 
                 const sourceInstance = {
@@ -7142,9 +7709,9 @@ export function MatrixContent({
               });
 
               return {
-                ...nextEvent,
+                ...nextEventWithProjectTasks,
                 routine: {
-                  ...nextEvent.routine,
+                  ...nextEventWithProjectTasks.routine,
                   habits: nextHabits,
                   completed: isMatrixScheduledRoutineCompleted(nextHabits),
                 },
@@ -7287,6 +7854,28 @@ export function MatrixContent({
                 goal: null,
                 habit: routineHabit.sourceHabit,
                 routine: null,
+                projectTasks: [],
+                inferredMeal: null,
+                scheduledMeal: null,
+              };
+            }
+
+            const projectTask = event.projectTasks.find(
+              (task) => task.sourceInstance.id === instanceId
+            );
+            if (projectTask) {
+              return {
+                instance: projectTask.sourceInstance,
+                title: projectTask.name,
+                subtitle: event.title,
+                monumentId: event.monumentId,
+                skillIds: projectTask.skillId ? [projectTask.skillId] : event.skillIds,
+                skillResolverSource: projectTask.skillId ? "task.skill_id" : null,
+                glyph: projectTask.skillIcon ?? event.glyph,
+                goal: null,
+                habit: null,
+                routine: null,
+                projectTasks: [],
                 inferredMeal: null,
                 scheduledMeal: null,
               };
@@ -8367,10 +8956,10 @@ export function MatrixContent({
         const { data: instanceData, error: instanceError } = await supabase
           .from("schedule_instances")
           .select(
-            "id, source_id, source_type, start_utc, end_utc, status, completed_at, weight_snapshot, event_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata"
+            "id, source_id, source_type, start_utc, end_utc, duration_min, status, completed_at, weight_snapshot, event_name, project_name, time_block_id, day_type_time_block_id, window_id, energy_resolved, metadata"
           )
           .eq("user_id", userId)
-          .in("source_type", ["PROJECT", "HABIT", "EVENT"])
+          .in("source_type", MATRIX_SCHEDULED_SOURCE_TYPES)
           .in("status", ["scheduled", "in_progress", "completed"])
           .lt("start_utc", dayEnd.toISOString())
           .gt("end_utc", dayStart.toISOString())
@@ -8379,6 +8968,18 @@ export function MatrixContent({
         if (instanceError) throw instanceError;
 
         const instances = (instanceData ?? []) as ScheduleInstance[];
+        const taskIds = collectMatrixScheduledTaskIds(instances);
+        const taskResult = taskIds.length
+          ? await supabase
+              .from("tasks")
+              .select("id, project_id, name, stage, skill_id, priority, completed_at")
+              .eq("user_id", userId)
+              .in("id", taskIds)
+          : { data: [], error: null };
+
+        if (taskResult.error) throw taskResult.error;
+
+        const scheduledTasks = (taskResult.data ?? []) as TaskRow[];
         const windowsForDatePromise = (async () => {
           const params = new URLSearchParams();
           params.set("dayKey", dayKey);
@@ -8417,9 +9018,10 @@ export function MatrixContent({
           console.error("Failed to load Matrix Nutrition meals", error);
           return [] as MatrixNutritionMealCompletionRow[];
         });
-        const projectIds = instances
-          .filter((item) => item.source_type === "PROJECT")
-          .map((item) => item.source_id);
+        const projectIds = collectMatrixScheduledProjectIds({
+          instances,
+          tasks: scheduledTasks,
+        });
         const scheduledHabitIds = new Set(
           instances
             .filter((item) => item.source_type === "HABIT")
@@ -8447,7 +9049,6 @@ export function MatrixContent({
         });
 
         const [
-          habitResult,
           allHabitsResult,
           goalResult,
           skillResult,
@@ -8460,16 +9061,6 @@ export function MatrixContent({
           nutritionMeals,
         ] =
           await Promise.all([
-            scheduledHabitIds.size
-              ? supabase
-                  .from("habits")
-                  .select(
-                    "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override, routine_id, routine_position"
-                  )
-                  .eq("user_id", userId)
-                  .is("circle_id", null)
-                  .in("id", Array.from(scheduledHabitIds))
-              : Promise.resolve({ data: [], error: null }),
             supabase
               .from("habits")
               .select(
@@ -8512,7 +9103,6 @@ export function MatrixContent({
             nutritionMealsPromise,
           ]);
 
-        if (habitResult.error) throw habitResult.error;
         if (allHabitsResult.error) throw allHabitsResult.error;
         if (goalResult.error) throw goalResult.error;
         if (skillResult.error) throw skillResult.error;
@@ -8522,65 +9112,64 @@ export function MatrixContent({
         if (dayTypeTimeBlockByBlockResult.error)
           throw dayTypeTimeBlockByBlockResult.error;
 
+        const allHabitRows = (allHabitsResult.data ?? []) as HabitRow[];
         const routineIds = Array.from(
           new Set(
-            ((allHabitsResult.data ?? []) as HabitRow[])
+            allHabitRows
               .map((habit) => habit.routine_id)
               .filter((routineId): routineId is string =>
                 Boolean(routineId?.trim())
               )
           )
         );
-        const routineResult = routineIds.length
-          ? await supabase
-              .from("habit_routines")
-              .select("id, name, description, icon")
-              .eq("user_id", userId)
-              .in("id", routineIds)
-          : { data: [], error: null };
-
-        if (routineResult.error) throw routineResult.error;
-
-        const allProjectIds = Array.from(new Set(projectIds));
-
-        const projectResult = allProjectIds.length
-          ? await supabase
-              .from("projects")
-              .select(
-                `
-                  id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
-                  priority,
-                  energy,
-                  tasks (
-                    id, project_id, stage, name, skill_id, priority
-                  ),
-                  project_skills (
-                    skill_id
-                  )
-                `
-              )
-              .eq("user_id", userId)
-              .in("id", allProjectIds)
-          : { data: [], error: null };
-
-        if (projectResult.error) throw projectResult.error;
-
+        const allProjectIds = projectIds;
         const allHabitIds = Array.from(
           new Set(
-            ((allHabitsResult.data ?? []) as HabitRow[])
+            allHabitRows
               .map((habit) => habit.id)
               .filter((id): id is string => Boolean(id))
           )
         );
-        const habitCompletionResult = allHabitIds.length
-          ? await supabase
-              .from("habit_completion_days")
-              .select("habit_id")
-              .eq("user_id", userId)
-              .eq("completion_day", creatorDay.creatorDayDate)
-              .in("habit_id", allHabitIds)
-          : { data: [], error: null };
+        const [routineResult, projectResult, habitCompletionResult] =
+          await Promise.all([
+            routineIds.length
+              ? supabase
+                  .from("habit_routines")
+                  .select("id, name, description, icon")
+                  .eq("user_id", userId)
+                  .in("id", routineIds)
+              : Promise.resolve({ data: [], error: null }),
+            allProjectIds.length
+              ? supabase
+                  .from("projects")
+                  .select(
+                    `
+                      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
+                      priority,
+                      energy,
+                      tasks (
+                        id, project_id, stage, name, skill_id, priority, completed_at
+                      ),
+                      project_skills (
+                        skill_id
+                      )
+                    `
+                  )
+                  .eq("user_id", userId)
+                  .in("id", allProjectIds)
+              : Promise.resolve({ data: [], error: null }),
+            allHabitIds.length
+              ? supabase
+                  .from("habit_completion_days")
+                  .select("habit_id")
+                  .eq("user_id", userId)
+                  .eq("completion_day", creatorDay.creatorDayDate)
+                  .in("habit_id", allHabitIds)
+              : Promise.resolve({ data: [], error: null }),
+          ]);
 
+        if (routineResult.error) throw routineResult.error;
+        if (projectResult.error) throw projectResult.error;
         if (habitCompletionResult.error) throw habitCompletionResult.error;
 
         const loadedCompletedHabitIdsForCreatorDay = new Set(
@@ -8618,8 +9207,13 @@ export function MatrixContent({
             project,
           ])
         );
+        const taskMap = new Map(
+          scheduledTasks.map((task) => [task.id, task])
+        );
         const habitMap = new Map(
-          ((habitResult.data ?? []) as HabitRow[]).map((habit) => [
+          allHabitRows
+            .filter((habit) => scheduledHabitIds.has(normalizeMatrixSourceId(habit.id)))
+            .map((habit) => [
             habit.id,
             habit,
           ])
@@ -8689,6 +9283,7 @@ export function MatrixContent({
         const rawEvents = buildSharedMatrixEvents({
           instances,
           projects: projectMap,
+          tasks: taskMap,
           habits: habitMap,
           goals: goalMap,
           skillIdToMonumentId,
@@ -8703,6 +9298,11 @@ export function MatrixContent({
         const events = buildSharedMatrixScheduledEvents({
           events: rawEvents,
           routines: routineMap,
+          projects: projectMap,
+          goals: goalMap,
+          tasks: taskMap,
+          skillIdToIcon,
+          monumentIdToEmoji,
         });
         const inferredMealEvents = buildSharedMatrixInferredMealMatrixEvents({
           inferredMeals: buildMatrixInferredMealEvents({
@@ -8725,7 +9325,7 @@ export function MatrixContent({
           }
         }
 
-        const dueHabitRows = ((allHabitsResult.data ?? []) as HabitRow[]).filter(
+        const dueHabitRows = allHabitRows.filter(
           (habit) =>
             isHabitDueToday(habit, today, timeZone) ||
             completedHabitIdsForCreatorDay.has(habit.id)

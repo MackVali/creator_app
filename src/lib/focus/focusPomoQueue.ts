@@ -2551,51 +2551,14 @@ async function fetchGoalNoteTodos(
   goalIds?: string[],
   options: { skillId?: string | null } = {}
 ): Promise<FocusPomoQueueItem[]> {
-  if (goalIds && goalIds.length === 0) return [];
-
-  let query = supabase
-    .from("goal_workspaces")
-    .select("goal_id, metadata, updated_at")
-    .eq("user_id", userId);
-
-  if (goalIds) {
-    query = query.in("goal_id", Array.from(new Set(goalIds.filter(Boolean))));
-  }
-
-  const { data, error } = (await query) as QueryResponse<GoalWorkspaceTodoRow>;
-  if (error) throw error;
-
-  const rows = data ?? [];
-  const workspaceGoalIds = rows
-    .map((row) => readString(row.goal_id))
-    .filter((id): id is string => Boolean(id));
-  const rawTodos = rows.flatMap((row) => readNoteTodos(row.metadata));
-  const skillIds = rawTodos
-    .map((todo) => readString(todo.skillId))
-    .filter((id): id is string => Boolean(id));
-  const [goalById, skillById] = await Promise.all([
-    fetchGoalMetadata(supabase, userId, workspaceGoalIds),
-    fetchSkillMetadata(supabase, userId, skillIds),
-  ]);
-  const items: FocusPomoQueueItem[] = [];
-
-  for (const row of rows) {
-    const goalId = readString(row.goal_id);
-    const goal = goalId ? goalById.get(goalId) : undefined;
-    if (!goal) continue;
-    readNoteTodos(row.metadata).forEach((todo, index) => {
-      if (options.skillId && todo.skillId !== options.skillId) return;
-      const item = mapGoalNoteTodo(todo, {
-        goal,
-        skillById,
-        workspaceUpdatedAt: readString(row.updated_at),
-        order: index,
-      });
-      if (item) items.push(item);
-    });
-  }
-
-  return items;
+  // Goal notes are no longer an active CREATOR feature.
+  // Keep historical goal_workspaces data intact, but do not surface its
+  // note todos in FocusPomo.
+  void supabase;
+  void userId;
+  void goalIds;
+  void options;
+  return [];
 }
 
 export async function fetchFocusPomoQueue(params: {

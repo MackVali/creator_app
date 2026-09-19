@@ -57,6 +57,7 @@ type PortfolioSiteProps = {
     pageId: string;
     sectionId: string;
     node?: SiteContentNodeId;
+    blockId?: string;
   }) => void;
   onEditorContentEditRequest?: (edit: {
     pageId: string;
@@ -76,6 +77,7 @@ type EditorSelectionContext = {
     pageId: string;
     sectionId: string;
     node?: EditorNodeId;
+    blockId?: string;
   }) => void;
   onContentEditRequest?: (edit: {
     pageId: string;
@@ -151,6 +153,47 @@ function editorNodeClass(
   }
 
   return "rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:bg-white/[0.025] hover:outline-white/24";
+}
+
+
+function editorBlockClass(
+  context: EditorSelectionContext,
+  sectionId: string,
+  blockId: string,
+) {
+  if (!context.editorPreview) return "";
+
+  const selected =
+    context.activeSelection?.pageId ===
+      context.pageId &&
+    context.activeSelection.sectionId ===
+      sectionId &&
+    context.activeSelection.kind === "block" &&
+    context.activeSelection.blockId === blockId;
+
+  if (selected) {
+    return "outline outline-2 -outline-offset-2 outline-white/55";
+  }
+
+  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color] hover:outline-white/20";
+}
+
+function handleEditorBlockClick(
+  event: MouseEvent<HTMLElement>,
+  context: EditorSelectionContext,
+  sectionId: string,
+  blockId: string,
+) {
+  if (!context.editorPreview) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  context.onSelectionRequest?.({
+    pageId: context.pageId,
+    sectionId,
+    blockId,
+  });
 }
 
 function handleEditorSectionClick(
@@ -379,45 +422,6 @@ function SectionRule({
   );
 }
 
-function HeroStage({
-  section,
-  editorContext,
-}: {
-  section?: SiteSection;
-  editorContext: EditorSelectionContext;
-}) {
-  const mediaUrl = readContentString(section, "mediaUrl", heroCover);
-  const mediaAlt = readContentString(section, "mediaAlt");
-  const mediaFit =
-    readContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
-
-  return (
-    <div
-      data-creator-editor-node={
-        editorContext.editorPreview ? "media" : undefined
-      }
-      onClick={(event) =>
-        handleEditorNodeClick(event, editorContext, section?.id, "media")
-      }
-      className={`absolute inset-0 hidden overflow-hidden bg-[var(--site-surface-strong)] lg:block ${editorNodeClass(
-        editorContext,
-        section?.id,
-        "media",
-      )}`}
-    >
-      <div className="absolute inset-y-0 left-[31%] right-[2%]">
-        <img
-          src={mediaUrl}
-          alt={mediaAlt}
-          className={`h-full w-full object-right ${
-            mediaFit === "cover" ? "object-cover" : "object-contain"
-          }`}
-        />
-      </div>
-    </div>
-  );
-}
-
 const defaultMackSections: SiteSection[] = (() => {
   const migrated =
     migrateLegacyMackSite(
@@ -443,6 +447,155 @@ function readContentString(
   const value = section?.content[key];
   return typeof value === "string" ? value : fallback;
 }
+
+function readContentNumber(
+  section: SiteSection | undefined,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const value =
+    section?.content[key];
+
+  return typeof value === "number" &&
+    Number.isFinite(value)
+    ? Math.max(
+        min,
+        Math.min(
+          max,
+          value,
+        ),
+      )
+    : fallback;
+}
+
+function sectionMediaSettings(
+  section: SiteSection | undefined,
+) {
+  const fit =
+    readContentString(
+      section,
+      "mediaFit",
+    ) === "cover"
+      ? "cover"
+      : "contain";
+
+  const ratioValue =
+    readContentString(
+      section,
+      "mediaRatio",
+    );
+
+  const ratio =
+    ratioValue === "auto" ||
+    ratioValue === "3:2" ||
+    ratioValue === "4:3" ||
+    ratioValue === "1:1" ||
+    ratioValue === "4:5"
+      ? ratioValue
+      : "16:9";
+
+  const frameValue =
+    readContentString(
+      section,
+      "mediaFrame",
+    );
+
+  const frame =
+    frameValue === "outline" ||
+    frameValue === "surface"
+      ? frameValue
+      : "none";
+
+  return {
+    fit,
+    ratio,
+    frame,
+
+    height:
+      readContentNumber(
+        section,
+        "mediaHeight",
+        360,
+        160,
+        900,
+      ),
+
+    zoom:
+      readContentNumber(
+        section,
+        "mediaZoom",
+        100,
+        50,
+        180,
+      ),
+
+    positionX:
+      readContentNumber(
+        section,
+        "mediaPositionX",
+        50,
+        0,
+        100,
+      ),
+
+    positionY:
+      readContentNumber(
+        section,
+        "mediaPositionY",
+        50,
+        0,
+        100,
+      ),
+
+    radius:
+      readContentNumber(
+        section,
+        "mediaRadius",
+        12,
+        0,
+        48,
+      ),
+  };
+}
+
+function mediaAspectRatio(
+  ratio: string,
+) {
+  if (ratio === "1:1") {
+    return "1 / 1";
+  }
+
+  if (ratio === "4:5") {
+    return "4 / 5";
+  }
+
+  if (ratio === "4:3") {
+    return "4 / 3";
+  }
+
+  if (ratio === "3:2") {
+    return "3 / 2";
+  }
+
+  return "16 / 9";
+}
+
+function mediaFrameClass(
+  frame: string,
+) {
+  if (frame === "outline") {
+    return "border border-[var(--site-border)]";
+  }
+
+  if (frame === "surface") {
+    return "border border-[var(--site-border)] bg-[var(--site-surface-strong)]";
+  }
+
+  return "";
+}
+
 
 type SiteGalleryItem = {
   id: string;
@@ -493,6 +646,27 @@ type SiteCardItem = {
   linkLabel: string;
   linkHref: string;
   linkPageId: string;
+
+  // Legacy presentation values remain readable.
+  emphasis?: "normal" | "featured";
+  mediaScale?: "small" | "balanced" | "dominant";
+
+  // Visual card geometry.
+  span?: "one" | "two" | "full";
+  mediaPosition?: "top" | "left" | "right";
+  mediaFit?: "cover" | "contain";
+  mediaRatio?: "16:9" | "3:2" | "4:3" | "1:1";
+  mediaShare?: number;
+  mediaZoom?: number;
+  mediaPositionX?: number;
+  mediaPositionY?: number;
+  minHeight?: number;
+  padding?: number;
+
+  // Card typography.
+  titleSize?: number;
+  bodySize?: number;
+  textWidth?: number;
 };
 
 function readCardItems(section: SiteSection): SiteCardItem[] {
@@ -508,31 +682,153 @@ function readCardItems(section: SiteSection): SiteCardItem[] {
       return [];
     }
 
-    const candidate = item as Record<string, unknown>;
+    const candidate =
+      item as Record<string, unknown>;
 
     if (typeof candidate.id !== "string") {
       return [];
     }
 
-    const read = (key: string) =>
+    const readString = (key: string) =>
       typeof candidate[key] === "string"
-        ? (candidate[key] as string)
+        ? candidate[key] as string
         : "";
 
-    return [
-      {
-        id: candidate.id,
-        eyebrow: read("eyebrow"),
-        title: read("title"),
-        body: read("body"),
-        imageUrl: read("imageUrl"),
-        imagePath: read("imagePath"),
-        imageAlt: read("imageAlt"),
-        linkLabel: read("linkLabel"),
-        linkHref: read("linkHref"),
-        linkPageId: read("linkPageId"),
-      },
-    ];
+    const readNumber = (
+      key: string,
+      min: number,
+      max: number,
+    ) => {
+      const value = candidate[key];
+
+      return typeof value === "number" &&
+        Number.isFinite(value)
+        ? Math.max(
+            min,
+            Math.min(
+              max,
+              value,
+            ),
+          )
+        : undefined;
+    };
+
+    return [{
+      id: candidate.id,
+      eyebrow: readString("eyebrow"),
+      title: readString("title"),
+      body: readString("body"),
+      imageUrl: readString("imageUrl"),
+      imagePath: readString("imagePath"),
+      imageAlt: readString("imageAlt"),
+      linkLabel: readString("linkLabel"),
+      linkHref: readString("linkHref"),
+      linkPageId: readString("linkPageId"),
+
+      emphasis:
+        candidate.emphasis === "normal" ||
+        candidate.emphasis === "featured"
+          ? candidate.emphasis
+          : undefined,
+
+      mediaScale:
+        candidate.mediaScale === "small" ||
+        candidate.mediaScale === "balanced" ||
+        candidate.mediaScale === "dominant"
+          ? candidate.mediaScale
+          : undefined,
+
+      span:
+        candidate.span === "one" ||
+        candidate.span === "two" ||
+        candidate.span === "full"
+          ? candidate.span
+          : undefined,
+
+      mediaPosition:
+        candidate.mediaPosition === "top" ||
+        candidate.mediaPosition === "left" ||
+        candidate.mediaPosition === "right"
+          ? candidate.mediaPosition
+          : undefined,
+
+      mediaFit:
+        candidate.mediaFit === "cover" ||
+        candidate.mediaFit === "contain"
+          ? candidate.mediaFit
+          : undefined,
+
+      mediaRatio:
+        candidate.mediaRatio === "16:9" ||
+        candidate.mediaRatio === "3:2" ||
+        candidate.mediaRatio === "4:3" ||
+        candidate.mediaRatio === "1:1"
+          ? candidate.mediaRatio
+          : undefined,
+
+      mediaShare:
+        readNumber(
+          "mediaShare",
+          25,
+          75,
+        ),
+
+      mediaZoom:
+        readNumber(
+          "mediaZoom",
+          50,
+          180,
+        ),
+
+      mediaPositionX:
+        readNumber(
+          "mediaPositionX",
+          0,
+          100,
+        ),
+
+      mediaPositionY:
+        readNumber(
+          "mediaPositionY",
+          0,
+          100,
+        ),
+
+      minHeight:
+        readNumber(
+          "minHeight",
+          180,
+          900,
+        ),
+
+      padding:
+        readNumber(
+          "padding",
+          0,
+          120,
+        ),
+
+      titleSize:
+        readNumber(
+          "titleSize",
+          18,
+          96,
+        ),
+
+      bodySize:
+        readNumber(
+          "bodySize",
+          9,
+          28,
+        ),
+
+      textWidth:
+        readNumber(
+          "textWidth",
+          180,
+          1000,
+        ),
+    }];
   });
 }
 
@@ -680,15 +976,15 @@ function sectionPaddingClass(
     "default";
 
   if (size === "compact") {
-    return "py-8";
+    return "py-6 md:py-8";
   }
 
   if (size === "standard") {
-    return "py-12 md:py-16";
+    return "py-10 md:py-12";
   }
 
   if (size === "large") {
-    return "py-20 md:py-24 lg:py-28";
+    return "py-14 md:py-16 lg:py-20";
   }
 
   const top =
@@ -961,6 +1257,172 @@ function sectionVariant(section: SiteSection | undefined, fallback: string) {
     : fallback;
 }
 
+
+type SectionTextDefaults = {
+  headingSize: number;
+  headingWidth: number;
+  bodySize: number;
+  bodyWidth: number;
+  textGap: number;
+};
+
+function sectionShellOuterStyle(
+  section: SiteSection | undefined,
+) {
+  if (!section?.layout) {
+    return undefined;
+  }
+
+  const layout =
+    section.layout;
+
+  if (
+    layout.heightMode ===
+    "screen"
+  ) {
+    return {
+      minHeight: "100svh",
+    } satisfies CSSProperties;
+  }
+
+  if (
+    layout.heightMode ===
+    "minimum"
+  ) {
+    return {
+      minHeight:
+        `${Math.max(
+          0,
+          layout.minHeight ??
+            520,
+        )}px`,
+    } satisfies CSSProperties;
+  }
+
+  return undefined;
+}
+
+function sectionShellContainerStyle(
+  section: SiteSection | undefined,
+) {
+  const layout =
+    section?.layout;
+
+  const style: CSSProperties =
+    {};
+
+  if (!layout) {
+    return style;
+  }
+
+  if (
+    typeof layout.contentWidth ===
+      "number" &&
+    Number.isFinite(
+      layout.contentWidth,
+    )
+  ) {
+    style.maxWidth =
+      `${Math.max(
+        320,
+        layout.contentWidth,
+      )}px`;
+  } else if (
+    layout.width === "narrow"
+  ) {
+    style.maxWidth = "900px";
+  } else if (
+    layout.width === "normal"
+  ) {
+    style.maxWidth = "1180px";
+  } else if (
+    layout.width === "full"
+  ) {
+    style.maxWidth =
+      "min(100%, 1680px)";
+  }
+
+  const precisePadding = [
+    ["paddingTop", layout.paddingTopPx],
+    ["paddingRight", layout.paddingRightPx],
+    ["paddingBottom", layout.paddingBottomPx],
+    ["paddingLeft", layout.paddingLeftPx],
+  ] as const;
+
+  for (const [
+    property,
+    value,
+  ] of precisePadding) {
+    if (
+      typeof value === "number" &&
+      Number.isFinite(value)
+    ) {
+      style[property] =
+        `${Math.max(
+          0,
+          value,
+        )}px`;
+    }
+  }
+
+  return style;
+}
+
+function sectionHeadingTextStyle(
+  section: SiteSection | undefined,
+  defaults: SectionTextDefaults,
+) {
+  const size =
+    section?.layout?.headingSize ??
+    defaults.headingSize;
+
+  const width =
+    section?.layout?.headingWidth ??
+    defaults.headingWidth;
+
+  const mobile =
+    Math.max(
+      22,
+      Math.round(
+        size * 0.56,
+      ),
+    );
+
+  return {
+    fontSize:
+      `clamp(${mobile}px, ${Math.max(
+        2.4,
+        size / 14,
+      )}vw, ${size}px)`,
+    maxWidth:
+      `${width}px`,
+  } satisfies CSSProperties;
+}
+
+function sectionBodyTextStyle(
+  section: SiteSection | undefined,
+  defaults: SectionTextDefaults,
+) {
+  return {
+    fontSize:
+      `${section?.layout?.bodySize ??
+      defaults.bodySize}px`,
+    maxWidth:
+      `${section?.layout?.bodyWidth ??
+      defaults.bodyWidth}px`,
+  } satisfies CSSProperties;
+}
+
+function sectionTextGap(
+  section: SiteSection | undefined,
+  defaults: SectionTextDefaults,
+) {
+  return (
+    section?.layout?.textGap ??
+    defaults.textGap
+  );
+}
+
 function HeroInlineMedia({
   section,
   editorContext,
@@ -981,13 +1443,13 @@ function HeroInlineMedia({
       "mediaAlt",
     );
 
-  const mediaFit =
-    readContentString(
+  const media =
+    sectionMediaSettings(
       section,
-      "mediaFit",
-    ) === "cover"
-      ? "cover"
-      : "contain";
+    );
+
+  const fixedRatio =
+    media.ratio !== "auto";
 
   return (
     <div
@@ -1004,24 +1466,46 @@ function HeroInlineMedia({
           "media",
         )
       }
-      className={`relative aspect-[16/9] overflow-hidden rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface-strong)] ${editorNodeClass(
+      className={`relative w-full overflow-hidden ${mediaFrameClass(
+        media.frame,
+      )} ${editorNodeClass(
         editorContext,
         section?.id,
         "media",
       )}`}
+      style={{
+        borderRadius:
+          `${media.radius}px`,
+
+        ...(fixedRatio
+          ? {
+              aspectRatio:
+                mediaAspectRatio(
+                  media.ratio,
+                ),
+            }
+          : {
+              minHeight:
+                `${media.height}px`,
+            }),
+      }}
     >
       {mediaUrl ? (
         <img
           src={mediaUrl}
           alt={mediaAlt}
-          className={`absolute inset-0 h-full w-full ${
-            mediaFit === "cover"
-              ? "object-cover"
-              : "object-contain"
-          }`}
+          className="absolute inset-0 h-full w-full"
+          style={{
+            objectFit:
+              media.fit,
+            objectPosition:
+              `${media.positionX}% ${media.positionY}%`,
+            transform:
+              `scale(${media.zoom / 100})`,
+          }}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--site-surface-strong)] text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
           Add media
         </div>
       )}
@@ -1040,165 +1524,326 @@ function HeroSection({
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
-  const eyebrow = readContentString(
-    section,
-    "eyebrow",
-    "Design · Build · Create",
-  );
-  const ctaLabel = readContentString(
-    section,
-    "primaryCtaLabel",
-    "Explore my work",
-  );
-  const ctaHref = readContentString(
-    section,
-    "primaryCtaHref",
-    "#software",
-  );
-  const ctaPageId = readContentString(
-    section,
-    "primaryCtaPageId",
-  );
-  const resolvedCtaHref = resolveSiteLinkHref(
-    siteDocument,
-    site.handle,
-    {
-      href: ctaHref,
-      pageId: ctaPageId || undefined,
-    },
-  );
-  const headline = readContentString(section, "headline", site.headline);
-  const intro = readContentString(section, "intro", site.intro);
-  const variant = sectionVariant(section, "split");
-  const centered = variant === "centered";
-  const editorial = variant === "editorial";
-  const minimal = variant === "minimal";
+  const eyebrow =
+    readContentString(
+      section,
+      "eyebrow",
+      "Design · Build · Create",
+    );
 
-  return (
-    <section
-      data-creator-editor-section={editorContext.editorPreview ? section?.id : undefined}
-      onClick={(event) => handleEditorSectionClick(event, editorContext, section?.id)}
-      className={`relative overflow-hidden ${
-        minimal ? "" : "lg:min-h-[410px]"
-      } ${sectionBackgroundClass(
-        section,
-      )} ${editorSectionClass(editorContext, section?.id)}`}
+  const headline =
+    readContentString(
+      section,
+      "headline",
+      site.headline,
+    );
+
+  const intro =
+    readContentString(
+      section,
+      "intro",
+      site.intro,
+    );
+
+  const ctaLabel =
+    readContentString(
+      section,
+      "primaryCtaLabel",
+      "Explore my work",
+    );
+
+  const ctaHref =
+    readContentString(
+      section,
+      "primaryCtaHref",
+      "#software",
+    );
+
+  const ctaPageId =
+    readContentString(
+      section,
+      "primaryCtaPageId",
+    );
+
+  const resolvedCtaHref =
+    resolveSiteLinkHref(
+      siteDocument,
+      site.handle,
+      {
+        href: ctaHref,
+        pageId:
+          ctaPageId ||
+          undefined,
+      },
+    );
+
+  const variant =
+    sectionVariant(
+      section,
+      "split",
+    );
+
+  const centered =
+    variant === "centered";
+
+  const editorial =
+    variant === "editorial";
+
+  const minimal =
+    variant === "minimal";
+
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 72,
+      headingWidth: 780,
+      bodySize: 14,
+      bodyWidth: 520,
+      textGap: 20,
+    };
+
+  const mediaShare =
+    section?.layout
+      ?.mediaShare ??
+    60;
+
+  const gap =
+    section?.layout?.gap ??
+    40;
+
+  const copy = (
+    <div
+      className={`flex min-w-0 flex-col justify-center ${
+        centered
+          ? "mx-auto text-center"
+          : ""
+      }`}
     >
       <div
-        className={`relative mx-auto max-w-[var(--site-page-width)] ${
-          centered
-            ? "px-[var(--site-page-x)] py-[var(--site-section-y)] text-center"
-            : editorial
-            ? "grid gap-8 px-[var(--site-page-x)] py-[var(--site-section-y)] lg:grid-cols-[1.1fr_0.9fr]"
-            : minimal
-            ? "px-[var(--site-page-x)] py-[var(--site-section-y)]"
-            : "h-full"
-        }`}
+        data-creator-editor-node={
+          editorContext.editorPreview
+            ? "text"
+            : undefined
+        }
+        onClick={(event) =>
+          handleEditorNodeClick(
+            event,
+            editorContext,
+            section?.id,
+            "text",
+          )
+        }
+        className={editorNodeClass(
+          editorContext,
+          section?.id,
+          "text",
+        )}
       >
-        {variant === "split" ? (
-          <HeroStage
-            section={section}
-            editorContext={editorContext}
+        {eyebrow ? (
+          <InlineEditableText
+            as="p"
+            value={eyebrow}
+            field="eyebrow"
+            sectionId={section?.id}
+            node="text"
+            editorContext={
+              editorContext
+            }
+            className="text-[8px] font-medium uppercase tracking-[0.3em] text-[var(--site-text-subtle)]"
           />
         ) : null}
 
-        <div
-          className={`relative z-10 flex flex-col justify-center ${
+        <InlineEditableText
+          as="h1"
+          value={headline}
+          field="headline"
+          sectionId={section?.id}
+          node="text"
+          editorContext={
+            editorContext
+          }
+          style={sectionHeadingTextStyle(
+            section,
+            textDefaults,
+          )}
+          className={`${
+            eyebrow ? "mt-4" : ""
+          } whitespace-pre-line leading-[0.94] tracking-[-0.06em] text-[var(--site-text)] ${
             centered
-              ? "mx-auto min-h-0 max-w-[840px]"
-              : editorial
-              ? "min-h-[300px] max-w-[860px]"
-              : minimal
-              ? "max-w-[760px]"
-              : "min-h-[360px] px-[var(--site-page-x)] py-[var(--site-section-y)] lg:h-[410px] lg:min-h-0 lg:w-[31%] lg:py-0"
+              ? "mx-auto"
+              : ""
           }`}
-        >
-          <div
-            data-creator-editor-node={editorContext.editorPreview ? "text" : undefined}
-            onClick={(event) =>
-              handleEditorNodeClick(event, editorContext, section?.id, "text")
+        />
+
+        {intro ? (
+          <InlineEditableText
+            as="p"
+            value={intro}
+            field="intro"
+            sectionId={section?.id}
+            node="text"
+            editorContext={
+              editorContext
             }
-            className={editorNodeClass(editorContext, section?.id, "text")}
-          >
-            <InlineEditableText
-              as="p"
-              value={eyebrow}
-              field="eyebrow"
-              sectionId={section?.id}
-              node="text"
-              editorContext={editorContext}
-              className="text-[7px] font-medium uppercase tracking-[0.38em] text-[var(--site-text-subtle)]"
-            />
-
-            <InlineEditableText
-              as="h1"
-              value={headline}
-              field="headline"
-              sectionId={section?.id}
-              node="text"
-              editorContext={editorContext}
-              className={`mt-4 whitespace-pre-line leading-[0.93] tracking-[-0.065em] text-[var(--site-text)] ${
-                editorial
-                  ? "text-[clamp(3.5rem,7vw,7.5rem)]"
-                  : minimal
-                  ? "text-[clamp(2.25rem,4vw,4.25rem)]"
-                  : "text-[clamp(3rem,3.8vw,4rem)]"
-              } ${
-                centered ? "mx-auto max-w-[760px] text-center" : ""
-              }`}
-            />
-
-            <InlineEditableText
-              as="p"
-              value={intro}
-              field="intro"
-              sectionId={section?.id}
-              node="text"
-              editorContext={editorContext}
-              multiline
-              className={`mt-5 text-[11px] leading-[1.55] text-white/53 ${
-                editorial ? "max-w-[560px]" : "max-w-[355px]"
-              } ${
-                centered ? "mx-auto text-center" : ""
-              }`}
-            />
-          </div>
-
-          <a
-            href={resolvedCtaHref}
-            data-creator-editor-node={editorContext.editorPreview ? "button" : undefined}
-            onClick={(event) =>
-              handleEditorNodeClick(event, editorContext, section?.id, "button")
-            }
-            className={`mt-5 inline-flex h-8 w-fit items-center gap-4 rounded-full border border-[var(--site-border-strong)] px-4 text-[7px] uppercase tracking-[0.2em] text-[var(--site-accent)] transition hover:border-white/35 ${
-              centered ? "mx-auto" : ""
-            } ${editorNodeClass(editorContext, section?.id, "button")}`}
-          >
-            <InlineEditableText
-              value={ctaLabel}
-              field="primaryCtaLabel"
-              sectionId={section?.id}
-              node="button"
-              editorContext={editorContext}
-            />
-            <span>→</span>
-          </a>
-        </div>
-
-        {minimal ? null : (
-          <div
-            className={
+            multiline
+            style={{
+              ...sectionBodyTextStyle(
+                section,
+                textDefaults,
+              ),
+              marginTop:
+                `${sectionTextGap(
+                  section,
+                  textDefaults,
+                )}px`,
+            }}
+            className={`leading-[1.7] text-[var(--site-text-muted)] ${
               centered
-                ? "mx-auto mt-8 w-full max-w-[980px]"
-                : editorial
-                ? "self-center"
-                : "px-[var(--site-page-x)] pb-[var(--site-section-y)] lg:hidden"
+                ? "mx-auto"
+                : ""
+            }`}
+          />
+        ) : null}
+      </div>
+
+      {ctaLabel ? (
+        <a
+          href={resolvedCtaHref}
+          data-creator-editor-node={
+            editorContext.editorPreview
+              ? "button"
+              : undefined
+          }
+          onClick={(event) =>
+            handleEditorNodeClick(
+              event,
+              editorContext,
+              section?.id,
+              "button",
+            )
+          }
+          className={`mt-6 inline-flex h-9 w-fit items-center gap-3 rounded-full border border-[var(--site-border-strong)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35 ${
+            centered
+              ? "mx-auto"
+              : ""
+          } ${editorNodeClass(
+            editorContext,
+            section?.id,
+            "button",
+          )}`}
+        >
+          <InlineEditableText
+            value={ctaLabel}
+            field="primaryCtaLabel"
+            sectionId={section?.id}
+            node="button"
+            editorContext={
+              editorContext
             }
+          />
+
+          <span>→</span>
+        </a>
+      ) : null}
+    </div>
+  );
+
+  const media = minimal ? null : (
+    <HeroInlineMedia
+      section={section}
+      editorContext={
+        editorContext
+      }
+    />
+  );
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section?.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section?.id,
+        )
+      }
+      style={
+        sectionShellOuterStyle(
+          section,
+        )
+      }
+      className={`relative ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section?.id,
+      )}`}
+    >
+      <div
+        style={
+          sectionShellContainerStyle(
+            section,
+          )
+        }
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
+        {variant === "split" ? (
+          <div
+            className="grid items-center lg:grid-cols-[var(--hero-copy)_var(--hero-media)]"
+            style={{
+              gap:
+                `${gap}px`,
+              "--hero-copy":
+                `${100 - mediaShare}fr`,
+              "--hero-media":
+                `${mediaShare}fr`,
+            } as CSSProperties}
           >
-            <HeroInlineMedia
-              section={section}
-              editorContext={editorContext}
-            />
+            {copy}
+            {media}
+          </div>
+        ) : centered ? (
+          <div
+            className="mx-auto max-w-[1100px]"
+          >
+            {copy}
+
+            {media ? (
+              <div
+                className="mx-auto mt-10"
+                style={{
+                  maxWidth:
+                    `${Math.min(
+                      1100,
+                      section?.layout
+                        ?.contentWidth ??
+                        1100,
+                    )}px`,
+                }}
+              >
+                {media}
+              </div>
+            ) : null}
+          </div>
+        ) : editorial ? (
+          <div
+            className="grid items-center lg:grid-cols-[1.15fr_0.85fr]"
+            style={{
+              gap:
+                `${gap}px`,
+            }}
+          >
+            {copy}
+            {media}
+          </div>
+        ) : (
+          <div className="max-w-[900px]">
+            {copy}
           </div>
         )}
       </div>
@@ -1390,11 +2035,12 @@ function CardsSection({
   editorPreview: boolean;
   editorContext: EditorSelectionContext;
 }) {
-  const heading = readContentString(
-    section,
-    "heading",
-    section.label,
-  );
+  const heading =
+    readContentString(
+      section,
+      "heading",
+      section.label,
+    );
 
   const intro =
     readContentString(
@@ -1412,7 +2058,8 @@ function CardsSection({
     );
 
   const columns =
-    section.layout?.columns ?? 3;
+    section.layout?.columns ??
+    3;
 
   if (
     items.length === 0 &&
@@ -1429,11 +2076,19 @@ function CardsSection({
         : "lg:grid-cols-3";
 
   const sectionStyle =
-    cardsSectionStyle(section);
+    cardsSectionStyle(
+      section,
+    );
+
   const containerStyle =
-    cardsContainerStyle(section);
+    cardsContainerStyle(
+      section,
+    );
+
   const gridStyle =
-    cardsGridStyle(section);
+    cardsGridStyle(
+      section,
+    );
 
   return (
     <section
@@ -1487,12 +2142,18 @@ function CardsSection({
             as="h2"
             value={heading}
             field="heading"
-            sectionId={section.id}
+            sectionId={
+              section.id
+            }
             node="text"
             editorContext={
               editorContext
             }
-            className="max-w-[1000px] text-[clamp(2.75rem,5.5vw,5.75rem)] leading-[0.9] tracking-[-0.065em] text-[var(--site-text)]"
+            style={sectionHeadingTextStyle(
+              section,
+              sectionTextDefaults,
+            )}
+            className="leading-[0.92] tracking-[-0.06em] text-[var(--site-text)]"
           />
 
           {intro ? (
@@ -1508,7 +2169,18 @@ function CardsSection({
                 editorContext
               }
               multiline
-              className="mt-5 max-w-[680px] text-[13px] leading-[1.7] text-[var(--site-text-muted)]"
+              style={{
+                ...sectionBodyTextStyle(
+                  section,
+                  sectionTextDefaults,
+                ),
+                marginTop:
+                  `${sectionTextGap(
+                    section,
+                    sectionTextDefaults,
+                  )}px`,
+              }}
+              className="leading-[1.7] text-[var(--site-text-muted)]"
             />
           ) : null}
         </div>
@@ -1517,20 +2189,123 @@ function CardsSection({
           <div
             className={
               variant === "list"
-                ? "grid gap-5"
-                : variant ===
-                    "featured"
-                  ? `grid gap-5 sm:grid-cols-2 ${gridColumns}`
-                  : `grid gap-5 sm:grid-cols-2 ${gridColumns}`
+                ? "grid"
+                : `grid sm:grid-cols-2 ${gridColumns}`
             }
             style={gridStyle}
           >
             {items.map(
               (item, index) => {
-                const featured =
+                const legacyFeatured =
+                  item.emphasis ===
+                    undefined &&
                   variant ===
                     "featured" &&
                   index === 0;
+
+                const featured =
+                  item.span ===
+                    "full" ||
+                  item.emphasis ===
+                    "featured" ||
+                  legacyFeatured;
+
+                const span =
+                  item.span ??
+                  (
+                    featured
+                      ? "full"
+                      : "one"
+                  );
+
+                const mediaPosition =
+                  item.mediaPosition ??
+                  (
+                    featured ||
+                    variant ===
+                      "list"
+                      ? "left"
+                      : "top"
+                  );
+
+                const mediaFit =
+                  item.mediaFit ??
+                  "cover";
+
+                const mediaRatio =
+                  item.mediaRatio ??
+                  (
+                    item.mediaScale ===
+                    "dominant"
+                      ? "4:3"
+                      : "16:9"
+                  );
+
+                const mediaShare =
+                  item.mediaShare ??
+                  (
+                    item.mediaScale ===
+                    "small"
+                      ? 38
+                      : item.mediaScale ===
+                          "dominant"
+                        ? 68
+                        : featured
+                          ? 62
+                          : 48
+                  );
+
+                const mediaZoom =
+                  item.mediaZoom ??
+                  100;
+
+                const mediaPositionX =
+                  item.mediaPositionX ??
+                  50;
+
+                const mediaPositionY =
+                  item.mediaPositionY ??
+                  50;
+
+                const cardMinHeight =
+                  item.minHeight ??
+                  (
+                    featured
+                      ? 460
+                      : 320
+                  );
+
+                const cardPadding =
+                  item.padding ??
+                  (
+                    featured
+                      ? 40
+                      : 24
+                  );
+
+                const titleSize =
+                  item.titleSize ??
+                  (
+                    featured
+                      ? 54
+                      : 30
+                  );
+
+                const bodySize =
+                  item.bodySize ??
+                  (
+                    featured
+                      ? 13
+                      : 11
+                  );
+
+                const textWidth =
+                  item.textWidth ??
+                  (
+                    featured
+                      ? 620
+                      : 520
+                  );
 
                 const resolvedLink =
                   resolveSiteLinkHref(
@@ -1550,15 +2325,39 @@ function CardsSection({
                     item.imageUrl,
                   );
 
+                const aspectRatio =
+                  mediaRatio === "1:1"
+                    ? "1 / 1"
+                    : mediaRatio === "4:3"
+                      ? "4 / 3"
+                      : mediaRatio === "3:2"
+                        ? "3 / 2"
+                        : "16 / 9";
+
+                const sideLayout =
+                  mediaPosition ===
+                    "left" ||
+                  mediaPosition ===
+                    "right";
+
                 const media = (
                   <div
-                    className={
-                      variant ===
-                      "list"
-                        ? "relative min-h-[220px] overflow-hidden bg-[var(--site-surface-strong)] md:min-h-[260px]"
-                        : featured
-                          ? "relative min-h-[320px] overflow-hidden bg-[var(--site-surface-strong)] lg:min-h-[460px]"
-                          : "relative aspect-[16/10] overflow-hidden bg-[var(--site-surface-strong)]"
+                    className={`relative overflow-hidden bg-[var(--site-surface-strong)] ${
+                      sideLayout
+                        ? "min-h-[220px]"
+                        : ""
+                    } ${
+                      mediaPosition ===
+                      "right"
+                        ? "md:order-2"
+                        : ""
+                    }`}
+                    style={
+                      sideLayout
+                        ? undefined
+                        : {
+                            aspectRatio,
+                          }
                     }
                   >
                     {hasImage ? (
@@ -1569,7 +2368,15 @@ function CardsSection({
                         alt={
                           item.imageAlt
                         }
-                        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
+                        className="absolute inset-0 h-full w-full transition duration-300"
+                        style={{
+                          objectFit:
+                            mediaFit,
+                          objectPosition:
+                            `${mediaPositionX}% ${mediaPositionY}%`,
+                          transform:
+                            `scale(${mediaZoom / 100})`,
+                        }}
                       />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.22em] text-[var(--site-text-faint)]">
@@ -1582,15 +2389,22 @@ function CardsSection({
                 const copy = (
                   <div
                     className={`flex min-w-0 flex-1 flex-col justify-between ${
-                      featured
-                        ? "p-7 sm:p-8 lg:p-10"
-                        : variant ===
-                            "list"
-                          ? "p-6 sm:p-7"
-                          : "p-5 sm:p-6"
+                      mediaPosition ===
+                      "right"
+                        ? "md:order-1"
+                        : ""
                     }`}
+                    style={{
+                      padding:
+                        `${cardPadding}px`,
+                    }}
                   >
-                    <div>
+                    <div
+                      style={{
+                        maxWidth:
+                          `${textWidth}px`,
+                      }}
+                    >
                       {item.eyebrow ? (
                         <p className="text-[8px] font-medium uppercase tracking-[0.24em] text-[var(--site-accent)]">
                           {
@@ -1600,14 +2414,15 @@ function CardsSection({
                       ) : null}
 
                       <h3
-                        className={`leading-[0.98] tracking-[-0.05em] text-[var(--site-text)] ${
-                          featured
-                            ? "mt-4 max-w-[720px] text-[clamp(2.25rem,4.5vw,4.75rem)]"
-                            : variant ===
-                                "list"
-                              ? "mt-3 text-[clamp(1.75rem,3vw,3rem)]"
-                              : "mt-3 text-[clamp(1.5rem,2.2vw,2.4rem)]"
-                        }`}
+                        className="mt-3 leading-[0.98] tracking-[-0.05em] text-[var(--site-text)]"
+                        style={{
+                          fontSize:
+                            `clamp(22px, ${Math.max(
+                              2,
+                              titleSize /
+                                12,
+                            )}vw, ${titleSize}px)`,
+                        }}
                       >
                         {item.title ||
                           "Untitled"}
@@ -1615,11 +2430,11 @@ function CardsSection({
 
                       {item.body ? (
                         <p
-                          className={`text-[var(--site-text-muted)] ${
-                            featured
-                              ? "mt-5 max-w-[620px] text-[13px] leading-[1.75]"
-                              : "mt-4 max-w-[520px] text-[11px] leading-[1.7]"
-                          }`}
+                          className="mt-4 leading-[1.7] text-[var(--site-text-muted)]"
+                          style={{
+                            fontSize:
+                              `${bodySize}px`,
+                          }}
                         >
                           {
                             item.body
@@ -1640,14 +2455,19 @@ function CardsSection({
                 );
 
                 const body =
-                  variant ===
-                  "list" ? (
-                    <div className="grid min-h-[260px] md:grid-cols-[38%_62%]">
-                      {media}
-                      {copy}
-                    </div>
-                  ) : featured ? (
-                    <div className="grid min-h-[460px] lg:grid-cols-[1.18fr_0.82fr]">
+                  sideLayout ? (
+                    <div
+                      className="flex flex-col md:grid"
+                      style={{
+                        gridTemplateColumns:
+                          mediaPosition ===
+                          "left"
+                            ? `${mediaShare}% minmax(0, 1fr)`
+                            : `minmax(0, 1fr) ${mediaShare}%`,
+                        minHeight:
+                          `${cardMinHeight}px`,
+                      }}
+                    >
                       {media}
                       {copy}
                     </div>
@@ -1658,21 +2478,41 @@ function CardsSection({
                     </div>
                   );
 
+                const spanClass =
+                  variant === "list"
+                    ? "sm:col-span-full"
+                    : span === "full"
+                      ? "sm:col-span-2 lg:col-span-full"
+                      : span === "two"
+                        ? "sm:col-span-2"
+                        : "";
+
                 const className = [
-                  "group overflow-hidden rounded-[var(--site-radius)]",
+                  "group relative overflow-hidden rounded-[var(--site-radius)]",
                   "border border-[var(--site-border)]",
                   "bg-[var(--site-surface)]",
                   "transition duration-200",
+                  editorBlockClass(
+                    editorContext,
+                    section.id,
+                    item.id,
+                  ),
                   resolvedLink &&
                   resolvedLink !== "#"
                     ? "hover:-translate-y-[2px] hover:border-[var(--site-border-strong)]"
                     : "",
-                  featured
-                    ? "sm:col-span-2 lg:col-span-full"
-                    : "",
+                  spanClass,
                 ]
                   .filter(Boolean)
                   .join(" ");
+
+                const editorLabel =
+                  editorPreview ? (
+                    <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[calc(100%-16px)] truncate rounded bg-black/75 px-2 py-1 text-[8px] font-medium tracking-[0.03em] text-white/75 opacity-0 backdrop-blur-sm transition group-hover:opacity-100">
+                      {item.title ||
+                        "Card"}
+                    </span>
+                  ) : null;
 
                 if (
                   resolvedLink &&
@@ -1686,10 +2526,24 @@ function CardsSection({
                       href={
                         resolvedLink
                       }
+                      data-creator-editor-block={
+                        editorContext.editorPreview
+                          ? item.id
+                          : undefined
+                      }
+                      onClick={(event) =>
+                        handleEditorBlockClick(
+                          event,
+                          editorContext,
+                          section.id,
+                          item.id,
+                        )
+                      }
                       className={
                         className
                       }
                     >
+                      {editorLabel}
                       {body}
                     </a>
                   );
@@ -1700,10 +2554,24 @@ function CardsSection({
                     key={
                       item.id
                     }
+                    data-creator-editor-block={
+                      editorContext.editorPreview
+                        ? item.id
+                        : undefined
+                    }
+                    onClick={(event) =>
+                      handleEditorBlockClick(
+                        event,
+                        editorContext,
+                        section.id,
+                        item.id,
+                      )
+                    }
                     className={
                       className
                     }
                   >
+                    {editorLabel}
                     {body}
                   </article>
                 );
@@ -1719,7 +2587,6 @@ function CardsSection({
     </section>
   );
 }
-
 function SplitSection({
   siteHandle,
   siteDocument,
@@ -1731,55 +2598,97 @@ function SplitSection({
   section: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
-  const eyebrow = readContentString(
-    section,
-    "eyebrow",
-  );
-  const heading = readContentString(
-    section,
-    "heading",
-    section.label,
-  );
-  const body = readContentString(section, "body");
-  const buttonLabel = readContentString(
-    section,
-    "buttonLabel",
-  );
-  const buttonHref = readContentString(
-    section,
-    "buttonHref",
-    "#",
-  );
-  const buttonPageId = readContentString(
-    section,
-    "buttonPageId",
-  );
-  const mediaUrl = readContentString(
-    section,
-    "mediaUrl",
-  );
-  const mediaAlt = readContentString(
-    section,
-    "mediaAlt",
-  );
-  const mediaFit =
-    readContentString(section, "mediaFit") === "contain"
-      ? "contain"
-      : "cover";
+  const eyebrow =
+    readContentString(
+      section,
+      "eyebrow",
+    );
 
-  const variant = sectionVariant(
-    section,
-    "media-right",
-  );
+  const heading =
+    readContentString(
+      section,
+      "heading",
+      section.label,
+    );
 
-  const resolvedHref = resolveSiteLinkHref(
-    siteDocument,
-    siteHandle,
-    {
-      href: buttonHref,
-      pageId: buttonPageId || undefined,
-    },
-  );
+  const body =
+    readContentString(
+      section,
+      "body",
+    );
+
+  const buttonLabel =
+    readContentString(
+      section,
+      "buttonLabel",
+    );
+
+  const buttonHref =
+    readContentString(
+      section,
+      "buttonHref",
+      "#",
+    );
+
+  const buttonPageId =
+    readContentString(
+      section,
+      "buttonPageId",
+    );
+
+  const mediaUrl =
+    readContentString(
+      section,
+      "mediaUrl",
+    );
+
+  const mediaAlt =
+    readContentString(
+      section,
+      "mediaAlt",
+    );
+
+  const media =
+    sectionMediaSettings(
+      section,
+    );
+
+  const variant =
+    sectionVariant(
+      section,
+      "media-right",
+    );
+
+  const mediaShare =
+    section.layout
+      ?.mediaShare ??
+    50;
+
+  const gap =
+    section.layout?.gap ??
+    40;
+
+  const resolvedHref =
+    resolveSiteLinkHref(
+      siteDocument,
+      siteHandle,
+      {
+        href:
+          buttonHref,
+        pageId:
+          buttonPageId ||
+          undefined,
+      },
+    );
+
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 48,
+      headingWidth: 760,
+      bodySize: 14,
+      bodyWidth: 620,
+      textGap: 18,
+    };
 
   const copy = (
     <div
@@ -1796,7 +2705,7 @@ function SplitSection({
           "text",
         )
       }
-      className={`flex min-w-0 flex-col justify-center p-6 sm:p-8 lg:p-12 ${editorNodeClass(
+      className={`flex min-w-0 flex-col justify-center ${editorNodeClass(
         editorContext,
         section.id,
         "text",
@@ -1808,8 +2717,10 @@ function SplitSection({
           field="eyebrow"
           sectionId={section.id}
           node="text"
-          editorContext={editorContext}
-          className="text-[8px] font-medium uppercase tracking-[0.25em] text-[var(--site-accent)]"
+          editorContext={
+            editorContext
+          }
+          className="text-[8px] font-medium uppercase tracking-[0.24em] text-[var(--site-accent)]"
         />
       ) : null}
 
@@ -1819,8 +2730,14 @@ function SplitSection({
         field="heading"
         sectionId={section.id}
         node="text"
-        editorContext={editorContext}
-        className="mt-3 max-w-[720px] text-[clamp(2rem,4.4vw,4.5rem)] leading-[0.94] tracking-[-0.06em] text-[var(--site-text)]"
+        editorContext={
+          editorContext
+        }
+        style={sectionHeadingTextStyle(
+          section,
+          textDefaults,
+        )}
+        className={`${eyebrow ? "mt-3" : ""} leading-[0.96] tracking-[-0.055em] text-[var(--site-text)]`}
       />
 
       {body ? (
@@ -1830,9 +2747,22 @@ function SplitSection({
           field="body"
           sectionId={section.id}
           node="text"
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
           multiline
-          className="mt-5 max-w-[620px] text-[11px] leading-[1.75] text-[var(--site-text-muted)]"
+          style={{
+            ...sectionBodyTextStyle(
+              section,
+              textDefaults,
+            ),
+            marginTop:
+              `${sectionTextGap(
+                section,
+                textDefaults,
+              )}px`,
+          }}
+          className="leading-[1.75] text-[var(--site-text-muted)]"
         />
       ) : null}
 
@@ -1852,7 +2782,7 @@ function SplitSection({
               "button",
             )
           }
-          className={`mt-7 inline-flex h-9 w-fit items-center gap-4 rounded-[var(--site-radius)] border border-[var(--site-border)] px-4 text-[8px] uppercase tracking-[0.18em] text-[var(--site-accent)] ${editorNodeClass(
+          className={`mt-7 inline-flex h-9 w-fit items-center gap-3 rounded-full border border-[var(--site-border-strong)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] ${editorNodeClass(
             editorContext,
             section.id,
             "button",
@@ -1863,7 +2793,9 @@ function SplitSection({
             field="buttonLabel"
             sectionId={section.id}
             node="button"
-            editorContext={editorContext}
+            editorContext={
+              editorContext
+            }
           />
           <span>→</span>
         </a>
@@ -1871,7 +2803,7 @@ function SplitSection({
     </div>
   );
 
-  const media = (
+  const mediaNode = (
     <div
       data-creator-editor-node={
         editorContext.editorPreview
@@ -1886,29 +2818,44 @@ function SplitSection({
           "media",
         )
       }
-      className={`relative min-h-[300px] overflow-hidden bg-[var(--site-surface-strong)] ${editorNodeClass(
+      className={`relative overflow-hidden ${mediaFrameClass(
+        media.frame,
+      )} ${editorNodeClass(
         editorContext,
         section.id,
         "media",
       )}`}
+      style={{
+        minHeight:
+          `${media.height}px`,
+        borderRadius:
+          `${media.radius}px`,
+      }}
     >
       {mediaUrl ? (
         <img
           src={mediaUrl}
           alt={mediaAlt}
-          className={`absolute inset-0 h-full w-full ${
-            mediaFit === "contain"
-              ? "object-contain"
-              : "object-cover"
-          }`}
+          className="absolute inset-0 h-full w-full"
+          style={{
+            objectFit:
+              media.fit,
+            objectPosition:
+              `${media.positionX}% ${media.positionY}%`,
+            transform:
+              `scale(${media.zoom / 100})`,
+          }}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.2em] text-[var(--site-text-faint)]">
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--site-surface-strong)] text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
           Add media
         </div>
       )}
     </div>
   );
+
+  const textShare =
+    100 - mediaShare;
 
   return (
     <section
@@ -1924,6 +2871,11 @@ function SplitSection({
           section.id,
         )
       }
+      style={
+        sectionShellOuterStyle(
+          section,
+        )
+      }
       className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(
@@ -1932,36 +2884,60 @@ function SplitSection({
       )}`}
     >
       <div
+        style={
+          sectionShellContainerStyle(
+            section,
+          )
+        }
         className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
-        <div
-          className={`overflow-hidden rounded-[var(--site-radius)] border border-[var(--site-border)] bg-[var(--site-surface)] ${
-            variant === "stacked"
-              ? "grid"
-              : "grid lg:grid-cols-2"
-          }`}
-        >
-          {variant === "media-left" ? (
-            <>
-              {media}
-              {copy}
-            </>
-          ) : variant === "stacked" ? (
-            <>
-              {copy}
-              <div className="min-h-[360px]">
-                {media}
-              </div>
-            </>
-          ) : (
-            <>
-              {copy}
-              {media}
-            </>
-          )}
-        </div>
+        {variant === "stacked" ? (
+          <div
+            className="grid"
+            style={{
+              gap:
+                `${gap}px`,
+            }}
+          >
+            {copy}
+            {mediaNode}
+          </div>
+        ) : (
+          <div
+            className="grid items-center lg:grid-cols-[var(--split-left)_var(--split-right)]"
+            style={{
+              gap:
+                `${gap}px`,
+
+              "--split-left":
+                variant ===
+                "media-left"
+                  ? `${mediaShare}fr`
+                  : `${textShare}fr`,
+
+              "--split-right":
+                variant ===
+                "media-left"
+                  ? `${textShare}fr`
+                  : `${mediaShare}fr`,
+            } as CSSProperties}
+          >
+            {variant ===
+            "media-left" ? (
+              <>
+                {mediaNode}
+                {copy}
+              </>
+            ) : (
+              <>
+                {copy}
+                {mediaNode}
+              </>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2608,38 +3584,71 @@ function StandaloneMediaSection({
   section: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
-  const mediaUrl = readContentString(section, "mediaUrl");
-  const mediaAlt = readContentString(section, "mediaAlt");
-  const mediaFit =
-    readContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
-  const variant = sectionVariant(section, "contained");
+  const mediaUrl =
+    readContentString(
+      section,
+      "mediaUrl",
+    );
 
-  if (!mediaUrl && !editorContext.editorPreview) return null;
+  const mediaAlt =
+    readContentString(
+      section,
+      "mediaAlt",
+    );
+
+  const media =
+    sectionMediaSettings(
+      section,
+    );
+
+  if (
+    !mediaUrl &&
+    !editorContext.editorPreview
+  ) {
+    return null;
+  }
 
   return (
     <section
       data-creator-editor-section={
-        editorContext.editorPreview ? section.id : undefined
+        editorContext.editorPreview
+          ? section.id
+          : undefined
       }
       onClick={(event) =>
-        handleEditorSectionClick(event, editorContext, section.id)
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      style={
+        sectionShellOuterStyle(
+          section,
+        )
       }
       className={`${sectionBackgroundClass(
         section,
-      )} ${editorSectionClass(editorContext, section.id)}`}
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
     >
       <div
-        className={`mx-auto px-[var(--site-page-x)] ${sectionPaddingClass(
+        style={
+          sectionShellContainerStyle(
+            section,
+          )
+        }
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
-        )} ${
-          variant === "wide"
-            ? "max-w-[var(--site-page-width)]"
-            : "max-w-[1200px]"
-        }`}
+        )}`}
       >
         <div
           data-creator-editor-node={
-            editorContext.editorPreview ? "media" : undefined
+            editorContext.editorPreview
+              ? "media"
+              : undefined
           }
           onClick={(event) =>
             handleEditorNodeClick(
@@ -2649,24 +3658,36 @@ function StandaloneMediaSection({
               "media",
             )
           }
-          className={`relative min-h-[220px] overflow-hidden border border-[var(--site-border)] bg-[var(--site-surface-strong)] ${editorNodeClass(
+          className={`relative overflow-hidden ${mediaFrameClass(
+            media.frame,
+          )} ${editorNodeClass(
             editorContext,
             section.id,
             "media",
           )}`}
+          style={{
+            minHeight:
+              `${media.height}px`,
+            borderRadius:
+              `${media.radius}px`,
+          }}
         >
           {mediaUrl ? (
             <img
               src={mediaUrl}
               alt={mediaAlt}
-              className={`h-full min-h-[220px] w-full ${
-                mediaFit === "cover"
-                  ? "object-cover"
-                  : "object-contain"
-              }`}
+              className="absolute inset-0 h-full w-full"
+              style={{
+                objectFit:
+                  media.fit,
+                objectPosition:
+                  `${media.positionX}% ${media.positionY}%`,
+                transform:
+                  `scale(${media.zoom / 100})`,
+              }}
             />
           ) : (
-            <div className="flex min-h-[260px] items-center justify-center border border-dashed border-[var(--site-border)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
+            <div className="absolute inset-0 flex items-center justify-center bg-[var(--site-surface-strong)] text-[10px] uppercase tracking-[0.18em] text-[var(--site-text-subtle)]">
               Upload media
             </div>
           )}
@@ -2689,29 +3710,45 @@ function SimpleManualSection({
   const narrow = variant === "narrow";
   const split = variant === "split";
 
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 48,
+      headingWidth: 760,
+      bodySize: 14,
+      bodyWidth: 620,
+      textGap: 18,
+    };
+
   return (
     <section
       data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
+      style={sectionShellOuterStyle(section)}
       className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
+        style={sectionShellContainerStyle(
+          section,
+        )}
         className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
-        <SectionRule number="02" label={section.label} />
         <div
-          className={`py-5 ${
+          className={`${
             split
               ? "grid gap-5 md:grid-cols-[0.8fr_1.2fr]"
               : `${narrow ? "mx-auto max-w-[520px] text-center" : sectionWidthClass(section)} ${sectionAlignmentClass(section)}`
           }`}
         >
           <h2
-            className={`leading-none tracking-[-0.05em] text-[var(--site-text)] ${
+            style={sectionHeadingTextStyle(
+              section,
+              textDefaults,
+            )}
+            className={`leading-[0.96] tracking-[-0.05em] text-[var(--site-text)] ${
               split ? "text-[36px]" : "text-[28px]"
             }`}
           >
@@ -2719,7 +3756,18 @@ function SimpleManualSection({
           </h2>
           {body ? (
             <p
-              className={`text-[11px] leading-[1.65] text-[var(--site-text-muted)] ${
+              style={{
+                ...sectionBodyTextStyle(
+                  section,
+                  textDefaults,
+                ),
+                marginTop:
+                  `${sectionTextGap(
+                    section,
+                    textDefaults,
+                  )}px`,
+              }}
+              className={`leading-[1.7] text-[var(--site-text-muted)] ${
                 split ? "mt-1 max-w-[620px]" : "mt-3"
               }`}
             >
@@ -2843,15 +3891,28 @@ function CtaSection({
   const centered = variant === "centered";
   const minimal = variant === "minimal";
 
+  const textDefaults:
+    SectionTextDefaults = {
+      headingSize: 40,
+      headingWidth: 760,
+      bodySize: 14,
+      bodyWidth: 620,
+      textGap: 14,
+    };
+
   return (
     <section
       data-creator-editor-section={editorContext.editorPreview ? section.id : undefined}
       onClick={(event) => handleEditorSectionClick(event, editorContext, section.id)}
+      style={sectionShellOuterStyle(section)}
       className={`${sectionBackgroundClass(
         section,
       )} ${editorSectionClass(editorContext, section.id)}`}
     >
       <div
+        style={sectionShellContainerStyle(
+          section,
+        )}
         className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
@@ -2883,7 +3944,11 @@ function CtaSection({
               sectionId={section.id}
               node="text"
               editorContext={editorContext}
-              className={`leading-none tracking-[-0.055em] text-[var(--site-text)] ${
+              style={sectionHeadingTextStyle(
+                section,
+                textDefaults,
+              )}
+              className={`leading-[0.98] tracking-[-0.055em] text-[var(--site-text)] ${
                 minimal ? "text-[22px]" : "text-[32px]"
               }`}
             />
@@ -2896,7 +3961,18 @@ function CtaSection({
                 node="text"
                 editorContext={editorContext}
                 multiline
-                className="mt-3 text-[11px] leading-[1.65] text-[var(--site-text-muted)]"
+                style={{
+                  ...sectionBodyTextStyle(
+                    section,
+                    textDefaults,
+                  ),
+                  marginTop:
+                    `${sectionTextGap(
+                      section,
+                      textDefaults,
+                    )}px`,
+                }}
+                className="leading-[1.7] text-[var(--site-text-muted)]"
               />
             ) : null}
           </div>
@@ -3020,6 +4096,18 @@ function ContactSection({
       "standard",
     ) === "centered";
 
+  const contactTextDefaults:
+    SectionTextDefaults = {
+      headingSize:
+        formEnabled
+          ? 52
+          : 32,
+      headingWidth: 720,
+      bodySize: 14,
+      bodyWidth: 560,
+      textGap: 16,
+    };
+
   async function submitInquiry(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -3111,23 +4199,33 @@ function ContactSection({
             section?.id,
           )
         }
+        style={sectionShellOuterStyle(
+          section,
+        )}
         className={editorSectionClass(
           editorContext,
           section?.id,
         )}
       >
-        <div className="mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)]">
+        <div
+          style={sectionShellContainerStyle(
+            section,
+          )}
+          className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+            section,
+          )}`}
+        >
           <div
-            className={`grid items-center gap-4 border-b border-[var(--site-border)] ${
+            className={`grid items-center border-b border-[var(--site-border)] ${
               centered
-                ? "min-h-[180px] py-8 text-center"
-                : "min-h-[48px] lg:grid-cols-[210px_1fr_auto]"
+                ? "text-center"
+                : "lg:grid-cols-[1fr_auto]"
             }`}
+            style={{
+              gap:
+                `${section?.layout?.gap ?? 24}px`,
+            }}
           >
-            <SectionRule
-              number="06"
-              label="Contact"
-            />
 
             <div
               data-creator-editor-node={
@@ -3154,13 +4252,17 @@ function ContactSection({
               )}`}
             >
               <InlineEditableText
-                as="p"
+                as="h2"
                 value={heading}
                 field="heading"
                 sectionId={section?.id}
                 node="text"
                 editorContext={editorContext}
-                className="text-[13px] tracking-[-0.02em] text-[var(--site-text)]"
+                style={sectionHeadingTextStyle(
+                  section,
+                  contactTextDefaults,
+                )}
+                className="leading-[0.98] tracking-[-0.03em] text-[var(--site-text)]"
               />
 
               <InlineEditableText
@@ -3171,10 +4273,21 @@ function ContactSection({
                 node="text"
                 editorContext={editorContext}
                 multiline
-                className={`text-[var(--site-text-subtle)] ${
+                style={{
+                  ...sectionBodyTextStyle(
+                    section,
+                    contactTextDefaults,
+                  ),
+                  marginTop:
+                    `${sectionTextGap(
+                      section,
+                      contactTextDefaults,
+                    )}px`,
+                }}
+                className={`leading-[1.65] text-[var(--site-text-subtle)] ${
                   centered
-                    ? "mt-3 text-[10px] leading-5"
-                    : "hidden text-[8px] xl:block"
+                    ? "mx-auto"
+                    : "hidden xl:block"
                 }`}
               />
             </div>
@@ -3232,14 +4345,28 @@ function ContactSection({
           section?.id,
         )
       }
+      style={sectionShellOuterStyle(
+        section,
+      )}
       className={editorSectionClass(
         editorContext,
         section?.id,
       )}
     >
-      <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-[var(--site-section-y)] sm:px-8 lg:px-[58px]">
+      <div
+        style={sectionShellContainerStyle(
+          section,
+        )}
+        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+          section,
+        )}`}
+      >
         <div
-          className={`grid gap-8 ${
+          style={{
+            gap:
+              `${section?.layout?.gap ?? 48}px`,
+          }}
+          className={`grid ${
             centered
               ? "mx-auto max-w-[760px]"
               : "lg:grid-cols-[0.85fr_1.15fr] lg:gap-14"
@@ -3265,11 +4392,6 @@ function ContactSection({
               "text",
             )}`}
           >
-            <SectionRule
-              number="06"
-              label="Contact"
-            />
-
             <InlineEditableText
               as="h2"
               value={heading}
@@ -3277,7 +4399,11 @@ function ContactSection({
               sectionId={section?.id}
               node="text"
               editorContext={editorContext}
-              className="mt-6 text-[clamp(2.4rem,5vw,5rem)] leading-[0.93] tracking-[-0.06em] text-[var(--site-text)]"
+              style={sectionHeadingTextStyle(
+                section,
+                contactTextDefaults,
+              )}
+              className="leading-[0.95] tracking-[-0.055em] text-[var(--site-text)]"
             />
 
             {body ? (
@@ -3289,10 +4415,21 @@ function ContactSection({
                 node="text"
                 editorContext={editorContext}
                 multiline
-                className={`mt-5 text-[11px] leading-[1.75] text-[var(--site-text-subtle)] ${
+                style={{
+                  ...sectionBodyTextStyle(
+                    section,
+                    contactTextDefaults,
+                  ),
+                  marginTop:
+                    `${sectionTextGap(
+                      section,
+                      contactTextDefaults,
+                    )}px`,
+                }}
+                className={`leading-[1.75] text-[var(--site-text-subtle)] ${
                   centered
-                    ? "mx-auto max-w-[620px]"
-                    : "max-w-[520px]"
+                    ? "mx-auto"
+                    : ""
                 }`}
               />
             ) : null}

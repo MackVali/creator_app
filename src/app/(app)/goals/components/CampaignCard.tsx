@@ -11,7 +11,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { Check, ChevronDown, MoreVertical, Plus, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, MoreVertical, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   AnimatePresence,
@@ -207,6 +207,51 @@ const campaignDrawerCompletingSurfaceClass =
 
 type CompletionMutationResult = boolean | void;
 type CampaignDrawerGoalBucket = "active" | "hold" | "completed-hidden";
+
+function clampProgress(value: number) {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function ProgressRing({ progress }: { progress: number }) {
+  const size = 29;
+  const stroke = 2.4;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safeProgress = Math.round(clampProgress(Number(progress) || 0));
+  const offset = circumference - (safeProgress / 100) * circumference;
+
+  return (
+    <div className="relative grid h-[30px] w-[30px] shrink-0 place-items-center">
+      <svg
+        className="-rotate-90"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        aria-hidden="true"
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(244,244,245,0.11)"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(52,211,153,0.78)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+      </svg>
+    </div>
+  );
+}
 
 function reportCampaignDrawerXpTiming(
   label: string,
@@ -422,6 +467,7 @@ function DraggableGoalCard({
   monumentContext,
   hideEnergyPill,
   campaignDrawerRow = false,
+  inlineCampaign = false,
   onGoalManualComplete,
   onGoalManualUndo,
   suppressReadyToast = false,
@@ -465,6 +511,7 @@ function DraggableGoalCard({
   monumentContext?: boolean;
   hideEnergyPill?: boolean;
   campaignDrawerRow?: boolean;
+  inlineCampaign?: boolean;
   suppressReadyToast?: boolean;
   sourceCampaignId?: string | null;
   newGoalRevealId?: string | null;
@@ -805,6 +852,71 @@ function DraggableGoalCard({
         : campaignDrawerCompletedSurfaceClass
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
   }`;
+
+  if (inlineCampaign) {
+    return (
+      <motion.div
+        ref={setGoalNodeRef}
+        className={`relative ${
+          isDragging ? "z-50 scale-[1.015] shadow-2xl" : ""
+        }`}
+        style={{
+          transform: transform
+            ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+            : undefined,
+          transition,
+        }}
+        layout={prefersReducedMotion ? undefined : "position"}
+      >
+        <GoalCard
+          goal={goal}
+          variant="library-list"
+          showWeight={false}
+          showCreatedAt={false}
+          showEmojiPrefix={false}
+          hideEnergyPill
+          monumentContext={monumentContext}
+          open={Boolean(isOpen)}
+          onOpenChange={onOpenChange}
+          onEdit={onGoalEdit ? handleGoalEdit : undefined}
+          onToggleActive={
+            onGoalToggleActive
+              ? () => onGoalToggleActive(goal)
+              : undefined
+          }
+          onDelete={
+            onGoalDelete
+              ? () => onGoalDelete(goal)
+              : undefined
+          }
+          onManualComplete={onGoalManualComplete}
+          onProjectUpdated={(projectId, updates) =>
+            onProjectUpdated?.(goal.id, projectId, updates)
+          }
+          onProjectEditOpen={
+            onProjectEditOpen
+              ? (target, project, origin) =>
+                  onProjectEditOpen(
+                    target,
+                    project.id,
+                    goal.id,
+                    origin
+                  )
+              : undefined
+          }
+          onTaskToggleCompletion={onTaskToggleCompletion}
+          suppressReadyToast={suppressReadyToast}
+          completeWhenProjectsDone
+          completionTheme="emerald"
+          newProjectRevealId={newProjectRevealId}
+          onNewProjectRevealComplete={(projectId) =>
+            onNewProjectRevealComplete?.(goal.id, projectId)
+          }
+          sourceCampaignId={sourceCampaignId}
+        />
+      </motion.div>
+    );
+  }
 
   const compactGoalRow = (
     <motion.button
@@ -1227,7 +1339,7 @@ interface CampaignCardProps {
   goals: Goal[];
   onClick?(): void;
   onAddGoal?: (campaignId: string) => void;
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "library-list";
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
@@ -1435,6 +1547,94 @@ function CampaignCardImpl({
         exit: "exit" as const,
       };
 
+  if (variant === "library-list") {
+    const campaignProgress = localGoals.length
+      ? Math.round(
+          localGoals.reduce(
+            (sum, goal) => sum + clampProgress(Number(goal.progress) || 0),
+            0
+          ) / localGoals.length
+        )
+      : 0;
+    const itemIcon = roadmap.emoji?.trim() || ".";
+    const displayTitle = roadmap.title;
+
+    return (
+      <div
+        className="group relative w-full overflow-hidden rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-[#101116]"
+        data-variant="library-list"
+      >
+        <motion.button
+          type="button"
+          onClick={() => {
+            handleToggle();
+            onClick?.();
+          }}
+          className="flex min-h-[48px] w-full items-center gap-1.5 px-2 py-0.5 text-left sm:min-h-[50px] sm:px-2"
+          {...shellMotionProps}
+        >
+          <ProgressRing progress={campaignProgress} />
+          <div
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-[14px] leading-none opacity-65 grayscale"
+            aria-hidden="true"
+          >
+            {itemIcon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3
+              className="truncate text-[13.5px] font-semibold leading-tight text-zinc-100/88 sm:text-[14px]"
+              title={roadmap.title}
+            >
+              {displayTitle}
+            </h3>
+            <p className="mt-px text-[10px] font-normal leading-none text-white/38">
+              {goalCount} {goalCount === 1 ? "goal" : "goals"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <span className="min-w-[1.75rem] text-right text-[12.5px] font-medium tabular-nums text-white/58">
+              {campaignProgress}%
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-white/24" aria-hidden />
+          </div>
+        </motion.button>
+
+        <AnimatePresence initial={false}>
+          {open ? (
+            <CampaignDrawer
+                inline
+              roadmap={roadmap}
+              goals={localGoals}
+              onClose={handleToggle}
+              onGoalEdit={onGoalEdit}
+              onGoalToggleActive={onGoalToggleActive}
+              onGoalDelete={onGoalDelete}
+              onGoalManualComplete={onGoalManualComplete}
+              onGoalManualUndo={onGoalManualUndo}
+              onProjectUpdated={handleProjectUpdated}
+              onTaskToggleCompletion={onTaskToggleCompletion}
+              onProjectEditOpen={onProjectEditOpen}
+              monumentContext={monumentContext}
+              suppressReadyToast={suppressReadyToast}
+              onAddGoal={onAddGoal}
+              restoreOpen={restoreOpen}
+              restoreOpenGoalId={restoreOpenGoalId}
+              newGoalRevealId={newGoalRevealId}
+              newProjectReveal={newProjectReveal}
+              onNewGoalRevealComplete={onNewGoalRevealComplete}
+              onNewProjectRevealComplete={onNewProjectRevealComplete}
+              onCampaignDetailsSaved={onCampaignDetailsSaved}
+              onGoalsReordered={async (reordered) => {
+                setLocalGoals(reordered);
+                await onRoadmapOrderSaved?.();
+              }}
+            />
+          ) : null}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   if (variant === "compact") {
     const containerBase =
       "group relative h-full rounded-2xl border-2 border-yellow-400 shimmer-border p-3 text-white min-h-[96px]";
@@ -1618,6 +1818,7 @@ type CampaignDrawerProps = {
   roadmap: Roadmap;
   goals: Goal[];
   onClose: () => void;
+  inline?: boolean;
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
@@ -1665,6 +1866,7 @@ function CampaignDrawer({
   roadmap,
   goals,
   onClose,
+  inline = false,
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
@@ -2560,7 +2762,7 @@ function CampaignDrawer({
   }, []);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
+    if (inline || typeof document === "undefined") return;
     const { body } = document;
     if (!body) return;
     const original = body.style.overflow;
@@ -2569,7 +2771,7 @@ function CampaignDrawer({
       body.style.overflow = original;
       queueFabViewportTeardown();
     };
-  }, []);
+  }, [inline]);
 
   if (typeof document === "undefined" || !mounted) return null;
 
@@ -2748,6 +2950,7 @@ function CampaignDrawer({
       monumentContext={monumentContext}
       hideEnergyPill
       campaignDrawerRow
+      inlineCampaign={inline}
       sourceCampaignId={roadmap.id}
       suppressReadyToast={suppressReadyToast}
       newGoalRevealId={newGoalRevealId}
@@ -2762,8 +2965,20 @@ function CampaignDrawer({
   );
 
   const listArea = (
-    <div className="flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5">
-      <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
+    <div
+      className={
+        inline
+          ? "flex min-h-0 flex-col px-2 pb-3 pt-2 sm:px-3"
+          : "flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5"
+      }
+    >
+      <div
+        className={
+          inline
+            ? "min-h-0 overflow-visible pb-1"
+            : "min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5"
+        }
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -2818,6 +3033,17 @@ function CampaignDrawer({
       </div>
     </div>
   );
+
+  if (inline) {
+    return (
+      <div
+        className="overflow-visible border-t border-white/[0.06] bg-black/[0.12]"
+        data-campaign-inline-goals
+      >
+        {listArea}
+      </div>
+    );
+  }
 
   const basePanelClass =
     "relative isolate overflow-hidden rounded-[24px] border border-white/[0.075] bg-[linear-gradient(180deg,#17191D_0%,#0D0E11_44%,#07080A_100%)] text-white/90 shadow-[0_24px_54px_-28px_rgba(0,0,0,0.9),0_12px_28px_-24px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.065)] sm:rounded-[22px]";

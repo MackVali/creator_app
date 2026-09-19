@@ -149,6 +149,27 @@ type SiteCardItem = {
   linkLabel: string;
   linkHref: string;
   linkPageId: string;
+
+  // Legacy presentation values remain readable.
+  emphasis?: "normal" | "featured";
+  mediaScale?: "small" | "balanced" | "dominant";
+
+  // Visual card geometry.
+  span?: "one" | "two" | "full";
+  mediaPosition?: "top" | "left" | "right";
+  mediaFit?: "cover" | "contain";
+  mediaRatio?: "16:9" | "3:2" | "4:3" | "1:1";
+  mediaShare?: number;
+  mediaZoom?: number;
+  mediaPositionX?: number;
+  mediaPositionY?: number;
+  minHeight?: number;
+  padding?: number;
+
+  // Card typography.
+  titleSize?: number;
+  bodySize?: number;
+  textWidth?: number;
 };
 
 type SiteStatItem = {
@@ -681,31 +702,153 @@ function getCardItems(section: SiteSection): SiteCardItem[] {
       return [];
     }
 
-    const candidate = item as Record<string, unknown>;
+    const candidate =
+      item as Record<string, unknown>;
 
     if (typeof candidate.id !== "string") {
       return [];
     }
 
-    const read = (key: string) =>
+    const readString = (key: string) =>
       typeof candidate[key] === "string"
-        ? (candidate[key] as string)
+        ? candidate[key] as string
         : "";
 
-    return [
-      {
-        id: candidate.id,
-        eyebrow: read("eyebrow"),
-        title: read("title"),
-        body: read("body"),
-        imageUrl: read("imageUrl"),
-        imagePath: read("imagePath"),
-        imageAlt: read("imageAlt"),
-        linkLabel: read("linkLabel"),
-        linkHref: read("linkHref"),
-        linkPageId: read("linkPageId"),
-      },
-    ];
+    const readNumber = (
+      key: string,
+      min: number,
+      max: number,
+    ) => {
+      const value = candidate[key];
+
+      return typeof value === "number" &&
+        Number.isFinite(value)
+        ? Math.max(
+            min,
+            Math.min(
+              max,
+              value,
+            ),
+          )
+        : undefined;
+    };
+
+    return [{
+      id: candidate.id,
+      eyebrow: readString("eyebrow"),
+      title: readString("title"),
+      body: readString("body"),
+      imageUrl: readString("imageUrl"),
+      imagePath: readString("imagePath"),
+      imageAlt: readString("imageAlt"),
+      linkLabel: readString("linkLabel"),
+      linkHref: readString("linkHref"),
+      linkPageId: readString("linkPageId"),
+
+      emphasis:
+        candidate.emphasis === "normal" ||
+        candidate.emphasis === "featured"
+          ? candidate.emphasis
+          : undefined,
+
+      mediaScale:
+        candidate.mediaScale === "small" ||
+        candidate.mediaScale === "balanced" ||
+        candidate.mediaScale === "dominant"
+          ? candidate.mediaScale
+          : undefined,
+
+      span:
+        candidate.span === "one" ||
+        candidate.span === "two" ||
+        candidate.span === "full"
+          ? candidate.span
+          : undefined,
+
+      mediaPosition:
+        candidate.mediaPosition === "top" ||
+        candidate.mediaPosition === "left" ||
+        candidate.mediaPosition === "right"
+          ? candidate.mediaPosition
+          : undefined,
+
+      mediaFit:
+        candidate.mediaFit === "cover" ||
+        candidate.mediaFit === "contain"
+          ? candidate.mediaFit
+          : undefined,
+
+      mediaRatio:
+        candidate.mediaRatio === "16:9" ||
+        candidate.mediaRatio === "3:2" ||
+        candidate.mediaRatio === "4:3" ||
+        candidate.mediaRatio === "1:1"
+          ? candidate.mediaRatio
+          : undefined,
+
+      mediaShare:
+        readNumber(
+          "mediaShare",
+          25,
+          75,
+        ),
+
+      mediaZoom:
+        readNumber(
+          "mediaZoom",
+          50,
+          180,
+        ),
+
+      mediaPositionX:
+        readNumber(
+          "mediaPositionX",
+          0,
+          100,
+        ),
+
+      mediaPositionY:
+        readNumber(
+          "mediaPositionY",
+          0,
+          100,
+        ),
+
+      minHeight:
+        readNumber(
+          "minHeight",
+          180,
+          900,
+        ),
+
+      padding:
+        readNumber(
+          "padding",
+          0,
+          120,
+        ),
+
+      titleSize:
+        readNumber(
+          "titleSize",
+          18,
+          96,
+        ),
+
+      bodySize:
+        readNumber(
+          "bodySize",
+          9,
+          28,
+        ),
+
+      textWidth:
+        readNumber(
+          "textWidth",
+          180,
+          1000,
+        ),
+    }];
   });
 }
 
@@ -877,42 +1020,6 @@ function TextAreaInput({
         rows={rows}
         className="mt-1.5 w-full resize-none rounded-md border border-white/[0.09] bg-black/30 px-2.5 py-2 text-[12px] leading-5 text-zinc-100 outline-none transition focus:border-white/[0.18]"
       />
-    </div>
-  );
-}
-
-function SegmentedControl<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: Array<{ label: string; value: T }>;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div>
-      <p className="text-[11px] font-medium text-zinc-500">
-        {label}
-      </p>
-      <div className="mt-1.5 grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-1 rounded-md border border-white/[0.08] bg-black/20 p-1">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`h-6 rounded text-[11px] transition ${
-              value === option.value
-                ? "bg-white/[0.1] text-zinc-100"
-                : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1159,6 +1266,127 @@ function EmbedEditor({
   );
 }
 
+
+function MediaPositionControl({
+  x,
+  y,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  onChange: (
+    x: number,
+    y: number,
+  ) => void;
+}) {
+  const clamp = (
+    value: number,
+  ) =>
+    Math.max(
+      0,
+      Math.min(100, value),
+    );
+
+  return (
+    <div className="px-1 py-2">
+      <div className="mb-2 text-[10px] text-zinc-500">
+        Position
+      </div>
+
+      <div
+        className="relative h-20 cursor-crosshair overflow-hidden rounded-md border border-white/[0.08] bg-black/30"
+        onPointerDown={(event) => {
+          const rect =
+            event.currentTarget
+              .getBoundingClientRect();
+
+          onChange(
+            clamp(
+              (
+                (
+                  event.clientX -
+                  rect.left
+                ) /
+                rect.width
+              ) * 100,
+            ),
+            clamp(
+              (
+                (
+                  event.clientY -
+                  rect.top
+                ) /
+                rect.height
+              ) * 100,
+            ),
+          );
+        }}
+      >
+        <div className="absolute inset-x-0 top-1/2 h-px bg-white/[0.05]" />
+        <div className="absolute inset-y-0 left-1/2 w-px bg-white/[0.05]" />
+
+        <span
+          className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/60 bg-white shadow-lg"
+          style={{
+            left: `${x}%`,
+            top: `${y}%`,
+          }}
+        />
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label>
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-zinc-700">
+            X
+          </span>
+
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={Math.round(x)}
+            onChange={(event) =>
+              onChange(
+                clamp(
+                  Number(
+                    event.target.value,
+                  ),
+                ),
+                y,
+              )
+            }
+            className="h-7 w-full rounded border border-white/[0.08] bg-black/25 px-2 text-[10px] text-zinc-300 outline-none"
+          />
+        </label>
+
+        <label>
+          <span className="mb-1 block text-[8px] uppercase tracking-[0.14em] text-zinc-700">
+            Y
+          </span>
+
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={Math.round(y)}
+            onChange={(event) =>
+              onChange(
+                x,
+                clamp(
+                  Number(
+                    event.target.value,
+                  ),
+                ),
+              )
+            }
+            className="h-7 w-full rounded border border-white/[0.08] bg-black/25 px-2 text-[10px] text-zinc-300 outline-none"
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function MediaEditor({
   section,
   onContentChange,
@@ -1166,137 +1394,439 @@ function MediaEditor({
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
 }) {
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] =
+    useState(false);
 
-  const mediaUrl = getContentString(section, "mediaUrl");
-  const mediaAlt = getContentString(section, "mediaAlt");
+  const [uploadError, setUploadError] =
+    useState<string | null>(null);
+
+  const mediaUrl =
+    getContentString(
+      section,
+      "mediaUrl",
+    );
+
+  const mediaAlt =
+    getContentString(
+      section,
+      "mediaAlt",
+    );
+
   const mediaFit =
-    getContentString(section, "mediaFit") === "cover" ? "cover" : "contain";
+    getContentString(
+      section,
+      "mediaFit",
+    ) === "cover"
+      ? "cover"
+      : "contain";
 
-  async function upload(file: File) {
+  const mediaRatioValue =
+    getContentString(
+      section,
+      "mediaRatio",
+    );
+
+  const mediaRatio =
+    mediaRatioValue === "auto" ||
+    mediaRatioValue === "3:2" ||
+    mediaRatioValue === "4:3" ||
+    mediaRatioValue === "1:1" ||
+    mediaRatioValue === "4:5"
+      ? mediaRatioValue
+      : "16:9";
+
+  const mediaFrameValue =
+    getContentString(
+      section,
+      "mediaFrame",
+    );
+
+  const mediaFrame =
+    mediaFrameValue === "outline" ||
+    mediaFrameValue === "surface"
+      ? mediaFrameValue
+      : "none";
+
+  function readNumber(
+    key: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ) {
+    const value =
+      section.content[key];
+
+    return typeof value === "number" &&
+      Number.isFinite(value)
+      ? Math.max(
+          min,
+          Math.min(
+            max,
+            value,
+          ),
+        )
+      : fallback;
+  }
+
+  const mediaHeight =
+    readNumber(
+      "mediaHeight",
+      360,
+      160,
+      900,
+    );
+
+  const mediaZoom =
+    readNumber(
+      "mediaZoom",
+      100,
+      50,
+      180,
+    );
+
+  const mediaPositionX =
+    readNumber(
+      "mediaPositionX",
+      50,
+      0,
+      100,
+    );
+
+  const mediaPositionY =
+    readNumber(
+      "mediaPositionY",
+      50,
+      0,
+      100,
+    );
+
+  const mediaRadius =
+    readNumber(
+      "mediaRadius",
+      12,
+      0,
+      48,
+    );
+
+  async function upload(
+    file: File,
+  ) {
     setUploading(true);
     setUploadError(null);
 
     try {
-      const result = await uploadSiteImage(file);
-      onContentChange("mediaUrl", result.url);
-      onContentChange("mediaPath", result.path);
+      const result =
+        await uploadSiteImage(
+          file,
+        );
+
+      onContentChange(
+        "mediaUrl",
+        result.url,
+      );
+
+      onContentChange(
+        "mediaPath",
+        result.path,
+      );
     } catch (error) {
       setUploadError(
-        error instanceof Error ? error.message : "Unable to upload image.",
+        error instanceof Error
+          ? error.message
+          : "Unable to upload image.",
       );
     } finally {
       setUploading(false);
     }
   }
 
+  const previewAspect =
+    mediaRatio === "1:1"
+      ? "1 / 1"
+      : mediaRatio === "4:5"
+        ? "4 / 5"
+        : mediaRatio === "4:3"
+          ? "4 / 3"
+          : mediaRatio === "3:2"
+            ? "3 / 2"
+            : "16 / 9";
+
   return (
-    <div className="space-y-3">
-      <div
-        className="relative aspect-[16/9] overflow-hidden rounded-md border border-white/[0.08] bg-black/30 bg-center bg-no-repeat"
-        style={
-          mediaUrl
-            ? {
-                backgroundImage: `url(${mediaUrl})`,
-                backgroundSize: mediaFit,
-              }
-            : undefined
-        }
-      >
-        {!mediaUrl ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-zinc-600">
-            Using template media
-          </div>
+    <div className="space-y-4">
+      <div>
+        <div
+          className={`relative overflow-hidden bg-black/25 ${
+            mediaFrame === "outline"
+              ? "border border-white/[0.12]"
+              : mediaFrame === "surface"
+                ? "border border-white/[0.08] bg-white/[0.035]"
+                : ""
+          }`}
+          style={{
+            aspectRatio:
+              previewAspect,
+            borderRadius:
+              `${mediaRadius}px`,
+          }}
+        >
+          {mediaUrl ? (
+            <div
+              className="absolute inset-0 bg-no-repeat"
+              style={{
+                backgroundImage:
+                  `url(${mediaUrl})`,
+                backgroundSize:
+                  mediaFit === "cover"
+                    ? "cover"
+                    : `${mediaZoom}%`,
+                backgroundPosition:
+                  `${mediaPositionX}% ${mediaPositionY}%`,
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-[10px] text-zinc-700">
+              No uploaded media
+            </div>
+          )}
+        </div>
+
+        <div className="mt-2 flex gap-2">
+          <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.1] px-3 text-[10px] text-zinc-400 transition hover:border-white/[0.2] hover:text-zinc-100">
+            {uploading
+              ? "Uploading…"
+              : mediaUrl
+                ? "Replace"
+                : "Upload"}
+
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+              className="hidden"
+              disabled={uploading}
+              onChange={(event) => {
+                const input =
+                  event.currentTarget;
+
+                const file =
+                  input.files?.[0];
+
+                if (!file) return;
+
+                void upload(
+                  file,
+                ).finally(() => {
+                  input.value = "";
+                });
+              }}
+            />
+          </label>
+
+          {mediaUrl ? (
+            <button
+              type="button"
+              onClick={() => {
+                onContentChange(
+                  "mediaUrl",
+                  "",
+                );
+
+                onContentChange(
+                  "mediaPath",
+                  "",
+                );
+              }}
+              className="h-8 rounded-md border border-white/[0.08] px-3 text-[10px] text-zinc-500 transition hover:border-red-300/20 hover:text-red-200"
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+
+        {uploadError ? (
+          <p className="mt-2 text-[10px] leading-4 text-red-200/80">
+            {uploadError}
+          </p>
         ) : null}
       </div>
-
-      <div className="flex gap-2">
-        <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.1] px-3 text-[11px] text-zinc-300 transition hover:border-white/[0.2] hover:text-zinc-100">
-          {uploading ? "Uploading…" : mediaUrl ? "Replace" : "Upload"}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-            className="hidden"
-            disabled={uploading}
-            onChange={(event) => {
-              const input = event.currentTarget;
-              const file = input.files?.[0];
-              if (!file) return;
-
-              void upload(file).finally(() => {
-                input.value = "";
-              });
-            }}
-          />
-        </label>
-
-        {mediaUrl ? (
-          <button
-            type="button"
-            onClick={() => {
-              onContentChange("mediaUrl", "");
-              onContentChange("mediaPath", "");
-            }}
-            className="h-8 rounded-md border border-white/[0.08] px-3 text-[11px] text-zinc-500 transition hover:border-red-300/20 hover:text-red-200"
-          >
-            Remove
-          </button>
-        ) : null}
-      </div>
-
-      {uploadError ? (
-        <p className="text-[11px] leading-4 text-red-200/80">{uploadError}</p>
-      ) : null}
 
       <TextInput
         id={`site-${section.id}-media-alt`}
         label="Alt text"
         value={mediaAlt}
-        onChange={(value) => onContentChange("mediaAlt", value)}
+        onChange={(value) =>
+          onContentChange(
+            "mediaAlt",
+            value,
+          )
+        }
         placeholder="Describe this image"
       />
 
-      <SegmentedControl
+      <InspectorSegmentedControl
         label="Fit"
         value={mediaFit}
         options={[
-          { label: "Contain", value: "contain" },
-          { label: "Cover", value: "cover" },
+          {
+            label: "Contain",
+            value: "contain",
+          },
+          {
+            label: "Cover",
+            value: "cover",
+          },
         ]}
-        onChange={(value) => onContentChange("mediaFit", value)}
+        onChange={(value) =>
+          onContentChange(
+            "mediaFit",
+            value,
+          )
+        }
+      />
+
+      <InspectorSelectRow
+        label="Ratio"
+        value={mediaRatio}
+        options={[
+          {
+            label: "Auto",
+            value: "auto",
+          },
+          {
+            label: "Wide 16:9",
+            value: "16:9",
+          },
+          {
+            label: "Photo 3:2",
+            value: "3:2",
+          },
+          {
+            label: "Standard 4:3",
+            value: "4:3",
+          },
+          {
+            label: "Square 1:1",
+            value: "1:1",
+          },
+          {
+            label: "Portrait 4:5",
+            value: "4:5",
+          },
+        ]}
+        onChange={(value) =>
+          onContentChange(
+            "mediaRatio",
+            value,
+          )
+        }
+      />
+
+      <InspectorRangeField
+        label="Height"
+        value={mediaHeight}
+        min={160}
+        max={900}
+        step={10}
+        unit="px"
+        onChange={(value) =>
+          onContentChange(
+            "mediaHeight",
+            value,
+          )
+        }
+      />
+
+      <InspectorRangeField
+        label="Zoom"
+        value={mediaZoom}
+        min={50}
+        max={180}
+        step={1}
+        unit="%"
+        onChange={(value) =>
+          onContentChange(
+            "mediaZoom",
+            value,
+          )
+        }
+      />
+
+      <MediaPositionControl
+        x={mediaPositionX}
+        y={mediaPositionY}
+        onChange={(x, y) => {
+          onContentChange(
+            "mediaPositionX",
+            x,
+          );
+
+          onContentChange(
+            "mediaPositionY",
+            y,
+          );
+        }}
+      />
+
+      <InspectorSegmentedControl
+        label="Frame"
+        value={mediaFrame}
+        options={[
+          {
+            label: "None",
+            value: "none",
+          },
+          {
+            label: "Outline",
+            value: "outline",
+          },
+          {
+            label: "Surface",
+            value: "surface",
+          },
+        ]}
+        onChange={(value) =>
+          onContentChange(
+            "mediaFrame",
+            value,
+          )
+        }
+      />
+
+      <InspectorRangeField
+        label="Corners"
+        value={mediaRadius}
+        min={0}
+        max={48}
+        step={1}
+        unit="px"
+        onChange={(value) =>
+          onContentChange(
+            "mediaRadius",
+            value,
+          )
+        }
       />
     </div>
   );
 }
 
-function CardsEditor({
-  site,
+
+function CardsNavigator({
   section,
   onContentChange,
+  onSelectBlock,
 }: {
-  site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
+  onSelectBlock: (blockId: string) => void;
 }) {
   const items = getCardItems(section);
-  const [uploadingItemId, setUploadingItemId] =
-    useState<string | null>(null);
-  const [uploadError, setUploadError] =
-    useState<string | null>(null);
 
-  function setItems(nextItems: SiteCardItem[]) {
-    onContentChange("items", nextItems);
-  }
-
-  function updateItem(
-    itemId: string,
-    updater: (item: SiteCardItem) => SiteCardItem,
+  function setItems(
+    nextItems: SiteCardItem[],
   ) {
-    setItems(
-      items.map((item) =>
-        item.id === itemId ? updater(item) : item,
-      ),
+    onContentChange(
+      "items",
+      nextItems,
     );
   }
 
@@ -1305,12 +1835,16 @@ function CardsEditor({
     direction: "up" | "down",
   ) {
     const index = items.findIndex(
-      (item) => item.id === itemId,
+      (item) =>
+        item.id === itemId,
     );
+
     if (index < 0) return;
 
     const destination =
-      direction === "up" ? index - 1 : index + 1;
+      direction === "up"
+        ? index - 1
+        : index + 1;
 
     if (
       destination < 0 ||
@@ -1320,62 +1854,430 @@ function CardsEditor({
     }
 
     const next = [...items];
-    const [moved] = next.splice(index, 1);
-    next.splice(destination, 0, moved);
+    const [moved] =
+      next.splice(index, 1);
+
+    next.splice(
+      destination,
+      0,
+      moved,
+    );
+
     setItems(next);
   }
 
   function addItem() {
+    const item: SiteCardItem = {
+      id: crypto.randomUUID(),
+      eyebrow: "Project",
+      title: "New card",
+      body: "Describe this item.",
+      imageUrl: "",
+      imagePath: "",
+      imageAlt: "",
+      linkLabel: "View",
+      linkHref: "#",
+      linkPageId: "",
+
+      span: "one",
+      mediaPosition: "top",
+      mediaFit: "cover",
+      mediaRatio: "16:9",
+      mediaShare: 50,
+      mediaZoom: 100,
+      mediaPositionX: 50,
+      mediaPositionY: 50,
+      padding: 24,
+      titleSize: 30,
+      bodySize: 11,
+      textWidth: 520,
+    };
+
     setItems([
       ...items,
-      {
-        id: crypto.randomUUID(),
-        eyebrow: "Project",
-        title: "New card",
-        body: "Describe this item.",
-        imageUrl: "",
-        imagePath: "",
-        imageAlt: "",
-        linkLabel: "View",
-        linkHref: "#",
-        linkPageId: "",
-      },
+      item,
     ]);
+
+    onSelectBlock(
+      item.id,
+    );
   }
 
-  function duplicateItem(item: SiteCardItem) {
-    const index = items.findIndex(
-      (candidate) => candidate.id === item.id,
-    );
+  function duplicateItem(
+    item: SiteCardItem,
+  ) {
+    const index =
+      items.findIndex(
+        (candidate) =>
+          candidate.id === item.id,
+      );
 
     const copy: SiteCardItem = {
       ...item,
       id: crypto.randomUUID(),
-      title: item.title
-        ? `${item.title} copy`
-        : "Card copy",
+      title:
+        item.title
+          ? `${item.title} copy`
+          : "Card copy",
     };
 
     const next = [...items];
-    next.splice(index + 1, 0, copy);
+
+    next.splice(
+      index + 1,
+      0,
+      copy,
+    );
+
     setItems(next);
+
+    onSelectBlock(
+      copy.id,
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {items.map(
+        (item, index) => (
+          <div
+            key={item.id}
+            className="group flex min-h-10 items-center gap-1 rounded-md border border-white/[0.07] bg-black/20 p-1"
+          >
+            <button
+              type="button"
+              onClick={() =>
+                onSelectBlock(
+                  item.id,
+                )
+              }
+              className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left transition hover:bg-white/[0.04]"
+            >
+              {item.imageUrl ? (
+                <span
+                  className="h-7 w-9 shrink-0 rounded-[3px] border border-white/[0.08] bg-contain bg-center bg-no-repeat"
+                  style={{
+                    backgroundImage:
+                      `url(${item.imageUrl})`,
+                  }}
+                />
+              ) : (
+                <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-[3px] border border-white/[0.08] bg-black/30">
+                  <ImageIcon className="h-3 w-3 text-zinc-700" />
+                </span>
+              )}
+
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-medium text-zinc-300">
+                  {item.title ||
+                    `Card ${index + 1}`}
+                </span>
+
+                <span className="mt-0.5 block text-[9px] text-zinc-700">
+                  Edit card
+                </span>
+              </span>
+
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-700 transition group-hover:text-zinc-400" />
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                index === 0
+              }
+              onClick={() =>
+                moveItem(
+                  item.id,
+                  "up",
+                )
+              }
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-20"
+              title="Move earlier"
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                index ===
+                items.length - 1
+              }
+              onClick={() =>
+                moveItem(
+                  item.id,
+                  "down",
+                )
+              }
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-20"
+              title="Move later"
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+
+            <details className="group/actions relative shrink-0">
+              <summary
+                className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 [&::-webkit-details-marker]:hidden"
+                title="Card actions"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </summary>
+
+              <div className="absolute right-0 top-8 z-30 w-32 rounded-md border border-white/[0.1] bg-[#111214] p-1 shadow-2xl">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute(
+                        "open",
+                      );
+
+                    duplicateItem(
+                      item,
+                    );
+                  }}
+                  className="flex h-8 w-full items-center gap-2 rounded px-2 text-[10px] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"
+                >
+                  <Copy className="h-3 w-3" />
+                  Duplicate
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute(
+                        "open",
+                      );
+
+                    setItems(
+                      items.filter(
+                        (candidate) =>
+                          candidate.id !==
+                          item.id,
+                      ),
+                    );
+                  }}
+                  className="flex h-8 w-full items-center gap-2 rounded px-2 text-[10px] text-zinc-500 hover:bg-red-400/[0.08] hover:text-red-200"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </button>
+              </div>
+            </details>
+          </div>
+        ),
+      )}
+
+      <button
+        type="button"
+        onClick={addItem}
+        className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-dashed border-white/[0.1] text-[10px] text-zinc-500 transition hover:border-white/[0.18] hover:text-zinc-200"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add card
+      </button>
+    </div>
+  );
+}
+
+function CardBlockInspectorPanel({
+  site,
+  section,
+  blockId,
+  onContentChange,
+}: {
+  site: SiteDocument;
+  section: SiteSection;
+  blockId: string;
+  onContentChange: SiteContentChangeHandler;
+}) {
+  const items =
+    getCardItems(section);
+
+  const index =
+    items.findIndex(
+      (candidate) =>
+        candidate.id === blockId,
+    );
+
+  const item =
+    index >= 0
+      ? items[index]
+      : undefined;
+
+  const [uploading, setUploading] =
+    useState(false);
+
+  const [uploadError, setUploadError] =
+    useState<string | null>(null);
+
+  if (!item) {
+    return (
+      <div className="p-4">
+        <p className="text-[11px] text-zinc-500">
+          This card could not be found.
+        </p>
+      </div>
+    );
+  }
+
+  const variant =
+    section.layout?.variant ??
+    "grid";
+
+  const legacyFeatured =
+    item.emphasis === undefined &&
+    variant === "featured" &&
+    index === 0;
+
+  const legacyExplicitFeatured =
+    item.emphasis ===
+    "featured";
+
+  const inferredFeatured =
+    legacyFeatured ||
+    legacyExplicitFeatured;
+
+  const span =
+    item.span ??
+    (
+      inferredFeatured
+        ? "full"
+        : "one"
+    );
+
+  const featured =
+    span === "full" ||
+    inferredFeatured;
+
+  const mediaPosition =
+    item.mediaPosition ??
+    (
+      featured ||
+      variant === "list"
+        ? "left"
+        : "top"
+    );
+
+  const mediaFit =
+    item.mediaFit ??
+    "cover";
+
+  const mediaRatio =
+    item.mediaRatio ??
+    (
+      item.mediaScale ===
+      "dominant"
+        ? "4:3"
+        : "16:9"
+    );
+
+  const mediaShare =
+    item.mediaShare ??
+    (
+      item.mediaScale ===
+      "small"
+        ? 38
+        : item.mediaScale ===
+            "dominant"
+          ? 68
+          : featured
+            ? 62
+            : 48
+    );
+
+  const mediaZoom =
+    item.mediaZoom ??
+    100;
+
+  const mediaPositionX =
+    item.mediaPositionX ??
+    50;
+
+  const mediaPositionY =
+    item.mediaPositionY ??
+    50;
+
+  const minHeight =
+    item.minHeight ??
+    (
+      featured
+        ? 460
+        : 320
+    );
+
+  const padding =
+    item.padding ??
+    (
+      featured
+        ? 40
+        : 24
+    );
+
+  const titleSize =
+    item.titleSize ??
+    (
+      featured
+        ? 54
+        : 30
+    );
+
+  const bodySize =
+    item.bodySize ??
+    (
+      featured
+        ? 13
+        : 11
+    );
+
+  const textWidth =
+    item.textWidth ??
+    (
+      featured
+        ? 620
+        : 520
+    );
+
+  function updateItem(
+    patch: Partial<SiteCardItem>,
+  ) {
+    onContentChange(
+      "items",
+      items.map(
+        (candidate) =>
+          candidate.id ===
+          item.id
+            ? {
+                ...candidate,
+                ...patch,
+              }
+            : candidate,
+      ),
+    );
   }
 
   async function uploadImage(
-    itemId: string,
     file: File,
   ) {
-    setUploadingItemId(itemId);
+    setUploading(true);
     setUploadError(null);
 
     try {
-      const result = await uploadSiteImage(file);
+      const result =
+        await uploadSiteImage(
+          file,
+        );
 
-      updateItem(itemId, (item) => ({
-        ...item,
-        imageUrl: result.url,
-        imagePath: result.path,
-      }));
+      updateItem({
+        imageUrl:
+          result.url,
+        imagePath:
+          result.path,
+      });
     } catch (error) {
       setUploadError(
         error instanceof Error
@@ -1383,293 +2285,443 @@ function CardsEditor({
           : "Unable to upload card image.",
       );
     } finally {
-      setUploadingItemId(null);
+      setUploading(false);
     }
   }
 
   return (
-    <div className="space-y-2">
-      {uploadError ? (
-        <p className="rounded-md border border-red-400/20 bg-red-400/[0.04] px-3 py-2 text-[11px] leading-4 text-red-200/80">
-          {uploadError}
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <p className="truncate text-[15px] font-medium text-zinc-100">
+          {item.title ||
+            "Untitled card"}
         </p>
-      ) : null}
 
-      {items.map((item, index) => (
-        <details
-          key={item.id}
-          className="group rounded-md border border-white/[0.08] bg-black/20"
-          open={items.length <= 2}
-        >
-          <summary className="flex h-9 cursor-pointer list-none items-center gap-2 px-2.5 text-[11px] text-zinc-300 [&::-webkit-details-marker]:hidden">
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600 transition group-open:rotate-90" />
+        <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+          {section.label} / Card
+        </p>
+      </div>
 
-            {item.imageUrl ? (
-              <span
-                className="h-5 w-6 shrink-0 rounded-sm border border-white/[0.08] bg-cover bg-center"
-                style={{
-                  backgroundImage: `url(${item.imageUrl})`,
-                }}
-              />
-            ) : (
-              <span className="flex h-5 w-6 shrink-0 items-center justify-center rounded-sm border border-white/[0.08]">
-                <ImageIcon className="h-3 w-3 text-zinc-700" />
-              </span>
-            )}
-
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {item.title || `Card ${index + 1}`}
-            </span>
-
-            <span className="text-[10px] text-zinc-700">
-              {index + 1}
-            </span>
-          </summary>
-
-          <div className="space-y-3 border-t border-white/[0.06] p-2.5">
-            <div className="grid grid-cols-2 gap-2">
-              <TextInput
-                id={`site-card-eyebrow-${item.id}`}
-                label="Eyebrow"
-                value={item.eyebrow}
-                onChange={(value) =>
-                  updateItem(item.id, (current) => ({
-                    ...current,
-                    eyebrow: value,
-                  }))
-                }
-              />
-
-              <TextInput
-                id={`site-card-title-${item.id}`}
-                label="Title"
-                value={item.title}
-                onChange={(value) =>
-                  updateItem(item.id, (current) => ({
-                    ...current,
-                    title: value,
-                  }))
-                }
-              />
-            </div>
-
-            <TextAreaInput
-              id={`site-card-body-${item.id}`}
-              label="Description"
-              value={item.body}
-              rows={3}
+      <div className="space-y-5 p-4">
+        <InspectorGroup title="Content">
+          <div className="space-y-3">
+            <TextInput
+              id={`site-card-block-eyebrow-${item.id}`}
+              label="Eyebrow"
+              value={item.eyebrow}
               onChange={(value) =>
-                updateItem(item.id, (current) => ({
-                  ...current,
-                  body: value,
-                }))
+                updateItem({
+                  eyebrow: value,
+                })
               }
             />
 
-            <div>
-              <FieldLabel>Image</FieldLabel>
+            <TextInput
+              id={`site-card-block-title-${item.id}`}
+              label="Title"
+              value={item.title}
+              onChange={(value) =>
+                updateItem({
+                  title: value,
+                })
+              }
+            />
 
-              {item.imageUrl ? (
-                <div className="mt-1.5 overflow-hidden rounded-md border border-white/[0.08] bg-black/30">
-                  <div
-                    className="h-24 bg-contain bg-center bg-no-repeat"
-                    style={{
-                      backgroundImage: `url(${item.imageUrl})`,
-                    }}
-                  />
-
-                  <div className="flex gap-2 border-t border-white/[0.06] p-2">
-                    <label className="flex h-7 cursor-pointer items-center rounded border border-white/[0.09] px-2 text-[10px] text-zinc-400 hover:text-zinc-100">
-                      {uploadingItemId === item.id
-                        ? "Uploading…"
-                        : "Replace"}
-
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                        disabled={uploadingItemId !== null}
-                        className="hidden"
-                        onChange={(event) => {
-                          const input = event.currentTarget;
-                          const file = input.files?.[0];
-                          if (!file) return;
-
-                          void uploadImage(
-                            item.id,
-                            file,
-                          ).finally(() => {
-                            input.value = "";
-                          });
-                        }}
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateItem(
-                          item.id,
-                          (current) => ({
-                            ...current,
-                            imageUrl: "",
-                            imagePath: "",
-                          }),
-                        )
-                      }
-                      className="h-7 rounded border border-white/[0.09] px-2 text-[10px] text-zinc-500 hover:text-red-200"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <label className="mt-1.5 flex h-16 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-white/[0.1] text-[10px] text-zinc-600 hover:border-white/[0.18] hover:text-zinc-300">
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  {uploadingItemId === item.id
-                    ? "Uploading…"
-                    : "Upload image"}
-
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                    disabled={uploadingItemId !== null}
-                    className="hidden"
-                    onChange={(event) => {
-                      const input = event.currentTarget;
-                      const file = input.files?.[0];
-                      if (!file) return;
-
-                      void uploadImage(
-                        item.id,
-                        file,
-                      ).finally(() => {
-                        input.value = "";
-                      });
-                    }}
-                  />
-                </label>
-              )}
-
-              {item.imageUrl ? (
-                <div className="mt-2">
-                  <TextInput
-                    id={`site-card-alt-${item.id}`}
-                    label="Alt text"
-                    value={item.imageAlt}
-                    onChange={(value) =>
-                      updateItem(
-                        item.id,
-                        (current) => ({
-                          ...current,
-                          imageAlt: value,
-                        }),
-                      )
-                    }
-                  />
-                </div>
-              ) : null}
-            </div>
+            <TextAreaInput
+              id={`site-card-block-body-${item.id}`}
+              label="Description"
+              value={item.body}
+              rows={4}
+              onChange={(value) =>
+                updateItem({
+                  body: value,
+                })
+              }
+            />
 
             <TextInput
-              id={`site-card-link-label-${item.id}`}
+              id={`site-card-block-link-label-${item.id}`}
               label="Link label"
               value={item.linkLabel}
               onChange={(value) =>
-                updateItem(item.id, (current) => ({
-                  ...current,
-                  linkLabel: value,
-                }))
+                updateItem({
+                  linkLabel:
+                    value,
+                })
               }
             />
 
             <SiteLinkTargetEditor
-              idPrefix={`site-card-link-${item.id}`}
+              idPrefix={`site-card-block-link-${item.id}`}
               site={site}
-              pageId={item.linkPageId}
-              href={item.linkHref}
+              pageId={
+                item.linkPageId
+              }
+              href={
+                item.linkHref
+              }
               onPageIdChange={(value) =>
-                updateItem(item.id, (current) => ({
-                  ...current,
-                  linkPageId: value,
-                }))
+                updateItem({
+                  linkPageId:
+                    value,
+                })
               }
               onHrefChange={(value) =>
-                updateItem(item.id, (current) => ({
-                  ...current,
-                  linkHref: value,
-                }))
+                updateItem({
+                  linkHref:
+                    value,
+                })
+              }
+            />
+          </div>
+        </InspectorGroup>
+
+        <InspectorGroup title="Layout">
+          <div>
+            {variant !== "list" ? (
+              <InspectorSegmentedControl
+                label="Card width"
+                value={span}
+                options={[
+                  {
+                    label: "1 col",
+                    value: "one",
+                  },
+                  {
+                    label: "2 col",
+                    value: "two",
+                  },
+                  {
+                    label: "Full",
+                    value: "full",
+                  },
+                ]}
+                onChange={(value) =>
+                  updateItem({
+                    span: value,
+                  })
+                }
+              />
+            ) : null}
+
+            <InspectorSegmentedControl
+              label="Media layout"
+              value={mediaPosition}
+              options={[
+                {
+                  label: "Top",
+                  value: "top",
+                },
+                {
+                  label: "Left",
+                  value: "left",
+                },
+                {
+                  label: "Right",
+                  value: "right",
+                },
+              ]}
+              onChange={(value) =>
+                updateItem({
+                  mediaPosition:
+                    value,
+                })
               }
             />
 
-            <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  disabled={index === 0}
-                  onClick={() =>
-                    moveItem(item.id, "up")
+            {mediaPosition !==
+            "top" ? (
+              <>
+                <InspectorRangeField
+                  label="Media width"
+                  value={mediaShare}
+                  min={25}
+                  max={75}
+                  step={1}
+                  unit="%"
+                  onChange={(value) =>
+                    updateItem({
+                      mediaShare:
+                        value,
+                    })
                   }
-                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
-                  title="Move earlier"
-                >
-                  <ArrowUp className="h-3 w-3" />
-                </button>
+                />
 
-                <button
-                  type="button"
-                  disabled={
-                    index === items.length - 1
+                <InspectorRangeField
+                  label="Card height"
+                  value={minHeight}
+                  min={220}
+                  max={900}
+                  step={10}
+                  unit="px"
+                  onChange={(value) =>
+                    updateItem({
+                      minHeight:
+                        value,
+                    })
                   }
-                  onClick={() =>
-                    moveItem(item.id, "down")
-                  }
-                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
-                  title="Move later"
-                >
-                  <ArrowDown className="h-3 w-3" />
-                </button>
+                />
+              </>
+            ) : null}
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    duplicateItem(item)
-                  }
-                  className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:text-zinc-200"
-                  title="Duplicate card"
-                >
-                  <Copy className="h-3 w-3" />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setItems(
-                    items.filter(
-                      (candidate) =>
-                        candidate.id !== item.id,
-                    ),
-                  )
-                }
-                className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
-                title="Delete card"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            </div>
+            <InspectorRangeField
+              label="Card padding"
+              value={padding}
+              min={0}
+              max={96}
+              step={2}
+              unit="px"
+              onChange={(value) =>
+                updateItem({
+                  padding: value,
+                })
+              }
+            />
           </div>
-        </details>
-      ))}
+        </InspectorGroup>
 
-      <button
-        type="button"
-        onClick={addItem}
-        className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add card
-      </button>
-    </div>
+        <InspectorGroup title="Media">
+          <div className="space-y-3">
+            <div
+              className="relative aspect-[16/9] overflow-hidden rounded-md border border-white/[0.08] bg-[var(--site-surface-strong)] bg-no-repeat"
+              style={
+                item.imageUrl
+                  ? {
+                      backgroundImage:
+                        `url(${item.imageUrl})`,
+                      backgroundSize:
+                        mediaFit ===
+                        "contain"
+                          ? `${mediaZoom}%`
+                          : "cover",
+                      backgroundPosition:
+                        `${mediaPositionX}% ${mediaPositionY}%`,
+                    }
+                  : undefined
+              }
+            >
+              {!item.imageUrl ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-zinc-700">
+                  No media
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex gap-2">
+              <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.1] px-3 text-[10px] text-zinc-400 transition hover:border-white/[0.2] hover:text-zinc-100">
+                {uploading
+                  ? "Uploading…"
+                  : item.imageUrl
+                    ? "Replace"
+                    : "Upload"}
+
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  disabled={uploading}
+                  className="hidden"
+                  onChange={(event) => {
+                    const input =
+                      event.currentTarget;
+
+                    const file =
+                      input.files?.[0];
+
+                    if (!file) return;
+
+                    void uploadImage(
+                      file,
+                    ).finally(() => {
+                      input.value =
+                        "";
+                    });
+                  }}
+                />
+              </label>
+
+              {item.imageUrl ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateItem({
+                      imageUrl: "",
+                      imagePath: "",
+                    })
+                  }
+                  className="h-8 rounded-md border border-white/[0.08] px-3 text-[10px] text-zinc-500 transition hover:border-red-300/20 hover:text-red-200"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+
+            {uploadError ? (
+              <p className="text-[10px] leading-4 text-red-200/80">
+                {uploadError}
+              </p>
+            ) : null}
+
+            {item.imageUrl ? (
+              <TextInput
+                id={`site-card-block-alt-${item.id}`}
+                label="Alt text"
+                value={item.imageAlt}
+                onChange={(value) =>
+                  updateItem({
+                    imageAlt:
+                      value,
+                  })
+                }
+              />
+            ) : null}
+
+            <InspectorSegmentedControl
+              label="Fit"
+              value={mediaFit}
+              options={[
+                {
+                  label: "Contain",
+                  value: "contain",
+                },
+                {
+                  label: "Cover",
+                  value: "cover",
+                },
+              ]}
+              onChange={(value) =>
+                updateItem({
+                  mediaFit:
+                    value,
+                })
+              }
+            />
+
+            <InspectorSelectRow
+              label="Ratio"
+              value={mediaRatio}
+              options={[
+                {
+                  label: "Wide 16:9",
+                  value: "16:9",
+                },
+                {
+                  label: "Photo 3:2",
+                  value: "3:2",
+                },
+                {
+                  label: "Standard 4:3",
+                  value: "4:3",
+                },
+                {
+                  label: "Square 1:1",
+                  value: "1:1",
+                },
+              ]}
+              onChange={(value) =>
+                updateItem({
+                  mediaRatio:
+                    value,
+                })
+              }
+            />
+
+            <InspectorRangeField
+              label="Zoom"
+              value={mediaZoom}
+              min={50}
+              max={180}
+              step={1}
+              unit="%"
+              onChange={(value) =>
+                updateItem({
+                  mediaZoom:
+                    value,
+                })
+              }
+            />
+
+            <InspectorRangeField
+              label="Position X"
+              value={mediaPositionX}
+              min={0}
+              max={100}
+              step={1}
+              unit="%"
+              onChange={(value) =>
+                updateItem({
+                  mediaPositionX:
+                    value,
+                })
+              }
+            />
+
+            <InspectorRangeField
+              label="Position Y"
+              value={mediaPositionY}
+              min={0}
+              max={100}
+              step={1}
+              unit="%"
+              onChange={(value) =>
+                updateItem({
+                  mediaPositionY:
+                    value,
+                })
+              }
+            />
+          </div>
+        </InspectorGroup>
+
+        <InspectorGroup title="Typography">
+          <div>
+            <InspectorRangeField
+              label="Title size"
+              value={titleSize}
+              min={18}
+              max={80}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                updateItem({
+                  titleSize:
+                    value,
+                })
+              }
+            />
+
+            <InspectorRangeField
+              label="Body size"
+              value={bodySize}
+              min={9}
+              max={22}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                updateItem({
+                  bodySize:
+                    value,
+                })
+              }
+            />
+
+            <InspectorRangeField
+              label="Text width"
+              value={textWidth}
+              min={200}
+              max={900}
+              step={10}
+              unit="px"
+              onChange={(value) =>
+                updateItem({
+                  textWidth:
+                    value,
+                })
+              }
+            />
+          </div>
+        </InspectorGroup>
+      </div>
+    </>
   );
 }
 
@@ -2377,6 +3429,7 @@ function InspectorContentPanel({
   site,
   section,
   onContentChange,
+  onSelectBlock,
   sourceStatus,
   sourceError,
   sourceProducts,
@@ -2389,6 +3442,7 @@ function InspectorContentPanel({
   site: SiteDocument;
   section: SiteSection;
   onContentChange: SiteContentChangeHandler;
+  onSelectBlock: (blockId: string) => void;
   sourceStatus: "idle" | "loading" | "loaded" | "error";
   sourceError: string | null;
   sourceProducts: SourceListing[];
@@ -2566,11 +3620,11 @@ function InspectorContentPanel({
           />
         </InspectorGroup>
 
-        <InspectorGroup title="Cards">
-          <CardsEditor
-            site={site}
+        <InspectorGroup title="Items">
+          <CardsNavigator
             section={section}
             onContentChange={onContentChange}
+            onSelectBlock={onSelectBlock}
           />
         </InspectorGroup>
       </div>
@@ -3719,6 +4773,102 @@ function InspectorSpacingControl({
   );
 }
 
+
+function sectionUsesPreciseEditor(
+  section: SiteSection,
+) {
+  return (
+    section.type === "hero" ||
+    section.type === "content" ||
+    section.type === "split" ||
+    section.type === "cards" ||
+    section.type === "cta" ||
+    section.type === "contact"
+  );
+}
+
+function sectionTypographyDefaults(
+  section: SiteSection,
+) {
+  if (section.type === "hero") {
+    return {
+      headingSize: 72,
+      headingWidth: 780,
+      bodySize: 14,
+      bodyWidth: 520,
+      textGap: 20,
+    };
+  }
+
+  if (section.type === "cards") {
+    return {
+      headingSize: 64,
+      headingWidth: 1000,
+      bodySize: 14,
+      bodyWidth: 680,
+      textGap: 18,
+    };
+  }
+
+  if (section.type === "contact") {
+    return {
+      headingSize: 52,
+      headingWidth: 720,
+      bodySize: 14,
+      bodyWidth: 560,
+      textGap: 18,
+    };
+  }
+
+  if (section.type === "cta") {
+    return {
+      headingSize: 40,
+      headingWidth: 760,
+      bodySize: 14,
+      bodyWidth: 620,
+      textGap: 14,
+    };
+  }
+
+  return {
+    headingSize: 48,
+    headingWidth: 760,
+    bodySize: 14,
+    bodyWidth: 620,
+    textGap: 18,
+  };
+}
+
+function preciseSectionPadding(
+  section: SiteSection,
+) {
+  const layout =
+    section.layout ?? {};
+
+  const fallback =
+    layout.spacing === "compact"
+      ? 32
+      : layout.spacing ===
+          "spacious"
+        ? 72
+        : 56;
+
+  return {
+    top:
+      layout.paddingTopPx ??
+      fallback,
+    right:
+      layout.paddingRightPx ??
+      48,
+    bottom:
+      layout.paddingBottomPx ??
+      fallback,
+    left:
+      layout.paddingLeftPx ??
+      48,
+  };
+}
+
 function InspectorDesignPanel({
   section,
   onLayoutChange,
@@ -3777,6 +4927,24 @@ function InspectorDesignPanel({
   const divider =
     section.style?.divider ??
     "none";
+
+  const preciseSectionControls =
+    sectionUsesPreciseEditor(
+      section,
+    );
+
+  const sectionLayout =
+    section.layout ?? {};
+
+  const typographyDefaults =
+    sectionTypographyDefaults(
+      section,
+    );
+
+  const sharedPadding =
+    preciseSectionPadding(
+      section,
+    );
 
   if (section.type === "cards") {
     const layout = section.layout ?? {};
@@ -4023,6 +5191,99 @@ function InspectorDesignPanel({
           />
         </InspectorGroup>
 
+
+        <InspectorGroup title="Typography">
+          <InspectorRangeField
+            label="Heading size"
+            value={
+              layout.headingSize ??
+              typographyDefaults.headingSize
+            }
+            min={24}
+            max={120}
+            step={1}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "headingSize",
+                value,
+              )
+            }
+          />
+
+          <InspectorRangeField
+            label="Heading width"
+            value={
+              layout.headingWidth ??
+              typographyDefaults.headingWidth
+            }
+            min={320}
+            max={1400}
+            step={10}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "headingWidth",
+                value,
+              )
+            }
+          />
+
+          <InspectorRangeField
+            label="Intro size"
+            value={
+              layout.bodySize ??
+              typographyDefaults.bodySize
+            }
+            min={10}
+            max={24}
+            step={1}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "bodySize",
+                value,
+              )
+            }
+          />
+
+          <InspectorRangeField
+            label="Intro width"
+            value={
+              layout.bodyWidth ??
+              typographyDefaults.bodyWidth
+            }
+            min={260}
+            max={1000}
+            step={10}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "bodyWidth",
+                value,
+              )
+            }
+          />
+
+          <InspectorRangeField
+            label="Heading → intro"
+            value={
+              layout.textGap ??
+              typographyDefaults.textGap
+            }
+            min={0}
+            max={64}
+            step={1}
+            unit="px"
+            onChange={(value) =>
+              onLayoutChange(
+                "textGap",
+                value,
+              )
+            }
+          />
+        </InspectorGroup>
+
         <InspectorGroup title="Appearance">
           <div>
             <InspectorSelectRow
@@ -4253,7 +5514,37 @@ function InspectorDesignPanel({
               />
             ) : null}
 
-            {supportsWidth ? (
+            {(
+              (
+                section.type === "hero" &&
+                currentVariant === "split"
+              ) ||
+              (
+                section.type === "split" &&
+                currentVariant !== "stacked"
+              )
+            ) ? (
+              <InspectorRangeField
+                label="Media share"
+                value={
+                  sectionLayout.mediaShare ??
+                  66
+                }
+                min={25}
+                max={75}
+                step={1}
+                unit="%"
+                onChange={(value) =>
+                  onLayoutChange(
+                    "mediaShare",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+
+            {supportsWidth &&
+            !preciseSectionControls ? (
               <InspectorSelectRow
                 label="Width"
                 value={
@@ -4351,97 +5642,292 @@ function InspectorDesignPanel({
       ) : null}
 
 
-      {/* SPACING */}
-      <InspectorGroup title="Section">
-        <InspectorSelectRow
-          label="Size"
-          value={
-            section.layout?.size ??
-            "default"
-          }
-          options={[
-            {
-              label: "Default",
-              value: "default",
-            },
-            {
-              label: "Compact",
-              value: "compact",
-            },
-            {
-              label: "Standard",
-              value: "standard",
-            },
-            {
-              label: "Large",
-              value: "large",
-            },
-          ]}
-          onChange={(value) =>
-            onLayoutChange(
-              "size",
-              value,
-            )
-          }
-        />
-
-        <details className="group border-t border-white/[0.045]">
-          <summary className="flex h-8 cursor-pointer list-none items-center justify-between px-1 text-[10px] text-zinc-600 transition hover:text-zinc-400 [&::-webkit-details-marker]:hidden">
-            <span>Advanced spacing</span>
-            <ChevronRight className="h-3 w-3 transition group-open:rotate-90" />
-          </summary>
-
-          <div className="pb-1">
-            <InspectorSelectRow
-              label="Top padding"
+      {/* PRECISE SECTION SHELL */}
+      {preciseSectionControls ? (
+        <>
+          <InspectorGroup title="Dimensions">
+            <InspectorSegmentedControl
+              label="Width"
               value={
-                section.layout?.paddingTop ??
-                "default"
+                sectionLayout.width ??
+                "wide"
               }
               options={[
-                { label: "Default", value: "default" },
-                { label: "None", value: "none" },
-                { label: "Small", value: "small" },
-                { label: "Medium", value: "medium" },
-                { label: "Large", value: "large" },
-                { label: "Extra large", value: "xlarge" },
+                {
+                  label: "Narrow",
+                  value: "narrow",
+                },
+                {
+                  label: "Normal",
+                  value: "normal",
+                },
+                {
+                  label: "Wide",
+                  value: "wide",
+                },
+                {
+                  label: "Full",
+                  value: "full",
+                },
               ]}
               onChange={(value) =>
                 onLayoutChange(
-                  "paddingTop",
-                  value === "default"
-                    ? undefined
-                    : value,
+                  "width",
+                  value,
                 )
               }
             />
 
-            <InspectorSelectRow
-              label="Bottom padding"
+            <InspectorRangeField
+              label="Content width"
               value={
-                section.layout?.paddingBottom ??
-                "default"
+                sectionLayout.contentWidth ??
+                (
+                  sectionLayout.width ===
+                  "narrow"
+                    ? 900
+                    : sectionLayout.width ===
+                        "normal"
+                      ? 1180
+                      : sectionLayout.width ===
+                          "full"
+                        ? 1600
+                        : 1320
+                )
               }
-              options={[
-                { label: "Default", value: "default" },
-                { label: "None", value: "none" },
-                { label: "Small", value: "small" },
-                { label: "Medium", value: "medium" },
-                { label: "Large", value: "large" },
-                { label: "Extra large", value: "xlarge" },
-              ]}
+              min={520}
+              max={1800}
+              step={10}
+              unit="px"
               onChange={(value) =>
                 onLayoutChange(
-                  "paddingBottom",
-                  value === "default"
-                    ? undefined
-                    : value,
+                  "contentWidth",
+                  value,
                 )
               }
             />
-          </div>
-        </details>
-      </InspectorGroup>
+
+            <InspectorSegmentedControl
+              label="Height"
+              value={
+                sectionLayout.heightMode ??
+                "auto"
+              }
+              options={[
+                {
+                  label: "Auto",
+                  value: "auto",
+                },
+                {
+                  label: "Min",
+                  value: "minimum",
+                },
+                {
+                  label: "Screen",
+                  value: "screen",
+                },
+              ]}
+              onChange={(value) =>
+                onLayoutChange(
+                  "heightMode",
+                  value,
+                )
+              }
+            />
+
+            {sectionLayout.heightMode ===
+            "minimum" ? (
+              <InspectorRangeField
+                label="Min height"
+                value={
+                  sectionLayout.minHeight ??
+                  520
+                }
+                min={180}
+                max={1200}
+                step={10}
+                unit="px"
+                onChange={(value) =>
+                  onLayoutChange(
+                    "minHeight",
+                    value,
+                  )
+                }
+              />
+            ) : null}
+          </InspectorGroup>
+
+          <InspectorGroup title="Spacing">
+            <InspectorSpacingControl
+              values={
+                sharedPadding
+              }
+              onChange={(
+                side,
+                value,
+              ) => {
+                const key =
+                  side === "top"
+                    ? "paddingTopPx"
+                    : side === "right"
+                      ? "paddingRightPx"
+                      : side === "bottom"
+                        ? "paddingBottomPx"
+                        : "paddingLeftPx";
+
+                onLayoutChange(
+                  key as keyof SiteSectionLayoutConfig,
+                  value,
+                );
+              }}
+            />
+
+            <InspectorRangeField
+              label="Internal gap"
+              value={
+                sectionLayout.gap ??
+                28
+              }
+              min={0}
+              max={120}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "gap",
+                  value,
+                )
+              }
+            />
+          </InspectorGroup>
+
+          <InspectorGroup title="Typography">
+            <InspectorRangeField
+              label="Heading size"
+              value={
+                sectionLayout.headingSize ??
+                typographyDefaults.headingSize
+              }
+              min={18}
+              max={120}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "headingSize",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Heading width"
+              value={
+                sectionLayout.headingWidth ??
+                typographyDefaults.headingWidth
+              }
+              min={240}
+              max={1400}
+              step={10}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "headingWidth",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Body size"
+              value={
+                sectionLayout.bodySize ??
+                typographyDefaults.bodySize
+              }
+              min={9}
+              max={28}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "bodySize",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Body width"
+              value={
+                sectionLayout.bodyWidth ??
+                typographyDefaults.bodyWidth
+              }
+              min={240}
+              max={1200}
+              step={10}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "bodyWidth",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Heading → body"
+              value={
+                sectionLayout.textGap ??
+                typographyDefaults.textGap
+              }
+              min={0}
+              max={64}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "textGap",
+                  value,
+                )
+              }
+            />
+          </InspectorGroup>
+        </>
+      ) : (
+        <InspectorGroup title="Section">
+          <InspectorSelectRow
+            label="Size"
+            value={
+              section.layout?.size ??
+              "default"
+            }
+            options={[
+              {
+                label: "Default",
+                value: "default",
+              },
+              {
+                label: "Compact",
+                value: "compact",
+              },
+              {
+                label: "Standard",
+                value: "standard",
+              },
+              {
+                label: "Large",
+                value: "large",
+              },
+            ]}
+            onChange={(value) =>
+              onLayoutChange(
+                "size",
+                value,
+              )
+            }
+          />
+        </InspectorGroup>
+      )}
 
       {/* COMMERCE DISPLAY */}
       {supportsListingDisplay ? (
@@ -5916,6 +7402,11 @@ export default function SiteBuilder() {
     editorSelection.pageId === selectedPage?.id
       ? editorSelection.node
       : null;
+  const selectedBlockId =
+    editorSelection?.kind === "block" &&
+    editorSelection.pageId === selectedPage?.id
+      ? editorSelection.blockId
+      : null;
   const selectedSection =
     selectedSectionId
       ? selectedPage?.sections.find(
@@ -7053,13 +8544,38 @@ export default function SiteBuilder() {
 
       if (!isSitePreviewSelectionRequestMessage(event.data)) return;
 
-      const { pageId, sectionId, node } = event.data.payload;
+      const {
+        pageId,
+        sectionId,
+        node,
+        blockId,
+      } = event.data.payload;
       const page = site.pages.find((candidate) => candidate.id === pageId);
       const section = page?.sections.find(
         (candidate) => candidate.id === sectionId,
       );
 
       if (!page || !section) return;
+
+      if (blockId) {
+        const selectable =
+          getSectionBlockNavigationChildren(
+            section,
+          ).some(
+            (child) =>
+              child.kind === "block" &&
+              child.id === blockId,
+          );
+
+        if (!selectable) return;
+
+        selectSectionBlock(
+          page.id,
+          section.id,
+          blockId,
+        );
+        return;
+      }
 
       if (node) {
         if (!sectionSupportsContentNode(section, node)) return;
@@ -8132,6 +9648,15 @@ export default function SiteBuilder() {
               onFooterChange={updateSiteFooterField}
               onNavigationChange={updateSiteNavigation}
             />
+          ) : selectedSection &&
+            selectedBlockId &&
+            selectedSection.type === "cards" ? (
+            <CardBlockInspectorPanel
+              site={site}
+              section={selectedSection}
+              blockId={selectedBlockId}
+              onContentChange={updateSelectedSectionContent}
+            />
           ) : selectedSection && selectedContentNode ? (
             <ContentNodeInspectorPanel
               site={site}
@@ -8194,6 +9719,13 @@ export default function SiteBuilder() {
                       site={site}
                       section={selectedSection}
                       onContentChange={updateSelectedSectionContent}
+                      onSelectBlock={(blockId) =>
+                        selectSectionBlock(
+                          selectedPage.id,
+                          selectedSection.id,
+                          blockId,
+                        )
+                      }
                       sourceStatus={sourceStatus}
                       sourceError={sourceError}
                       sourceProducts={sourceProducts}

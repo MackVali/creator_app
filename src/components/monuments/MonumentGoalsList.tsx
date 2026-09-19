@@ -13,7 +13,7 @@ import {
   type WheelEvent,
 } from "react";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Grid2x2, Grid3x3, Plus } from "lucide-react";
+import { Grid2x2, Grid3x3, List, Plus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   hapticLevelUp,
@@ -149,6 +149,7 @@ type GoalRowWithRelations = GoalRow & {
 type GoalPanel = "active" | "completed";
 type GoalPanelSwipeAxis = "horizontal" | "vertical" | null;
 type GoalCardDensity = "large" | "small";
+type GoalLibraryView = "cards" | "list";
 
 const GOAL_RELATIONS_BASE_SELECT =
   "id, name, priority, energy, priority_code, priority_order, energy_code, why, created_at, active, status, monument_id, circle_id, area_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank, global_rank";
@@ -2735,6 +2736,8 @@ export function MonumentGoalsList({
     useState<GoalCardDensity>(() =>
       resolvedSourceType === "area" ? "large" : "small"
     );
+  const [goalLibraryView, setGoalLibraryView] =
+    useState<GoalLibraryView>("list");
   const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
   const [goalPanelDragOffset, setGoalPanelDragOffset] = useState(0);
   const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
@@ -2755,6 +2758,7 @@ export function MonumentGoalsList({
   const goalsViewPanelRef = useRef<HTMLDivElement | null>(null);
   const roadmapViewPanelRef = useRef<HTMLDivElement | null>(null);
   const goalPanelViewportRef = useRef<HTMLDivElement | null>(null);
+  const goalPanelPagerRef = useRef<HTMLDivElement | null>(null);
   const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
@@ -2804,7 +2808,9 @@ export function MonumentGoalsList({
     resolvedSourceType === "monument";
 
   const goalGridClass =
-    isAreaOrMonumentGoalLibrary
+    isAreaOrMonumentGoalLibrary && goalLibraryView === "list"
+      ? "flex w-full min-w-0 flex-col gap-0.5"
+      : isAreaOrMonumentGoalLibrary
       ? goalCardDensity === "small"
         ? GOAL_SMALL_GRID_CLASS
         : "goal-grid area-goal-grid--large grid w-full min-w-0 grid-cols-4 gap-[0.4rem] px-0 py-0.5"
@@ -2812,10 +2818,16 @@ export function MonumentGoalsList({
         ? GOAL_SMALL_GRID_CLASS
         : GOAL_GRID_CLASS;
   const isSmallGoalCardDensity = goalCardDensity === "small";
+  const isGoalLibraryListView =
+    isAreaOrMonumentGoalLibrary && goalLibraryView === "list";
+  const goalPanelContentClass = isGoalLibraryListView
+    ? "px-0 py-0"
+    : GOAL_PANEL_CONTENT_CLASS;
 
   useEffect(() => {
     if (isAreaOrMonumentGoalLibrary) {
       setGoalCardDensity("large");
+      setGoalLibraryView("list");
     }
   }, [
     goalsSourceKey,
@@ -2886,9 +2898,25 @@ export function MonumentGoalsList({
         view === "roadmap"
           ? roadmapViewPanelRef.current
           : goalsViewPanelRef.current;
-      return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+
+      if (!panelElement) {
+        return null;
+      }
+
+      if (view === "goals" && isGoalLibraryListView) {
+        const pagerElement = goalPanelPagerRef.current;
+
+        if (pagerElement) {
+          const panelRect = panelElement.getBoundingClientRect();
+          const pagerRect = pagerElement.getBoundingClientRect();
+
+          return Math.ceil(pagerRect.bottom - panelRect.top);
+        }
+      }
+
+      return Math.ceil(panelElement.getBoundingClientRect().height);
     },
-    []
+    [isGoalLibraryListView]
   );
 
   const measureSelectedGoalsRoadmapPanel = useCallback(() => {
@@ -2991,27 +3019,60 @@ export function MonumentGoalsList({
 
   const handleGoalCardDensityToggle = useCallback(() => {
     void hapticSoftTick();
-    setGoalCardDensity((currentDensity) =>
-      currentDensity === "large" ? "small" : "large"
-    );
-  }, []);
+    if (!isAreaOrMonumentGoalLibrary) {
+      setGoalCardDensity((currentDensity) =>
+        currentDensity === "large" ? "small" : "large"
+      );
+      return;
+    }
+
+    if (goalLibraryView === "list") {
+      setGoalLibraryView("cards");
+      setGoalCardDensity("large");
+      return;
+    }
+
+    if (goalCardDensity === "large") {
+      setGoalCardDensity("small");
+      return;
+    }
+
+    setGoalLibraryView("list");
+  }, [goalCardDensity, goalLibraryView, isAreaOrMonumentGoalLibrary]);
 
   const renderGoalCardDensityToggle = useCallback(() => (
     <button
       type="button"
-      aria-label={isSmallGoalCardDensity ? "Use large cards" : "Use small cards"}
+      aria-label={
+        isAreaOrMonumentGoalLibrary
+          ? goalLibraryView === "list"
+            ? "Use large cards"
+            : isSmallGoalCardDensity
+              ? "Use list rows"
+              : "Use small cards"
+          : isSmallGoalCardDensity
+            ? "Use large cards"
+            : "Use small cards"
+      }
       onClick={handleGoalCardDensityToggle}
       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:border-white/20 focus-visible:bg-white/[0.06] focus-visible:outline-none ${
-        isSmallGoalCardDensity ? "text-zinc-300" : ""
+        isSmallGoalCardDensity || goalLibraryView === "list" ? "text-zinc-300" : ""
       }`}
     >
-      {isSmallGoalCardDensity ? (
+      {isAreaOrMonumentGoalLibrary && goalLibraryView === "list" ? (
+        <List className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+      ) : isSmallGoalCardDensity ? (
         <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
       ) : (
         <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
       )}
     </button>
-  ), [handleGoalCardDensityToggle, isSmallGoalCardDensity]);
+  ), [
+    goalLibraryView,
+    handleGoalCardDensityToggle,
+    isAreaOrMonumentGoalLibrary,
+    isSmallGoalCardDensity,
+  ]);
 
   const measureActiveGoalPanel = useCallback(() => {
     const nextHeight = goalsGridLoading
@@ -3038,6 +3099,7 @@ export function MonumentGoalsList({
   }, [
     activeGoalPanel,
     goalCardDensity,
+    goalLibraryView,
     goalCampaignCards,
     goals,
     goalsGridLoading,
@@ -3096,6 +3158,7 @@ export function MonumentGoalsList({
     activeGoalPanel,
     goalPanelHeight,
     goalCardDensity,
+    goalLibraryView,
     goalCampaignCards,
     goals,
     goalsGridLoading,
@@ -3140,6 +3203,7 @@ export function MonumentGoalsList({
     activeGoalPanel,
     goalPanelHeight,
     goalCardDensity,
+    goalLibraryView,
     goalsGridLoading,
     loading,
     measureSelectedGoalsRoadmapPanel,
@@ -3594,7 +3658,14 @@ export function MonumentGoalsList({
           normalizedTaskSkillIds
             .map(resolveSkillEmoji)
             .find((emoji): emoji is string => Boolean(emoji)) ??
+          monumentEmoji ??
           null;
+
+        const tasksWithDisplayIcons = normalizedTasks.map((task) => ({
+          ...task,
+          skillIcon: task.skillIcon ?? projectEmoji ?? monumentEmoji ?? null,
+        }));
+
         const rawEnergy = extractLookupName(project.energy);
         const rawPriority = extractLookupName(project.priority);
         const energyCode = normalizeEnergyCode(rawEnergy);
@@ -3625,7 +3696,7 @@ export function MonumentGoalsList({
               ? project.global_rank
               : null,
           isNew: false,
-          tasks: normalizedTasks,
+          tasks: tasksWithDisplayIcons,
         };
       });
 
@@ -5660,7 +5731,11 @@ export function MonumentGoalsList({
             <div className="w-1/2 shrink-0 overflow-hidden">
               <div
                 ref={goalsViewPanelRef}
-                className="px-1 py-1 sm:px-1.5 sm:py-1.5"
+                className={cn(
+                  isGoalLibraryListView
+                    ? "px-0 py-0"
+                    : "px-1 py-1 sm:px-1.5 sm:py-1.5"
+                )}
               >
                 {goalsContent}
               </div>
@@ -5668,7 +5743,7 @@ export function MonumentGoalsList({
             <div className="w-1/2 shrink-0 overflow-hidden">
               <div
                 ref={roadmapViewPanelRef}
-                className="px-1 py-1 sm:px-1.5 sm:py-1.5"
+                className="px-1 pt-1 pb-0 sm:px-1.5 sm:pt-1.5 sm:pb-0"
               >
                 {roadmapContent}
               </div>
@@ -5680,9 +5755,17 @@ export function MonumentGoalsList({
 
     if (goalsGridLoading) {
       const loadingGoalsContent = (
-        <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-1">
+        <section
+          className={cn(
+            GOAL_REVEAL_CLASS,
+            isGoalLibraryListView ? "space-y-2" : "space-y-3"
+          )}
+        >
+          <div className={cn(
+            "flex items-center gap-3",
+            isGoalLibraryListView ? "h-8 justify-end" : "justify-between"
+          )}>
+            <div className={cn("space-y-1", isGoalLibraryListView && "sr-only")}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
                 Goal Library
               </p>
@@ -5730,21 +5813,37 @@ export function MonumentGoalsList({
           >
             <div
               ref={loadingGoalPanelRef}
-              className={GOAL_PANEL_CONTENT_CLASS}
+              className={goalPanelContentClass}
             >
               <div
                 className={`${goalGridClass} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
               >
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton
-                    key={i}
-                    className={`h-full bg-white/[0.06] ${
-                      isSmallGoalCardDensity
-                        ? "min-h-[70px] rounded-xl"
-                        : "min-h-[100px] rounded-2xl"
-                    }`}
-                  />
-                ))}
+                {Array.from({ length: 8 }).map((_, i) =>
+                  isGoalLibraryListView ? (
+                    <div
+                      key={i}
+                      className="flex min-h-[62px] w-full items-center gap-2 rounded-[10px] border border-white/[0.055] bg-white/[0.03] px-3 py-1.5 sm:min-h-[64px]"
+                    >
+                      <Skeleton className="h-[34px] w-[34px] shrink-0 rounded-full bg-white/[0.06]" />
+                      <Skeleton className="h-6 w-6 shrink-0 rounded bg-white/[0.045]" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Skeleton className="h-3.5 w-2/3 rounded bg-white/[0.07]" />
+                        <Skeleton className="h-2.5 w-20 rounded bg-white/[0.05]" />
+                      </div>
+                      <Skeleton className="h-3.5 w-9 shrink-0 rounded bg-white/[0.06]" />
+                      <Skeleton className="h-3.5 w-3.5 shrink-0 rounded bg-white/[0.05]" />
+                    </div>
+                  ) : (
+                    <Skeleton
+                      key={i}
+                      className={`bg-white/[0.06] ${
+                        isSmallGoalCardDensity
+                          ? "h-full min-h-[70px] rounded-xl"
+                          : "h-full min-h-[100px] rounded-2xl"
+                      }`}
+                    />
+                  )
+                )}
               </div>
             </div>
           </div>
@@ -5810,13 +5909,9 @@ export function MonumentGoalsList({
         return false;
       }
 
-      return section === "completed"
-        ? linkedGoals.every((goal) =>
-            filterRoadmapGoalBySection(goal, "completed")
-          )
-        : linkedGoals.some((goal) =>
-            filterRoadmapGoalBySection(goal, "active")
-          );
+      // Campaigns do not currently have their own completion state.
+      // Keep the campaign on the active side even when every child Goal is complete.
+      return section === "active";
     };
     const sortCampaignGoalsByPosition = (
       linkedGoals: RoadmapCampaignGoal[]
@@ -6344,13 +6439,13 @@ export function MonumentGoalsList({
             ({ roadmap, goals: roadmapGoalsList, goalCount }) => (
               <div
                 key={roadmap.id}
-                className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+                className={`goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible ${isGoalLibraryListView ? "opacity-100" : "opacity-80"}`}
               >
                 <RoadmapCard
                   roadmap={roadmap}
                   goalCount={goalCount}
                   goals={roadmapGoalsList}
-                  variant="compact"
+                  variant={isGoalLibraryListView ? "library-list" : "compact"}
                   onGoalEdit={handleRoadmapGoalEdit}
                   onProjectEditOpen={handleProjectEditOpen}
                   onProjectUpdated={handleProjectUpdated}
@@ -6391,7 +6486,7 @@ export function MonumentGoalsList({
 
           {openRoadmapGoalForSection ? (
             <div
-              className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+              className={`goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible ${isGoalLibraryListView ? "opacity-100" : "opacity-80"}`}
               data-monument-goal-card-id={openRoadmapGoalForSection.id}
             >
               <GoalCard
@@ -6399,7 +6494,7 @@ export function MonumentGoalsList({
                 showWeight={false}
                 showCreatedAt={false}
                 showEmojiPrefix={false}
-                variant="compact"
+                variant={isGoalLibraryListView ? "library-list" : "compact"}
                 monumentContext
                 completeWhenProjectsDone
                 completionTheme="border"
@@ -6458,7 +6553,7 @@ export function MonumentGoalsList({
             <div
               key={goal.id}
               data-monument-goal-card-id={goal.id}
-              className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+              className={`goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible ${isGoalLibraryListView ? "opacity-100" : "opacity-80"}`}
             >
               <GoalCard
                 goal={goal}
@@ -6471,7 +6566,7 @@ export function MonumentGoalsList({
                 showWeight={false}
                 showCreatedAt={false}
                 showEmojiPrefix={false}
-                variant="compact"
+                variant={isGoalLibraryListView ? "library-list" : "compact"}
                 selected={
                   resolvedSourceType === "area" && featuredGoalId === goal.id
                 }
@@ -6517,14 +6612,24 @@ export function MonumentGoalsList({
     };
 
     const goalsContent = (
-      <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
+      <section
+        className={cn(
+          GOAL_REVEAL_CLASS,
+          isGoalLibraryListView
+            ? "space-y-2 pb-[calc(7.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0"
+            : "space-y-3"
+        )}
+      >
+        <div className={cn(
+          "flex items-center gap-3",
+          isGoalLibraryListView ? "h-8 justify-end" : "justify-between"
+        )}>
+          <div className={cn("space-y-1", isGoalLibraryListView && "sr-only")}>
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
               Goal Library
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 justify-between">
             {(
               resolvedSourceType === "area" ||
               resolvedSourceType === "monument"
@@ -6586,7 +6691,7 @@ export function MonumentGoalsList({
               <div className="h-full w-1/2 shrink-0 overflow-hidden">
                 <div
                   ref={activeGoalPanelRef}
-                  className={GOAL_PANEL_CONTENT_CLASS}
+                  className={goalPanelContentClass}
                 >
                   {renderGoalsPanel("active")}
                 </div>
@@ -6594,7 +6699,7 @@ export function MonumentGoalsList({
               <div className="h-full w-1/2 shrink-0 overflow-hidden">
                 <div
                   ref={completedGoalPanelRef}
-                  className={GOAL_PANEL_CONTENT_CLASS}
+                  className={goalPanelContentClass}
                 >
                   {renderGoalsPanel("completed")}
                 </div>
@@ -6602,7 +6707,10 @@ export function MonumentGoalsList({
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-center gap-1.5">
+        <div
+          ref={goalPanelPagerRef}
+          className="flex items-center justify-center gap-1.5"
+        >
           {(["active", "completed"] as const).map((panel) => {
             const isActive = activeGoalPanel === panel;
             return (
@@ -6656,7 +6764,10 @@ export function MonumentGoalsList({
     recentlyCompletedGoalIds,
     activeGoalPanel,
     goalGridClass,
+    goalPanelContentClass,
     goalPanelHeight,
+    isAreaOrMonumentGoalLibrary,
+    isGoalLibraryListView,
     isSmallGoalCardDensity,
     openGoalId,
     renderGoalCardDensityToggle,

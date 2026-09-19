@@ -32,6 +32,7 @@ export type SitePreviewSelectionRequestPayload = {
   pageId: string;
   sectionId: string;
   node?: SiteContentNodeId;
+  blockId?: string;
 };
 
 export type SitePreviewSelectionRequestMessage = {
@@ -145,10 +146,22 @@ function isSiteEditorSelection(value: unknown): value is SiteEditorSelection {
 
   if (value.kind === "section") return true;
 
-  return (
-    value.kind === "content" &&
-    (value.node === "text" || value.node === "button" || value.node === "media")
-  );
+  if (value.kind === "content") {
+    return (
+      value.node === "text" ||
+      value.node === "button" ||
+      value.node === "media"
+    );
+  }
+
+  if (value.kind === "block") {
+    return (
+      typeof value.blockId === "string" &&
+      value.blockId.trim().length > 0
+    );
+  }
+
+  return false;
 }
 
 export function createSitePreviewStateMessage(
@@ -244,10 +257,28 @@ export function isSitePreviewSelectionRequestMessage(
   if (value.type !== "selection-request") return false;
   if (!isRecord(value.payload)) return false;
 
+  const nodeValid =
+    value.payload.node === undefined ||
+    isSelectableNode(value.payload.node);
+
+  const blockValid =
+    value.payload.blockId === undefined ||
+    (
+      typeof value.payload.blockId === "string" &&
+      value.payload.blockId.trim().length > 0
+    );
+
+  const hasNode =
+    value.payload.node !== undefined;
+  const hasBlock =
+    value.payload.blockId !== undefined;
+
   return (
     typeof value.payload.pageId === "string" &&
     typeof value.payload.sectionId === "string" &&
-    (value.payload.node === undefined || isSelectableNode(value.payload.node))
+    nodeValid &&
+    blockValid &&
+    !(hasNode && hasBlock)
   );
 }
 

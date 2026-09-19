@@ -275,6 +275,55 @@ function isSiteSectionLayoutConfig(
     return false;
   }
 
+  const numericRanges: Record<
+    string,
+    [number, number]
+  > = {
+    contentWidth: [320, 2000],
+    minHeight: [0, 1600],
+
+    paddingTopPx: [0, 240],
+    paddingRightPx: [0, 240],
+    paddingBottomPx: [0, 240],
+    paddingLeftPx: [0, 240],
+
+    gap: [0, 160],
+    mediaShare: [20, 80],
+
+    headingSize: [18, 160],
+    headingWidth: [240, 1400],
+
+    bodySize: [9, 32],
+    bodyWidth: [240, 1200],
+
+    textGap: [0, 96],
+  };
+
+  for (const [
+    key,
+    [min, max],
+  ] of Object.entries(
+    numericRanges,
+  )) {
+    const candidate =
+      value[key];
+
+    if (
+      candidate !== undefined &&
+      (
+        typeof candidate !==
+          "number" ||
+        !Number.isFinite(
+          candidate,
+        ) ||
+        candidate < min ||
+        candidate > max
+      )
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 

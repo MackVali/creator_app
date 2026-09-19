@@ -84,6 +84,90 @@ function visualCard(
   };
 }
 
+function repairMigratedSoftwareCards(
+  section: SiteSection,
+): SiteSection {
+  if (
+    section.id !== "home-software" ||
+    section.type !== "cards" ||
+    !Array.isArray(section.content.items)
+  ) {
+    return section;
+  }
+
+  const projectsById = new Map(
+    mackValiPortfolio.software.map(
+      (project) => [
+        `project-${project.slug}`,
+        project,
+      ],
+    ),
+  );
+
+  let changed = false;
+
+  const items = section.content.items.map(
+    (item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return item;
+      }
+
+      const record =
+        item as Record<string, unknown>;
+
+      const id =
+        typeof record.id === "string"
+          ? record.id
+          : "";
+
+      const project =
+        projectsById.get(id);
+
+      if (!project?.imageSrc) {
+        return item;
+      }
+
+      const hasImage =
+        typeof record.imageUrl ===
+          "string" &&
+        record.imageUrl.trim().length > 0;
+
+      if (hasImage) {
+        return item;
+      }
+
+      changed = true;
+
+      return {
+        ...record,
+        imageUrl: project.imageSrc,
+        imageAlt:
+          typeof record.imageAlt ===
+            "string" &&
+          record.imageAlt.trim()
+            ? record.imageAlt
+            : project.title,
+      };
+    },
+  );
+
+  if (!changed) {
+    return section;
+  }
+
+  return {
+    ...section,
+    content: {
+      ...section.content,
+      items,
+    },
+  };
+}
+
 const largeMackSectionIds = new Set([
   "home-software",
   "home-clothing",
@@ -94,26 +178,33 @@ function migrateLegacySection(
   site: SiteDocument,
   section: SiteSection,
 ): SiteSection {
+  const repairedSection =
+    repairMigratedSoftwareCards(
+      section,
+    );
+
   if (
-    largeMackSectionIds.has(section.id) &&
-    !section.layout?.size &&
-    !section.content.templateKind
+    largeMackSectionIds.has(
+      repairedSection.id,
+    ) &&
+    !repairedSection.layout?.size &&
+    !repairedSection.content.templateKind
   ) {
     return {
-      ...section,
+      ...repairedSection,
       layout: {
-        ...section.layout,
+        ...repairedSection.layout,
         size: "large",
       },
     };
   }
 
   const templateKind =
-    section.content.templateKind;
+    repairedSection.content.templateKind;
 
   if (templateKind === "software") {
     return {
-      ...section,
+      ...repairedSection,
       type: "cards",
       content: {
         heading:
@@ -144,7 +235,7 @@ function migrateLegacySection(
 
   if (templateKind === "clothing") {
     return {
-      ...section,
+      ...repairedSection,
       type: "cards",
       content: {
         heading:
@@ -175,7 +266,7 @@ function migrateLegacySection(
 
   if (templateKind === "visual") {
     return {
-      ...section,
+      ...repairedSection,
       type: "cards",
       content: {
         heading:
@@ -213,7 +304,7 @@ function migrateLegacySection(
         : "";
 
     return {
-      ...section,
+      ...repairedSection,
       type: "content",
       content: {
         heading:
@@ -238,7 +329,7 @@ function migrateLegacySection(
     };
   }
 
-  return section;
+  return repairedSection;
 }
 
 export function migrateLegacyMackSite(

@@ -257,11 +257,12 @@ export function ProjectRow({
   const prefersReducedMotion = useReducedMotion();
   const isCompactNested = variant === "compactNested";
   const hasTasks = project.tasks.length > 0;
+  const canExpandTasks = hasTasks || isCompactNested;
   const [open, setOpen] = useState(() => (isCompactNested ? false : hasTasks));
   const toggle = useCallback(() => {
-    if (!hasTasks) return;
+    if (!canExpandTasks) return;
     setOpen((o) => !o);
-  }, [hasTasks]);
+  }, [canExpandTasks]);
   const [isBouncing, setIsBouncing] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
   const [completionPending, setCompletionPending] = useState(false);
@@ -789,7 +790,7 @@ export function ProjectRow({
   const displayEmoji =
     typeof project.emoji === "string" && project.emoji.trim().length > 0
       ? project.emoji.trim()
-      : project.name.slice(0, 2).toUpperCase();
+      : "✦";
   const flameLevel = (
     project.energyCode ? project.energyCode : project.energy ?? "No"
   )
@@ -997,7 +998,7 @@ export function ProjectRow({
               </div>
             )}
           </button>
-          {hasTasks && (
+          {canExpandTasks && (
             <button
               type="button"
               className={`flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${
@@ -1027,12 +1028,14 @@ export function ProjectRow({
             </span>
           )}
         </div>
-        {hasTasks && isCompactNested && (
+        {isCompactNested && (
           <AnimatePresence initial={false}>
             {open ? (
               <motion.div
                 id={`project-${project.id}`}
                 className={`relative mt-1 overflow-hidden border-0 bg-black/[0.12] py-1 pl-2.5 pr-0 sm:mt-1.5 sm:py-1.5 sm:pl-3 ${
+                  !hasTasks ? "min-h-[42px] pb-2 sm:min-h-[44px] sm:pb-2" : ""
+                } ${
                   isCompleted
                     ? "text-emerald-50 shadow-[inset_1px_0_0_rgba(110,231,183,0.2)]"
                     : "text-white/72 shadow-[inset_1px_0_0_rgba(255,255,255,0.12)]"
@@ -1075,7 +1078,7 @@ export function ProjectRow({
                   }}
                   onClick={handleAddTaskClick}
                   disabled={!fabCreation}
-                  className="mt-1.5 ml-auto flex min-h-6 w-fit items-center justify-end gap-2 rounded-md bg-transparent px-0 text-[12px] font-medium leading-none text-white/42 transition hover:text-white/68 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-35"
+                  className="relative z-10 mt-1.5 ml-auto flex min-h-6 w-fit items-center justify-end gap-2 rounded-md bg-transparent px-0 text-[12px] font-medium leading-none text-white/42 transition hover:text-white/68 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <span>Add task</span>
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/18 bg-transparent">

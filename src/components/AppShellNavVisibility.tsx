@@ -36,6 +36,14 @@ export default function AppShellNavVisibility({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+
+  // /site/preview is rendered inside the Site Builder iframe.
+  // It must behave like the public website itself, not like
+  // another nested CREATOR application shell.
+  if (pathname === "/site/preview") {
+    return <>{children}</>;
+  }
+
   const hideNav = isIndividualInboxThreadRoute(pathname);
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
   const showBottomChrome = !hideNav && !shouldHideBottomChrome(pathname);

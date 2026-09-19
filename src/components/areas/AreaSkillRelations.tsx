@@ -376,16 +376,15 @@ export function AreaSkillRelations({
   }
 
   return (
-    <Card className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050608] text-white shadow-[0_18px_48px_-38px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_62%)]" />
-      <CardHeader className="relative z-10 px-2 pb-1 pt-2 sm:px-2.5">
-        <CardTitle className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/62">
+    <Card className="relative overflow-visible rounded-none border-0 bg-transparent text-white shadow-none">
+      <CardHeader className="relative z-10 px-1 pb-1 pt-1 sm:px-1.5">
+        <CardTitle className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/48">
           <span className="flex min-w-0 items-center gap-2">
-            <ListChecks className="size-3.5 text-white/48" aria-hidden="true" />
+            <ListChecks className="size-3.5 text-white/38" aria-hidden="true" />
             <span className="truncate">SKILLS</span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
-            <span className="text-[10px] text-white/36">{currentAreaSkills.length}</span>
+            <span className="text-[10px] text-white/32">{currentAreaSkills.length}</span>
             <button
               type="button"
               onClick={toggleManagement}
@@ -402,7 +401,7 @@ export function AreaSkillRelations({
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="relative z-10 space-y-1.5 px-1.5 pb-1.5 sm:px-2">
+      <CardContent className="relative z-10 space-y-1.5 px-0 pb-0">
         {error ? (
           <p className="rounded-lg border border-red-400/20 bg-red-950/20 px-2.5 py-1.5 text-[11px] text-red-100/80">
             {error}
@@ -410,30 +409,34 @@ export function AreaSkillRelations({
         ) : null}
 
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-1">
+          <div className="flex w-full flex-col gap-0.5">
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
-                className="h-8 animate-pulse rounded-lg border border-white/[0.06] bg-white/[0.035]"
+                className="h-[48px] w-full animate-pulse rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 sm:h-[50px]"
               />
             ))}
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+            <div className="flex w-full min-w-0 flex-col gap-0.5">
               {currentAreaSkills.length > 0 ? (
                 currentAreaSkills.map((skill) => (
                   <div
                     key={skill.id}
-                    className="flex min-h-7 min-w-0 items-center gap-1.5 rounded-lg border border-white/[0.075] bg-white/[0.035] px-1.5 py-0.5 text-xs font-semibold text-white/82"
+                    className="group relative flex min-h-[48px] w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 px-2 py-0.5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-[#101116] sm:min-h-[50px] sm:px-2"
                   >
-                    <span className="flex size-4.5 shrink-0 items-center justify-center rounded-md bg-black/25 text-[10px] text-white/76">
+                    <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-[14px] leading-none text-white/62">
                       {getSkillFallbackIcon(skill)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">{skill.name}</span>
-                    <span className="shrink-0 rounded-md border border-white/[0.07] bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/45">
-                      {getSkillLevelLabel(skill)}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13.5px] font-semibold leading-tight text-zinc-100/88 sm:text-[14px]">
+                        {skill.name}
+                      </p>
+                      <p className="mt-px text-[10px] font-normal leading-none text-white/38">
+                        {getSkillLevelLabel(skill)}
+                      </p>
+                    </div>
                     {isManaging ? (
                       <button
                         type="button"
@@ -448,21 +451,21 @@ export function AreaSkillRelations({
                   </div>
                 ))
               ) : (
-                <p className="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.025] px-2.5 py-2 text-xs text-white/42 sm:col-span-2">
+                <p className="px-2 py-3 text-[11px] text-white/38">
                   No skills yet.
                 </p>
               )}
             </div>
 
             {isManaging ? (
-              <div className="space-y-2 border-t border-white/[0.07] pt-2.5">
+              <div className="mt-2 space-y-2 border-t border-white/[0.055] pt-2.5">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-white/34" />
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={`Create or move skills into ${areaLabel}`}
-                    className="h-8 w-full rounded-lg border border-white/[0.08] bg-black/30 pl-8 pr-8 text-xs text-white outline-none transition placeholder:text-white/32 focus:border-white/20 focus:ring-2 focus:ring-white/10"
+                    className="h-9 w-full rounded-[8px] border border-white/[0.055] bg-[#090A0D]/95 pl-8 pr-8 text-xs text-white outline-none transition placeholder:text-white/30 focus:border-white/15 focus:bg-[#101116] focus:ring-1 focus:ring-white/10"
                   />
                   {query ? (
                     <button
@@ -477,14 +480,14 @@ export function AreaSkillRelations({
                 </div>
 
                 {(availableSkills.length > 0 || canCreateSkill) && query ? (
-                  <div className="space-y-1 rounded-xl border border-white/[0.07] bg-black/20 p-1.5">
+                  <div className="flex w-full flex-col gap-0.5">
                     {availableSkills.map((skill) => (
                       <button
                         key={skill.id}
                         type="button"
                         onClick={() => assignSkillToArea(skill)}
                         disabled={isSaving}
-                        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-white/82 transition hover:bg-white/[0.06] disabled:opacity-45"
+                        className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-[8px] border border-white/[0.045] bg-[#090A0D]/80 px-2 py-1 text-left text-xs font-semibold text-white/82 transition hover:bg-[#101116] disabled:opacity-45"
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px]">
