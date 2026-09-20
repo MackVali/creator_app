@@ -1077,9 +1077,6 @@ type MonumentPrioritySupabaseClient = NonNullable<
     fn: "save_global_priority_order",
     args: { p_items: GlobalPriorityOrderPayloadItem[] }
   ): Promise<{ error: { message?: string } | null }>;
-  rpc(
-    fn: "recalculate_goal_global_rank"
-  ): Promise<{ error: { message?: string } | null }>;
 };
 
 function comparePriorityRoadmapText(a?: string | null, b?: string | null) {
@@ -5299,13 +5296,6 @@ export function MonumentGoalsList({
 
         if (saveError) {
           throw saveError;
-        }
-
-        const { error: rankError } = await supabase.rpc(
-          "recalculate_goal_global_rank"
-        );
-        if (rankError) {
-          throw rankError;
         }
 
         await refreshTrueRoadmaps();
