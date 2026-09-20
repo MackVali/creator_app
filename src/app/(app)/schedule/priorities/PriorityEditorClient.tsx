@@ -132,9 +132,6 @@ type PriorityEditorSupabaseClient = NonNullable<
     args: { p_items: GlobalPriorityOrderPayloadItem[] }
   ): Promise<{ error: { message?: string } | null }>;
   rpc(
-    fn: "recalculate_goal_global_rank"
-  ): Promise<{ error: { message?: string } | null }>;
-  rpc(
     fn: "save_global_habit_order",
     args: { p_user_id: string; p_habit_type: string; p_habit_ids: string[] }
   ): Promise<{ error: { message?: string } | null }>;
@@ -916,13 +913,6 @@ export default function PriorityEditorClient({
 
         if (saveError) {
           throw saveError;
-        }
-
-        const { error: rankError } = await supabase.rpc(
-          "recalculate_goal_global_rank"
-        );
-        if (rankError) {
-          throw rankError;
         }
 
         void hapticComplete();
