@@ -1825,20 +1825,22 @@ function MediaEditor({
         }
       />
 
-      <InspectorRangeField
-        label="Height"
-        value={mediaHeight}
-        min={160}
-        max={900}
-        step={10}
-        unit="px"
-        onChange={(value) =>
-          onContentChange(
-            "mediaHeight",
-            value,
-          )
-        }
-      />
+      {mediaRatio === "auto" ? (
+        <InspectorRangeField
+          label="Height"
+          value={mediaHeight}
+          min={160}
+          max={900}
+          step={10}
+          unit="px"
+          onChange={(value) =>
+            onContentChange(
+              "mediaHeight",
+              value,
+            )
+          }
+        />
+      ) : null}
 
       <InspectorRangeField
         label="Zoom"
@@ -10277,7 +10279,7 @@ export default function SiteBuilder() {
     if (
       selectedSection &&
       activeInspectorMode === "design" &&
-      (selectedContentNode || !sectionHasDesignControls(selectedSection))
+      !sectionHasDesignControls(selectedSection)
     ) {
       setActiveInspectorMode("content");
     }

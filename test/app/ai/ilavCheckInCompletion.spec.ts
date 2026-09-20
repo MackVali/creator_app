@@ -111,6 +111,21 @@ const habit = {
   routine_position: null,
 };
 
+const scheduledProject = {
+  id: "44444444-4444-4444-8444-444444444444",
+  user_id: "user-1",
+  source_type: "PROJECT",
+  source_id: "55555555-5555-4555-8555-555555555555",
+  event_name: "Ilav Chat",
+  start_utc: "2026-09-18T18:30:00.000Z",
+  end_utc: "2026-09-18T19:30:00.000Z",
+  status: "missed",
+  completed_at: null,
+  duration_min: 60,
+  metadata: null,
+};
+
+
 describe("ILAV check-in completion", () => {
   beforeEach(() => {
     updateInstanceStatusMock.mockReset();
@@ -146,6 +161,55 @@ describe("ILAV check-in completion", () => {
         body: expect.stringContaining(`"habitId":"${habit.id}"`),
       })
     );
+  });
+
+  it("completes a scheduled Project even when it has no Skill context", async () => {
+    const client = createClient({
+      schedule_instances: [scheduledProject],
+      project_skills: [],
+      tasks: [],
+    });
+    const fetchFn = createFetch([
+      { json: { reversed: 0 } },
+      { json: { inserted: 1, surge: null } },
+    ]);
+
+    const result = await completeIlavCheckInItem({
+      client: client as never,
+      userId: "user-1",
+      request: {
+        itemType: "scheduled_instance",
+        scheduleInstanceId: scheduledProject.id,
+        timeZone: "America/Chicago",
+        completedAt: "2026-09-18T20:00:00.000Z",
+      },
+      fetchFn,
+    });
+
+    expect(updateInstanceStatusMock).toHaveBeenCalledWith(
+      scheduledProject.id,
+      "completed",
+      { completedAtUTC: "2026-09-18T20:00:00.000Z" },
+      client
+    );
+
+    expect(fetchFn.mock.calls.map((call) => call[0])).toEqual([
+      "/api/xp/reverse",
+      "/api/xp/award",
+    ]);
+
+    expect(JSON.parse(String(fetchFn.mock.calls[1][1]?.body))).toMatchObject({
+      scheduleInstanceId: scheduledProject.id,
+      kind: "project",
+      completion: {
+        sourceType: "PROJECT",
+        sourceId: scheduledProject.source_id,
+        wasScheduled: true,
+      },
+    });
+
+    expect(result.sourceType).toBe("PROJECT");
+    expect(result.sourceId).toBe(scheduledProject.source_id);
   });
 
   it("completes a missed scheduled Habit with Matrix scheduled-Habit semantics", async () => {

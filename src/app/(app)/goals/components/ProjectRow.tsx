@@ -576,39 +576,12 @@ export function ProjectRow({
       : Math.min(lastActiveProgressRef.current, getIncompleteProjectProgress(project));
     const previousStatus = localStatus;
     const previousStage = localStage;
-
-    setCompletionPending(true);
-    setLocalStatus(projectStageToStatus(nextStage));
-    setLocalStage(nextStage);
-    const projectCompletionPayload = {
-      stage: nextStage,
-      completed_at: completedAt,
-    };
-    const { error } = await supabase
-      .from("projects")
-      .update(projectCompletionPayload as never)
-      .eq("id", project.id);
-    if (error) {
-      console.error("Failed to toggle project completion", error);
-      setLocalStatus(previousStatus);
-      setLocalStage(previousStage);
-      setCompletionPending(false);
-      return;
-    }
-    reportCampaignDrawerXpTiming("project persistence complete", {
-      projectId: project.id,
-      completedAt: performance.now(),
-      elapsedMs: performance.now() - tapStartedAt,
-    });
+    const previousCompletedAt =
+      projectWithCompletion.completedAt ??
+      projectWithCompletion.completed_at ??
+      null;
 
     const nextStatus = projectStageToStatus(nextStage);
-    if (shouldComplete && localStage && localStage !== "RELEASE") {
-      setLastActiveStage(localStage);
-      lastActiveProgressRef.current = project.progress;
-    } else if (!shouldComplete && nextStage && nextStage !== "RELEASE") {
-      setLastActiveStage(nextStage);
-    }
-
     const completionUpdates: Partial<Project> & {
       completedAt?: string | null;
       completed_at?: string | null;
@@ -619,11 +592,75 @@ export function ProjectRow({
       completedAt,
       completed_at: completedAt,
     };
+
+    const rollbackUpdates: Partial<Project> & {
+      completedAt?: string | null;
+      completed_at?: string | null;
+    } = {
+      status: previousStatus,
+      stage: previousStage,
+      progress: project.progress,
+      completedAt: previousCompletedAt,
+      completed_at: previousCompletedAt,
+    };
+
+    setCompletionPending(true);
+    setLocalStatus(nextStatus);
+    setLocalStage(nextStage);
+
+    // Completion should feel instant. The Goal receives the optimistic
+    // completed Project immediately instead of waiting for scheduler/XP work.
+    if (shouldComplete) {
+      onUpdated?.(project.id, completionUpdates);
+    }
+    // Completion is persisted through completed_at.
+    //
+    // Do not write stage=RELEASE here. Changing project.stage fires the
+    // global-rank trigger, which browser-authenticated users cannot execute.
+    // The Goal hydration mapper already treats completed_at as completed and
+    // derives RELEASE/Done for display.
+    const projectCompletionPayload = {
+      completed_at: completedAt,
+    };
+    const { error } = await supabase
+      .from("projects")
+      .update(projectCompletionPayload as never)
+      .eq("id", project.id);
+    if (error) {
+      console.error("Failed to toggle project completion", error);
+      setLocalStatus(previousStatus);
+      setLocalStage(previousStage);
+
+      if (shouldComplete) {
+        onUpdated?.(project.id, rollbackUpdates);
+      }
+
+      setCompletionPending(false);
+      return;
+    }
+    reportCampaignDrawerXpTiming("project persistence complete", {
+      projectId: project.id,
+      completedAt: performance.now(),
+      elapsedMs: performance.now() - tapStartedAt,
+    });
+
+    if (shouldComplete && localStage && localStage !== "RELEASE") {
+      setLastActiveStage(localStage);
+      lastActiveProgressRef.current = project.progress;
+    } else if (!shouldComplete && nextStage && nextStage !== "RELEASE") {
+      setLastActiveStage(nextStage);
+    }
     if (!shouldComplete) {
       onUpdated?.(project.id, completionUpdates);
     }
     if (shouldComplete) {
-      const result = await recordProjectCompletion(
+      // completed_at is already safely persisted. Scheduler sync, XP,
+      // duration lookup, skill lookup, etc. are secondary side effects and
+      // must not block the completion UI.
+      setCompletionPending(false);
+      completionTapStartedAtRef.current = null;
+
+      void recordProjectCompletion(
         {
           projectId: project.id,
           projectSkillIds: project.skillIds,
@@ -636,14 +673,26 @@ export function ProjectRow({
           xpSourceOrigin: xpSourceRect ? "card" : undefined,
         },
         "complete"
-      );
-      reportCampaignDrawerXpTiming("project xp response", {
-        projectId: project.id,
-        responseAt: performance.now(),
-        elapsedMs: performance.now() - tapStartedAt,
-        inserted: result.inserted,
-        didDispatchVisual: result.didDispatchVisual,
-      });
+      )
+        .then((result) => {
+          reportCampaignDrawerXpTiming("project xp response", {
+            projectId: project.id,
+            responseAt: performance.now(),
+            elapsedMs: performance.now() - tapStartedAt,
+            inserted: result.inserted,
+            didDispatchVisual: result.didDispatchVisual,
+          });
+        })
+        .catch((error) => {
+          // The Project itself is already completed successfully. Failure of
+          // secondary XP/scheduler bookkeeping should not visually undo it.
+          console.error(
+            "Project completed, but completion side effects failed",
+            error
+          );
+        });
+
+      return;
     } else {
       const result = await recordProjectCompletion(
         {
@@ -699,9 +748,6 @@ export function ProjectRow({
       }
     }
     setCompletionPending(false);
-    if (shouldComplete) {
-      onUpdated?.(project.id, completionUpdates);
-    }
     completionTapStartedAtRef.current = null;
   }, [
     completionPending,

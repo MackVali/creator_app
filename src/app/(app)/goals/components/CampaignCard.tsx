@@ -1887,7 +1887,7 @@ function CampaignDrawer({
   onNewGoalRevealComplete,
   onNewProjectRevealComplete,
 }: CampaignDrawerProps) {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(inline);
   const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
@@ -2918,6 +2918,88 @@ function CampaignDrawer({
     showCompletedGoals ? "Hide completed Goals" : "Show completed Goals"
   } (${completedGoals.length})`;
 
+  const handleInlineGoalOpenChange = (
+    goalId: string,
+    isOpen: boolean
+  ) => {
+    if (isOpen) {
+      setOpenGoalId(goalId);
+      return;
+    }
+
+    setOpenGoalId((current) =>
+      current === goalId ? null : current
+    );
+  };
+
+  const renderInlineGoalCard = (goal: Goal) => (
+    <div
+      key={campaignDrawerGoalRowKey(goal.id)}
+      className="relative min-w-0"
+      data-campaign-inline-goal
+    >
+      <GoalCard
+        goal={goal}
+        variant="library-list"
+        showWeight={false}
+        showCreatedAt={false}
+        showEmojiPrefix={false}
+        hideEnergyPill
+        monumentContext={monumentContext}
+        open={openGoalId === goal.id}
+        onOpenChange={(isOpen) =>
+          handleInlineGoalOpenChange(goal.id, isOpen)
+        }
+        onEdit={
+          onGoalEdit
+            ? () => {
+                onGoalEdit(goal);
+                handleClose();
+              }
+            : undefined
+        }
+        onToggleActive={
+          onGoalToggleActive
+            ? () => onGoalToggleActive(goal)
+            : undefined
+        }
+        onDelete={
+          onGoalDelete
+            ? () => onGoalDelete(goal)
+            : undefined
+        }
+        onManualComplete={handleGoalManualComplete}
+        onProjectUpdated={(projectId, updates) =>
+          handleProjectUpdated(goal.id, projectId, updates)
+        }
+        onProjectEditOpen={
+          onProjectEditOpen
+            ? (target, project, origin) =>
+                onProjectEditOpen(
+                  target,
+                  project.id,
+                  goal.id,
+                  origin
+                )
+            : undefined
+        }
+        onTaskToggleCompletion={handleTaskToggleCompletion}
+        suppressReadyToast={suppressReadyToast}
+        completeWhenProjectsDone
+        completionTheme="emerald"
+        newProjectRevealId={
+          newProjectReveal?.goalId === goal.id
+            ? newProjectReveal.projectId
+            : null
+        }
+        onNewProjectRevealComplete={(projectId) =>
+          onNewProjectRevealComplete?.(goal.id, projectId)
+        }
+        sourceCampaignId={roadmap.id}
+      />
+    </div>
+  );
+
   const renderDrawerGoalCard = (goal: Goal, index: number) => (
     <DraggableGoalCard
       key={campaignDrawerGoalRowKey(goal.id)}
@@ -2950,7 +3032,7 @@ function CampaignDrawer({
       monumentContext={monumentContext}
       hideEnergyPill
       campaignDrawerRow
-      inlineCampaign={inline}
+      inlineCampaign={false}
       sourceCampaignId={roadmap.id}
       suppressReadyToast={suppressReadyToast}
       newGoalRevealId={newGoalRevealId}
@@ -2963,6 +3045,21 @@ function CampaignDrawer({
       onNewProjectRevealComplete={onNewProjectRevealComplete}
     />
   );
+
+  const completedGoalsButton = inline ? (
+    completedGoals.length > 0 ? (
+      <button
+        type="button"
+        aria-expanded={showCompletedGoals}
+        onClick={() =>
+          setShowCompletedGoals((current) => !current)
+        }
+        className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+      >
+        <span>{completedGoalsToggleLabel}</span>
+      </button>
+    ) : null
+  ) : null;
 
   const listArea = (
     <div
@@ -2979,57 +3076,97 @@ function CampaignDrawer({
             : "min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5"
         }
       >
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={(event) => {
-            console.log("🎯 Drag started:", event.active.id);
-          }}
-          onDragEnd={handleDrawerDragEnd}
-        >
-          <SortableContext items={visibleDrawerGoals.map((g) => g.id)}>
-            <LayoutGroup id={`campaign-drawer-goals-${roadmap.id}`}>
-              <div className="flex flex-col gap-1 sm:gap-1.5">
-                <AnimatePresence initial={false}>
-                  {activeGoals.map((goal, index) =>
-                    renderDrawerGoalCard(goal, index)
-                  )}
+        {inline ? (
+          <div
+            className="flex flex-col gap-1 sm:gap-1.5"
+            data-campaign-inline-goal-list
+          >
+            {activeGoals.map((goal) =>
+              renderInlineGoalCard(goal)
+            )}
 
-                  {completedGoals.length > 0 ? (
-                    <motion.button
-                      key="campaign-drawer-completed-goals-toggle"
-                      type="button"
-                      aria-expanded={showCompletedGoals}
-                      onClick={() =>
-                        setShowCompletedGoals((current) => !current)
-                      }
-                      className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
-                      layout={
-                        prefersReducedMotion ? undefined : "position"
-                      }
-                      transition={
-                        prefersReducedMotion
-                          ? { duration: 0.12 }
-                          : { layout: campaignDrawerRowTransition }
-                      }
-                    >
-                      <span>{completedGoalsToggleLabel}</span>
-                    </motion.button>
-                  ) : null}
+            {completedGoalsButton}
 
-                  {showCompletedGoals
-                    ? completedGoals.map((goal, index) =>
-                        renderDrawerGoalCard(goal, activeGoals.length + index)
-                      )
-                    : null}
-                </AnimatePresence>
-              </div>
-            </LayoutGroup>
-          </SortableContext>
-        </DndContext>
+            {showCompletedGoals
+              ? completedGoals.map((goal) =>
+                  renderInlineGoalCard(goal)
+                )
+              : null}
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(event) => {
+              console.log("🎯 Drag started:", event.active.id);
+            }}
+            onDragEnd={handleDrawerDragEnd}
+          >
+            <SortableContext
+              items={visibleDrawerGoals.map((g) => g.id)}
+            >
+              <LayoutGroup
+                id={`campaign-drawer-goals-${roadmap.id}`}
+              >
+                <div className="flex flex-col gap-1 sm:gap-1.5">
+                  <AnimatePresence initial={false}>
+                    {activeGoals.map((goal, index) =>
+                      renderDrawerGoalCard(goal, index)
+                    )}
+
+                    {completedGoals.length > 0 ? (
+                      <motion.button
+                        key="campaign-drawer-completed-goals-toggle"
+                        type="button"
+                        aria-expanded={showCompletedGoals}
+                        onClick={() =>
+                          setShowCompletedGoals(
+                            (current) => !current
+                          )
+                        }
+                        className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                        layout={
+                          prefersReducedMotion
+                            ? undefined
+                            : "position"
+                        }
+                        transition={
+                          prefersReducedMotion
+                            ? { duration: 0.12 }
+                            : {
+                                layout:
+                                  campaignDrawerRowTransition,
+                              }
+                        }
+                      >
+                        <span>
+                          {completedGoalsToggleLabel}
+                        </span>
+                      </motion.button>
+                    ) : null}
+
+                    {showCompletedGoals
+                      ? completedGoals.map(
+                          (goal, index) =>
+                            renderDrawerGoalCard(
+                              goal,
+                              activeGoals.length + index
+                            )
+                        )
+                      : null}
+                  </AnimatePresence>
+                </div>
+              </LayoutGroup>
+            </SortableContext>
+          </DndContext>
+        )}
       </div>
+
       <div className="mt-1.5 shrink-0 sm:mt-2">
-        <AddGoalButton campaignId={roadmap.id} onAddGoal={onAddGoal} />
+        <AddGoalButton
+          campaignId={roadmap.id}
+          onAddGoal={onAddGoal}
+        />
       </div>
     </div>
   );

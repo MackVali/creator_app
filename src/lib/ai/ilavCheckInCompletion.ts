@@ -53,6 +53,7 @@ type HabitLookupRow = {
 type TaskLookupRow = {
   id: string;
   skill_id: string | null;
+  project_id: string | null;
 };
 
 function normalizeCompletedAt(value: string | null | undefined) {
@@ -99,15 +100,52 @@ async function loadHabit(client: Client, userId: string, habitId: string) {
   return data as HabitLookupRow | null;
 }
 
-async function loadTaskSkillId(client: Client, userId: string, taskId: string) {
+async function loadTask(client: Client, userId: string, taskId: string) {
   const { data, error } = await client
     .from("tasks")
-    .select("id, skill_id")
+    .select("id, skill_id, project_id")
     .eq("user_id", userId)
     .eq("id", taskId)
     .maybeSingle();
   if (error) throw error;
-  return ((data as TaskLookupRow | null)?.skill_id ?? null)?.trim() || null;
+  return data as TaskLookupRow | null;
+}
+
+async function resolveProjectSkillIds(
+  client: Client,
+  userId: string,
+  projectId: string
+) {
+  const [projectSkillResult, taskSkillResult] = await Promise.all([
+    client
+      .from("project_skills")
+      .select("project_id, skill_id")
+      .eq("project_id", projectId),
+    client
+      .from("tasks")
+      .select("id, skill_id, project_id")
+      .eq("user_id", userId)
+      .eq("project_id", projectId),
+  ]);
+
+  if (projectSkillResult.error) throw projectSkillResult.error;
+  if (taskSkillResult.error) throw taskSkillResult.error;
+
+  const skillIds = new Set<string>();
+
+  for (const row of (projectSkillResult.data ?? []) as Array<{
+    skill_id: string | null;
+  }>) {
+    const skillId = row.skill_id?.trim();
+    if (skillId) skillIds.add(skillId);
+  }
+
+  for (const row of (taskSkillResult.data ?? []) as TaskLookupRow[]) {
+    const skillId = row.skill_id?.trim();
+    if (skillId) skillIds.add(skillId);
+  }
+
+  return Array.from(skillIds);
 }
 
 async function resolveScheduledSkillIds(params: {
@@ -122,8 +160,17 @@ async function resolveScheduledSkillIds(params: {
     return habit?.skill_id ? [habit.skill_id] : [];
   }
   if (params.instance.source_type === "TASK") {
-    const skillId = await loadTaskSkillId(params.client, params.userId, sourceId);
-    return skillId ? [skillId] : [];
+    const task = await loadTask(params.client, params.userId, sourceId);
+    const skillId = task?.skill_id?.trim();
+    if (skillId) return [skillId];
+
+    const projectId = task?.project_id?.trim();
+    return projectId
+      ? resolveProjectSkillIds(params.client, params.userId, projectId)
+      : [];
+  }
+  if (params.instance.source_type === "PROJECT") {
+    return resolveProjectSkillIds(params.client, params.userId, sourceId);
   }
   return [];
 }
@@ -179,7 +226,10 @@ async function completeScheduledInstance(params: {
     userId: params.userId,
     instance,
   });
-  if (skillIds.length === 0) {
+  if (
+    skillIds.length === 0 &&
+    instance.source_type !== "PROJECT"
+  ) {
     throw new Error(`${semantics.completionSourceType} has no skill context.`);
   }
 
