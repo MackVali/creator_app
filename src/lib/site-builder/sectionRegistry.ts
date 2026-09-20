@@ -70,6 +70,12 @@ const sectionDefinitions = [
     defaultStyle: { background: "default" },
     variants: [
       { id: "split", label: "Split", description: "Copy beside a media stage." },
+      {
+        id: "showcase",
+        label: "Showcase",
+        description:
+          "Large edge-to-edge media with copy layered into the composition.",
+      },
       { id: "centered", label: "Centered", description: "Balanced copy with media below." },
       { id: "editorial", label: "Editorial", description: "Large type and restrained media." },
       { id: "minimal", label: "Minimal", description: "Compact, text-first introduction." },

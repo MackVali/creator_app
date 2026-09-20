@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import PortfolioSite from "@/components/portfolio/PortfolioSite";
 import {
@@ -32,7 +32,6 @@ function cloneInitialSite(): SiteDocument {
 
 
 export default function SitePreviewFrame() {
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const [site, setSite] = useState<SiteDocument>(cloneInitialSite);
   const [selectedPageId, setSelectedPageId] = useState(
     () => cloneInitialSite().homePageId,
@@ -66,19 +65,6 @@ export default function SitePreviewFrame() {
     site.pages[0];
 
   useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search,
-      );
-
-    if (
-      params.get(
-        "standalone",
-      ) === "1"
-    ) {
-      return;
-    }
-
     const html =
       document.documentElement;
 
@@ -88,21 +74,60 @@ export default function SitePreviewFrame() {
     const previousHtmlOverflow =
       html.style.overflow;
 
+    const previousHtmlOverflowX =
+      html.style.overflowX;
+
+    const previousHtmlOverflowY =
+      html.style.overflowY;
+
     const previousBodyOverflow =
       body.style.overflow;
 
+    const previousBodyOverflowX =
+      body.style.overflowX;
+
+    const previousBodyOverflowY =
+      body.style.overflowY;
+
+    // Preview pages should scroll like normal websites.
+    // The iframe itself defines the viewport; the document
+    // inside it owns vertical scrolling.
     html.style.overflow =
+      "auto";
+
+    html.style.overflowX =
       "hidden";
 
+    html.style.overflowY =
+      "auto";
+
     body.style.overflow =
+      "auto";
+
+    body.style.overflowX =
       "hidden";
+
+    body.style.overflowY =
+      "auto";
 
     return () => {
       html.style.overflow =
         previousHtmlOverflow;
 
+      html.style.overflowX =
+        previousHtmlOverflowX;
+
+      html.style.overflowY =
+        previousHtmlOverflowY;
+
       body.style.overflow =
         previousBodyOverflow;
+
+      body.style.overflowX =
+        previousBodyOverflowX;
+
+      body.style.overflowY =
+        previousBodyOverflowY;
     };
   }, []);
 
@@ -260,7 +285,7 @@ export default function SitePreviewFrame() {
   }, []);
 
   useEffect(() => {
-    rootRef.current?.scrollTo({
+    window.scrollTo({
       top: 0,
       left: 0,
       behavior: "auto",
@@ -326,17 +351,8 @@ export default function SitePreviewFrame() {
 
   return (
     <div
-      ref={rootRef}
       data-site-preview-scroll-root
-      className={
-        standaloneMode
-          ? "min-h-dvh overflow-x-hidden"
-          : "h-dvh overflow-y-auto overflow-x-hidden overscroll-contain"
-      }
-      style={{
-        WebkitOverflowScrolling:
-          "touch",
-      }}
+      className="min-h-dvh overflow-x-hidden"
     >
       {standaloneLoading ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black text-[12px] text-white/50">

@@ -294,6 +294,7 @@ type InlineEditableTextProps = {
   node: EditorNodeId;
   editorContext: EditorSelectionContext;
   className?: string;
+  style?: CSSProperties;
   multiline?: boolean;
   children?: ReactNode;
 };
@@ -310,6 +311,7 @@ function InlineEditableText({
   node,
   editorContext,
   className = "",
+  style,
   multiline = false,
   children,
 }: InlineEditableTextProps) {
@@ -431,6 +433,7 @@ function InlineEditableText({
   return (
     <Tag
       ref={elementRef as never}
+      style={style}
       contentEditable={editing}
       suppressContentEditableWarning
       tabIndex={editing ? 0 : undefined}
@@ -1705,6 +1708,9 @@ function HeroSection({
   const centered =
     variant === "centered";
 
+  const showcase =
+    variant === "showcase";
+
   const editorial =
     variant === "editorial";
 
@@ -1712,13 +1718,21 @@ function HeroSection({
     variant === "minimal";
 
   const textDefaults:
-    SectionTextDefaults = {
-      headingSize: 72,
-      headingWidth: 780,
-      bodySize: 14,
-      bodyWidth: 520,
-      textGap: 20,
-    };
+    SectionTextDefaults = showcase
+      ? {
+          headingSize: 96,
+          headingWidth: 980,
+          bodySize: 18,
+          bodyWidth: 620,
+          textGap: 20,
+        }
+      : {
+          headingSize: 72,
+          headingWidth: 780,
+          bodySize: 14,
+          bodyWidth: 520,
+          textGap: 20,
+        };
 
   const mediaShare =
     section?.layout
@@ -1767,7 +1781,7 @@ function HeroSection({
             editorContext={
               editorContext
             }
-            className="text-[8px] font-medium uppercase tracking-[0.3em] text-[var(--site-text-subtle)]"
+            className="text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--site-text-subtle)]"
           />
         ) : null}
 
@@ -1840,7 +1854,11 @@ function HeroSection({
               "button",
             )
           }
-          className={`mt-6 inline-flex h-9 w-fit items-center gap-3 rounded-full border border-[var(--site-border-strong)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35 ${
+          className={`${
+            showcase
+              ? "mt-7 inline-flex w-fit items-center gap-3 border-b border-white/20 pb-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-[var(--site-accent)] transition-colors hover:border-white/40"
+              : "mt-6 inline-flex h-9 w-fit items-center gap-3 rounded-full border border-[var(--site-border-strong)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35"
+          } ${
             centered
               ? "mx-auto"
               : ""
@@ -1911,7 +1929,19 @@ function HeroSection({
           section,
         )}`}
       >
-        {variant === "split" ? (
+        {showcase ? (
+          <div className="relative">
+            <div className="mb-10 max-w-[980px] lg:mb-12">
+              {copy}
+            </div>
+
+            {media ? (
+              <div className="w-full">
+                {media}
+              </div>
+            ) : null}
+          </div>
+        ) : variant === "split" ? (
           <div
             className="grid items-center lg:grid-cols-[var(--hero-copy)_var(--hero-media)]"
             style={{
@@ -5568,17 +5598,17 @@ export default function PortfolioSite({
       className="min-h-screen bg-[var(--site-bg)] text-[var(--site-text)]"
     >
       <header className="sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl">
-        <div className="mx-auto flex h-[48px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
+        <div className="mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
           <Link
             href={`/portfolio/${site.handle}`}
-            className="text-[10px] font-semibold tracking-[0.43em]"
+            className="text-[11px] font-semibold tracking-[0.32em]"
             style={{ color: "var(--site-accent)" }}
           >
             {headerConfig.brandLabel}
           </Link>
 
           <div className="flex items-center gap-6">
-            <nav className="hidden items-center gap-9 text-[9px] text-[var(--site-text-muted)] md:flex">
+            <nav className="hidden items-center gap-8 text-[10px] text-[var(--site-text-muted)] md:flex">
               {visibleNavigation.map((item) => (
                 <a
                   key={item.id}
