@@ -66,6 +66,7 @@ enum FocusGateSharedState {
     static let appGroupIdentifier = "group.app.trycreator.creator"
     static let stateKey = "creator.focusGate.state.v1"
     static let baselineAllowedMinutesKey = "creator.focusGate.baselineAllowedMinutes.v1"
+    static let monitorGenerationKey = "creator.focusGate.monitorGeneration.v1"
     static let selectionKey = "creator.focusGate.familyActivitySelection.v1"
     static let debugEventsKey = "creator.focusGate.debugEvents.v1"
     static let debugEventLimit = 30
@@ -123,6 +124,27 @@ enum FocusGateSharedState {
 
         defaults.set(sanitizeBaselineAllowedMinutes(value), forKey: baselineAllowedMinutesKey)
         return defaults.synchronize()
+    }
+
+    static func loadMonitorGeneration() -> Int {
+        guard let defaults = userDefaults() else {
+            return 0
+        }
+        return max(0, defaults.integer(forKey: monitorGenerationKey))
+    }
+
+    @discardableResult
+    static func advanceMonitorGeneration() -> Int {
+        guard let defaults = userDefaults() else {
+            return 0
+        }
+
+        let next = loadMonitorGeneration() >= Int.max - 1
+            ? 1
+            : loadMonitorGeneration() + 1
+        defaults.set(next, forKey: monitorGenerationKey)
+        defaults.synchronize()
+        return next
     }
 
     static func loadSelection() -> FamilyActivitySelection {
