@@ -255,10 +255,6 @@ function buildSectionPreview(
       placement: "top",
     };
 
-    section.style = {
-      ...section.style,
-      background: "contrast",
-    };
   }
 
   if (type === "hero") {

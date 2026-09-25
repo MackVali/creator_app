@@ -37,6 +37,7 @@ interface ScheduleTopBarProps {
   onToggleSimpleSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
   position?: "fixed" | "sticky";
+  compactActionButtons?: boolean;
   className?: string;
 }
 
@@ -62,6 +63,7 @@ export function ScheduleTopBar({
   onToggleSimpleSchedulingMode,
   onHeightChange,
   position = "fixed",
+  compactActionButtons = false,
   className,
 }: ScheduleTopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
@@ -267,7 +269,9 @@ export function ScheduleTopBar({
               onClick={handleRescheduleClick}
               disabled={!canReschedule || isRescheduling}
               aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
-              className={rescheduleButtonClass}
+              className={
+                compactActionButtons ? "hidden" : rescheduleButtonClass
+              }
             >
               <RefreshCcw
                 strokeWidth={2.4}
@@ -282,7 +286,11 @@ export function ScheduleTopBar({
               onClick={handleRescheduleClick}
               disabled={!canReschedule || isRescheduling}
               aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
-              className={`sm:hidden ${iconButtonClass}`}
+              className={
+                compactActionButtons
+                  ? iconButtonClass
+                  : `sm:hidden ${iconButtonClass}`
+              }
             >
               <RefreshCcw
                 className={`h-5 w-5 text-[var(--muted)] ${
@@ -299,7 +307,7 @@ export function ScheduleTopBar({
             aria-label="Toggle schedule debug menu"
             aria-expanded={isDebugMenuOpen}
             className={cn(
-              debugButtonClass,
+              compactActionButtons ? "hidden" : debugButtonClass,
               isDebugMenuOpen &&
                 "relative z-[140] bg-black text-zinc-100 hover:bg-black hover:text-zinc-100"
             )}
@@ -314,7 +322,7 @@ export function ScheduleTopBar({
             aria-expanded={isDebugMenuOpen}
             className={cn(
               iconButtonClass,
-              "sm:hidden",
+              !compactActionButtons && "sm:hidden",
               isDebugMenuOpen &&
                 "relative z-[140] bg-black hover:bg-black"
             )}
