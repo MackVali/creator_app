@@ -413,6 +413,36 @@ const sectionDefinitions = [
     supportsBackground: true,
   },
   {
+    type: "banner",
+    label: "Banner",
+    description:
+      "Show an announcement at the top, bottom, or both edges of the page.",
+    category: "Essentials",
+    defaultContent: {
+      message: "Announcement",
+      buttonLabel: "",
+      buttonHref: "",
+    },
+    defaultSource: { kind: "manual" },
+    defaultLayout: {
+      variant: "standard",
+      placement: "top",
+    },
+    defaultStyle: {
+      background: "contrast",
+    },
+    variants: [
+      {
+        id: "standard",
+        label: "Standard",
+        description:
+          "A compact full-width announcement bar.",
+      },
+    ],
+    usesSource: false,
+    supportsBackground: true,
+  },
+  {
     type: "cta",
     label: "CTA",
     description: "Invite visitors into the next step.",

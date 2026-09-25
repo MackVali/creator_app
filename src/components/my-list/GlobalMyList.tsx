@@ -59,8 +59,6 @@ import {
 } from "@/lib/my-list/myListListsStorage";
 import { isAreaId } from "@/config/areas";
 
-const DESKTOP_MY_LIST_MEDIA_QUERY = "(min-width: 1024px)";
-
 type MyListXpAwardResult = {
   success?: boolean;
   inserted?: number;
@@ -417,11 +415,6 @@ export function GlobalMyList({
   const { user, ready } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [isDesktopViewport, setIsDesktopViewport] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : window.matchMedia(DESKTOP_MY_LIST_MEDIA_QUERY).matches,
-  );
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [pinnedSourceRows, setPinnedSourceRows] = useState<
     MyListPinnedSourceRow[]
@@ -451,24 +444,7 @@ export function GlobalMyList({
     () => getPreferredMyListSystemKeyFromPathname(pathname),
     [pathname],
   );
-  const isDesktopCommandRail =
-    pathname === "/dashboard" && isDesktopViewport;
-  const presentationMode = isDesktopCommandRail ? "desktop-rail" : "sheet";
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const mediaQuery = window.matchMedia(DESKTOP_MY_LIST_MEDIA_QUERY);
-    const syncDesktopViewport = () => {
-      setIsDesktopViewport(mediaQuery.matches);
-    };
-
-    syncDesktopViewport();
-    mediaQuery.addEventListener("change", syncDesktopViewport);
-    return () => {
-      mediaQuery.removeEventListener("change", syncDesktopViewport);
-    };
-  }, []);
+  const presentationMode = "sheet";
 
   useEffect(() => {
     if (!ready || !user?.id) {
@@ -1978,7 +1954,7 @@ export function GlobalMyList({
 
   return (
     <MyListSheet
-      open={isDesktopCommandRail || open}
+      open={open}
       presentationMode={presentationMode}
       userId={user?.id ?? null}
       tasks={myListTasks}
@@ -2006,7 +1982,6 @@ export function GlobalMyList({
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {
-        if (isDesktopCommandRail) return;
         void hapticPress();
         setOpen(nextOpen);
       }}

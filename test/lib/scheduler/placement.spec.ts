@@ -500,6 +500,60 @@ describe("placeItemInWindows", () => {
     expect(capturedStarts[1]).toBe("2024-01-02T02:30:00.000Z");
   });
 
+  it("treats scheduled EVENT instances as blockers for project placement", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    let capturedStartUTC: string | null = null;
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStartUTC = input.startUTC;
+      return {
+        data: { id: "inst-project-after-event" },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const windowStart = new Date("2026-09-24T19:00:00Z");
+    const windowEnd = new Date("2026-09-24T22:00:00Z");
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "project-event-blocked",
+        sourceType: "PROJECT",
+        duration_min: 60,
+        energy: "MEDIUM",
+        weight: 1,
+      },
+      windows: [
+        {
+          id: "win-afternoon",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-event-blocker",
+          source_id: "event-1",
+          source_type: "EVENT",
+          status: "scheduled",
+          start_utc: "2026-09-24T20:00:00.000Z",
+          end_utc: "2026-09-24T21:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(capturedStartUTC).not.toBe("2026-09-24T20:00:00.000Z");
+    expect([
+      "2026-09-24T19:00:00.000Z",
+      "2026-09-24T21:00:00.000Z",
+    ]).toContain(capturedStartUTC);
+  });
+
   it("reuses blocker cache entries for the same day/timezone", async () => {
     const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
     fetchInstancesMock.mockResolvedValue({

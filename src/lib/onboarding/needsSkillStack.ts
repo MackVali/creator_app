@@ -24,14 +24,27 @@ export async function needsCreatorOnboarding(
   supabase: Supabase,
   userId: string
 ) {
-  const [profileResult, skillResult, monumentResult] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select(
-        "name,username,dob,onboarding_version,onboarding_step,onboarding_completed_at"
-      )
-      .eq("user_id", userId)
-      .maybeSingle(),
+  const profileResult = await supabase
+    .from("profiles")
+    .select(
+      "name,username,dob,onboarding_version,onboarding_step,onboarding_completed_at"
+    )
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (profileResult.error) {
+    throw profileResult.error;
+  }
+
+  if (isProfileSetupIncomplete(profileResult.data)) {
+    return false;
+  }
+
+  if (isCreatorOnboardingComplete(profileResult.data)) {
+    return false;
+  }
+
+  const [skillResult, monumentResult] = await Promise.all([
     supabase
       .from("skills")
       .select("id", { count: "exact", head: true })
@@ -42,24 +55,12 @@ export async function needsCreatorOnboarding(
       .eq("user_id", userId),
   ]);
 
-  if (profileResult.error) {
-    throw profileResult.error;
-  }
-
   if (skillResult.error) {
     throw skillResult.error;
   }
 
   if (monumentResult.error) {
     throw monumentResult.error;
-  }
-
-  if (isProfileSetupIncomplete(profileResult.data)) {
-    return false;
-  }
-
-  if (isCreatorOnboardingComplete(profileResult.data)) {
-    return false;
   }
 
   return (

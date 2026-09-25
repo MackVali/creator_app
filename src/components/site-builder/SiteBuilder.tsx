@@ -59,6 +59,7 @@ import {
   createSitePreviewActiveSelectionMessage,
   createSitePreviewStateMessage,
   isSitePreviewContentEditRequestMessage,
+  isSitePreviewMediaEditRequestMessage,
   isSitePreviewReadyMessage,
   isSitePreviewSectionInsertRequestMessage,
   isSitePreviewSelectionRequestMessage,
@@ -430,6 +431,13 @@ function getSectionNavigationChildren(
     ];
   }
 
+  if (section.type === "banner") {
+    return [
+      { id: "text", label: "Message", icon: Type },
+      { id: "button", label: "Action", icon: MousePointerClick },
+    ];
+  }
+
   if (section.type === "cta") {
     return [
       { id: "text", label: "Text", icon: Type },
@@ -526,6 +534,7 @@ function getSectionTreeIcon(
     case "embed":
       return ImageIcon;
 
+    case "banner":
     case "cta":
     case "contact":
       return MousePointerClick;
@@ -2419,6 +2428,12 @@ function CardBlockInspectorPanel({
       <div className="space-y-5 p-4">
         <InspectorGroup title="Content">
           <div className="space-y-3">
+        <SectionColorControls
+          section={section}
+          themeColors={themeColors}
+          onStyleChange={onStyleChange}
+        />
+
             <TextInput
               id={`site-card-block-eyebrow-${item.id}`}
               label="Eyebrow"
@@ -3879,6 +3894,7 @@ function InspectorContentPanel({
   if (section.type === "cards") {
     return (
       <div className="space-y-3">
+
         <InspectorGroup title="Section">
           <TextInput
             id="site-cards-heading"
@@ -4243,6 +4259,56 @@ function InspectorContentPanel({
     );
   }
 
+  if (section.type === "banner") {
+    return (
+      <div className="space-y-3">
+        <InspectorGroup title="Banner">
+          <TextAreaInput
+            id="site-banner-message"
+            label="Message"
+            value={getContentString(
+              section,
+              "message",
+            )}
+            onChange={(value) =>
+              onContentChange(
+                "message",
+                value,
+              )
+            }
+            rows={2}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Action">
+          <CtaFields
+            site={site}
+            labelId="site-banner-button-label"
+            hrefId="site-banner-button-href"
+            label={getContentString(
+              section,
+              "buttonLabel",
+            )}
+            href={getContentString(
+              section,
+              "buttonHref",
+            )}
+            pageId={getContentString(
+              section,
+              "buttonPageId",
+            )}
+            labelKey="buttonLabel"
+            hrefKey="buttonHref"
+            pageIdKey="buttonPageId"
+            onContentChange={
+              onContentChange
+            }
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "cta") {
     return (
       <InspectorGroup title="Content">
@@ -4301,6 +4367,39 @@ function ContentNodeInspectorPanel({
     node === "button" ? "Button" : node === "media" ? "Media" : "Text";
 
   if (node === "text") {
+    if (section.type === "banner") {
+      return (
+        <>
+          <div className="border-b border-white/[0.07] px-4 py-3">
+            <p className="truncate text-[15px] font-medium text-zinc-100">
+              Message
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+              {section.label} / Message
+            </p>
+          </div>
+
+          <div className="p-4">
+            <TextAreaInput
+              id="site-banner-node-message"
+              label="Message"
+              value={getContentString(
+                section,
+                "message",
+              )}
+              onChange={(value) =>
+                onContentChange(
+                  "message",
+                  value,
+                )
+              }
+              rows={3}
+            />
+          </div>
+        </>
+      );
+    }
+
     if (section.type === "hero") {
       return (
         <>
@@ -4513,6 +4612,7 @@ function ContentNodeInspectorPanel({
 
     if (
       section.type === "hero" ||
+      section.type === "banner" ||
       section.type === "split" ||
       section.type === "cta" ||
       section.type === "contact"
@@ -5437,10 +5537,12 @@ function preciseSectionPadding(
 
 function InspectorDesignPanel({
   section,
+  themeColors,
   onLayoutChange,
   onStyleChange,
 }: {
   section: SiteSection;
+  themeColors: SectionThemeColors;
   onLayoutChange: (
     key: keyof SiteSectionLayoutConfig,
     value:
@@ -5517,6 +5619,503 @@ function InspectorDesignPanel({
       section,
     );
 
+  if (section.type === "hero") {
+    const heroHeadingSize =
+      sectionLayout.headingSize ??
+      typographyDefaults.headingSize;
+
+    const heroScale =
+      heroHeadingSize >= 70
+        ? "large"
+        : heroHeadingSize <= 48
+          ? "compact"
+          : "balanced";
+
+    const heroHeightMode =
+      sectionLayout.heightMode ??
+      "auto";
+
+    function setHeroScale(
+      value:
+        | "compact"
+        | "balanced"
+        | "large",
+    ) {
+      if (value === "compact") {
+        onLayoutChange(
+          "headingSize",
+          44,
+        );
+        onLayoutChange(
+          "headingWidth",
+          440,
+        );
+        onLayoutChange(
+          "bodySize",
+          13,
+        );
+        onLayoutChange(
+          "bodyWidth",
+          380,
+        );
+        onLayoutChange(
+          "textGap",
+          10,
+        );
+        return;
+      }
+
+      if (value === "large") {
+        onLayoutChange(
+          "headingSize",
+          76,
+        );
+        onLayoutChange(
+          "headingWidth",
+          640,
+        );
+        onLayoutChange(
+          "bodySize",
+          17,
+        );
+        onLayoutChange(
+          "bodyWidth",
+          500,
+        );
+        onLayoutChange(
+          "textGap",
+          16,
+        );
+        return;
+      }
+
+      onLayoutChange(
+        "headingSize",
+        60,
+      );
+      onLayoutChange(
+        "headingWidth",
+        520,
+      );
+      onLayoutChange(
+        "bodySize",
+        15,
+      );
+      onLayoutChange(
+        "bodyWidth",
+        440,
+      );
+      onLayoutChange(
+        "textGap",
+        14,
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <SectionColorControls
+          section={section}
+          themeColors={themeColors}
+          onStyleChange={onStyleChange}
+        />
+        <InspectorGroup title="Composition">
+          <InspectorSegmentedControl
+            label="Layout"
+            value={
+              currentVariant === "split" ||
+              currentVariant === "centered" ||
+              currentVariant === "minimal"
+                ? currentVariant
+                : "showcase"
+            }
+            options={[
+              {
+                label: "Showcase",
+                value: "showcase",
+              },
+              {
+                label: "Split",
+                value: "split",
+              },
+              {
+                label: "Centered",
+                value: "centered",
+              },
+              {
+                label: "Minimal",
+                value: "minimal",
+              },
+            ]}
+            onChange={(value) =>
+              onLayoutChange(
+                "variant",
+                value,
+              )
+            }
+          />
+
+          <InspectorSegmentedControl
+            label="Height"
+            value={heroHeightMode}
+            options={[
+              {
+                label: "Auto",
+                value: "auto",
+              },
+              {
+                label: "Tall",
+                value: "minimum",
+              },
+              {
+                label: "Screen",
+                value: "screen",
+              },
+            ]}
+            onChange={(value) => {
+              onLayoutChange(
+                "heightMode",
+                value,
+              );
+
+              if (
+                value === "minimum" &&
+                !sectionLayout.minHeight
+              ) {
+                onLayoutChange(
+                  "minHeight",
+                  760,
+                );
+              }
+            }}
+          />
+
+          {heroHeightMode ===
+          "minimum" ? (
+            <InspectorRangeField
+              label="Height"
+              value={
+                sectionLayout.minHeight ??
+                760
+              }
+              min={480}
+              max={1100}
+              step={10}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "minHeight",
+                  value,
+                )
+              }
+            />
+          ) : null}
+        </InspectorGroup>
+
+        <InspectorGroup title="Type">
+          <InspectorSegmentedControl
+            label="Scale"
+            value={heroScale}
+            options={[
+              {
+                label: "Compact",
+                value: "compact",
+              },
+              {
+                label: "Balanced",
+                value: "balanced",
+              },
+              {
+                label: "Large",
+                value: "large",
+              },
+            ]}
+            onChange={setHeroScale}
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Appearance">
+          <InspectorSelectRow
+            label="Background"
+            value={
+              section.style
+                ?.background ??
+              "default"
+            }
+            options={[
+              {
+                label:
+                  "Site background",
+                value:
+                  "default",
+              },
+              {
+                label:
+                  "Surface",
+                value:
+                  "plain",
+              },
+              {
+                label:
+                  "Muted",
+                value:
+                  "muted",
+              },
+              {
+                label:
+                  "Strong",
+                value:
+                  "dark",
+              },
+              {
+                label:
+                  "Contrast",
+                value:
+                  "contrast",
+              },
+            ]}
+            onChange={(value) =>
+              onStyleChange(
+                "background",
+                value,
+              )
+            }
+          />
+
+          <InspectorSelectRow
+            label="Divider"
+            value={divider}
+            options={[
+              {
+                label: "None",
+                value: "none",
+              },
+              {
+                label: "Bottom",
+                value: "bottom",
+              },
+              {
+                label: "Top",
+                value: "top",
+              },
+              {
+                label: "Both",
+                value: "both",
+              },
+            ]}
+            onChange={(value) =>
+              onStyleChange(
+                "divider",
+                value,
+              )
+            }
+          />
+        </InspectorGroup>
+
+        <details className="group rounded-[10px] bg-white/[0.012] ring-1 ring-inset ring-white/[0.03]">
+          <summary className="flex h-9 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-medium text-zinc-600 transition-colors hover:text-zinc-400 [&::-webkit-details-marker]:hidden">
+            <span>
+              Advanced
+            </span>
+
+            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+          </summary>
+
+          <div className="space-y-3 border-t border-white/[0.035] p-2">
+            <InspectorSegmentedControl
+              label="Width"
+              value={
+                sectionLayout.width ??
+                "wide"
+              }
+              options={[
+                {
+                  label: "Normal",
+                  value: "normal",
+                },
+                {
+                  label: "Wide",
+                  value: "wide",
+                },
+                {
+                  label: "Full",
+                  value: "full",
+                },
+              ]}
+              onChange={(value) =>
+                onLayoutChange(
+                  "width",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Content width"
+              value={
+                sectionLayout
+                  .contentWidth ??
+                1440
+              }
+              min={800}
+              max={1800}
+              step={20}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "contentWidth",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSpacingControl
+              values={sharedPadding}
+              onChange={(
+                side,
+                value,
+              ) => {
+                const key =
+                  side === "top"
+                    ? "paddingTopPx"
+                    : side === "right"
+                      ? "paddingRightPx"
+                      : side === "bottom"
+                        ? "paddingBottomPx"
+                        : "paddingLeftPx";
+
+                onLayoutChange(
+                  key as keyof SiteSectionLayoutConfig,
+                  value,
+                );
+              }}
+            />
+
+            <InspectorRangeField
+              label="Heading"
+              value={
+                sectionLayout
+                  .headingSize ??
+                typographyDefaults
+                  .headingSize
+              }
+              min={32}
+              max={110}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "headingSize",
+                  value,
+                )
+              }
+            />
+
+            <InspectorRangeField
+              label="Body"
+              value={
+                sectionLayout
+                  .bodySize ??
+                typographyDefaults
+                  .bodySize
+              }
+              min={11}
+              max={24}
+              step={1}
+              unit="px"
+              onChange={(value) =>
+                onLayoutChange(
+                  "bodySize",
+                  value,
+                )
+              }
+            />
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  if (section.type === "banner") {
+    const placement =
+      section.layout
+        ?.placement ??
+      "top";
+
+    const background =
+      section.style
+        ?.background ??
+      "contrast";
+
+    return (
+      <div className="space-y-3">
+        <SectionColorControls
+          section={section}
+          themeColors={themeColors}
+          onStyleChange={onStyleChange}
+        />
+        <InspectorGroup title="Placement">
+          <InspectorSegmentedControl
+            label="Position"
+            value={placement}
+            options={[
+              {
+                label: "Top",
+                value: "top",
+              },
+              {
+                label: "Bottom",
+                value: "bottom",
+              },
+              {
+                label: "Both",
+                value: "both",
+              },
+            ]}
+            onChange={(value) =>
+              onLayoutChange(
+                "placement",
+                value as
+                  | "top"
+                  | "bottom"
+                  | "both",
+              )
+            }
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Appearance">
+          <InspectorSegmentedControl
+            label="Background"
+            value={background}
+            options={[
+              {
+                label: "Plain",
+                value: "plain",
+              },
+              {
+                label: "Muted",
+                value: "muted",
+              },
+              {
+                label: "Contrast",
+                value: "contrast",
+              },
+            ]}
+            onChange={(value) =>
+              onStyleChange(
+                "background",
+                value as
+                  SiteSectionStyleConfig[
+                    "background"
+                  ],
+              )
+            }
+          />
+        </InspectorGroup>
+      </div>
+    );
+  }
+
   if (section.type === "cards") {
     const layout = section.layout ?? {};
     const width =
@@ -5546,6 +6145,11 @@ function InspectorDesignPanel({
 
     return (
       <div className="space-y-3">
+        <SectionColorControls
+          section={section}
+          themeColors={themeColors}
+          onStyleChange={onStyleChange}
+        />
         <InspectorGroup title="Layout">
           <div>
             {supportsVariant &&
@@ -6003,6 +6607,11 @@ function InspectorDesignPanel({
 
   return (
     <div className="space-y-3">
+      <SectionColorControls
+        section={section}
+        themeColors={themeColors}
+        onStyleChange={onStyleChange}
+      />
 
       {/* APPEARANCE */}
       <InspectorGroup title="Appearance">
@@ -6822,6 +7431,299 @@ function ThemeColorRow({
         />
       </label>
     </div>
+  );
+}
+
+
+type SectionThemeColors =
+  ReturnType<
+    typeof getSiteThemeColors
+  >;
+
+function SectionColorField({
+  label,
+  value,
+  fallback,
+  swatches,
+  onChange,
+}: {
+  label: string;
+  value?: string;
+  fallback: string;
+  swatches: string[];
+  onChange: (
+    value:
+      | string
+      | undefined,
+  ) => void;
+}) {
+  const effectiveValue =
+    value ?? fallback;
+
+  const [
+    draft,
+    setDraft,
+  ] = useState(
+    effectiveValue.toUpperCase(),
+  );
+
+  useEffect(() => {
+    setDraft(
+      effectiveValue.toUpperCase(),
+    );
+  }, [
+    effectiveValue,
+  ]);
+
+  function commitDraft() {
+    if (
+      /^#[0-9a-fA-F]{6}$/.test(
+        draft,
+      )
+    ) {
+      onChange(
+        draft.toUpperCase(),
+      );
+
+      return;
+    }
+
+    setDraft(
+      effectiveValue.toUpperCase(),
+    );
+  }
+
+  const uniqueSwatches =
+    Array.from(
+      new Set(
+        swatches.map(
+          (color) =>
+            color.toUpperCase(),
+        ),
+      ),
+    );
+
+  return (
+    <div className="border-b border-white/[0.04] px-1 py-2.5 last:border-b-0">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] text-zinc-400">
+          {label}
+        </span>
+
+        {value ? (
+          <button
+            type="button"
+            onClick={() =>
+              onChange(
+                undefined,
+              )
+            }
+            className="text-[9px] text-zinc-650 transition hover:text-zinc-300"
+          >
+            Reset
+          </button>
+        ) : (
+          <span className="text-[8px] uppercase tracking-[0.08em] text-zinc-700">
+            Theme
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <label
+          className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-[7px] border border-white/[0.12]"
+          style={{
+            backgroundColor:
+              effectiveValue,
+          }}
+        >
+          <input
+            type="color"
+            value={
+              effectiveValue
+            }
+            onChange={(
+              event,
+            ) =>
+              onChange(
+                event.target.value.toUpperCase(),
+              )
+            }
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+        </label>
+
+        <div className="flex h-8 min-w-0 flex-1 items-center rounded-[7px] border border-white/[0.065] bg-black/20 px-2">
+          <span className="mr-1 font-mono text-[9px] text-zinc-700">
+            #
+          </span>
+
+          <input
+            value={
+              draft.replace(
+                /^#/,
+                "",
+              )
+            }
+            onChange={(
+              event,
+            ) =>
+              setDraft(
+                `#${event.target.value
+                  .replace(
+                    /[^0-9a-f]/gi,
+                    "",
+                  )
+                  .slice(
+                    0,
+                    6,
+                  )
+                  .toUpperCase()}`,
+              )
+            }
+            onBlur={
+              commitDraft
+            }
+            onKeyDown={(
+              event,
+            ) => {
+              if (
+                event.key ===
+                "Enter"
+              ) {
+                event.currentTarget.blur();
+              }
+            }}
+            spellCheck={
+              false
+            }
+            className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-zinc-400 outline-none focus:text-zinc-200"
+          />
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5">
+        {uniqueSwatches.map(
+          (color) => (
+            <button
+              key={
+                color
+              }
+              type="button"
+              title={
+                color
+              }
+              onClick={() =>
+                onChange(
+                  color,
+                )
+              }
+              className="h-4 w-4 rounded-full border border-white/[0.12] transition-transform hover:scale-110"
+              style={{
+                backgroundColor:
+                  color,
+              }}
+            />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionColorControls({
+  section,
+  themeColors,
+  onStyleChange,
+}: {
+  section: SiteSection;
+  themeColors:
+    SectionThemeColors;
+  onStyleChange: (
+    key:
+      keyof SiteSectionStyleConfig,
+    value:
+      SiteSectionStyleConfig[
+        keyof SiteSectionStyleConfig
+      ],
+  ) => void;
+}) {
+  const swatches = [
+    themeColors.background,
+    themeColors.surface,
+    themeColors.text,
+    themeColors.mutedText,
+    themeColors.accent,
+  ];
+
+  return (
+    <InspectorGroup title="Colors">
+      <SectionColorField
+        label="Background"
+        value={
+          section.style
+            ?.backgroundColor
+        }
+        fallback={
+          themeColors.background
+        }
+        swatches={
+          swatches
+        }
+        onChange={(
+          value,
+        ) =>
+          onStyleChange(
+            "backgroundColor",
+            value,
+          )
+        }
+      />
+
+      <SectionColorField
+        label="Text"
+        value={
+          section.style
+            ?.textColor
+        }
+        fallback={
+          themeColors.text
+        }
+        swatches={
+          swatches
+        }
+        onChange={(
+          value,
+        ) =>
+          onStyleChange(
+            "textColor",
+            value,
+          )
+        }
+      />
+
+      <SectionColorField
+        label="Accent"
+        value={
+          section.style
+            ?.accentColor
+        }
+        fallback={
+          themeColors.accent
+        }
+        swatches={
+          swatches
+        }
+        onChange={(
+          value,
+        ) =>
+          onStyleChange(
+            "accentColor",
+            value,
+          )
+        }
+      />
+    </InspectorGroup>
   );
 }
 
@@ -7754,6 +8656,214 @@ function SiteCatalogInspector({
 }
 
 
+function getNavigationItemKind(
+  item: SiteNavigationItem,
+) {
+  if (item.kind) {
+    return item.kind;
+  }
+
+  if (
+    item.children &&
+    item.children.length > 0
+  ) {
+    return "dropdown" as const;
+  }
+
+  return item.pageId
+    ? "page" as const
+    : "link" as const;
+}
+
+function findNavigationItem(
+  items: SiteNavigationItem[],
+  itemId: string,
+): SiteNavigationItem | undefined {
+  for (const item of items) {
+    if (item.id === itemId) {
+      return item;
+    }
+
+    const nested =
+      findNavigationItem(
+        item.children ?? [],
+        itemId,
+      );
+
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return undefined;
+}
+
+function updateNavigationTreeItem(
+  items: SiteNavigationItem[],
+  itemId: string,
+  update: (
+    item: SiteNavigationItem,
+  ) => SiteNavigationItem,
+): SiteNavigationItem[] {
+  return items.map((item) => {
+    if (item.id === itemId) {
+      return update(item);
+    }
+
+    if (
+      !item.children ||
+      item.children.length === 0
+    ) {
+      return item;
+    }
+
+    return {
+      ...item,
+      children:
+        updateNavigationTreeItem(
+          item.children,
+          itemId,
+          update,
+        ),
+    };
+  });
+}
+
+function removeNavigationTreeItem(
+  items: SiteNavigationItem[],
+  itemId: string,
+): SiteNavigationItem[] {
+  return items
+    .filter(
+      (item) =>
+        item.id !== itemId,
+    )
+    .map((item) => ({
+      ...item,
+      children:
+        item.children
+          ? removeNavigationTreeItem(
+              item.children,
+              itemId,
+            )
+          : undefined,
+    }));
+}
+
+function insertNavigationTreeItem(
+  items: SiteNavigationItem[],
+  parentId: string,
+  newItem: SiteNavigationItem,
+): SiteNavigationItem[] {
+  return items.map((item) => {
+    if (item.id === parentId) {
+      return {
+        ...item,
+        kind:
+          "dropdown",
+        children: [
+          ...(item.children ?? []),
+          newItem,
+        ],
+      };
+    }
+
+    if (
+      !item.children ||
+      item.children.length === 0
+    ) {
+      return item;
+    }
+
+    return {
+      ...item,
+      children:
+        insertNavigationTreeItem(
+          item.children,
+          parentId,
+          newItem,
+        ),
+    };
+  });
+}
+
+function moveNavigationTreeItem(
+  items: SiteNavigationItem[],
+  itemId: string,
+  direction: -1 | 1,
+): SiteNavigationItem[] {
+  const index =
+    items.findIndex(
+      (item) =>
+        item.id === itemId,
+    );
+
+  if (index >= 0) {
+    const nextIndex =
+      index + direction;
+
+    if (
+      nextIndex < 0 ||
+      nextIndex >=
+        items.length
+    ) {
+      return items;
+    }
+
+    const next = [
+      ...items,
+    ];
+
+    const [moved] =
+      next.splice(
+        index,
+        1,
+      );
+
+    next.splice(
+      nextIndex,
+      0,
+      moved,
+    );
+
+    return next;
+  }
+
+  return items.map((item) => {
+    if (
+      !item.children ||
+      item.children.length === 0
+    ) {
+      return item;
+    }
+
+    return {
+      ...item,
+      children:
+        moveNavigationTreeItem(
+          item.children,
+          itemId,
+          direction,
+        ),
+    };
+  });
+}
+
+function countNavigationTreeItems(
+  items: SiteNavigationItem[],
+): number {
+  return items.reduce(
+    (total, item) =>
+      total +
+      1 +
+      countNavigationTreeItems(
+        item.children ?? [],
+      ),
+    0,
+  );
+}
+
+
 function SiteChromeInspector({
   selection,
   site,
@@ -7785,6 +8895,23 @@ function SiteChromeInspector({
   const theme = getSiteThemeConfig(site);
   const themeColors =
     getSiteThemeColors(theme);
+  const [
+    navigationPickerOpen,
+    setNavigationPickerOpen,
+  ] = useState(false);
+
+  const [
+    navigationSearch,
+    setNavigationSearch,
+  ] = useState("");
+
+  const [
+    navigationInsertParentId,
+    setNavigationInsertParentId,
+  ] = useState<string | null>(
+    null,
+  );
+
 
   function updateThemeColor(
     key:
@@ -7803,14 +8930,6 @@ function SiteChromeInspector({
       },
     });
   }
-  const linkedNavigationPageIds = new Set(
-    header.navigation.flatMap((item) =>
-      item.pageId ? [item.pageId] : [],
-    ),
-  );
-  const navigationPagesNotLinked = site.pages.filter(
-    (page) => !linkedNavigationPageIds.has(page.id),
-  );
 
   if (selection === "site") {
     return (
@@ -8226,232 +9345,705 @@ function SiteChromeInspector({
   }
 
   if (selection === "navigation") {
+    const navigationCount =
+      countNavigationTreeItems(
+        header.navigation,
+      );
+
+    const pickerParent =
+      navigationInsertParentId
+        ? findNavigationItem(
+            header.navigation,
+            navigationInsertParentId,
+          )
+        : undefined;
+
+    const query =
+      navigationSearch
+        .trim()
+        .toLowerCase();
+
+    const matchingPages =
+      site.pages.filter(
+        (page) => {
+          if (!query) {
+            return true;
+          }
+
+          const route =
+            getSitePageHref(
+              site,
+              page.id,
+            );
+
+          return (
+            page.title
+              .toLowerCase()
+              .includes(
+                query,
+              ) ||
+            route
+              .toLowerCase()
+              .includes(
+                query,
+              )
+          );
+        },
+      );
+
+    function commitNavigationItem(
+      item: SiteNavigationItem,
+    ) {
+      if (
+        navigationInsertParentId
+      ) {
+        onNavigationChange(
+          insertNavigationTreeItem(
+            header.navigation,
+            navigationInsertParentId,
+            item,
+          ),
+        );
+      } else {
+        onNavigationChange([
+          ...header.navigation,
+          item,
+        ]);
+      }
+    }
+
+    function openNavigationPicker(
+      parentId:
+        string | null = null,
+    ) {
+      setNavigationInsertParentId(
+        parentId,
+      );
+
+      setNavigationSearch(
+        "",
+      );
+
+      setNavigationPickerOpen(
+        true,
+      );
+    }
+
+    function renderNavigationItems(
+      items: SiteNavigationItem[],
+    ): ReactNode {
+      return items.map(
+        (item, index) => {
+          const kind =
+            getNavigationItemKind(
+              item,
+            );
+
+          const children =
+            item.children ?? [];
+
+          const page =
+            item.pageId
+              ? site.pages.find(
+                  (candidate) =>
+                    candidate.id ===
+                    item.pageId,
+                )
+              : undefined;
+
+          const route =
+            page
+              ? getSitePageHref(
+                  site,
+                  page.id,
+                )
+              : item.href;
+
+          const destinationValue =
+            item.pageId
+              ? item.pageId
+              : item.href
+                ? "__custom__"
+                : kind ===
+                    "dropdown"
+                  ? "__none__"
+                  : "__custom__";
+
+          return (
+            <div
+              key={
+                item.id
+              }
+              className="space-y-1"
+            >
+              <details className="group overflow-hidden rounded-[9px] border border-white/[0.055] bg-white/[0.012]">
+                <summary className="flex min-h-[50px] cursor-pointer list-none items-center gap-2.5 px-2.5 py-2 [&::-webkit-details-marker]:hidden">
+                  <span className="select-none text-[12px] tracking-[-0.12em] text-zinc-700">
+                    ⋮⋮
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[11px] font-medium text-zinc-300">
+                        {
+                          item.label ||
+                          "Untitled"
+                        }
+                      </span>
+
+                      {kind ===
+                      "dropdown" ? (
+                        <span className="shrink-0 text-[8px] text-zinc-700">
+                          {
+                            children.length
+                          }{" "}
+                          {
+                            children.length ===
+                            1
+                              ? "item"
+                              : "items"
+                          }
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-0.5 truncate text-[9px] text-zinc-650">
+                      {kind ===
+                      "dropdown"
+                        ? route ||
+                          "Dropdown"
+                        : route ||
+                          "No destination"}
+                    </p>
+                  </div>
+
+                  {!item.visible ? (
+                    <span className="shrink-0 text-[8px] text-zinc-700">
+                      Hidden
+                    </span>
+                  ) : null}
+
+                  <span className="shrink-0 text-[11px] text-zinc-700 transition group-open:rotate-90">
+                    ›
+                  </span>
+                </summary>
+
+                <div className="space-y-3 border-t border-white/[0.045] p-2.5">
+                  <TextInput
+                    id={`site-nav-label-${item.id}`}
+                    label="Label"
+                    value={
+                      item.label
+                    }
+                    onChange={(
+                      value,
+                    ) =>
+                      onNavigationChange(
+                        updateNavigationTreeItem(
+                          header.navigation,
+                          item.id,
+                          (
+                            current,
+                          ) => ({
+                            ...current,
+                            label:
+                              value,
+                          }),
+                        ),
+                      )
+                    }
+                  />
+
+                  <div>
+                    <FieldLabel
+                      htmlFor={`site-nav-target-${item.id}`}
+                    >
+                      Destination
+                    </FieldLabel>
+
+                    <select
+                      id={`site-nav-target-${item.id}`}
+                      value={
+                        destinationValue
+                      }
+                      onChange={(
+                        event,
+                      ) => {
+                        const value =
+                          event
+                            .target
+                            .value;
+
+                        onNavigationChange(
+                          updateNavigationTreeItem(
+                            header.navigation,
+                            item.id,
+                            (
+                              current,
+                            ) => {
+                              if (
+                                value ===
+                                "__none__"
+                              ) {
+                                return {
+                                  ...current,
+                                  pageId:
+                                    undefined,
+                                  href: "",
+                                };
+                              }
+
+                              if (
+                                value ===
+                                "__custom__"
+                              ) {
+                                return {
+                                  ...current,
+                                  kind:
+                                    kind ===
+                                    "dropdown"
+                                      ? "dropdown"
+                                      : "link",
+                                  pageId:
+                                    undefined,
+                                  href:
+                                    current.href ||
+                                    "",
+                                };
+                              }
+
+                              return {
+                                ...current,
+                                kind:
+                                  kind ===
+                                  "dropdown"
+                                    ? "dropdown"
+                                    : "page",
+                                pageId:
+                                  value,
+                                href: "",
+                              };
+                            },
+                          ),
+                        );
+                      }}
+                      className="mt-1.5 h-8 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 text-[10px] text-zinc-400 outline-none focus:border-white/[0.14]"
+                    >
+                      {kind ===
+                      "dropdown" ? (
+                        <option value="__none__">
+                          No destination
+                        </option>
+                      ) : null}
+
+                      <option value="__custom__">
+                        Custom URL
+                      </option>
+
+                      {site.pages.map(
+                        (pageOption) => (
+                          <option
+                            key={
+                              pageOption.id
+                            }
+                            value={
+                              pageOption.id
+                            }
+                          >
+                            {
+                              pageOption.title
+                            }
+                            {pageOption.id ===
+                            site.homePageId
+                              ? " · Home"
+                              : ""}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+
+                  {!item.pageId &&
+                  destinationValue ===
+                    "__custom__" ? (
+                    <TextInput
+                      id={`site-nav-href-${item.id}`}
+                      label="Custom URL"
+                      value={
+                        item.href
+                      }
+                      placeholder="https://… or #section"
+                      onChange={(
+                        value,
+                      ) =>
+                        onNavigationChange(
+                          updateNavigationTreeItem(
+                            header.navigation,
+                            item.id,
+                            (
+                              current,
+                            ) => ({
+                              ...current,
+                              href:
+                                value,
+                            }),
+                          ),
+                        )
+                      }
+                    />
+                  ) : null}
+
+                  {kind ===
+                  "dropdown" ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openNavigationPicker(
+                          item.id,
+                        )
+                      }
+                      className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-white/[0.035] text-[10px] text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-300"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add child
+                    </button>
+                  ) : null}
+
+                  <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
+                    <label className="flex items-center gap-2 text-[10px] text-zinc-500">
+                      <input
+                        type="checkbox"
+                        checked={
+                          item.visible
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          onNavigationChange(
+                            updateNavigationTreeItem(
+                              header.navigation,
+                              item.id,
+                              (
+                                current,
+                              ) => ({
+                                ...current,
+                                visible:
+                                  event
+                                    .target
+                                    .checked,
+                              }),
+                            ),
+                          )
+                        }
+                        className="h-3.5 w-3.5 accent-zinc-100"
+                      />
+
+                      Visible
+                    </label>
+
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        disabled={
+                          index === 0
+                        }
+                        onClick={() =>
+                          onNavigationChange(
+                            moveNavigationTreeItem(
+                              header.navigation,
+                              item.id,
+                              -1,
+                            ),
+                          )
+                        }
+                        className="flex h-6 w-6 items-center justify-center rounded text-zinc-650 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-20"
+                        title="Move up"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={
+                          index ===
+                          items.length -
+                            1
+                        }
+                        onClick={() =>
+                          onNavigationChange(
+                            moveNavigationTreeItem(
+                              header.navigation,
+                              item.id,
+                              1,
+                            ),
+                          )
+                        }
+                        className="flex h-6 w-6 items-center justify-center rounded text-zinc-650 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-20"
+                        title="Move down"
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onNavigationChange(
+                            removeNavigationTreeItem(
+                              header.navigation,
+                              item.id,
+                            ),
+                          )
+                        }
+                        className="flex h-6 w-6 items-center justify-center rounded text-zinc-650 transition hover:bg-red-300/[0.06] hover:text-red-200"
+                        title="Remove item"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              {children.length >
+              0 ? (
+                <div className="ml-4 space-y-1 border-l border-white/[0.055] pl-2">
+                  {renderNavigationItems(
+                    children,
+                  )}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      );
+    }
+
     return (
       <>
-        <div className="border-b border-white/[0.07] px-4 py-3">
-          <p className="text-[15px] font-medium text-zinc-100">
-            Navigation
-          </p>
-          <p className="mt-0.5 text-[11px] text-zinc-600">
-            Site / Header / Navigation
-          </p>
+        <div className="border-b border-white/[0.055] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[15px] font-medium text-zinc-100">
+                Navigation
+              </p>
+
+              <p className="mt-0.5 text-[10px] text-zinc-600">
+                Header menu
+              </p>
+            </div>
+
+            <span className="text-[9px] tabular-nums text-zinc-700">
+              {
+                navigationCount
+              }{" "}
+              {
+                navigationCount ===
+                1
+                  ? "item"
+                  : "items"
+              }
+            </span>
+          </div>
         </div>
 
-        <div className="space-y-3 p-4">
-          {header.navigation.map((item, index) => (
-            <div
-              key={item.id}
-              className="rounded-md border border-white/[0.08] bg-black/20 p-2.5"
-            >
-              <div className="grid grid-cols-2 gap-2">
-                <TextInput
-                  id={`site-nav-label-${item.id}`}
-                  label="Label"
-                  value={item.label}
-                  onChange={(value) =>
-                    onNavigationChange(
-                      header.navigation.map((candidate) =>
-                        candidate.id === item.id
-                          ? { ...candidate, label: value }
-                          : candidate,
-                      ),
+        <div className="space-y-3 p-3">
+          {header.navigation.length >
+          0 ? (
+            <div className="space-y-1">
+              {renderNavigationItems(
+                header.navigation,
+              )}
+            </div>
+          ) : (
+            <div className="px-3 py-7 text-center">
+              <p className="text-[11px] text-zinc-400">
+                Your header menu is empty.
+              </p>
+
+              <p className="mt-1 text-[9px] leading-4 text-zinc-700">
+                Add a page, dropdown, or custom link.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() =>
+              openNavigationPicker()
+            }
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] border border-white/[0.07] bg-white/[0.02] text-[10px] font-medium text-zinc-400 transition hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-zinc-200"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add menu item
+          </button>
+
+          {navigationPickerOpen ? (
+            <div className="overflow-hidden rounded-[10px] border border-white/[0.07] bg-[#151618]">
+              <div className="flex items-center justify-between gap-3 border-b border-white/[0.05] px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-zinc-300">
+                    Add to{" "}
+                    {pickerParent
+                      ? pickerParent.label ||
+                        "dropdown"
+                      : "header"}
+                  </p>
+
+                  {pickerParent ? (
+                    <p className="mt-0.5 truncate text-[9px] text-zinc-700">
+                      Nested menu item
+                    </p>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNavigationPickerOpen(
+                      false,
+                    );
+
+                    setNavigationInsertParentId(
+                      null,
+                    );
+
+                    setNavigationSearch(
+                      "",
+                    );
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded text-[15px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
+                  aria-label="Close picker"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-2.5">
+                <input
+                  value={
+                    navigationSearch
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setNavigationSearch(
+                      event.target
+                        .value,
                     )
                   }
+                  placeholder="Search pages…"
+                  className="h-8 w-full rounded-md border border-white/[0.07] bg-black/20 px-2.5 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-white/[0.13]"
                 />
 
-                <div>
-                  <FieldLabel
-                    htmlFor={`site-nav-target-${item.id}`}
-                  >
-                    Target
-                  </FieldLabel>
-
-                  <select
-                    id={`site-nav-target-${item.id}`}
-                    value={item.pageId ?? "__custom__"}
-                    onChange={(event) => {
-                      const nextPageId =
-                        event.target.value === "__custom__"
-                          ? undefined
-                          : event.target.value;
-
-                      onNavigationChange(
-                        header.navigation.map((candidate) =>
-                          candidate.id === item.id
-                            ? {
-                                ...candidate,
-                                pageId: nextPageId,
-                              }
-                            : candidate,
-                        ),
-                      );
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      commitNavigationItem({
+                        id:
+                          `nav-${crypto.randomUUID()}`,
+                        kind:
+                          "dropdown",
+                        label:
+                          "New menu",
+                        href: "",
+                        visible:
+                          true,
+                        children:
+                          [],
+                      });
                     }}
-                    className="mt-1.5 h-8 w-full rounded-md border border-white/[0.09] bg-black/30 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.18]"
+                    className="flex h-8 items-center justify-center rounded-md bg-white/[0.035] text-[9px] text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-300"
                   >
-                    <option value="__custom__">
-                      Custom URL
-                    </option>
+                    + Dropdown
+                  </button>
 
-                    {site.pages.map((page) => (
-                      <option
-                        key={page.id}
-                        value={page.id}
-                      >
-                        {page.id === site.homePageId
-                          ? `${page.title} · Home`
-                          : page.title}
-                      </option>
-                    ))}
-                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      commitNavigationItem({
+                        id:
+                          `nav-${crypto.randomUUID()}`,
+                        kind:
+                          "link",
+                        label:
+                          "New link",
+                        href: "#",
+                        visible:
+                          true,
+                      });
+                    }}
+                    className="flex h-8 items-center justify-center rounded-md bg-white/[0.035] text-[9px] text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-300"
+                  >
+                    + Custom link
+                  </button>
                 </div>
               </div>
 
-              {item.pageId ? (
-                <div className="mt-2 rounded border border-white/[0.06] bg-black/20 px-2.5 py-2">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-700">
-                    Resolves to
-                  </p>
-                  <p className="mt-1 break-all text-[10px] text-zinc-500">
-                    {getSitePageHref(site, item.pageId)}
-                  </p>
+              <div className="border-t border-white/[0.045]">
+                <div className="px-3 pb-1 pt-2 text-[8px] font-medium uppercase tracking-[0.11em] text-zinc-700">
+                  Pages
                 </div>
-              ) : (
-                <div className="mt-2">
-                  <TextInput
-                    id={`site-nav-href-${item.id}`}
-                    label="Custom URL"
-                    value={item.href}
-                    placeholder="https://… or #section"
-                    onChange={(value) =>
-                      onNavigationChange(
-                        header.navigation.map(
-                          (candidate) =>
-                            candidate.id === item.id
-                              ? {
-                                  ...candidate,
-                                  href: value,
-                                }
-                              : candidate,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              )}
 
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <label className="flex items-center gap-2 text-[11px] text-zinc-500">
-                  <input
-                    type="checkbox"
-                    checked={item.visible}
-                    onChange={(event) =>
-                      onNavigationChange(
-                        header.navigation.map((candidate) =>
-                          candidate.id === item.id
-                            ? {
-                                ...candidate,
-                                visible: event.target.checked,
+                <div className="max-h-64 overflow-y-auto px-1.5 pb-1.5">
+                  {matchingPages.length >
+                  0 ? (
+                    matchingPages.map(
+                      (page) => (
+                        <button
+                          key={
+                            page.id
+                          }
+                          type="button"
+                          onClick={() =>
+                            commitNavigationItem({
+                              id:
+                                `nav-${crypto.randomUUID()}`,
+                              kind:
+                                "page",
+                              label:
+                                page.title,
+                              href: "",
+                              pageId:
+                                page.id,
+                              visible:
+                                true,
+                            })
+                          }
+                          className="flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 text-left transition hover:bg-white/[0.035]"
+                        >
+                          <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-650" />
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[10px] font-medium text-zinc-400">
+                              {
+                                page.title
                               }
-                            : candidate,
-                        ),
-                      )
-                    }
-                    className="h-3.5 w-3.5 accent-zinc-100"
-                  />
-                  Visible
-                </label>
+                            </p>
 
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    disabled={index === 0}
-                    onClick={() => {
-                      const next = [...header.navigation];
-                      const [moved] = next.splice(index, 1);
-                      next.splice(index - 1, 0, moved);
-                      onNavigationChange(next);
-                    }}
-                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
-                    title="Move up"
-                  >
-                    <ArrowUp className="h-3 w-3" />
-                  </button>
+                            <p className="mt-0.5 truncate text-[8px] text-zinc-700">
+                              {getSitePageHref(
+                                site,
+                                page.id,
+                              )}
+                            </p>
+                          </div>
 
-                  <button
-                    type="button"
-                    disabled={index === header.navigation.length - 1}
-                    onClick={() => {
-                      const next = [...header.navigation];
-                      const [moved] = next.splice(index, 1);
-                      next.splice(index + 1, 0, moved);
-                      onNavigationChange(next);
-                    }}
-                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 disabled:opacity-25"
-                    title="Move down"
-                  >
-                    <ArrowDown className="h-3 w-3" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onNavigationChange(
-                        header.navigation.filter(
-                          (candidate) => candidate.id !== item.id,
-                        ),
-                      )
-                    }
-                    className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.08] text-zinc-500 hover:border-red-300/20 hover:text-red-200"
-                    title="Delete link"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
+                          <span className="shrink-0 text-[9px] text-zinc-650">
+                            Add
+                          </span>
+                        </button>
+                      ),
+                    )
+                  ) : (
+                    <p className="px-2 py-5 text-center text-[9px] text-zinc-700">
+                      No matching pages.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
-          ))}
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={navigationPagesNotLinked.length === 0}
-              onClick={() =>
-                onNavigationChange([
-                  ...header.navigation,
-                  ...navigationPagesNotLinked.map((page) => ({
-                    id: `nav-${crypto.randomUUID()}`,
-                    label: page.title,
-                    href: "",
-                    pageId: page.id,
-                    visible: true,
-                  })),
-                ])
-              }
-              className="flex h-8 items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              Add pages
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                onNavigationChange([
-                  ...header.navigation,
-                  {
-                    id: `nav-${crypto.randomUUID()}`,
-                    label: "New link",
-                    href: "#",
-                    visible: true,
-                  },
-                ])
-              }
-              className="flex h-8 items-center justify-center gap-2 rounded-md border border-white/[0.1] text-[11px] text-zinc-400 transition hover:border-white/[0.18] hover:text-zinc-100"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Custom link
-            </button>
-          </div>
+          ) : null}
         </div>
       </>
     );
@@ -10150,6 +11742,52 @@ export default function SiteBuilder() {
         return;
       }
 
+      if (
+        isSitePreviewMediaEditRequestMessage(
+          event.data,
+        )
+      ) {
+        const {
+          pageId,
+          sectionId,
+          changes,
+        } = event.data.payload;
+
+        const page =
+          site.pages.find(
+            (candidate) =>
+              candidate.id ===
+              pageId,
+          );
+
+        const section =
+          page?.sections.find(
+            (candidate) =>
+              candidate.id ===
+              sectionId,
+          );
+
+        if (!page || !section) {
+          return;
+        }
+
+        for (const [
+          key,
+          value,
+        ] of Object.entries(
+          changes,
+        )) {
+          updateSectionContent(
+            pageId,
+            sectionId,
+            key,
+            value,
+          );
+        }
+
+        return;
+      }
+
       if (isSitePreviewContentEditRequestMessage(event.data)) {
         const { pageId, sectionId, field, value } = event.data.payload;
         const page = site.pages.find((candidate) => candidate.id === pageId);
@@ -10416,13 +12054,6 @@ export default function SiteBuilder() {
 
   return (
     <div className="min-h-screen bg-[#08090a] text-zinc-100 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
-      <SectionLibrary
-        open={showSectionLibrary && !editorLocked}
-        insertionLabel={sectionInsertionLabel}
-        onClose={closeSectionLibrary}
-        onInsert={addSection}
-      />
-
       {showPageDialog ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-24">
           <div className="w-full max-w-[360px] rounded-lg border border-white/[0.1] bg-[#111214] p-4 shadow-2xl">
@@ -11127,7 +12758,13 @@ export default function SiteBuilder() {
         </aside>
 
         {/* CENTER: actual renderer */}
-        <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0c0d0e]">
+        <main className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0c0d0e]">
+          <SectionLibrary
+            open={showSectionLibrary && !editorLocked}
+            insertionLabel={sectionInsertionLabel}
+            onClose={closeSectionLibrary}
+            onInsert={addSection}
+          />
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
             <div className="flex items-center gap-4 text-[11px] text-zinc-500">
               <span className="flex items-center gap-2">
@@ -11478,6 +13115,11 @@ export default function SiteBuilder() {
                   {activeInspectorMode === "design" ? (
                     <InspectorDesignPanel
                       section={selectedSection}
+                      themeColors={getSiteThemeColors(
+                        getSiteThemeConfig(
+                          site,
+                        ),
+                      )}
                       onLayoutChange={updateSelectedSectionLayout}
                       onStyleChange={updateSelectedSectionStyle}
                     />

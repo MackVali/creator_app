@@ -199,16 +199,6 @@ function ProgressRing({ progress }: { progress: number }) {
   const safeProgress = Math.round(clamp(Number(progress) || 0, 0, 100));
   const offset = circumference - (safeProgress / 100) * circumference;
 
-  if (safeProgress >= 100) {
-    return (
-      <div
-        data-complete-progress-disc
-        className="h-[30px] w-[30px] shrink-0 rounded-full border border-emerald-50/28 bg-[linear-gradient(155deg,rgba(34,197,94,0.98)_0%,rgba(22,163,74,0.99)_48%,rgba(21,128,61,1)_100%)] shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-2px_8px_rgba(0,0,0,0.12)]"
-        aria-hidden="true"
-      />
-    );
-  }
-
   return (
     <div className="relative grid h-[30px] w-[30px] shrink-0 place-items-center">
       <svg
@@ -222,16 +212,8 @@ function ProgressRing({ progress }: { progress: number }) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          fill={
-            safeProgress >= 100
-              ? "rgba(5,150,105,0.92)"
-              : "none"
-          }
-          stroke={
-            safeProgress >= 100
-              ? "rgba(110,231,183,0.92)"
-              : "rgba(244,244,245,0.11)"
-          }
+          fill="none"
+          stroke="rgba(244,244,245,0.11)" 
           strokeWidth={stroke}
         />
         <circle
@@ -331,6 +313,7 @@ function GoalCardImpl({
   onProjectHoldComplete,
   completeWhenProjectsDone = false,
   completionTheme = "auto",
+  onManualComplete,
   sourceCampaignId = null,
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -1971,7 +1954,9 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.open === next.open &&
     prev.onGoalLongPressEdit === next.onGoalLongPressEdit &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
-    prev.completionTheme === next.completionTheme
+    prev.completionTheme === next.completionTheme &&
+    prev.onManualComplete === next.onManualComplete &&
+    prev.sourceCampaignId === next.sourceCampaignId
   );
 });
 

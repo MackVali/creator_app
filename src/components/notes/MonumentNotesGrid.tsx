@@ -63,26 +63,47 @@ export function MonumentNotesGrid({
 
   useEffect(() => {
     let isMounted = true;
+    let refreshTimer: number | null = null;
+
     async function loadNotes() {
       if (!sourceId) return;
+
       setIsLoading(true);
+
       const fetched =
         sourceType === "area"
           ? await getAreaNotes(sourceId)
           : await getMonumentNotes(sourceId);
+
       if (!isMounted) return;
+
       setNotes((currentNotes) => {
         if (fetched.length > 0) return fetched;
-        if (currentNotes.length > 0 || latestInitialNotesRef.current.length > 0) {
+        if (
+          currentNotes.length > 0 ||
+          latestInitialNotesRef.current.length > 0
+        ) {
           return currentNotes;
         }
         return fetched;
       });
+
       setIsLoading(false);
     }
-    loadNotes();
+
+    // Notes are secondary detail-page content. Give Goals/Habits and the
+    // opening page transition a head start instead of joining the initial
+    // request burst.
+    refreshTimer = window.setTimeout(() => {
+      void loadNotes();
+    }, 250);
+
     return () => {
       isMounted = false;
+
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
     };
   }, [sourceId, sourceType]);
 

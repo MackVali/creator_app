@@ -4,45 +4,28 @@ import type {
   SiteHeaderConfig,
 } from "@/lib/site-builder/types";
 
+function cloneSiteNavigation(
+  items: SiteHeaderConfig["navigation"],
+): SiteHeaderConfig["navigation"] {
+  return items.map((item) => ({
+    ...item,
+    children:
+      item.children
+        ? cloneSiteNavigation(
+            item.children,
+          )
+        : undefined,
+  }));
+}
+
+
 export function createDefaultSiteHeader(
   brandLabel: string,
 ): SiteHeaderConfig {
   return {
     brandLabel,
-    tagline: "Ideas. Products. A Quieter Internet.",
-    navigation: [
-      { id: "nav-work", label: "Work", href: "#work", visible: true },
-      {
-        id: "nav-software",
-        label: "Software",
-        href: "#software",
-        visible: true,
-      },
-      {
-        id: "nav-clothing",
-        label: "Clothing",
-        href: "#clothing",
-        visible: true,
-      },
-      {
-        id: "nav-visual",
-        label: "Visual",
-        href: "#visual",
-        visible: true,
-      },
-      {
-        id: "nav-studio",
-        label: "Studio",
-        href: "#studio",
-        visible: true,
-      },
-      {
-        id: "nav-contact",
-        label: "Contact",
-        href: "#contact",
-        visible: true,
-      },
-    ],
+    tagline: "",
+    navigation: [],
   };
 }
 
@@ -51,7 +34,7 @@ export function createDefaultSiteFooter(
 ): SiteFooterConfig {
   return {
     brandLabel,
-    tagline: "Better tools · Brighter days.",
+    tagline: "",
   };
 }
 
@@ -65,7 +48,10 @@ export function getSiteHeaderConfig(
   return {
     brandLabel: site.header.brandLabel,
     tagline: site.header.tagline,
-    navigation: site.header.navigation.map((item) => ({ ...item })),
+    navigation:
+      cloneSiteNavigation(
+        site.header.navigation,
+      ),
   };
 }
 

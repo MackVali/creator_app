@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AREA_CARD_STATUS_REFRESH_EVENT } from "@/lib/areas/areaCardStatusEvents";
 import { resolveCreatorDay } from "@/lib/creatorDay";
@@ -44,6 +44,11 @@ type ProjectCompletionRow = {
 type TaskCompletionRow = {
   goal_id: string | null;
   project_id: string | null;
+};
+
+type IdleSchedulerWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
 };
 
 function getBrowserTimezone() {
@@ -140,13 +145,14 @@ export function useAreaCardStatuses({
   profileTimezone?: string | null;
 }) {
   const [statuses, setStatuses] = useState<Record<string, AreaCardStatus>>({});
+  const loadStatusesInFlightRef = useRef<Promise<void> | null>(null);
   const areaIdsKey = useMemo(() => areaIds.join(","), [areaIds]);
   const normalizedAreaIds = useMemo(
     () => areaIdsKey.split(",").filter(Boolean),
     [areaIdsKey],
   );
 
-  const loadStatuses = useCallback(async () => {
+  const loadStatusesCore = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase || !userId) {
       setStatuses({});
@@ -172,55 +178,39 @@ export function useAreaCardStatuses({
       .filter((habit) => habit.areaId && metrics[habit.areaId])
       .map((habit) => habit.id);
 
-    const [
-      currentHabitCompletions,
-      previousHabitCompletions,
-      myListCompletions,
-      completedProjects,
-      completedTasks,
-    ] = await Promise.all([
-      areaHabitIds.length > 0
-        ? supabase
-            .from("habit_completion_days")
-            .select("habit_id,completion_day,completed_at")
-            .eq("user_id", userId)
-            .eq("completion_day", creatorDay.creatorDayDate)
-            .in("habit_id", areaHabitIds)
-        : Promise.resolve({ data: [] as HabitCompletionRow[], error: null }),
-      areaHabitIds.length > 0
-        ? supabase
-            .from("habit_completion_days")
-            .select("habit_id,completion_day,completed_at")
-            .eq("user_id", userId)
-            .lt("completion_day", creatorDay.creatorDayDate)
-            .in("habit_id", areaHabitIds)
-            .order("completion_day", { ascending: false })
-            .limit(1000)
-        : Promise.resolve({ data: [] as HabitCompletionRow[], error: null }),
-      supabase
-        .from("my_list_items")
-        .select("skill_id")
-        .eq("user_id", userId)
-        .eq("done", true)
-        .not("skill_id", "is", null)
-        .gte("completed_at", creatorDay.startsAt)
-        .lt("completed_at", creatorDay.endsAt),
-      supabase
-        .from("projects")
-        .select("id,goal_id")
-        .eq("user_id", userId)
-        .gte("completed_at", creatorDay.startsAt)
-        .lt("completed_at", creatorDay.endsAt),
-      supabase
-        .from("tasks")
-        .select("goal_id,project_id")
-        .eq("user_id", userId)
-        .gte("completed_at", creatorDay.startsAt)
-        .lt("completed_at", creatorDay.endsAt),
-    ]);
+    const [currentHabitCompletions, myListCompletions, completedProjects, completedTasks] =
+      await Promise.all([
+        areaHabitIds.length > 0
+          ? supabase
+              .from("habit_completion_days")
+              .select("habit_id,completion_day,completed_at")
+              .eq("user_id", userId)
+              .eq("completion_day", creatorDay.creatorDayDate)
+              .in("habit_id", areaHabitIds)
+          : Promise.resolve({ data: [] as HabitCompletionRow[], error: null }),
+        supabase
+          .from("my_list_items")
+          .select("skill_id")
+          .eq("user_id", userId)
+          .eq("done", true)
+          .not("skill_id", "is", null)
+          .gte("completed_at", creatorDay.startsAt)
+          .lt("completed_at", creatorDay.endsAt),
+        supabase
+          .from("projects")
+          .select("id,goal_id")
+          .eq("user_id", userId)
+          .gte("completed_at", creatorDay.startsAt)
+          .lt("completed_at", creatorDay.endsAt),
+        supabase
+          .from("tasks")
+          .select("goal_id,project_id")
+          .eq("user_id", userId)
+          .gte("completed_at", creatorDay.startsAt)
+          .lt("completed_at", creatorDay.endsAt),
+      ]);
 
     if (currentHabitCompletions.error) throw currentHabitCompletions.error;
-    if (previousHabitCompletions.error) throw previousHabitCompletions.error;
     if (myListCompletions.error) throw myListCompletions.error;
     if (completedProjects.error) throw completedProjects.error;
     if (completedTasks.error) throw completedTasks.error;
@@ -230,6 +220,21 @@ export function useAreaCardStatuses({
         .map((row) => row.habit_id)
         .filter((habitId): habitId is string => Boolean(habitId)),
     );
+
+    const previousHabitCompletions =
+      currentCompletionIds.size > 0
+        ? await supabase
+            .from("habit_completion_days")
+            .select("habit_id,completion_day,completed_at")
+            .eq("user_id", userId)
+            .lt("completion_day", creatorDay.creatorDayDate)
+            .in("habit_id", Array.from(currentCompletionIds))
+            .order("completion_day", { ascending: false })
+            .limit(1000)
+        : { data: [] as HabitCompletionRow[], error: null };
+
+    if (previousHabitCompletions.error) throw previousHabitCompletions.error;
+
     const previousCompletionByHabitId = new Map<string, string | null>();
     for (const row of (previousHabitCompletions.data ?? []) as HabitCompletionRow[]) {
       if (!row.habit_id || previousCompletionByHabitId.has(row.habit_id)) {
@@ -328,11 +333,45 @@ export function useAreaCardStatuses({
     );
   }, [normalizedAreaIds, profileTimezone, userId]);
 
-  useEffect(() => {
-    void loadStatuses().catch((error) => {
-      console.error("Failed to load Area card statuses", error);
-      setStatuses({});
+  const loadStatuses = useCallback(() => {
+    if (loadStatusesInFlightRef.current) {
+      return loadStatusesInFlightRef.current;
+    }
+
+    const loadPromise = loadStatusesCore().finally(() => {
+      loadStatusesInFlightRef.current = null;
     });
+    loadStatusesInFlightRef.current = loadPromise;
+    return loadPromise;
+  }, [loadStatusesCore]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const idleWindow = window as IdleSchedulerWindow;
+    const runInitialLoad = () => {
+      if (cancelled) {
+        return;
+      }
+
+      void loadStatuses().catch((error) => {
+        console.error("Failed to load Area card statuses", error);
+        setStatuses({});
+      });
+    };
+
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      const idleHandle = idleWindow.requestIdleCallback(runInitialLoad, { timeout: 1500 });
+      return () => {
+        cancelled = true;
+        idleWindow.cancelIdleCallback?.(idleHandle);
+      };
+    }
+
+    const timeout = window.setTimeout(runInitialLoad, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [loadStatuses]);
 
   useEffect(() => {
@@ -341,16 +380,21 @@ export function useAreaCardStatuses({
         console.error("Failed to refresh Area card statuses", error);
       });
     };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
 
     window.addEventListener(AREA_CARD_STATUS_REFRESH_EVENT, refresh);
     window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("creator:entity-saved", refresh);
 
     return () => {
       window.removeEventListener(AREA_CARD_STATUS_REFRESH_EVENT, refresh);
       window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("creator:entity-saved", refresh);
     };
   }, [loadStatuses]);

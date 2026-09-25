@@ -14,6 +14,7 @@ import {
   type TouchEvent as ReactTouchEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   AnimatePresence,
@@ -28,10 +29,19 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { Check, ChevronDown, ChevronUp, Lock, Play, Dumbbell, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Dumbbell,
+  Lock,
+  Play,
+  X,
+} from "lucide-react";
 import { Icon } from "@iconify/react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useProfileContext } from "@/components/ProfileProvider";
 import {
   DayTimeline,
   TIMELINE_CARD_LEFT_FALLBACK,
@@ -55,10 +65,6 @@ import FlameEmber, {
   type FlameEmberProps,
 } from "@/components/FlameEmber";
 import { ScheduleTopBar } from "@/components/schedule/ScheduleTopBar";
-import { JumpToDateSheet } from "@/components/schedule/JumpToDateSheet";
-import { ScheduleSearchSheet } from "@/components/schedule/ScheduleSearchSheet";
-import { ProjectEditSheet } from "@/components/schedule/ProjectEditSheet";
-import { HabitEditSheet } from "@/components/schedule/HabitEditSheet";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -69,7 +75,6 @@ import {
 } from "@/components/ui/select";
 import { type ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDialog";
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
-import { SchedulerModeSheet } from "@/components/schedule/SchedulerModeSheet";
 import { type ScheduleView } from "@/components/schedule/viewUtils";
 import {
   updateTaskStage,
@@ -91,6 +96,10 @@ import {
   updateInstanceStatus,
   type ScheduleInstance,
 } from "@/lib/scheduler/instanceRepo";
+import {
+  isInteractiveEventScheduleInstance,
+  isLinkedEventScheduleInstance,
+} from "@/lib/schedule/eventScheduleInstances";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import {
   buildScheduleXpOccurrenceStem,
@@ -190,7 +199,6 @@ import {
   type SchedulerModeSelection,
   type SchedulerModeType,
 } from "@/lib/scheduler/modes";
-import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { scheduleTourSteps } from "@/lib/tours/scheduleTour";
 import { useTour } from "@/components/tour/TourProvider";
 import {
@@ -198,7 +206,6 @@ import {
   SCHEDULE_TOUR_PENDING_KEY,
   completeCreatorTourState,
 } from "@/lib/tours/creatorTourState";
-import { useProfile } from "@/lib/hooks/useProfile";
 import {
   dispatchCreatorXpBurstStatus,
   getCreatorXpRectFromPoint,
@@ -224,6 +231,54 @@ import {
   PRIORITY_ORDER,
   type PriorityBucketId,
 } from "./priorities/utils";
+
+const JumpToDateSheet = dynamic(
+  () =>
+    import("@/components/schedule/JumpToDateSheet").then(
+      (module) => module.JumpToDateSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+
+const ScheduleSearchSheet = dynamic(
+  () =>
+    import("@/components/schedule/ScheduleSearchSheet").then(
+      (module) => module.ScheduleSearchSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+
+const ProjectEditSheet = dynamic(
+  () =>
+    import("@/components/schedule/ProjectEditSheet").then(
+      (module) => module.ProjectEditSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+
+const HabitEditSheet = dynamic(
+  () =>
+    import("@/components/schedule/HabitEditSheet").then(
+      (module) => module.HabitEditSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+
+const SchedulerModeSheet = dynamic(
+  () =>
+    import("@/components/schedule/SchedulerModeSheet").then(
+      (module) => module.SchedulerModeSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+
+const MemoCompletionDialog = dynamic(
+  () =>
+    import("@/components/schedule/MemoCompletionDialog").then(
+      (module) => module.MemoCompletionDialog
+    ),
+  { ssr: false, loading: () => null }
+);
 
 const DEBUG_DAY_SHIFT = true;
 const DEBUG_SCHEDULE_XP = DEBUG_DAY_SHIFT;
@@ -256,6 +311,8 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
 const INLINE_JUMP_REVEAL_HEIGHT_PX = 360;
+const DASHBOARD_RAIL_ACTIVE_BLOCK_HEADER_OFFSET_PX = 20;
+const DASHBOARD_RAIL_ACTIVE_BLOCK_SCROLL_MAX_ATTEMPTS = 12;
 const INLINE_JUMP_TIMELINE_PEEK_MIN_PX = 124;
 const INLINE_JUMP_TIMELINE_PEEK_MAX_PX = 172;
 const INLINE_JUMP_TIMELINE_PEEK_VIEWPORT_RATIO = 0.16;
@@ -1001,6 +1058,15 @@ function isMyListScheduleInstance(
   return isMyListScheduleInstanceLike(instance);
 }
 
+function canOpenScheduleEventEditor(
+  instance: ScheduleInstance | null | undefined
+) {
+  return (
+    isLinkedEventScheduleInstance(instance) ||
+    isMyListScheduleInstance(instance)
+  );
+}
+
 function getMyListScheduleInstanceTitle(
   instance: Pick<ScheduleInstance, "event_name" | "metadata"> | null | undefined,
   fallback?: string | null
@@ -1421,7 +1487,7 @@ function buildRenderedSavedScheduleEventCards({
     const bucket = eventInstancesBySourceId.get(eventSourceId) ?? [];
     bucket.push(instance);
     eventInstancesBySourceId.set(eventSourceId, bucket);
-    if (isMyListScheduleInstanceLike(instance)) {
+    if (isLinkedEventScheduleInstance(instance)) {
       projectStyleEventInstanceBySourceId.set(eventSourceId, instance);
     }
   }
@@ -1744,9 +1810,15 @@ function parseScheduleDateParam(value: string | null) {
   };
 }
 
-function ScheduleViewShell({ children }: { children: ReactNode }) {
+function ScheduleViewShell({
+  children,
+  disabled = false,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+}) {
   const prefersReducedMotion = useReducedMotion();
-  if (prefersReducedMotion) return <div>{children}</div>;
+  if (prefersReducedMotion || disabled) return <div>{children}</div>;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -1969,6 +2041,7 @@ function buildMyListProjectStyleMetadata({
   end,
   durationMinutes,
   energyResolved,
+  includeMyListMarkers = true,
 }: {
   metadata: Json | null | undefined;
   title: string;
@@ -1976,6 +2049,7 @@ function buildMyListProjectStyleMetadata({
   end: Date;
   durationMinutes: number;
   energyResolved?: string | null;
+  includeMyListMarkers?: boolean;
 }) {
   const baseMetadata = readScheduleMetadataRecord(metadata) ?? {};
   const energy =
@@ -2005,8 +2079,12 @@ function buildMyListProjectStyleMetadata({
     readScheduleMetadataString(baseMetadata, "priority_symbol");
   return {
     ...baseMetadata,
-    source: "my-list",
-    presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+    ...(includeMyListMarkers
+      ? {
+          source: "my-list",
+          presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+        }
+      : {}),
     title,
     name: title,
     start: start.toISOString(),
@@ -2032,6 +2110,7 @@ function buildMyListProjectStyleScheduleInstance({
   durationMinutes,
   status = "scheduled",
   energyResolved,
+  includeMyListMarkers = true,
 }: {
   metadata: Json | null | undefined;
   title: string;
@@ -2040,6 +2119,7 @@ function buildMyListProjectStyleScheduleInstance({
   durationMinutes: number;
   status?: ScheduleInstance["status"] | null;
   energyResolved?: string | null;
+  includeMyListMarkers?: boolean;
 }): ProjectStyleScheduleInstanceCardInstance {
   const normalizedEnergy = resolveEnergyLevel(
     energyResolved ??
@@ -2056,6 +2136,7 @@ function buildMyListProjectStyleScheduleInstance({
       end,
       durationMinutes,
       energyResolved,
+      includeMyListMarkers,
     }),
   };
 }
@@ -2067,6 +2148,7 @@ function normalizeMyListProjectStyleScheduleInstance({
   end,
   durationMinutes,
   status,
+  includeMyListMarkers = true,
 }: {
   instance: ScheduleInstance;
   title: string;
@@ -2074,6 +2156,7 @@ function normalizeMyListProjectStyleScheduleInstance({
   end: Date;
   durationMinutes: number;
   status?: ScheduleInstance["status"] | null;
+  includeMyListMarkers?: boolean;
 }): ProjectStyleScheduleInstanceCardInstance {
   return buildMyListProjectStyleScheduleInstance({
     metadata: instance.metadata,
@@ -2083,6 +2166,7 @@ function normalizeMyListProjectStyleScheduleInstance({
     durationMinutes,
     status: status ?? instance.status ?? "scheduled",
     energyResolved: instance.energy_resolved,
+    includeMyListMarkers,
   });
 }
 
@@ -3041,11 +3125,12 @@ type DayTimelineRenderOptions = {
   disableQuickCreateSurface?: boolean;
   containerRef?: RefObject<HTMLDivElement | null>;
   fullBleed?: boolean;
-  presentation?: "default" | "desktop-column";
+  presentation?: "default" | "desktop-column" | "dashboard-rail";
   showTimeLabels?: boolean;
 };
 
 type DebugSchedulingViewMode = "DEFAULT" | "MANUAL" | "SIMPLE";
+type SchedulePresentation = "page" | "dashboard-rail";
 
 const SCHEDULE_DEBUG_VIEW_MODE_STORAGE_KEY =
   "creator:schedule:debug-view-mode";
@@ -5530,15 +5615,19 @@ function compareQuickCreateOrderThenName(
 
 export default function ScheduleTabContent({
   isSwipePreview = false,
+  presentation = "page",
 }: {
   isSwipePreview?: boolean;
+  presentation?: SchedulePresentation;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { localTimeZone, loading: profileLoading } = useProfile();
+  const { localTimeZone, loading: profileLoading } = useProfileContext();
   const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
+  const isDashboardRail = presentation === "dashboard-rail";
+  const isEmbeddedSchedulePresentation = isDashboardRail;
 
   // 1. browser timezone detection
   const browserTimeZone = useMemo(() => {
@@ -5571,6 +5660,14 @@ export default function ScheduleTabContent({
   const canonicalTodayDateKey = useMemo(() => {
     return dayKeyFromUtc(new Date().toISOString(), effectiveTimeZone);
   }, [effectiveTimeZone]);
+  const dashboardRailTodayDateKey = useMemo(() => {
+    if (!isDashboardRail) return canonicalTodayDateKey;
+    const tz = normalizeTimeZone(effectiveTimeZone) ?? "UTC";
+    return formatScheduleDateKey(
+      getSchedulerDayAnchorForNow(new Date(), tz),
+      tz
+    );
+  }, [canonicalTodayDateKey, effectiveTimeZone, isDashboardRail]);
   const prefersReducedMotion = useReducedMotion();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -5588,6 +5685,7 @@ export default function ScheduleTabContent({
   );
 
   useEffect(() => {
+    if (isDashboardRail) return;
     if (isSwipePreview) return;
     if (typeof window === "undefined") return;
     if (hasStartedScheduleTourRef.current) return;
@@ -5596,9 +5694,11 @@ export default function ScheduleTabContent({
     if (window.localStorage.getItem(SCHEDULE_TOUR_COMPLETED_KEY) === "1") return;
     hasStartedScheduleTourRef.current = true;
     startScheduleTour();
-  }, [isSwipePreview, startScheduleTour]);
+  }, [isSwipePreview, startScheduleTour, isDashboardRail]);
 
-  const initialViewParam = searchParams.get("view") as ScheduleView | null;
+  const initialViewParam = isDashboardRail
+    ? null
+    : (searchParams.get("view") as ScheduleView | null);
   const quickCreateDebugEnabled = searchParams.get("quickCreateDebug") === "1";
   const [quickCreateDebugPhase, setQuickCreateDebugPhaseState] =
     useState("idle");
@@ -5614,7 +5714,7 @@ export default function ScheduleTabContent({
     initialViewParam && ["day", "focus"].includes(initialViewParam)
       ? initialViewParam
       : "day";
-  const initialDate = searchParams.get("date");
+  const initialDate = isDashboardRail ? null : searchParams.get("date");
 
   const initialDateResult = useMemo(
     () => parseScheduleDateParam(initialDate),
@@ -6519,6 +6619,31 @@ export default function ScheduleTabContent({
   }, [view]);
 
   useEffect(() => {
+    if (!isDashboardRail) return;
+    const tz =
+      stableTimeZone ??
+      (profileLoading ? null : normalizeTimeZone(effectiveTimeZone));
+    if (!tz) return;
+
+    const todayAnchor = getSchedulerDayAnchorForNow(new Date(), tz);
+    const todayKey = formatScheduleDateKey(todayAnchor, tz);
+    hasAppliedInitialDateFallbackRef.current = true;
+    setCurrentDateKey((currentKey) =>
+      currentKey === todayKey ? currentKey : todayKey
+    );
+    if (view !== "day") {
+      setView("day");
+    }
+  }, [
+    isDashboardRail,
+    stableTimeZone,
+    effectiveTimeZone,
+    profileLoading,
+    view,
+  ]);
+
+  useEffect(() => {
+    if (isDashboardRail) return;
     if (initialDateWasValid) return;
     if (hasAppliedInitialDateFallbackRef.current) return;
     const tz =
@@ -6529,7 +6654,13 @@ export default function ScheduleTabContent({
     // cannot override user date navigation after the page has initialized.
     hasAppliedInitialDateFallbackRef.current = true;
     setCurrentDateKey(formatScheduleDateKey(new Date(), tz));
-  }, [initialDateWasValid, stableTimeZone, effectiveTimeZone, profileLoading]);
+  }, [
+    isDashboardRail,
+    initialDateWasValid,
+    stableTimeZone,
+    effectiveTimeZone,
+    profileLoading,
+  ]);
 
   useEffect(() => {
     setMemoCompletionState(null);
@@ -6552,12 +6683,13 @@ export default function ScheduleTabContent({
     }
   }, [currentDate, effectiveTimeZone]);
   const scheduleContentPaddingTop = useMemo(() => {
+    if (isDashboardRail) return "1rem";
     if (topBarHeight !== null && Number.isFinite(topBarHeight)) {
       const clamped = Math.max(0, topBarHeight);
       return `calc(${clamped}px + 1rem)`;
     }
     return "calc(4rem + env(safe-area-inset-top, 0px))";
-  }, [topBarHeight]);
+  }, [isDashboardRail, topBarHeight]);
   const friendlyTimeZone = useMemo(() => {
     if (!effectiveTimeZone) return "UTC";
     const segments = effectiveTimeZone.split("/");
@@ -6791,10 +6923,11 @@ export default function ScheduleTabContent({
 
   const isDesktopScheduleLayout = useCallback(() => {
     return (
+      !isDashboardRail &&
       typeof window !== "undefined" &&
       window.matchMedia("(min-width: 1024px)").matches
     );
-  }, []);
+  }, [isDashboardRail]);
 
   const animateInlineJumpOpen = useCallback(
     async ({ source = "button" }: { source?: "button" | "pull" } = {}) => {
@@ -7287,6 +7420,7 @@ export default function ScheduleTabContent({
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
+  const datasetLookaheadDays = FULL_WRITE_WINDOW_DAYS;
   const isSchedulingRef = useRef(false);
   const isManualSchedulingRef = useRef(false);
   const externalSchedulingRunsRef = useRef(0);
@@ -7412,6 +7546,7 @@ export default function ScheduleTabContent({
   }, [userId]);
 
   useEffect(() => {
+    if (isDashboardRail) return;
     const params = new URLSearchParams();
     if (quickCreateDebugEnabled) {
       params.set("quickCreateDebug", "1");
@@ -7430,6 +7565,7 @@ export default function ScheduleTabContent({
     stableTimeZone,
     effectiveTimeZone,
     quickCreateDebugEnabled,
+    isDashboardRail,
   ]);
 
   useEffect(() => {
@@ -7472,13 +7608,15 @@ export default function ScheduleTabContent({
         instanceCount: nextInstances.length,
         timeZone: effectiveTimeZone ?? localTimeZone ?? null,
       });
-      syncScheduleBlockLocalNotificationsForDataset({
-        payload,
-        windowsSnapshot: windowsRef.current,
-        date: currentDateRef.current,
-        timeZone: effectiveTimeZone ?? localTimeZone ?? null,
-        source: "dataset",
-      });
+      if (!isDashboardRail) {
+        syncScheduleBlockLocalNotificationsForDataset({
+          payload,
+          windowsSnapshot: windowsRef.current,
+          date: currentDateRef.current,
+          timeZone: effectiveTimeZone ?? localTimeZone ?? null,
+          source: "dataset",
+        });
+      }
       setAllInstances(nextInstances);
       setInstances(nextInstances);
       nextInstances.forEach((instance) => {
@@ -7496,7 +7634,7 @@ export default function ScheduleTabContent({
       setInstancesStatus("loading");
       try {
         const params = new URLSearchParams();
-        params.set("lookaheadDays", String(FULL_WRITE_WINDOW_DAYS));
+        params.set("lookaheadDays", String(datasetLookaheadDays));
         params.set("timeZone", effectiveTimeZone || "UTC");
         const response = await fetch(
           `/api/schedule/events?${params.toString()}`,
@@ -7538,11 +7676,13 @@ export default function ScheduleTabContent({
     effectiveTimeZone,
     localTimeZone,
     clearScheduleData,
-    FULL_WRITE_WINDOW_DAYS,
+    datasetLookaheadDays,
     logInstanceStatusChange,
+    isDashboardRail,
   ]);
 
   useEffect(() => {
+    if (isDashboardRail) return;
     if (!userId) return;
     const payload = scheduleDatasetRef.current;
     if (!payload || windows.length === 0) return;
@@ -7554,7 +7694,14 @@ export default function ScheduleTabContent({
       timeZone: effectiveTimeZone ?? localTimeZone ?? null,
       source: "windows",
     });
-  }, [userId, windows, currentDate, effectiveTimeZone, localTimeZone]);
+  }, [
+    userId,
+    windows,
+    currentDate,
+    effectiveTimeZone,
+    localTimeZone,
+    isDashboardRail,
+  ]);
 
   const refreshDayTypeWindows = useCallback(async () => {
     if (!userId) {
@@ -7814,6 +7961,10 @@ export default function ScheduleTabContent({
       setJumpToDateSnapshot(null);
       return;
     }
+    if (!isJumpToDateOpen && !isInlineJumpToDateOpen) {
+      setJumpToDateSnapshot(null);
+      return;
+    }
     let isCancelled = false;
     const tz = effectiveTimeZone || "UTC";
     const baseDate = currentDate;
@@ -7948,7 +8099,14 @@ export default function ScheduleTabContent({
     return () => {
       isCancelled = true;
     };
-  }, [userId, currentDate, effectiveTimeZone, goalMetaById]);
+  }, [
+    userId,
+    currentDate,
+    effectiveTimeZone,
+    goalMetaById,
+    isJumpToDateOpen,
+    isInlineJumpToDateOpen,
+  ]);
 
   const habitMap = useMemo(() => {
     const map: Record<string, HabitScheduleItem> = {};
@@ -8127,6 +8285,7 @@ export default function ScheduleTabContent({
   ]);
 
   useEffect(() => {
+    if (isDashboardRail) return;
     if (!userId || instancesStatus !== "loaded") return;
 
     const syncDate = new Date();
@@ -8205,6 +8364,7 @@ export default function ScheduleTabContent({
     projectSkillIds,
     skills,
     tasks,
+    isDashboardRail,
   ]);
 
   useEffect(() => {
@@ -10553,8 +10713,13 @@ export default function ScheduleTabContent({
   const desktopMultiDayHeaderRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
   const inlineJumpPanelRef = useRef<HTMLDivElement | null>(null);
+  const hasPositionedDashboardRailForEntryRef = useRef(false);
   const [isDesktopScheduleViewport, setIsDesktopScheduleViewport] =
     useState(false);
+  const useMobileSchedulePresentation =
+    isDashboardRail || !isDesktopScheduleViewport;
+  const useDesktopSchedulePresentation =
+    !isDashboardRail && isDesktopScheduleViewport;
   const [desktopMultiDayHeaderBounds, setDesktopMultiDayHeaderBounds] =
     useState<{ left: number; width: number } | null>(null);
   const [desktopMultiDayHeaderHeight, setDesktopMultiDayHeaderHeight] =
@@ -11237,13 +11402,13 @@ export default function ScheduleTabContent({
     []
   );
 
-  const openMyListScheduleEventEditor = useCallback(
+  const openScheduleEventEditor = useCallback(
     (
       instance: ScheduleInstance,
       originData: ScheduleEditOrigin | null,
       fallbackTitle?: string | null
     ) => {
-      if (!isMyListScheduleInstance(instance)) return;
+      if (!canOpenScheduleEventEditor(instance)) return;
       triggerLongPressFeedback(instance.id);
       const nextSnapshot: EditingSnapshot = {
         source_type: "EVENT",
@@ -11253,7 +11418,7 @@ export default function ScheduleTabContent({
         eventId: instance.source_type === "EVENT" ? instance.source_id : null,
         originData,
       };
-      logEditingSnapshotEvent("my-list-event-card", nextSnapshot, {
+      logEditingSnapshotEvent("schedule-event-card", nextSnapshot, {
         instanceId: instance.id,
         sourceType: instance.source_type,
         sourceId: instance.source_id,
@@ -11857,7 +12022,7 @@ export default function ScheduleTabContent({
       timeZoneShortName,
       friendlyTimeZone,
       localTimeZone: effectiveTimeZone,
-      todayDateKey: canonicalTodayDateKey,
+      todayDateKey: dashboardRailTodayDateKey,
     });
   }, [
     currentDate,
@@ -11877,10 +12042,11 @@ export default function ScheduleTabContent({
     timeZoneShortName,
     friendlyTimeZone,
     effectiveTimeZone,
-    canonicalTodayDateKey,
+    dashboardRailTodayDateKey,
   ]);
 
   const desktopDayTimelineModels = useMemo(() => {
+    if (isDashboardRail) return [];
     return [0, 1, 2, 3, 4].map((dayOffset) => {
       const date =
         dayOffset === 0
@@ -11926,13 +12092,14 @@ export default function ScheduleTabContent({
     timeZoneShortName,
     friendlyTimeZone,
     canonicalTodayDateKey,
+    isDashboardRail,
   ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const measureDesktopMultiDayHeader = () => {
-      if (!isDesktopScheduleViewport || view !== "day") {
+      if (!useDesktopSchedulePresentation || view !== "day") {
         setDesktopMultiDayHeaderBounds(null);
         return;
       }
@@ -11981,7 +12148,7 @@ export default function ScheduleTabContent({
       window.removeEventListener("resize", measureDesktopMultiDayHeader);
     };
   }, [
-    isDesktopScheduleViewport,
+    useDesktopSchedulePresentation,
     view,
     desktopDayTimelineModels.length,
   ]);
@@ -15592,32 +15759,8 @@ export default function ScheduleTabContent({
               const useProjectStyleEventCard = card.projectStyleEventCard;
 
               if (useProjectStyleEventCard && projectStyleEventInstance) {
-                const isInteractiveMyListEvent =
+                const isMyListEvent =
                   isMyListScheduleInstance(projectStyleEventInstance);
-                if (!isInteractiveMyListEvent) {
-                  return (
-                    <div
-                      key={card.renderKey}
-                      aria-label={`Event ${card.title}`}
-                      className="pointer-events-none absolute select-none"
-                      style={{
-                        ...TIMELINE_CARD_BOUNDS,
-                        top: toTimelinePosition(startOffsetMinutes),
-                        height: toTimelinePosition(durationMinutes),
-                        zIndex: stackingZIndex,
-                      }}
-                    >
-                      <ProjectScheduleInstanceCard
-                        instance={projectStyleEventInstance}
-                        title={card.title}
-                        durationMinutes={durationMinutes}
-                        heightPx={eventHeightPx}
-                        showDurationLabel={false}
-                      />
-                    </div>
-                  );
-                }
-
                 const pendingStatus = pendingInstanceStatuses.get(
                   projectStyleEventInstance.id
                 );
@@ -15628,8 +15771,11 @@ export default function ScheduleTabContent({
                   "scheduled";
                 const isPending = pendingStatus !== undefined;
                 const isCompleted = effectiveStatus === "completed";
-                const canToggle =
-                  canToggleMyListScheduleStatus(effectiveStatus) && !isPending;
+                const canToggleStatus = isMyListEvent
+                  ? canToggleMyListScheduleStatus(effectiveStatus)
+                  : effectiveStatus === "completed" ||
+                    effectiveStatus === "scheduled";
+                const canToggle = canToggleStatus && !isPending;
                 const eventLongPressActive =
                   longPressBounceId === projectStyleEventInstance.id;
                 const eventCompletionBounceActive =
@@ -15642,8 +15788,9 @@ export default function ScheduleTabContent({
                     end: card.scheduledEnd,
                     durationMinutes,
                     status: effectiveStatus,
+                    includeMyListMarkers: isMyListEvent,
                   });
-                const handleMyListEventPrimaryAction = (
+                const handleScheduleEventPrimaryAction = (
                   source?: ScheduleXpSourceCapture | null
                 ) => {
                   if (!canToggle) return;
@@ -15685,9 +15832,17 @@ export default function ScheduleTabContent({
                       handleInstancePointerDown(
                         event,
                         projectStyleEventInstance,
-                        handleMyListEventPrimaryAction,
+                        handleScheduleEventPrimaryAction,
                         () => {
-                          openMyListScheduleEventEditor(
+                          if (
+                            !isInteractiveEventScheduleInstance(
+                              projectStyleEventInstance
+                            ) &&
+                            !isMyListEvent
+                          ) {
+                            return;
+                          }
+                          openScheduleEventEditor(
                             projectStyleEventInstance,
                             getScheduleEditOriginFromElement(
                               event.currentTarget
@@ -15703,7 +15858,7 @@ export default function ScheduleTabContent({
                     }
                     onClick={(event) => {
                       if (shouldBlockClickFromLongPress()) return;
-                      handleMyListEventPrimaryAction(
+                      handleScheduleEventPrimaryAction(
                         captureScheduleXpSourceFromInteraction(
                           projectStyleEventInstance.id,
                           event
@@ -15713,7 +15868,7 @@ export default function ScheduleTabContent({
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      handleMyListEventPrimaryAction(
+                      handleScheduleEventPrimaryAction(
                         captureScheduleXpSourceFromInteraction(
                           projectStyleEventInstance.id,
                           event
@@ -17550,7 +17705,7 @@ export default function ScheduleTabContent({
                                         taskInstance &&
                                           isMyListScheduleInstance(taskInstance)
                                           ? () => {
-                                              openMyListScheduleEventEditor(
+                                              openScheduleEventEditor(
                                                 taskInstance,
                                                 getScheduleEditOriginFromElement(
                                                   event.currentTarget
@@ -17897,7 +18052,7 @@ export default function ScheduleTabContent({
                           handleStandaloneTaskPrimaryAction,
                           isMyListStandaloneTaskInstance
                             ? () => {
-                                openMyListScheduleEventEditor(
+                                openScheduleEventEditor(
                                   instance,
                                   getScheduleEditOriginFromElement(
                                     event.currentTarget
@@ -18054,7 +18209,7 @@ export default function ScheduleTabContent({
       handleInstancePointerUp,
       handleInstancePointerCancel,
       getScheduleEditOriginFromElement,
-      openMyListScheduleEventEditor,
+      openScheduleEventEditor,
       handleQuickCreateSurfacePointerDown,
       handleQuickCreateSurfacePointerMove,
       handleQuickCreateSurfacePointerEnd,
@@ -18098,9 +18253,125 @@ export default function ScheduleTabContent({
       renderDayTimeline(dayTimelineModel, {
         containerRef: dayTimelineContainerRef,
         fullBleed: true,
+        presentation: isDashboardRail ? "dashboard-rail" : "default",
       }),
-    [renderDayTimeline, dayTimelineModel]
+    [renderDayTimeline, dayTimelineModel, isDashboardRail]
   );
+
+  useEffect(() => {
+    if (pathname !== "/dashboard") {
+      hasPositionedDashboardRailForEntryRef.current = false;
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isDashboardRail) return;
+    if (hasPositionedDashboardRailForEntryRef.current) return;
+    if (!dayTimelineModel || dayTimelineModel.windows.length === 0) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const timeZone =
+      normalizeTimeZone(dayTimelineModel.viewTimeZone) ??
+      normalizeTimeZone(effectiveTimeZone) ??
+      "UTC";
+    const now = new Date();
+    const creatorDayKey = formatScheduleDateKey(
+      getSchedulerDayAnchorForNow(now, timeZone),
+      timeZone
+    );
+    if (dayTimelineModel.dayViewDateKey !== creatorDayKey) return;
+
+    const activeBlock = dayTimelineModel.windows.find((block) => {
+      const { start, end } = resolveWindowBoundsForRenderDay(
+        block,
+        dayTimelineModel.date,
+        timeZone
+      );
+      if (!isValidDate(start) || !isValidDate(end) || end <= start) {
+        return false;
+      }
+      return now >= start && now < end;
+    });
+    if (!activeBlock) {
+      hasPositionedDashboardRailForEntryRef.current = true;
+      return;
+    }
+
+    const { start: blockStart } = resolveWindowBoundsForRenderDay(
+      activeBlock,
+      dayTimelineModel.date,
+      timeZone
+    );
+    if (!isValidDate(blockStart)) {
+      hasPositionedDashboardRailForEntryRef.current = true;
+      return;
+    }
+
+    let frame = 0;
+    let attempts = 0;
+    const applyDashboardRailScroll = () => {
+      const scrollContainer = document.querySelector<HTMLElement>(
+        "[data-dashboard-schedule-rail-scroll]"
+      );
+      const timelineContainer = dayTimelineContainerRef.current;
+      const timelineContent =
+        timelineContainer?.querySelector<HTMLElement>(".timeline-content") ??
+        null;
+      const header =
+        scrollContainer?.querySelector<HTMLElement>(
+          "[data-schedule-top-bar]"
+        ) ?? null;
+
+      if (!scrollContainer || !timelineContent || !header) {
+        if (attempts < DASHBOARD_RAIL_ACTIVE_BLOCK_SCROLL_MAX_ATTEMPTS) {
+          attempts += 1;
+          frame = window.requestAnimationFrame(applyDashboardRailScroll);
+          return;
+        }
+        hasPositionedDashboardRailForEntryRef.current = true;
+        return;
+      }
+
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const timelineRect = timelineContent.getBoundingClientRect();
+      const headerHeight = header.getBoundingClientRect().height;
+      const blockStartOffsetMinutes =
+        getDayMinuteOffset(blockStart, renderDayStart) -
+        dayTimelineModel.startHour * 60;
+      const blockStartOffsetPx =
+        Math.max(0, blockStartOffsetMinutes) * dayTimelineModel.pxPerMin;
+      const targetScrollTop =
+        scrollContainer.scrollTop +
+        (timelineRect.top - containerRect.top) +
+        blockStartOffsetPx -
+        headerHeight -
+        DASHBOARD_RAIL_ACTIVE_BLOCK_HEADER_OFFSET_PX;
+      const maxScrollTop = Math.max(
+        0,
+        scrollContainer.scrollHeight - scrollContainer.clientHeight
+      );
+      const nextScrollTop = Math.min(
+        Math.max(0, targetScrollTop),
+        maxScrollTop
+      );
+
+      if (Number.isFinite(nextScrollTop)) {
+        scrollContainer.scrollTo({ top: nextScrollTop, behavior: "auto" });
+      }
+      hasPositionedDashboardRailForEntryRef.current = true;
+    };
+
+    frame = window.requestAnimationFrame(applyDashboardRailScroll);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [
+    dayTimelineModel,
+    effectiveTimeZone,
+    isDashboardRail,
+    pathname,
+    renderDayStart,
+  ]);
 
   const desktopMultiDayTimelineNode = useMemo(() => {
     const fixedHeaderTop =
@@ -19059,6 +19330,11 @@ export default function ScheduleTabContent({
     );
   }
 
+  const shouldRenderScheduleTopBar = !isNutritionQuickAddOverlayOpen;
+  const shouldUseDesktopMultiDayTimeline =
+    view === "day" && useDesktopSchedulePresentation;
+  const shouldEnableDaySwipeGestures = useMobileSchedulePresentation;
+
   return (
     <LayoutGroup id="schedule-shared-layout">
       {timeBlockConstraintsPortal}
@@ -19069,7 +19345,7 @@ export default function ScheduleTabContent({
         </div>
       ) : null}
       <ProtectedRoute>
-        {!isNutritionQuickAddOverlayOpen ? (
+        {shouldRenderScheduleTopBar ? (
           <ScheduleTopBar
             year={year}
             weekdayLabel={dayTimelineModel?.dayViewDetails.weekday}
@@ -19082,6 +19358,7 @@ export default function ScheduleTabContent({
                 : undefined
             }
             onBack={handleBack}
+            hideBackButton={isEmbeddedSchedulePresentation}
             onToday={handleToday}
             onOpenJumpToDate={openInlineJumpToDateFromButton}
             onOpenSearch={() => {
@@ -19104,14 +19381,24 @@ export default function ScheduleTabContent({
             isSimpleSchedulingMode={isSimpleSchedulingMode}
             onToggleSimpleSchedulingMode={handleToggleSimpleSchedulingMode}
             onHeightChange={setTopBarHeight}
-            className={!isSwipePreview ? "lg:left-0 lg:right-0" : undefined}
+            position={isDashboardRail ? "sticky" : "fixed"}
+            className={
+              isDashboardRail
+                ? "z-[90]"
+                : !isSwipePreview
+                  ? "lg:left-0 lg:right-0"
+                  : undefined
+            }
           />
         ) : null}
         <div
           className={clsx(
             "min-w-0 space-y-4 text-[var(--text)]",
-            isDesktopScheduleViewport ? "overflow-x-clip" : "overflow-x-hidden",
+            useDesktopSchedulePresentation
+              ? "overflow-x-clip"
+              : "overflow-x-hidden",
             !isSwipePreview &&
+              !isDashboardRail &&
               "lg:w-screen lg:max-w-none lg:min-w-0"
           )}
           style={{ paddingTop: scheduleContentPaddingTop }}
@@ -19120,7 +19407,7 @@ export default function ScheduleTabContent({
           <div
             className={clsx(
               "app-surface relative",
-              isDesktopScheduleViewport || isInlineJumpToDateOpen
+              useDesktopSchedulePresentation || isInlineJumpToDateOpen
                 ? "overflow-visible"
                 : "overflow-hidden"
             )}
@@ -19128,20 +19415,34 @@ export default function ScheduleTabContent({
             style={{
               touchAction: manualPlacementSession ? "none" : TIMELINE_TOUCH_ACTION,
             }}
-            onTouchStart={manualPlacementSession ? undefined : handleTouchStart}
-            onTouchMove={manualPlacementSession ? undefined : handleTouchMove}
+            onTouchStart={
+              manualPlacementSession || !shouldEnableDaySwipeGestures
+                ? undefined
+                : handleTouchStart
+            }
+            onTouchMove={
+              manualPlacementSession || !shouldEnableDaySwipeGestures
+                ? undefined
+                : handleTouchMove
+            }
             onTouchEnd={
-              manualPlacementSession
+              manualPlacementSession || !shouldEnableDaySwipeGestures
                 ? undefined
                 : (event) => {
                     void handleTouchEnd(event);
                   }
             }
-            onTouchCancel={manualPlacementSession ? undefined : handleTouchCancel}
+            onTouchCancel={
+              manualPlacementSession || !shouldEnableDaySwipeGestures
+                ? undefined
+                : handleTouchCancel
+            }
           >
             <motion.div
-              animate={isDesktopScheduleViewport ? undefined : jumpPullControls}
-              initial={isDesktopScheduleViewport ? undefined : false}
+              animate={
+                useDesktopSchedulePresentation ? undefined : jumpPullControls
+              }
+              initial={useDesktopSchedulePresentation ? undefined : false}
             >
               <div
                 data-inline-jump-panel
@@ -19212,7 +19513,7 @@ export default function ScheduleTabContent({
                   }
                 >
                   <AnimatePresence mode="wait" initial={false}>
-                    {view === "day" && isDesktopScheduleViewport ? (
+                    {shouldUseDesktopMultiDayTimeline ? (
                       <div key="day">
                         {!dayTimelineModel ? (
                           <div className="flex h-64 items-center justify-center text-zinc-500">
@@ -19323,7 +19624,7 @@ export default function ScheduleTabContent({
             </motion.div>
           </div>
         </div>
-        {!isSwipePreview ? (
+        {!isSwipePreview && useDesktopSchedulePresentation ? (
           <aside className="hidden">
             <JumpToDateSheet
               variant="inline"
@@ -19339,72 +19640,80 @@ export default function ScheduleTabContent({
           </aside>
         ) : null}
       </ProtectedRoute>
-      <MemoCompletionDialog
-        open={Boolean(memoCompletionState)}
-        context={memoCompletionState}
-        onOpenChange={(open) => {
-          if (!open) setMemoCompletionState(null);
-        }}
-        onCompleted={handleMemoCompletionSubmitted}
-      />
-      <div className="lg:hidden">
-        <JumpToDateSheet
-          open={isJumpToDateOpen}
+      {memoCompletionState ? (
+        <MemoCompletionDialog
+          open
+          context={memoCompletionState}
+          onOpenChange={(open) => {
+            if (!open) setMemoCompletionState(null);
+          }}
+          onCompleted={handleMemoCompletionSubmitted}
+        />
+      ) : null}
+      {isJumpToDateOpen ? (
+        <div className="lg:hidden">
+          <JumpToDateSheet
+            open
+            onOpenChange={(open) => {
+              void hapticSnap();
+              setIsJumpToDateOpen(open);
+            }}
+            currentDate={currentDate}
+            timeZone={effectiveTimeZone}
+            onSelectDate={handleJumpToDateSelect}
+            snapshot={jumpToDateSnapshot ?? undefined}
+          />
+        </div>
+      ) : null}
+      {isSearchOpen ? (
+        <ScheduleSearchSheet
+          open
           onOpenChange={(open) => {
             void hapticSnap();
-            setIsJumpToDateOpen(open);
+            setIsSearchOpen(open);
           }}
-          currentDate={currentDate}
-          timeZone={effectiveTimeZone}
-          onSelectDate={handleJumpToDateSelect}
-          snapshot={jumpToDateSnapshot ?? undefined}
+          instances={instances}
+          taskMap={taskMap}
+          projectMap={projectMap}
+          onSelectResult={handleSearchResultSelect}
         />
-      </div>
-      <ScheduleSearchSheet
-        open={isSearchOpen}
-        onOpenChange={(open) => {
-          void hapticSnap();
-          setIsSearchOpen(open);
-        }}
-        instances={instances}
-        taskMap={taskMap}
-        projectMap={projectMap}
-        onSelectResult={handleSearchResultSelect}
-      />
-      <SchedulerModeSheet
-        open={isModeSheetOpen}
-        onOpenChange={(open) => {
-          void hapticSnap();
-          setIsModeSheetOpen(open);
-        }}
-        modeType={modeType}
-        onModeTypeChange={handleModeTypeChange}
-        monumentId={modeMonumentId}
-        onMonumentChange={handleMonumentChange}
-        skillIds={modeSkillIds}
-        onSkillToggle={handleSkillToggle}
-        onClearSkills={handleClearSkills}
-        monuments={monuments}
-        skills={skills}
-      />
-      {!fabEditTarget ? (
-        <>
-          <ProjectEditSheet
-            open={isProjectEditing}
-            projectId={editingSnapshot?.projectId ?? null}
-            instance={editingInstance}
-            onClose={handleCloseEditSheet}
-            onInstanceDeleted={refreshScheduleData}
-          />
-          <HabitEditSheet
-            open={isHabitEditing}
-            habitId={editingSnapshot?.habitId ?? null}
-            instance={editingInstance}
-            onClose={handleCloseEditSheet}
-            onSaved={refreshScheduleData}
-            onInstanceDeleted={refreshScheduleData}
-          />
-        </>
+      ) : null}
+      {isModeSheetOpen ? (
+        <SchedulerModeSheet
+          open
+          onOpenChange={(open) => {
+            void hapticSnap();
+            setIsModeSheetOpen(open);
+          }}
+          modeType={modeType}
+          onModeTypeChange={handleModeTypeChange}
+          monumentId={modeMonumentId}
+          onMonumentChange={handleMonumentChange}
+          skillIds={modeSkillIds}
+          onSkillToggle={handleSkillToggle}
+          onClearSkills={handleClearSkills}
+          monuments={monuments}
+          skills={skills}
+        />
+      ) : null}
+      {!fabEditTarget && isProjectEditing ? (
+        <ProjectEditSheet
+          open
+          projectId={editingSnapshot?.projectId ?? null}
+          instance={editingInstance}
+          onClose={handleCloseEditSheet}
+          onInstanceDeleted={refreshScheduleData}
+        />
+      ) : null}
+      {!fabEditTarget && isHabitEditing ? (
+        <HabitEditSheet
+          open
+          habitId={editingSnapshot?.habitId ?? null}
+          instance={editingInstance}
+          onClose={handleCloseEditSheet}
+          onSaved={refreshScheduleData}
+          onInstanceDeleted={refreshScheduleData}
+        />
       ) : null}
       {activeMyListPlacement && typeof document !== "undefined"
         ? createPortal(

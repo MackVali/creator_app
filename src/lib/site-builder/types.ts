@@ -1,4 +1,5 @@
 export type SiteSectionType =
+  | "banner"
   | "hero"
   | "content"
   | "split"
@@ -51,6 +52,10 @@ export type SiteSectionDividerStrength =
 
 export type SiteSectionLayoutConfig = {
   variant?: string;
+
+  // Banner sections are anchored outside the normal page flow.
+  placement?: "top" | "bottom" | "both";
+
   alignment?: "left" | "center";
   width?: "narrow" | "normal" | "wide" | "full";
 
@@ -92,6 +97,12 @@ export type SiteSectionLayoutConfig = {
 
 export type SiteSectionStyleConfig = {
   background?: "default" | "plain" | "dark" | "muted" | "contrast";
+
+  // Optional per-section color overrides.
+  // When absent, the section inherits the active Site theme.
+  backgroundColor?: string;
+  textColor?: string;
+  accentColor?: string;
 
   divider?: SiteSectionDivider;
   dividerStrength?: SiteSectionDividerStrength;
@@ -150,12 +161,24 @@ export type SitePage = {
   sections: SiteSection[];
 };
 
+export type SiteNavigationItemKind =
+  | "page"
+  | "link"
+  | "dropdown";
+
 export type SiteNavigationItem = {
   id: string;
   label: string;
+
+  // Optional so existing flat navigation documents remain valid.
+  kind?: SiteNavigationItemKind;
+
   href: string;
   pageId?: string;
   visible: boolean;
+
+  // Navigation is its own hierarchy. Pages remain independent.
+  children?: SiteNavigationItem[];
 };
 
 export type SiteHeaderConfig = {

@@ -12,6 +12,7 @@ import DesktopShellNav from "@/components/DesktopShellNav";
 import BottomNav from "@/components/BottomNav";
 import CreatorXpBurstOverlay from "@/components/effects/CreatorXpBurstOverlay";
 import { GlobalMyList } from "@/components/my-list/GlobalMyList";
+import ScheduleTabContent from "@/app/(app)/schedule/ScheduleTabContent";
 import TopNav from "@/components/TopNav";
 
 const profileManagementRouteSegments = new Set(["edit", "linked-accounts"]);
@@ -48,10 +49,10 @@ export default function AppShellNavVisibility({
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
   const showBottomChrome = !hideNav && !shouldHideBottomChrome(pathname);
   const showGlobalMyList =
-    showBottomChrome ||
-    (!hideNav && (isScheduleRoute(pathname) || pathname === "/dashboard"));
+    showBottomChrome || (!hideNav && isScheduleRoute(pathname));
   const isMainSchedulePage = pathname === "/schedule";
-  const enableScheduleTimelineDrag = pathname === "/schedule";
+  const enableScheduleTimelineDrag =
+    pathname === "/schedule" || pathname === "/dashboard";
 
   return (
     <>
@@ -67,6 +68,16 @@ export default function AppShellNavVisibility({
 
       <AppMain>{children}</AppMain>
 
+      {!hideNav && pathname === "/dashboard" ? (
+        <aside
+          data-dashboard-right-rail
+          data-dashboard-schedule-rail-scroll
+          className="fixed inset-y-0 right-0 z-30 hidden w-[360px] overflow-y-auto overscroll-contain border-l border-white/10 bg-[#070708] text-white shadow-[inset_1px_0_0_rgba(255,255,255,0.035)] lg:block"
+        >
+          <ScheduleTabContent presentation="dashboard-rail" />
+        </aside>
+      ) : null}
+
       {showBottomChrome && (
         <div className="lg:hidden">
           <BottomNav />
@@ -74,7 +85,7 @@ export default function AppShellNavVisibility({
       )}
 
       {showGlobalMyList && (
-        <div className={pathname === "/dashboard" ? "" : "lg:hidden"}>
+        <div className="lg:hidden">
           <GlobalMyList
             useFullExpandedHeight={!isMainSchedulePage}
             enableScheduleTimelineDrag={enableScheduleTimelineDrag}

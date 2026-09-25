@@ -19,7 +19,10 @@ import {
 import { resolveListingImage } from "@/components/profile/detailSheetUtils";
 import { normalizeSourceListingCardProps } from "@/components/source/SourceListingCard";
 import type { PortfolioSiteData } from "@/lib/portfolio/types";
-import type { SitePreviewInlineEditField } from "@/lib/site-builder/previewMessages";
+import type {
+  SitePreviewInlineEditField,
+  SitePreviewMediaEditChanges,
+} from "@/lib/site-builder/previewMessages";
 import {
   getSiteFooterConfig,
   getSiteHeaderConfig,
@@ -41,6 +44,7 @@ import type {
   SiteContentNodeId,
   SiteDocument,
   SiteEditorSelection,
+  SiteNavigationItem,
   SiteSection,
 } from "@/lib/site-builder/types";
 import type { SourceListing } from "@/types/source";
@@ -50,6 +54,7 @@ type PortfolioSiteProps = {
   siteDocument?: SiteDocument;
   sections?: SiteSection[];
   sourceListings?: SourceListing[];
+  sectionOnly?: boolean;
   editorPreview?: boolean;
   editorPageId?: string;
   editorSelection?: SiteEditorSelection | null;
@@ -64,6 +69,11 @@ type PortfolioSiteProps = {
     sectionId: string;
     field: SitePreviewInlineEditField;
     value: string;
+  }) => void;
+  onEditorMediaEditRequest?: (edit: {
+    pageId: string;
+    sectionId: string;
+    changes: SitePreviewMediaEditChanges;
   }) => void;
   onEditorSectionInsertRequest?: (request: {
     pageId: string;
@@ -88,6 +98,11 @@ type EditorSelectionContext = {
     sectionId: string;
     field: SitePreviewInlineEditField;
     value: string;
+  }) => void;
+  onMediaEditRequest?: (edit: {
+    pageId: string;
+    sectionId: string;
+    changes: SitePreviewMediaEditChanges;
   }) => void;
   onSectionInsertRequest?: (request: {
     pageId: string;
@@ -179,19 +194,28 @@ function editorSectionClass(
   context: EditorSelectionContext,
   sectionId: string | undefined,
 ) {
-  if (!context.editorPreview || !sectionId) return "";
+  if (
+    !context.editorPreview ||
+    !sectionId
+  ) {
+    return "";
+  }
 
-  const state = getSectionSelectionState(context, sectionId);
+  const state =
+    getSectionSelectionState(
+      context,
+      sectionId,
+    );
 
   if (state.selected) {
-    return "outline outline-1 -outline-offset-1 outline-white/45";
+    return "outline outline-1 -outline-offset-1 outline-zinc-400/55";
   }
 
   if (state.active) {
-    return "outline outline-1 -outline-offset-1 outline-white/22 hover:outline-white/32";
+    return "outline outline-1 -outline-offset-1 outline-zinc-500/25";
   }
 
-  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:outline-white/12";
+  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:outline-zinc-500/20";
 }
 
 function editorNodeClass(
@@ -199,38 +223,51 @@ function editorNodeClass(
   sectionId: string | undefined,
   node: EditorNodeId,
 ) {
-  if (!context.editorPreview || !sectionId) return "";
-
-  const state = getNodeSelectionState(context, sectionId, node);
-
-  if (state.active) {
-    return "rounded-[3px] bg-white/[0.045] outline outline-1 -outline-offset-1 outline-white/50";
+  if (
+    !context.editorPreview ||
+    !sectionId
+  ) {
+    return "";
   }
 
-  return "rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:bg-white/[0.025] hover:outline-white/24";
-}
+  const state =
+    getNodeSelectionState(
+      context,
+      sectionId,
+      node,
+    );
 
+  if (state.active) {
+    return "rounded-[3px] bg-zinc-400/[0.055] outline outline-1 -outline-offset-1 outline-zinc-400/65";
+  }
+
+  return "rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:bg-zinc-400/[0.025] hover:outline-zinc-500/25";
+}
 
 function editorBlockClass(
   context: EditorSelectionContext,
   sectionId: string,
   blockId: string,
 ) {
-  if (!context.editorPreview) return "";
+  if (!context.editorPreview) {
+    return "";
+  }
 
   const selected =
     context.activeSelection?.pageId ===
       context.pageId &&
     context.activeSelection.sectionId ===
       sectionId &&
-    context.activeSelection.kind === "block" &&
-    context.activeSelection.blockId === blockId;
+    context.activeSelection.kind ===
+      "block" &&
+    context.activeSelection.blockId ===
+      blockId;
 
   if (selected) {
-    return "outline outline-2 -outline-offset-2 outline-white/55";
+    return "outline outline-1 -outline-offset-1 outline-zinc-400/65";
   }
 
-  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color] hover:outline-white/20";
+  return "outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:outline-zinc-500/25";
 }
 
 function handleEditorBlockClick(
@@ -444,11 +481,11 @@ function InlineEditableText({
       onPaste={handlePaste}
       className={`${className} ${
         editable
-          ? "cursor-text rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent hover:outline-white/20"
+          ? "cursor-text rounded-[3px] outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color,background-color] hover:outline-zinc-500/30"
           : ""
       } ${
         editing
-          ? "bg-white/[0.055] outline-white/45"
+          ? "bg-zinc-400/[0.07] outline-zinc-400/75 caret-zinc-200"
           : ""
       }`}
     >
@@ -1345,7 +1382,19 @@ function sectionBackgroundClass(
 ) {
   let background = "";
 
+  const customBackground =
+    section?.style
+      ?.backgroundColor;
+
   if (
+    customBackground &&
+    /^#[0-9a-f]{6}$/i.test(
+      customBackground,
+    )
+  ) {
+    background =
+      "bg-[var(--site-section-bg)]";
+  } else if (
     section?.style?.background === "plain"
   ) {
     background =
@@ -1388,40 +1437,179 @@ type SectionTextDefaults = {
   textGap: number;
 };
 
+function sectionColorRgb(
+  hex: string,
+) {
+  const match =
+    /^#([0-9a-f]{6})$/i.exec(
+      hex,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const value =
+    Number.parseInt(
+      match[1],
+      16,
+    );
+
+  return {
+    r:
+      (value >> 16) &
+      255,
+
+    g:
+      (value >> 8) &
+      255,
+
+    b:
+      value & 255,
+  };
+}
+
+function sectionContrastColor(
+  hex: string,
+) {
+  const rgb =
+    sectionColorRgb(hex);
+
+  if (!rgb) {
+    return "#FFFFFF";
+  }
+
+  const luminance =
+    0.2126 * rgb.r +
+    0.7152 * rgb.g +
+    0.0722 * rgb.b;
+
+  return luminance > 145
+    ? "#090909"
+    : "#FFFFFF";
+}
+
+type SectionOuterStyle =
+  CSSProperties &
+  Record<
+    `--site-${string}`,
+    string
+  >;
+
 function sectionShellOuterStyle(
   section: SiteSection | undefined,
 ) {
-  if (!section?.layout) {
+  if (!section) {
     return undefined;
   }
+
+  const style =
+    {} as SectionOuterStyle;
 
   const layout =
     section.layout;
 
   if (
-    layout.heightMode ===
+    layout?.heightMode ===
     "screen"
   ) {
-    return {
-      minHeight: "100svh",
-    } satisfies CSSProperties;
+    style.minHeight =
+      "100svh";
+  } else if (
+    layout?.heightMode ===
+    "minimum"
+  ) {
+    style.minHeight =
+      `${Math.max(
+        0,
+        layout.minHeight ??
+          520,
+      )}px`;
+  }
+
+  const backgroundColor =
+    section.style
+      ?.backgroundColor;
+
+  const explicitTextColor =
+    section.style
+      ?.textColor;
+
+  const textColor =
+    explicitTextColor ||
+    (
+      backgroundColor
+        ? sectionContrastColor(
+            backgroundColor,
+          )
+        : undefined
+    );
+
+  const accentColor =
+    section.style
+      ?.accentColor;
+
+  if (
+    backgroundColor &&
+    /^#[0-9a-f]{6}$/i.test(
+      backgroundColor,
+    )
+  ) {
+    style.backgroundColor =
+      backgroundColor;
+
+    style["--site-section-bg"] =
+      backgroundColor;
   }
 
   if (
-    layout.heightMode ===
-    "minimum"
+    textColor &&
+    /^#[0-9a-f]{6}$/i.test(
+      textColor,
+    )
   ) {
-    return {
-      minHeight:
-        `${Math.max(
-          0,
-          layout.minHeight ??
-            520,
-        )}px`,
-    } satisfies CSSProperties;
+    style.color =
+      textColor;
+
+    style["--site-text"] =
+      textColor;
+
+    style["--site-text-muted"] =
+      `color-mix(in srgb, ${textColor} 68%, transparent)`;
+
+    style["--site-text-subtle"] =
+      `color-mix(in srgb, ${textColor} 48%, transparent)`;
+
+    style["--site-text-faint"] =
+      `color-mix(in srgb, ${textColor} 30%, transparent)`;
+
+    style["--site-border"] =
+      `color-mix(in srgb, ${textColor} 16%, transparent)`;
+
+    style["--site-border-strong"] =
+      `color-mix(in srgb, ${textColor} 28%, transparent)`;
   }
 
-  return undefined;
+  if (
+    accentColor &&
+    /^#[0-9a-f]{6}$/i.test(
+      accentColor,
+    )
+  ) {
+    style["--site-accent"] =
+      accentColor;
+
+    style["--site-accent-contrast"] =
+      sectionContrastColor(
+        accentColor,
+      );
+  }
+
+  return Object.keys(
+    style,
+  ).length > 0
+    ? style
+    : undefined;
 }
 
 function sectionShellContainerStyle(
@@ -1503,19 +1691,28 @@ function sectionHeadingTextStyle(
     defaults.headingWidth;
 
   const mobile =
+    Math.min(
+      size,
+      Math.max(
+        28,
+        Math.round(
+          size * 0.62,
+        ),
+      ),
+    );
+
+  const fluid =
     Math.max(
-      22,
-      Math.round(
-        size * 0.56,
+      2.35,
+      Math.min(
+        7.5,
+        size / 12,
       ),
     );
 
   return {
     fontSize:
-      `clamp(${mobile}px, ${Math.max(
-        2.4,
-        size / 14,
-      )}vw, ${size}px)`,
+      `clamp(${mobile}px, ${fluid}vw, ${size}px)`,
     maxWidth:
       `${width}px`,
   } satisfies CSSProperties;
@@ -1545,6 +1742,17 @@ function sectionTextGap(
   );
 }
 
+function clampMediaNumber(
+  value: number,
+  min: number,
+  max: number,
+) {
+  return Math.max(
+    min,
+    Math.min(max, value),
+  );
+}
+
 function HeroInlineMedia({
   section,
   editorContext,
@@ -1552,6 +1760,23 @@ function HeroInlineMedia({
   section?: SiteSection;
   editorContext: EditorSelectionContext;
 }) {
+  const [cropMode, setCropMode] =
+    useState(false);
+
+  const dragRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    positionX: number;
+    positionY: number;
+  } | null>(null);
+
+  const resizeRef = useRef<{
+    pointerId: number;
+    clientY: number;
+    height: number;
+  } | null>(null);
+
   const mediaUrl =
     readContentString(
       section,
@@ -1573,6 +1798,55 @@ function HeroInlineMedia({
   const fixedRatio =
     media.ratio !== "auto";
 
+  const selected =
+    Boolean(
+      section?.id &&
+        getNodeSelectionState(
+          editorContext,
+          section.id,
+          "media",
+        ).active,
+    );
+
+  useEffect(() => {
+    if (!selected) {
+      setCropMode(false);
+      dragRef.current = null;
+      resizeRef.current = null;
+    }
+  }, [selected]);
+
+  function requestMediaChange(
+    changes: SitePreviewMediaEditChanges,
+  ) {
+    if (!section?.id) return;
+
+    editorContext.onMediaEditRequest?.({
+      pageId:
+        editorContext.pageId,
+      sectionId:
+        section.id,
+      changes,
+    });
+  }
+
+  function selectMedia(
+    event: MouseEvent<HTMLElement>,
+  ) {
+    if (cropMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    handleEditorNodeClick(
+      event,
+      editorContext,
+      section?.id,
+      "media",
+    );
+  }
+
   return (
     <div
       data-creator-editor-node={
@@ -1580,15 +1854,104 @@ function HeroInlineMedia({
           ? "media"
           : undefined
       }
-      onClick={(event) =>
-        handleEditorNodeClick(
-          event,
-          editorContext,
-          section?.id,
-          "media",
-        )
-      }
-      className={`relative w-full overflow-hidden ${mediaFrameClass(
+      onClick={selectMedia}
+      onPointerDown={(event) => {
+        if (
+          !cropMode ||
+          !selected ||
+          !section?.id
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        event.currentTarget.setPointerCapture(
+          event.pointerId,
+        );
+
+        dragRef.current = {
+          pointerId:
+            event.pointerId,
+          clientX:
+            event.clientX,
+          clientY:
+            event.clientY,
+          positionX:
+            media.positionX,
+          positionY:
+            media.positionY,
+        };
+      }}
+      onPointerMove={(event) => {
+        const drag =
+          dragRef.current;
+
+        if (
+          !drag ||
+          drag.pointerId !==
+            event.pointerId
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        const rect =
+          event.currentTarget.getBoundingClientRect();
+
+        if (
+          rect.width <= 0 ||
+          rect.height <= 0
+        ) {
+          return;
+        }
+
+        const dx =
+          event.clientX -
+          drag.clientX;
+
+        const dy =
+          event.clientY -
+          drag.clientY;
+
+        requestMediaChange({
+          mediaPositionX:
+            clampMediaNumber(
+              drag.positionX -
+                (dx / rect.width) *
+                  100,
+              0,
+              100,
+            ),
+          mediaPositionY:
+            clampMediaNumber(
+              drag.positionY -
+                (dy / rect.height) *
+                  100,
+              0,
+              100,
+            ),
+        });
+      }}
+      onPointerUp={(event) => {
+        if (
+          dragRef.current
+            ?.pointerId ===
+          event.pointerId
+        ) {
+          dragRef.current = null;
+        }
+      }}
+      onPointerCancel={() => {
+        dragRef.current = null;
+      }}
+      className={`relative w-full overflow-hidden ${
+        cropMode
+          ? "cursor-grab select-none"
+          : ""
+      } ${mediaFrameClass(
         media.frame,
       )} ${editorNodeClass(
         editorContext,
@@ -1598,6 +1961,10 @@ function HeroInlineMedia({
       style={{
         borderRadius:
           `${media.radius}px`,
+        touchAction:
+          cropMode
+            ? "none"
+            : undefined,
 
         ...(fixedRatio
           ? {
@@ -1616,7 +1983,8 @@ function HeroInlineMedia({
         <img
           src={mediaUrl}
           alt={mediaAlt}
-          className="absolute inset-0 h-full w-full"
+          draggable={false}
+          className="pointer-events-none absolute inset-0 h-full w-full select-none"
           style={{
             objectFit:
               media.fit,
@@ -1627,10 +1995,226 @@ function HeroInlineMedia({
           }}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-[var(--site-surface-strong)] text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
-          Add media
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--site-surface-strong)] text-[12px] text-[var(--site-text-muted)]">
+          Add image
         </div>
       )}
+
+      {selected &&
+      editorContext.editorPreview &&
+      mediaUrl ? (
+        <>
+          <div
+            className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-[8px] border border-white/[0.1] bg-[#111214]/95 p-1 shadow-2xl backdrop-blur-xl"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setCropMode(
+                  (current) =>
+                    !current,
+                );
+
+                if (
+                  media.fit !==
+                  "cover"
+                ) {
+                  requestMediaChange({
+                    mediaFit:
+                      "cover",
+                  });
+                }
+              }}
+              className={`h-7 rounded-[6px] px-2.5 text-[10px] transition-colors ${
+                cropMode
+                  ? "bg-white/[0.1] text-zinc-200"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {cropMode
+                ? "Done"
+                : "Crop"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                requestMediaChange({
+                  mediaFit:
+                    "contain",
+                })
+              }
+              className="h-7 rounded-[6px] px-2.5 text-[10px] text-zinc-500 transition-colors hover:text-zinc-300"
+            >
+              Fit
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                requestMediaChange({
+                  mediaFit:
+                    "cover",
+                })
+              }
+              className="h-7 rounded-[6px] px-2.5 text-[10px] text-zinc-500 transition-colors hover:text-zinc-300"
+            >
+              Fill
+            </button>
+
+            {cropMode ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  onClick={() =>
+                    requestMediaChange({
+                      mediaZoom:
+                        clampMediaNumber(
+                          media.zoom -
+                            10,
+                          50,
+                          200,
+                        ),
+                    })
+                  }
+                  className="flex h-7 w-7 items-center justify-center rounded-[6px] text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+                >
+                  −
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  onClick={() =>
+                    requestMediaChange({
+                      mediaZoom:
+                        clampMediaNumber(
+                          media.zoom +
+                            10,
+                          50,
+                          200,
+                        ),
+                    })
+                  }
+                  className="flex h-7 w-7 items-center justify-center rounded-[6px] text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+                >
+                  +
+                </button>
+              </>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() =>
+                requestMediaChange({
+                  mediaZoom: 100,
+                  mediaPositionX: 50,
+                  mediaPositionY: 50,
+                })
+              }
+              className="h-7 rounded-[6px] px-2.5 text-[10px] text-zinc-600 transition-colors hover:text-zinc-300"
+            >
+              Reset
+            </button>
+          </div>
+
+          {cropMode ? (
+            <div className="pointer-events-none absolute inset-0 z-20 border border-white/30">
+              <div className="absolute inset-x-0 top-1/3 h-px bg-white/10" />
+              <div className="absolute inset-x-0 top-2/3 h-px bg-white/10" />
+              <div className="absolute inset-y-0 left-1/3 w-px bg-white/10" />
+              <div className="absolute inset-y-0 left-2/3 w-px bg-white/10" />
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-2 py-1 text-[9px] text-white/60">
+                Drag image to reposition
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            aria-label="Resize media height"
+            title="Drag to resize"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              event.currentTarget.setPointerCapture(
+                event.pointerId,
+              );
+
+              resizeRef.current = {
+                pointerId:
+                  event.pointerId,
+                clientY:
+                  event.clientY,
+                height:
+                  media.height,
+              };
+
+              if (
+                media.ratio !==
+                "auto"
+              ) {
+                requestMediaChange({
+                  mediaRatio:
+                    "auto",
+                  mediaHeight:
+                    media.height,
+                });
+              }
+            }}
+            onPointerMove={(event) => {
+              const resize =
+                resizeRef.current;
+
+              if (
+                !resize ||
+                resize.pointerId !==
+                  event.pointerId
+              ) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+
+              requestMediaChange({
+                mediaHeight:
+                  clampMediaNumber(
+                    resize.height +
+                      event.clientY -
+                      resize.clientY,
+                    180,
+                    1200,
+                  ),
+              });
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              if (
+                resizeRef.current
+                  ?.pointerId ===
+                event.pointerId
+              ) {
+                resizeRef.current =
+                  null;
+              }
+            }}
+            className="absolute bottom-1 left-1/2 z-40 h-2.5 w-16 -translate-x-1/2 cursor-ns-resize rounded-full bg-white/30 transition-colors hover:bg-white/50"
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -1650,7 +2234,7 @@ function HeroSection({
     readContentString(
       section,
       "eyebrow",
-      "Design · Build · Create",
+      "",
     );
 
   const headline =
@@ -1671,14 +2255,14 @@ function HeroSection({
     readContentString(
       section,
       "primaryCtaLabel",
-      "Explore my work",
+      "",
     );
 
   const ctaHref =
     readContentString(
       section,
       "primaryCtaHref",
-      "#software",
+      "#",
     );
 
   const ctaPageId =
@@ -1718,37 +2302,74 @@ function HeroSection({
     variant === "minimal";
 
   const textDefaults:
-    SectionTextDefaults = showcase
+    SectionTextDefaults =
+    showcase
       ? {
-          headingSize: 96,
-          headingWidth: 980,
-          bodySize: 18,
-          bodyWidth: 620,
+          headingSize: 88,
+          headingWidth: 780,
+          bodySize: 17,
+          bodyWidth: 560,
           textGap: 20,
         }
-      : {
-          headingSize: 72,
-          headingWidth: 780,
-          bodySize: 14,
-          bodyWidth: 520,
-          textGap: 20,
-        };
+      : editorial
+        ? {
+            headingSize: 92,
+            headingWidth: 1040,
+            bodySize: 17,
+            bodyWidth: 620,
+            textGap: 22,
+          }
+        : centered
+          ? {
+              headingSize: 84,
+              headingWidth: 920,
+              bodySize: 17,
+              bodyWidth: 620,
+              textGap: 20,
+            }
+          : minimal
+            ? {
+                headingSize: 76,
+                headingWidth: 960,
+                bodySize: 17,
+                bodyWidth: 620,
+                textGap: 20,
+              }
+            : {
+                headingSize: 76,
+                headingWidth: 720,
+                bodySize: 17,
+                bodyWidth: 560,
+                textGap: 20,
+              };
 
   const mediaShare =
     section?.layout
       ?.mediaShare ??
-    60;
+    56;
 
   const gap =
     section?.layout?.gap ??
-    40;
+    56;
+
+  const mediaUrl =
+    readContentString(
+      section,
+      "mediaUrl",
+      section
+        ? ""
+        : heroCover,
+    );
+
+  const hasMedia =
+    Boolean(mediaUrl);
 
   const copy = (
     <div
-      className={`flex min-w-0 flex-col justify-center ${
+      className={`flex min-w-0 flex-col ${
         centered
-          ? "mx-auto text-center"
-          : ""
+          ? "mx-auto items-center text-center"
+          : "items-start"
       }`}
     >
       <div
@@ -1781,7 +2402,7 @@ function HeroSection({
             editorContext={
               editorContext
             }
-            className="text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--site-text-subtle)]"
+            className="text-[13px] font-medium leading-5 text-[var(--site-text-muted)]"
           />
         ) : null}
 
@@ -1799,8 +2420,10 @@ function HeroSection({
             textDefaults,
           )}
           className={`${
-            eyebrow ? "mt-4" : ""
-          } whitespace-pre-line leading-[0.94] tracking-[-0.06em] text-[var(--site-text)] ${
+            eyebrow
+              ? "mt-4"
+              : ""
+          } whitespace-pre-line [text-wrap:balance] leading-[0.94] tracking-[-0.045em] text-[var(--site-text)] ${
             centered
               ? "mx-auto"
               : ""
@@ -1829,7 +2452,7 @@ function HeroSection({
                   textDefaults,
                 )}px`,
             }}
-            className={`leading-[1.7] text-[var(--site-text-muted)] ${
+            className={`[text-wrap:pretty] leading-[1.6] text-[var(--site-text-muted)] ${
               centered
                 ? "mx-auto"
                 : ""
@@ -1854,11 +2477,7 @@ function HeroSection({
               "button",
             )
           }
-          className={`${
-            showcase
-              ? "mt-7 inline-flex w-fit items-center gap-3 border-b border-white/20 pb-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-[var(--site-accent)] transition-colors hover:border-white/40"
-              : "mt-6 inline-flex h-9 w-fit items-center gap-3 rounded-full border border-[var(--site-border-strong)] px-4 text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] transition hover:border-white/35"
-          } ${
+          className={`mt-8 inline-flex w-fit items-center gap-2 border-b border-[var(--site-border-strong)] pb-1 text-[14px] font-medium leading-5 text-[var(--site-text)] transition-opacity hover:opacity-60 ${
             centered
               ? "mx-auto"
               : ""
@@ -1878,20 +2497,46 @@ function HeroSection({
             }
           />
 
-          <span>→</span>
+          <span aria-hidden="true">
+            ↗
+          </span>
         </a>
       ) : null}
     </div>
   );
 
-  const media = minimal ? null : (
-    <HeroInlineMedia
-      section={section}
-      editorContext={
-        editorContext
-      }
-    />
-  );
+  const media =
+    minimal ||
+    (
+      !hasMedia &&
+      !editorContext.editorPreview
+    )
+      ? null
+      : (
+          <HeroInlineMedia
+            section={section}
+            editorContext={
+              editorContext
+            }
+          />
+        );
+
+  const baseContainerStyle =
+    sectionShellContainerStyle(
+      section,
+    );
+
+  const containerStyle = {
+    ...baseContainerStyle,
+    ...(showcase &&
+    typeof section?.layout
+      ?.contentWidth !== "number"
+      ? {
+          maxWidth:
+            "var(--site-page-width)",
+        }
+      : {}),
+  } satisfies CSSProperties;
 
   return (
     <section
@@ -1920,30 +2565,25 @@ function HeroSection({
       )}`}
     >
       <div
-        style={
-          sectionShellContainerStyle(
-            section,
-          )
-        }
-        className={`mx-auto max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
+        style={containerStyle}
+        className={`mx-auto w-full max-w-[var(--site-page-width)] px-[var(--site-page-x)] ${sectionPaddingClass(
           section,
         )}`}
       >
-        {showcase ? (
-          <div className="relative">
-            <div className="mb-10 max-w-[980px] lg:mb-12">
-              {copy}
+        {showcase && media ? (
+          <div>
+            <div className="w-full">
+              {media}
             </div>
 
-            {media ? (
-              <div className="w-full">
-                {media}
-              </div>
-            ) : null}
+            <div className="relative mt-7 max-w-[780px] md:-mt-24 md:ml-[7%] md:bg-[var(--site-bg)] md:pr-10 md:pt-8">
+              {copy}
+            </div>
           </div>
-        ) : variant === "split" ? (
+        ) : variant === "split" &&
+          media ? (
           <div
-            className="grid items-center lg:grid-cols-[var(--hero-copy)_var(--hero-media)]"
+            className="grid items-center gap-10 lg:grid-cols-[var(--hero-copy)_var(--hero-media)]"
             style={{
               gap:
                 `${gap}px`,
@@ -1957,41 +2597,34 @@ function HeroSection({
             {media}
           </div>
         ) : centered ? (
-          <div
-            className="mx-auto max-w-[1100px]"
-          >
+          <div className="mx-auto max-w-[1120px]">
             {copy}
 
             {media ? (
-              <div
-                className="mx-auto mt-10"
-                style={{
-                  maxWidth:
-                    `${Math.min(
-                      1100,
-                      section?.layout
-                        ?.contentWidth ??
-                        1100,
-                    )}px`,
-                }}
-              >
+              <div className="mx-auto mt-12">
                 {media}
               </div>
             ) : null}
           </div>
-        ) : editorial ? (
-          <div
-            className="grid items-center lg:grid-cols-[1.15fr_0.85fr]"
-            style={{
-              gap:
-                `${gap}px`,
-            }}
-          >
-            {copy}
-            {media}
+        ) : editorial &&
+          media ? (
+          <div className="grid gap-10 lg:grid-cols-12 lg:gap-y-14">
+            <div className="lg:col-span-9">
+              {copy}
+            </div>
+
+            <div className="lg:col-span-7 lg:col-start-6">
+              {media}
+            </div>
           </div>
         ) : (
-          <div className="max-w-[900px]">
+          <div
+            className={
+              minimal
+                ? "max-w-[980px] py-2 md:py-8"
+                : "max-w-[980px]"
+            }
+          >
             {copy}
           </div>
         )}
@@ -2055,7 +2688,9 @@ function ProductsSection({
   const variant =
     sectionVariant(
       section,
-      "grid",
+      section.type === "services"
+        ? "list"
+        : "grid",
     );
 
   const listMode =
@@ -2394,7 +3029,10 @@ function ProductsSection({
             }
             style={{
               gap:
-                `${gap}px`,
+                listMode &&
+                frame === "none"
+                  ? "0px"
+                  : `${gap}px`,
             }}
           >
             {products.map(
@@ -2460,7 +3098,7 @@ function ProductsSection({
                         }
                       />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-[9px] uppercase tracking-[0.18em] text-[var(--site-text-faint)]">
+                      <div className="absolute inset-0 flex items-center justify-center text-[10px] text-[var(--site-text-faint)]">
                         No image
                       </div>
                     )}
@@ -2472,7 +3110,9 @@ function ProductsSection({
                     className={`flex min-w-0 flex-1 flex-col ${
                       frame ===
                       "none"
-                        ? "pt-3"
+                        ? sideLayout
+                          ? "py-1 md:py-2"
+                          : "pt-4"
                         : ""
                     }`}
                     style={
@@ -2491,8 +3131,8 @@ function ProductsSection({
                           className={`leading-[1.15] tracking-[-0.025em] text-[var(--site-text)] ${
                             sideLayout ||
                             editorialMode
-                              ? "text-[20px] sm:text-[24px]"
-                              : "text-[13px] sm:text-[14px]"
+                              ? "text-[21px] sm:text-[25px]"
+                              : "text-[14px] sm:text-[15px]"
                           }`}
                         >
                           {
@@ -2501,7 +3141,7 @@ function ProductsSection({
                         </h3>
 
                         {product.metaLabel ? (
-                          <p className="mt-1 truncate text-[9px] leading-4 text-[var(--site-text-muted)] sm:text-[10px]">
+                          <p className="mt-1.5 truncate text-[10px] leading-4 text-[var(--site-text-muted)] sm:text-[11px]">
                             {
                               product.metaLabel
                             }
@@ -2511,7 +3151,7 @@ function ProductsSection({
 
                       {showPrice &&
                       product.priceLabel ? (
-                        <p className="shrink-0 text-[10px] tabular-nums text-[var(--site-text-subtle)] sm:text-[11px]">
+                        <p className="shrink-0 text-[11px] tabular-nums text-[var(--site-text-subtle)] sm:text-[12px]">
                           {
                             product.priceLabel
                           }
@@ -2525,8 +3165,8 @@ function ProductsSection({
                         className={`mt-2 leading-[1.55] text-[var(--site-text-muted)] ${
                           sideLayout ||
                           editorialMode
-                            ? "text-[13px]"
-                            : "line-clamp-2 text-[10px]"
+                            ? "text-[13px] sm:text-[14px]"
+                            : "line-clamp-2 text-[11px] sm:text-[12px]"
                         }`}
                       >
                         {
@@ -2547,6 +3187,10 @@ function ProductsSection({
                       itemFrameClass(
                         frame,
                       ),
+                      frame === "none" &&
+                      listMode
+                        ? "border-b border-[var(--site-border)] py-6 last:border-b-0"
+                        : "",
                       featured
                         ? "col-span-2"
                         : "",
@@ -2560,15 +3204,25 @@ function ProductsSection({
                   >
                     {sideLayout ? (
                       <div
-                        className="flex flex-col md:grid"
-                        style={{
-                          gridTemplateColumns:
-                            listMode
-                              ? "minmax(160px, 28%) minmax(0, 1fr)"
-                              : "minmax(0, 1.35fr) minmax(0, 0.65fr)",
-                        }}
+                        className={
+                          product.image
+                            ? "flex flex-col gap-5 md:grid md:gap-8"
+                            : "flex"
+                        }
+                        style={
+                          product.image
+                            ? {
+                                gridTemplateColumns:
+                                  listMode
+                                    ? "minmax(150px, 26%) minmax(0, 1fr)"
+                                    : "minmax(0, 1.35fr) minmax(0, 0.65fr)",
+                              }
+                            : undefined
+                        }
                       >
-                        {media}
+                        {product.image
+                          ? media
+                          : null}
                         {copy}
                       </div>
                     ) : (
@@ -2712,7 +3366,12 @@ function CardsSection({
         editorContext,
         section.id,
       )}`}
-      style={sectionStyle}
+      style={{
+        ...(sectionStyle ?? {}),
+        ...(sectionShellOuterStyle(
+          section,
+        ) ?? {}),
+      }}
     >
       <div
         className={`mx-auto w-full px-[var(--site-page-x)] ${sectionPaddingClass(
@@ -5354,6 +6013,192 @@ function ContactSection({
   );
 }
 
+function BannerSection({
+  siteHandle,
+  siteDocument,
+  section,
+  editorContext,
+}: {
+  siteHandle: string;
+  siteDocument?: SiteDocument;
+  section: SiteSection;
+  editorContext: EditorSelectionContext;
+}) {
+  const message =
+    readContentString(
+      section,
+      "message",
+    );
+
+  const buttonLabel =
+    readContentString(
+      section,
+      "buttonLabel",
+    );
+
+  const buttonHref =
+    readContentString(
+      section,
+      "buttonHref",
+      "#",
+    );
+
+  const buttonPageId =
+    readContentString(
+      section,
+      "buttonPageId",
+    );
+
+  const displayMessage =
+    message ||
+    (
+      editorContext.editorPreview
+        ? "Announcement"
+        : ""
+    );
+
+  if (
+    !displayMessage &&
+    !buttonLabel
+  ) {
+    return null;
+  }
+
+  const resolvedHref =
+    resolveSiteLinkHref(
+      siteDocument,
+      siteHandle,
+      {
+        href: buttonHref,
+        pageId:
+          buttonPageId ||
+          undefined,
+      },
+    );
+
+  const contrast =
+    section.style?.background ===
+    "contrast";
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      className={`relative ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+      style={{
+        ...(
+          contrast &&
+          !section.style?.backgroundColor &&
+          !section.style?.textColor
+            ? {
+                backgroundColor:
+                  "var(--site-text)",
+                color:
+                  "var(--site-bg)",
+              }
+            : {}
+        ),
+        ...(
+          sectionShellOuterStyle(
+            section,
+          ) ?? {}
+        ),
+      }}
+    >
+      <div className="mx-auto flex min-h-[46px] max-w-[var(--site-page-width)] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-[var(--site-page-x)] py-2.5 text-center">
+        {displayMessage ? (
+          <div
+            data-creator-editor-node={
+              editorContext.editorPreview
+                ? "text"
+                : undefined
+            }
+            onClick={(event) =>
+              handleEditorNodeClick(
+                event,
+                editorContext,
+                section.id,
+                "text",
+              )
+            }
+            className={editorNodeClass(
+              editorContext,
+              section.id,
+              "text",
+            )}
+          >
+            <InlineEditableText
+              as="p"
+              value={displayMessage}
+              field="message"
+              sectionId={section.id}
+              node="text"
+              editorContext={
+                editorContext
+              }
+              className="text-[13px] font-medium leading-5 tracking-[-0.012em]"
+            />
+          </div>
+        ) : null}
+
+        {buttonLabel ? (
+          <a
+            href={resolvedHref}
+            data-creator-editor-node={
+              editorContext.editorPreview
+                ? "button"
+                : undefined
+            }
+            onClick={(event) =>
+              handleEditorNodeClick(
+                event,
+                editorContext,
+                section.id,
+                "button",
+              )
+            }
+            className={`inline-flex items-center gap-1.5 border-b border-current/35 pb-px text-[12px] font-medium leading-5 transition-opacity hover:opacity-60 ${editorNodeClass(
+              editorContext,
+              section.id,
+              "button",
+            )}`}
+          >
+            <InlineEditableText
+              value={buttonLabel}
+              field="buttonLabel"
+              sectionId={section.id}
+              node="button"
+              editorContext={
+                editorContext
+              }
+            />
+
+            <span aria-hidden="true">
+              ↗
+            </span>
+          </a>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+
 function MackHomeSections({
   site,
   siteDocument,
@@ -5369,7 +6214,12 @@ function MackHomeSections({
   editorPreview: boolean;
   editorContext: EditorSelectionContext;
 }) {
-  const visibleSections = sections.filter((section) => section.visible);
+  const visibleSections =
+    sections.filter(
+      (section) =>
+        section.visible &&
+        section.type !== "banner",
+    );
   const nodes: ReactNode[] = [];
 
   for (let index = 0; index < visibleSections.length; index += 1) {
@@ -5549,16 +6399,439 @@ function MackHomeSections({
   return <>{nodes}</>;
 }
 
+function siteNavigationItemKind(
+  item: SiteNavigationItem,
+) {
+  if (item.kind) {
+    return item.kind;
+  }
+
+  if (
+    item.children &&
+    item.children.length > 0
+  ) {
+    return "dropdown" as const;
+  }
+
+  if (item.pageId) {
+    return "page" as const;
+  }
+
+  return "link" as const;
+}
+
+function visibleNavigationChildren(
+  item: SiteNavigationItem,
+) {
+  return (
+    item.children ?? []
+  ).filter(
+    (child) =>
+      child.visible,
+  );
+}
+
+function navigationHasDestination(
+  item: SiteNavigationItem,
+) {
+  return Boolean(
+    item.pageId ||
+    item.href.trim(),
+  );
+}
+
+function DesktopDropdownChildren({
+  items,
+  siteDocument,
+  siteHandle,
+  editorPreview,
+  depth = 0,
+}: {
+  items: SiteNavigationItem[];
+  siteDocument?: SiteDocument;
+  siteHandle: string;
+  editorPreview: boolean;
+  depth?: number;
+}) {
+  const visibleItems =
+    items.filter(
+      (item) =>
+        item.visible,
+    );
+
+  return (
+    <>
+      {visibleItems.map(
+        (item) => {
+          const children =
+            visibleNavigationChildren(
+              item,
+            );
+
+          const hasDestination =
+            navigationHasDestination(
+              item,
+            );
+
+          const content = (
+            <span className="flex min-h-8 items-center justify-between gap-5">
+              <span>
+                {item.label}
+              </span>
+
+              {children.length > 0 ? (
+                <span className="text-[9px] text-[var(--site-text-faint)]">
+                  {children.length}
+                </span>
+              ) : null}
+            </span>
+          );
+
+          return (
+            <div
+              key={
+                item.id
+              }
+            >
+              {hasDestination ? (
+                <a
+                  href={resolveSiteNavigationHref(
+                    siteDocument,
+                    siteHandle,
+                    item,
+                  )}
+                  onClick={(event) => {
+                    if (
+                      editorPreview
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                  className="block min-w-[180px] text-[11px] text-[var(--site-text-muted)] transition hover:text-[var(--site-text)]"
+                >
+                  {content}
+                </a>
+              ) : (
+                <div className="min-w-[180px] text-[11px] font-medium text-[var(--site-text)]">
+                  {content}
+                </div>
+              )}
+
+              {children.length >
+              0 ? (
+                <div
+                  className="ml-2 border-l border-[var(--site-border)] pl-3"
+                  style={{
+                    marginTop:
+                      depth === 0
+                        ? "2px"
+                        : "0px",
+                  }}
+                >
+                  <DesktopDropdownChildren
+                    items={
+                      children
+                    }
+                    siteDocument={
+                      siteDocument
+                    }
+                    siteHandle={
+                      siteHandle
+                    }
+                    editorPreview={
+                      editorPreview
+                    }
+                    depth={
+                      depth + 1
+                    }
+                  />
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      )}
+    </>
+  );
+}
+
+function DesktopNavigationItem({
+  item,
+  siteDocument,
+  siteHandle,
+  editorPreview,
+}: {
+  item: SiteNavigationItem;
+  siteDocument?: SiteDocument;
+  siteHandle: string;
+  editorPreview: boolean;
+}) {
+  const children =
+    visibleNavigationChildren(
+      item,
+    );
+
+  const kind =
+    siteNavigationItemKind(
+      item,
+    );
+
+  const dropdown =
+    kind === "dropdown" ||
+    children.length > 0;
+
+  if (!dropdown) {
+    return (
+      <a
+        href={resolveSiteNavigationHref(
+          siteDocument,
+          siteHandle,
+          item,
+        )}
+        onClick={(event) => {
+          if (editorPreview) {
+            event.preventDefault();
+          }
+        }}
+        className="transition hover:text-[var(--site-text)]"
+      >
+        {item.label}
+      </a>
+    );
+  }
+
+  const hasDestination =
+    navigationHasDestination(
+      item,
+    );
+
+  return (
+    <div className="group relative">
+      {hasDestination ? (
+        <a
+          href={resolveSiteNavigationHref(
+            siteDocument,
+            siteHandle,
+            item,
+          )}
+          onClick={(event) => {
+            if (
+              editorPreview
+            ) {
+              event.preventDefault();
+            }
+          }}
+          className="flex items-center gap-1.5 transition hover:text-[var(--site-text)]"
+        >
+          <span>
+            {item.label}
+          </span>
+
+          <span
+            aria-hidden="true"
+            className="text-[8px]"
+          >
+            ▾
+          </span>
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="flex items-center gap-1.5 transition hover:text-[var(--site-text)]"
+        >
+          <span>
+            {item.label}
+          </span>
+
+          <span
+            aria-hidden="true"
+            className="text-[8px]"
+          >
+            ▾
+          </span>
+        </button>
+      )}
+
+      {children.length >
+      0 ? (
+        <div className="pointer-events-none invisible absolute right-0 top-full z-[80] pt-4 opacity-0 transition-[opacity,visibility] duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+          <div className="min-w-[220px] border border-[var(--site-border)] bg-[var(--site-bg)] p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+            <DesktopDropdownChildren
+              items={
+                children
+              }
+              siteDocument={
+                siteDocument
+              }
+              siteHandle={
+                siteHandle
+              }
+              editorPreview={
+                editorPreview
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MobileNavigationItem({
+  item,
+  siteDocument,
+  siteHandle,
+  editorPreview,
+  onNavigate,
+  depth = 0,
+}: {
+  item: SiteNavigationItem;
+  siteDocument?: SiteDocument;
+  siteHandle: string;
+  editorPreview: boolean;
+  onNavigate: () => void;
+  depth?: number;
+}) {
+  const children =
+    visibleNavigationChildren(
+      item,
+    );
+
+  const kind =
+    siteNavigationItemKind(
+      item,
+    );
+
+  const dropdown =
+    kind === "dropdown" ||
+    children.length > 0;
+
+  const hasDestination =
+    navigationHasDestination(
+      item,
+    );
+
+  if (!dropdown) {
+    return (
+      <a
+        href={resolveSiteNavigationHref(
+          siteDocument,
+          siteHandle,
+          item,
+        )}
+        onClick={(event) => {
+          if (
+            editorPreview
+          ) {
+            event.preventDefault();
+          }
+
+          onNavigate();
+        }}
+        className="flex min-h-10 items-center border-b border-[var(--site-border)] text-[11px] text-[var(--site-text-muted)] transition hover:text-[var(--site-text)]"
+        style={{
+          paddingLeft:
+            `${depth * 14}px`,
+        }}
+      >
+        {item.label}
+      </a>
+    );
+  }
+
+  return (
+    <details className="border-b border-[var(--site-border)]">
+      <summary
+        className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 text-[11px] text-[var(--site-text-muted)] [&::-webkit-details-marker]:hidden"
+        style={{
+          paddingLeft:
+            `${depth * 14}px`,
+        }}
+      >
+        <span>
+          {item.label}
+        </span>
+
+        <span
+          aria-hidden="true"
+          className="text-[9px]"
+        >
+          +
+        </span>
+      </summary>
+
+      <div className="pb-1">
+        {hasDestination ? (
+          <a
+            href={resolveSiteNavigationHref(
+              siteDocument,
+              siteHandle,
+              item,
+            )}
+            onClick={(event) => {
+              if (
+                editorPreview
+              ) {
+                event.preventDefault();
+              }
+
+              onNavigate();
+            }}
+            className="flex min-h-9 items-center text-[10px] text-[var(--site-text-subtle)] transition hover:text-[var(--site-text)]"
+            style={{
+              paddingLeft:
+                `${(depth + 1) * 14}px`,
+            }}
+          >
+            Overview
+          </a>
+        ) : null}
+
+        {children.map(
+          (child) => (
+            <MobileNavigationItem
+              key={
+                child.id
+              }
+              item={
+                child
+              }
+              siteDocument={
+                siteDocument
+              }
+              siteHandle={
+                siteHandle
+              }
+              editorPreview={
+                editorPreview
+              }
+              onNavigate={
+                onNavigate
+              }
+              depth={
+                depth + 1
+              }
+            />
+          ),
+        )}
+      </div>
+    </details>
+  );
+}
+
+
 export default function PortfolioSite({
   site,
   siteDocument,
   sections,
   sourceListings = [],
+  sectionOnly = false,
   editorPreview = false,
   editorPageId = "",
   editorSelection = null,
   onEditorSelectionRequest,
   onEditorContentEditRequest,
+  onEditorMediaEditRequest,
   onEditorSectionInsertRequest,
 }: PortfolioSiteProps) {
   const renderSections = (sections ?? defaultMackSections) as SiteSection[];
@@ -5587,9 +6860,98 @@ export default function PortfolioSite({
       onEditorSelectionRequest,
     onContentEditRequest:
       onEditorContentEditRequest,
+    onMediaEditRequest:
+      onEditorMediaEditRequest,
     onSectionInsertRequest:
       onEditorSectionInsertRequest,
   };
+
+  const bannerSections =
+    renderSections.filter(
+      (section) =>
+        section.visible &&
+        section.type === "banner",
+    );
+
+  const topBannerSections =
+    bannerSections.filter(
+      (section) => {
+        const placement =
+          section.layout
+            ?.placement ??
+          "top";
+
+        return (
+          placement === "top" ||
+          placement === "both"
+        );
+      },
+    );
+
+  const bottomBannerSections =
+    bannerSections.filter(
+      (section) => {
+        const placement =
+          section.layout
+            ?.placement ??
+          "top";
+
+        return (
+          placement === "bottom" ||
+          placement === "both"
+        );
+      },
+    );
+
+
+
+  if (sectionOnly) {
+    return (
+      <div
+        data-site-theme-root
+        style={themeStyle}
+        className="bg-[var(--site-bg)] text-[var(--site-text)]"
+      >
+        {renderSections.length === 1 &&
+        renderSections[0]?.type ===
+          "banner" ? (
+          <BannerSection
+            siteHandle={
+              site.handle
+            }
+            siteDocument={
+              siteDocument
+            }
+            section={
+              renderSections[0]
+            }
+            editorContext={
+              editorContext
+            }
+          />
+        ) : (
+          <MackHomeSections
+            site={site}
+            siteDocument={
+              siteDocument
+            }
+            sections={
+              renderSections
+            }
+            sourceListings={
+              sourceListings
+            }
+            editorPreview={
+              editorPreview
+            }
+            editorContext={
+              editorContext
+            }
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -5597,6 +6959,24 @@ export default function PortfolioSite({
       style={themeStyle}
       className="min-h-screen bg-[var(--site-bg)] text-[var(--site-text)]"
     >
+      {topBannerSections.map(
+          (section) => (
+            <BannerSection
+              key={`banner-top-${section.id}`}
+              siteHandle={
+                site.handle
+              }
+              siteDocument={
+                siteDocument
+              }
+              section={section}
+              editorContext={
+                editorContext
+              }
+            />
+          ),
+        )}
+
       <header className="sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl">
         <div className="mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
           <Link
@@ -5609,19 +6989,27 @@ export default function PortfolioSite({
 
           <div className="flex items-center gap-6">
             <nav className="hidden items-center gap-8 text-[10px] text-[var(--site-text-muted)] md:flex">
-              {visibleNavigation.map((item) => (
-                <a
-                  key={item.id}
-                  href={resolveSiteNavigationHref(
-                    siteDocument,
-                    site.handle,
-                    item,
-                  )}
-                  className="transition hover:text-[var(--site-text)]"
-                >
-                  {item.label}
-                </a>
-              ))}
+              {visibleNavigation.map(
+                (item) => (
+                  <DesktopNavigationItem
+                    key={
+                      item.id
+                    }
+                    item={
+                      item
+                    }
+                    siteDocument={
+                      siteDocument
+                    }
+                    siteHandle={
+                      site.handle
+                    }
+                    editorPreview={
+                      editorPreview
+                    }
+                  />
+                ),
+              )}
             </nav>
 
             {headerConfig.tagline ? (
@@ -5646,36 +7034,46 @@ export default function PortfolioSite({
           </div>
         </div>
 
-        {mobileNavOpen && visibleNavigation.length > 0 ? (
+        {mobileNavOpen &&
+        visibleNavigation.length >
+          0 ? (
           <nav
             id="site-mobile-navigation"
             className="border-t border-[var(--site-border)] md:hidden"
           >
             <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-3 sm:px-8">
-              {visibleNavigation.map((item) => (
-                <a
-                  key={item.id}
-                  href={resolveSiteNavigationHref(
-                    siteDocument,
-                    site.handle,
-                    item,
-                  )}
-                  onClick={(event) => {
-                    if (editorPreview) {
-                      event.preventDefault();
+              {visibleNavigation.map(
+                (item) => (
+                  <MobileNavigationItem
+                    key={
+                      item.id
                     }
-
-                    setMobileNavOpen(false);
-                  }}
-                  className="flex min-h-10 items-center border-b border-[var(--site-border)] text-[11px] text-[var(--site-text-muted)] transition last:border-b-0 hover:text-[var(--site-text)]"
-                >
-                  {item.label}
-                </a>
-              ))}
+                    item={
+                      item
+                    }
+                    siteDocument={
+                      siteDocument
+                    }
+                    siteHandle={
+                      site.handle
+                    }
+                    editorPreview={
+                      editorPreview
+                    }
+                    onNavigate={() =>
+                      setMobileNavOpen(
+                        false,
+                      )
+                    }
+                  />
+                ),
+              )}
 
               {headerConfig.tagline ? (
                 <p className="pt-3 text-[8px] leading-4 text-[var(--site-text-subtle)]">
-                  {headerConfig.tagline}
+                  {
+                    headerConfig.tagline
+                  }
                 </p>
               ) : null}
             </div>
@@ -5710,6 +7108,24 @@ export default function PortfolioSite({
           ) : null}
         </div>
       </footer>
+
+      {bottomBannerSections.map(
+        (section) => (
+          <BannerSection
+            key={`banner-bottom-${section.id}`}
+            siteHandle={
+              site.handle
+            }
+            siteDocument={
+              siteDocument
+            }
+            section={section}
+            editorContext={
+              editorContext
+            }
+          />
+        ),
+      )}
     </div>
   );
 }

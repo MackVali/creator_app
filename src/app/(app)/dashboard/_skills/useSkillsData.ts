@@ -19,6 +19,7 @@ export interface Skill {
   emoji?: string | null;
   level?: number | null;
   category_id: string | null;
+  global_skill_id?: string | null;
   sort_order?: number | null;
 }
 
@@ -74,7 +75,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const baseQuery = supabase
     .from("skills")
-    .select("id,name,icon,level,progress,cat_id,sort_order")
+    .select("id,name,icon,level,progress,cat_id,global_skill_id,sort_order")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
@@ -86,6 +87,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     level?: number | null;
     progress?: number | null;
     cat_id?: string | null;
+    global_skill_id?: string | null;
     sort_order?: number | null;
   };
 
@@ -94,6 +96,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
   if (error) {
     // Step down to variants without optional columns while keeping level whenever possible
     const fallbackSelects = [
+      "id,name,icon,level,cat_id,global_skill_id,sort_order",
       "id,name,icon,level,cat_id,sort_order",
       "id,name,icon,level,cat_id",
       "id,name,icon,level",
@@ -134,6 +137,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     emoji: s.icon,
     level: typeof s.level === "number" ? s.level : 1,
     category_id: "cat_id" in s ? s.cat_id : null,
+    global_skill_id: "global_skill_id" in s ? s.global_skill_id : null,
     sort_order: typeof s.sort_order === "number" ? s.sort_order : null,
   }));
 }
@@ -156,7 +160,7 @@ const UNCATEGORIZED_CATEGORY: Category = {
   is_locked: false,
 };
 
-export function useSkillsData() {
+export function useSkillsData(userId: string | null) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [skillsByCategory, setSkillsByCategory] = useState<Record<string, Skill[]>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -165,15 +169,16 @@ export function useSkillsData() {
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) throw new Error("Supabase client not available");
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("No user");
+      setError(null);
+      if (!userId) {
+        setCategories([]);
+        setSkillsByCategory({});
+        return;
+      }
+
       let [cats, skills] = await Promise.all([
-        fetchCategories(user.id).catch(() => []),
-        fetchSkills(user.id).catch(() => []),
+        fetchCategories(userId).catch(() => []),
+        fetchSkills(userId).catch(() => []),
       ]);
 
       if (cats.length === 0 && skills.length === 0) {
@@ -184,8 +189,8 @@ export function useSkillsData() {
         }
 
         [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id).catch(() => []),
+          fetchCategories(userId).catch(() => []),
+          fetchSkills(userId).catch(() => []),
         ]);
       }
       const grouped = groupByCategory(skills);
@@ -209,7 +214,7 @@ export function useSkillsData() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   const reload = useCallback(async () => {
     await load();

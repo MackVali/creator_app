@@ -26,11 +26,11 @@ import {
   shouldUseFiveColumnCategoryPillGrid,
 } from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
-import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
 import { backfillSkillStarterNote, getSkillStarterNote } from "@/lib/skillStarterNotes";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { useProfileContext } from "@/components/ProfileProvider";
 import { useToastHelpers } from "@/components/ui/toast";
 import { SkillDetail } from "@/app/(app)/skills/[id]/SkillDetail";
 import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
@@ -56,14 +56,6 @@ type CommunitySkill = {
 type StarterBackfillSkill = {
   id: string;
   name: string | null;
-};
-
-type SkillSortQueryRow = {
-  id: string;
-  name: string;
-  cat_id: string | null;
-  global_skill_id?: string | null;
-  sort_order?: number | null;
 };
 
 const POPULAR_COMMUNITY_SKILLS = [
@@ -340,6 +332,11 @@ type CatalogSkillRow = {
 
 export type SkillsCarouselHandle = {
   refresh: () => Promise<void>;
+};
+
+type IdleSchedulerWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
 };
 
 function getSafeAreaInsetTop() {
@@ -635,7 +632,13 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
 }
 
 const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(_props, ref) {
-  const { categories: fetchedCategories, skillsByCategory, isLoading, reload } = useSkillsData();
+  const { userId } = useProfileContext();
+  const {
+    categories: fetchedCategories,
+    skillsByCategory,
+    isLoading,
+    reload,
+  } = useSkillsData(userId);
   const { progressBySkillId } = useSkillProgress();
   const router = useRouter();
   const search = useSearchParams();
@@ -684,7 +687,6 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   );
   const [isCommunityCatalogLoading, setIsCommunityCatalogLoading] = useState(true);
   const [communityCatalogError, setCommunityCatalogError] = useState<string | null>(null);
-  const [existingSkillSortItems, setExistingSkillSortItems] = useState<ExistingSkillSortItem[]>([]);
   const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(FALLBACK_COLOR);
@@ -702,8 +704,23 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   const outerSwipeBlockedByCommunityRef = useRef(false);
   const outerSwipeBlockedScrollLeftRef = useRef<number | null>(null);
   const starterBackfillKeysRef = useRef<Set<string>>(new Set());
+  const communityCatalogLoadedRef = useRef(false);
+  const communityCatalogCacheRef = useRef<CommunityCatalog | null>(null);
+  const communityCatalogRequestRef = useRef<Promise<CommunityCatalog> | null>(null);
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
+
+  const existingSkillSortItems = useMemo<ExistingSkillSortItem[]>(() => {
+    return Object.values(skillsByCategory)
+      .flat()
+      .map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        cat_id: skill.category_id,
+        global_skill_id: skill.global_skill_id ?? null,
+        sort_order: skill.sort_order ?? null,
+      }));
+  }, [skillsByCategory]);
 
   useEffect(() => {
     setIsPortalMounted(true);
@@ -1146,22 +1163,46 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   }, [communitySkillSearch]);
 
   useEffect(() => {
-    let isMounted = true;
+    if (!communitySkillPickerOpen) {
+      return undefined;
+    }
+
+    if (communityCatalogLoadedRef.current && communityCatalogCacheRef.current) {
+      setCommunityCatalog(communityCatalogCacheRef.current);
+      setCommunityCatalogError(null);
+      setIsCommunityCatalogLoading(false);
+      return undefined;
+    }
+
+    let isCancelled = false;
 
     async function loadCommunityCatalog() {
       setIsCommunityCatalogLoading(true);
+      if (!communityCatalogRequestRef.current) {
+        communityCatalogRequestRef.current = fetchCommunityCatalog()
+          .then((catalog) => {
+            communityCatalogLoadedRef.current = true;
+            communityCatalogCacheRef.current = catalog;
+            return catalog;
+          })
+          .catch((error) => {
+            communityCatalogRequestRef.current = null;
+            throw error;
+          });
+      }
+
       try {
-        const catalog = await fetchCommunityCatalog();
-        if (!isMounted) return;
+        const catalog = await communityCatalogRequestRef.current;
+        if (isCancelled) return;
         setCommunityCatalog(catalog);
         setCommunityCatalogError(null);
       } catch (error) {
         console.error("Error loading global skill catalog:", error);
-        if (!isMounted) return;
+        if (isCancelled) return;
         setCommunityCatalog(buildFallbackCommunityCatalog());
         setCommunityCatalogError(error instanceof Error ? error.message : "Catalog unavailable");
       } finally {
-        if (isMounted) {
+        if (!isCancelled) {
           setIsCommunityCatalogLoading(false);
         }
       }
@@ -1170,9 +1211,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     void loadCommunityCatalog();
 
     return () => {
-      isMounted = false;
+      isCancelled = true;
     };
-  }, []);
+  }, [communitySkillPickerOpen]);
 
   useEffect(() => {
     if (activeCommunitySkillCategoryIndex >= communitySkillCategoryNames.length) {
@@ -1277,56 +1318,35 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     [],
   );
 
-  const loadExistingSkillSortItems = useCallback(async () => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return;
+  useEffect(() => {
+    if (!userId || existingSkillSortItems.length === 0) {
+      return undefined;
+    }
 
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const { data, error } = await supabase
-        .from("skills")
-        .select("id,name,cat_id,global_skill_id,sort_order")
-        .eq("user_id", user.id)
-        .order("sort_order", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        const skillRows = await getSkillsForUser(user.id);
-        const nextSkillSortItems = (skillRows || []).map((skill) => ({
-          id: skill.id,
-          name: skill.name,
-          cat_id: skill.cat_id,
-          sort_order: skill.sort_order ?? null,
-        }));
-
-        setExistingSkillSortItems(nextSkillSortItems);
-        void backfillStarterNotesForSkills(user.id, nextSkillSortItems);
+    let cancelled = false;
+    const idleWindow = window as IdleSchedulerWindow;
+    const runBackfill = () => {
+      if (cancelled) {
         return;
       }
 
-      const skillSortRows = (data || []) as SkillSortQueryRow[];
-      const nextSkillSortItems = skillSortRows.map((skill) => ({
-        id: skill.id,
-        name: skill.name,
-        cat_id: skill.cat_id,
-        global_skill_id: skill.global_skill_id ?? null,
-        sort_order: skill.sort_order ?? null,
-      }));
+      backfillStarterNotesForSkills(userId, existingSkillSortItems);
+    };
 
-      setExistingSkillSortItems(nextSkillSortItems);
-      void backfillStarterNotesForSkills(user.id, nextSkillSortItems);
-    } catch (error) {
-      console.error("Error loading skill sort data:", error);
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      const idleHandle = idleWindow.requestIdleCallback(runBackfill, { timeout: 5000 });
+      return () => {
+        cancelled = true;
+        idleWindow.cancelIdleCallback?.(idleHandle);
+      };
     }
-  }, [backfillStarterNotesForSkills]);
 
-  useEffect(() => {
-    void loadExistingSkillSortItems();
-  }, [loadExistingSkillSortItems]);
+    const timeout = window.setTimeout(runBackfill, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [backfillStarterNotesForSkills, existingSkillSortItems, userId]);
 
   useEffect(() => {
     if (!canAddCategory && isAddCategoryMenuOpen) {
@@ -1786,21 +1806,6 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         skillName: data.name,
       });
 
-      setExistingSkillSortItems((previous) => {
-        if (previous.some((existing) => existing.id === data.id)) {
-          return previous;
-        }
-        return [
-          ...previous,
-          {
-            id: data.id,
-            name: data.name,
-            cat_id: catIdToUse,
-            global_skill_id: skill.global_skill_id ?? null,
-            sort_order: data.sort_order ?? nextSortOrder,
-          },
-        ];
-      });
       void reload();
       return true;
     },

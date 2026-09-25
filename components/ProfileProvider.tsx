@@ -7,6 +7,7 @@ import { Profile } from "@/lib/types";
 interface ProfileContextType {
   profile: Profile | null;
   userId: string | null;
+  localTimeZone: string | null;
   loading: boolean;
   error: string | null;
   refreshProfile: () => Promise<void>;

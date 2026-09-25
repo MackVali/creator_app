@@ -21,8 +21,6 @@ const AuthCtx = createContext<AuthContextValue>({
 });
 export const useAuth = () => useContext(AuthCtx);
 
-const BOOT_LOADER_MINIMUM_MS = 1600;
-
 export default function AuthProvider({
   children,
 }: {
@@ -32,17 +30,7 @@ export default function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const [canRender, setCanRender] = useState(false);
-  const [bootLoaderMinimumElapsed, setBootLoaderMinimumElapsed] =
-    useState(false);
   const sessionRef = useRef<Session | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setBootLoaderMinimumElapsed(true);
-    }, BOOT_LOADER_MINIMUM_MS);
-
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     const supabase = getSupabaseBrowser?.()
@@ -147,7 +135,7 @@ export default function AuthProvider({
     void registerCreatorPushNotifications({ userId: user.id })
   }, [user?.id])
 
-  const shouldShowBootLoader = !canRender || !bootLoaderMinimumElapsed;
+  const shouldShowBootLoader = !canRender;
 
   if (shouldShowBootLoader) {
     return <BloomingHexagonLoader statusText="Syncing your system" />;

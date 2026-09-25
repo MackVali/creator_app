@@ -85,6 +85,33 @@ export type SitePreviewContentEditRequestMessage = {
   payload: SitePreviewContentEditRequestPayload;
 };
 
+export type SitePreviewMediaEditChanges = {
+  mediaFit?: "cover" | "contain";
+  mediaRatio?:
+    | "auto"
+    | "16:9"
+    | "3:2"
+    | "4:3"
+    | "1:1"
+    | "4:5";
+  mediaHeight?: number;
+  mediaZoom?: number;
+  mediaPositionX?: number;
+  mediaPositionY?: number;
+};
+
+export type SitePreviewMediaEditRequestPayload = {
+  pageId: string;
+  sectionId: string;
+  changes: SitePreviewMediaEditChanges;
+};
+
+export type SitePreviewMediaEditRequestMessage = {
+  namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
+  type: "media-edit-request";
+  payload: SitePreviewMediaEditRequestPayload;
+};
+
 export type SitePreviewActiveSelectionPayload = {
   selection: SiteEditorSelection | null;
 };
@@ -102,6 +129,7 @@ export type SitePreviewMessage =
   | SitePreviewSelectionRequestMessage
   | SitePreviewSectionInsertRequestMessage
   | SitePreviewContentEditRequestMessage
+  | SitePreviewMediaEditRequestMessage
   | SitePreviewActiveSelectionMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -243,6 +271,16 @@ export function createSitePreviewContentEditRequestMessage(
   };
 }
 
+export function createSitePreviewMediaEditRequestMessage(
+  payload: SitePreviewMediaEditRequestPayload,
+): SitePreviewMediaEditRequestMessage {
+  return {
+    namespace: SITE_PREVIEW_MESSAGE_NAMESPACE,
+    type: "media-edit-request",
+    payload,
+  };
+}
+
 export function createSitePreviewActiveSelectionMessage(
   selection: SiteEditorSelection | null,
 ): SitePreviewActiveSelectionMessage {
@@ -377,6 +415,88 @@ export function isSitePreviewContentEditRequestMessage(
     isSitePreviewInlineEditField(value.payload.field) &&
     typeof value.payload.value === "string"
   );
+}
+
+export function isSitePreviewMediaEditRequestMessage(
+  value: unknown,
+): value is SitePreviewMediaEditRequestMessage {
+  if (!isRecord(value)) return false;
+  if (
+    value.namespace !==
+      SITE_PREVIEW_MESSAGE_NAMESPACE ||
+    value.type !== "media-edit-request" ||
+    !isRecord(value.payload) ||
+    typeof value.payload.pageId !== "string" ||
+    typeof value.payload.sectionId !== "string" ||
+    !isRecord(value.payload.changes)
+  ) {
+    return false;
+  }
+
+  const changes = value.payload.changes;
+  const allowedKeys = new Set([
+    "mediaFit",
+    "mediaRatio",
+    "mediaHeight",
+    "mediaZoom",
+    "mediaPositionX",
+    "mediaPositionY",
+  ]);
+
+  const keys = Object.keys(changes);
+
+  if (
+    keys.length === 0 ||
+    keys.some((key) => !allowedKeys.has(key))
+  ) {
+    return false;
+  }
+
+  if (
+    "mediaFit" in changes &&
+    changes.mediaFit !== "cover" &&
+    changes.mediaFit !== "contain"
+  ) {
+    return false;
+  }
+
+  if (
+    "mediaRatio" in changes &&
+    ![
+      "auto",
+      "16:9",
+      "3:2",
+      "4:3",
+      "1:1",
+      "4:5",
+    ].includes(String(changes.mediaRatio))
+  ) {
+    return false;
+  }
+
+  const numberChecks = [
+    ["mediaHeight", 120, 1600],
+    ["mediaZoom", 50, 200],
+    ["mediaPositionX", 0, 100],
+    ["mediaPositionY", 0, 100],
+  ] as const;
+
+  for (const [key, min, max] of numberChecks) {
+    if (!(key in changes)) continue;
+
+    const candidate = changes[key];
+
+    if (
+      typeof candidate !== "number" ||
+      !Number.isFinite(candidate) ||
+      candidate < min ||
+      candidate > max
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function isSitePreviewActiveSelectionMessage(
