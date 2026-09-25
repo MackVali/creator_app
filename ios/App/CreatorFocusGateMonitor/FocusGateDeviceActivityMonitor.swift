@@ -39,15 +39,43 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
     }
 
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        guard activity == FocusGateDeviceActivity.activityName else {
+            return
+        }
+
+        let currentGeneration = FocusGateSharedState.loadMonitorGeneration()
         guard
-            activity == FocusGateDeviceActivity.activityName,
-            event == FocusGateDeviceActivity.protectedUsageEventName
+            let eventGeneration = FocusGateDeviceActivity.protectedUsageEventGeneration(event),
+            eventGeneration == currentGeneration
         else {
+            FocusGateSharedState.recordDebugEvent(
+                source: "monitorExtension",
+                message: "stale_threshold_ignored",
+                details: [
+                    "eventName": event.rawValue,
+                    "currentGeneration": "\(currentGeneration)"
+                ]
+            )
             return
         }
 
         var state = FocusGateSharedState.advanceExpiredCreatorDayIfNeeded(FocusGateSharedState.loadState())
+        guard state.enabled else {
+            FocusGateShielding.clearShield()
+            FocusGateSharedState.recordDebugEvent(
+                source: "monitorExtension",
+                message: "disabled_threshold_ignored",
+                details: ["generation": "\(currentGeneration)"]
+            )
+            return
+        }
+
         let selection = FocusGateSharedState.loadSelection()
+        guard FocusGateSharedState.selectionSummary(selection).hasSelection else {
+            FocusGateShielding.clearShield()
+            return
+        }
+
         state.lastReachedThresholdMinutes = max(state.lastReachedThresholdMinutes, state.allowedMinutes)
         state.shielded = true
         state.lastSyncedAt = FocusGateSharedState.isoString(from: Date())
@@ -57,6 +85,7 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
             source: "monitorExtension",
             message: "threshold_reached",
             details: [
+                "generation": "\(currentGeneration)",
                 "allowedMinutes": "\(state.allowedMinutes)",
                 "lastReachedThresholdMinutes": "\(state.lastReachedThresholdMinutes)"
             ]
@@ -116,16 +145,22 @@ class FocusGateDeviceActivityMonitor: DeviceActivityMonitor {
     }
 
     override func eventWillReachThresholdWarning(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        guard activity == FocusGateDeviceActivity.activityName else {
+            return
+        }
+
+        let currentGeneration = FocusGateSharedState.loadMonitorGeneration()
         guard
-            activity == FocusGateDeviceActivity.activityName,
-            event == FocusGateDeviceActivity.protectedUsageEventName
+            let eventGeneration = FocusGateDeviceActivity.protectedUsageEventGeneration(event),
+            eventGeneration == currentGeneration
         else {
             return
         }
 
         FocusGateSharedState.recordDebugEvent(
             source: "monitorExtension",
-            message: "event_will_reach_threshold_warning"
+            message: "event_will_reach_threshold_warning",
+            details: ["generation": "\(currentGeneration)"]
         )
     }
 }
