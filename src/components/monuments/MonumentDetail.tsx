@@ -753,11 +753,11 @@ export function MonumentDetail({
           </div>
         </section>
 
-        <div className="grid w-full grid-cols-1 items-start gap-1 xl:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="flex w-full flex-col gap-5 lg:gap-6">
           <section
             className={cn(
               "relative w-full px-2 pt-2 pb-0 sm:px-0 sm:py-0",
-              "min-h-0 xl:min-h-[260px]",
+              "min-h-0",
               "z-0 overflow-visible"
             )}
           >

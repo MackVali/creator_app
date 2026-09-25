@@ -11,6 +11,7 @@ import {
   Rows3,
   RefreshCcw,
   Recycle,
+  Search,
   X,
 } from "lucide-react";
 interface ScheduleTopBarProps {
@@ -20,6 +21,7 @@ interface ScheduleTopBarProps {
   onBack: () => void;
   onToday: () => void;
   canGoBack?: boolean;
+  hideBackButton?: boolean;
   onOpenJumpToDate?: () => void;
   onOpenSearch?: () => void;
   onReschedule?: () => void | Promise<void>;
@@ -34,6 +36,7 @@ interface ScheduleTopBarProps {
   isSimpleSchedulingMode?: boolean;
   onToggleSimpleSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
+  position?: "fixed" | "sticky";
   className?: string;
 }
 
@@ -43,7 +46,9 @@ export function ScheduleTopBar({
   monthLabel,
   onBack,
   canGoBack = true,
+  hideBackButton = false,
   onOpenJumpToDate,
+  onOpenSearch,
   onReschedule,
   canReschedule = true,
   isRescheduling = false,
@@ -56,6 +61,7 @@ export function ScheduleTopBar({
   isSimpleSchedulingMode = false,
   onToggleSimpleSchedulingMode,
   onHeightChange,
+  position = "fixed",
   className,
 }: ScheduleTopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
@@ -195,17 +201,26 @@ export function ScheduleTopBar({
 
   return (
     <header
+      data-schedule-top-bar
       className={cn(
-        "app-surface-elevated fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 shadow-sm border-b border-[var(--hairline)]",
+        "app-surface-elevated top-0 z-[120] flex items-center justify-between gap-2 shadow-sm border-b border-[var(--hairline)]",
+        position === "sticky" ? "sticky w-full" : "fixed inset-x-0",
         className
       )}
       style={safeAreaPadding}
       ref={headerRef}
     >
       <div className="flex items-center gap-2">
-        <button type="button" onClick={handleBackClick} disabled={!canGoBack} className={iconButtonClass}>
-          <ChevronLeft className="h-5 w-5 text-[var(--muted)]" />
-        </button>
+        {!hideBackButton ? (
+          <button
+            type="button"
+            onClick={handleBackClick}
+            disabled={!canGoBack}
+            className={iconButtonClass}
+          >
+            <ChevronLeft className="h-5 w-5 text-[var(--muted)]" />
+          </button>
+        ) : null}
         <button
           type="button"
           data-tour="jump-to-date"
@@ -215,6 +230,19 @@ export function ScheduleTopBar({
         >
           <Calendar className="h-5 w-5 text-[var(--muted)]" />
         </button>
+        {onOpenSearch ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerTopBarHaptic();
+              onOpenSearch();
+            }}
+            aria-label="Search schedule"
+            className={iconButtonClass}
+          >
+            <Search className="h-5 w-5 text-[var(--muted)]" />
+          </button>
+        ) : null}
       </div>
       <div className="flex items-center justify-center gap-1.5 px-2 leading-none text-[var(--text)]">
         {weekdayLabel ? (

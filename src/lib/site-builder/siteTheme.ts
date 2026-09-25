@@ -19,48 +19,48 @@ const palettes: Record<
   PaletteTokens
 > = {
   graphite: {
-    background: "#080808",
-    surface: "#101011",
-    text: "#f4f3ef",
-    mutedText: "#969693",
-    border: "#29292b",
-    accent: "#f4f3ef",
+    background: "#0d0d0c",
+    surface: "#171715",
+    text: "#f5f5f0",
+    mutedText: "#a3a29b",
+    border: "#2a2a27",
+    accent: "#f5f5f0",
   },
 
   ink: {
-    background: "#070a12",
-    surface: "#0d1420",
-    text: "#f2f6ff",
-    mutedText: "#93a2ba",
-    border: "#293750",
-    accent: "#7ea7ff",
+    background: "#0c0f14",
+    surface: "#141922",
+    text: "#f4f7fb",
+    mutedText: "#9ea8b6",
+    border: "#2a303a",
+    accent: "#b8c8e6",
   },
 
   slate: {
-    background: "#10171c",
-    surface: "#172127",
-    text: "#f1f5f7",
-    mutedText: "#9cabb3",
-    border: "#34434c",
-    accent: "#9dc8d9",
+    background: "#111416",
+    surface: "#181d1f",
+    text: "#f2f4f3",
+    mutedText: "#9ea7a6",
+    border: "#2d3436",
+    accent: "#bdc9c7",
   },
 
   warm: {
-    background: "#15100c",
-    surface: "#201811",
-    text: "#f7eee5",
-    mutedText: "#b7a496",
-    border: "#49362a",
-    accent: "#e8b783",
+    background: "#17130f",
+    surface: "#201a15",
+    text: "#f5efe7",
+    mutedText: "#b2a69a",
+    border: "#392f27",
+    accent: "#dfc2a3",
   },
 
   paper: {
-    background: "#f4f0e8",
-    surface: "#fffdf8",
-    text: "#1b1814",
-    mutedText: "#686057",
-    border: "#d4cabc",
-    accent: "#1b1814",
+    background: "#f7f5f0",
+    surface: "#fcfbf8",
+    text: "#1c1c1a",
+    mutedText: "#706e68",
+    border: "#d9d5cc",
+    accent: "#1c1c1a",
   },
 };
 
@@ -201,8 +201,8 @@ const legacySpacing = {
 
 const radii = {
   sharp: "0px",
-  soft: "8px",
-  rounded: "18px",
+  soft: "6px",
+  rounded: "14px",
 } as const;
 
 const fontFamilies = {

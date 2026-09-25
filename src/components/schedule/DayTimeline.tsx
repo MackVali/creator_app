@@ -33,7 +33,7 @@ interface DayTimelineProps {
   children?: ReactNode;
   className?: string;
   showTimeLabels?: boolean;
-  presentation?: "default" | "desktop-column";
+  presentation?: "default" | "desktop-column" | "dashboard-rail";
   zoomPxPerMin?: MotionValue<number>;
   style?: Record<string, string | number | MotionValue>;
 }
@@ -76,16 +76,21 @@ export function DayTimeline({
   );
 
   const isDesktopColumn = presentation === "desktop-column";
+  const isDashboardRail = presentation === "dashboard-rail";
   const effectiveShowTimeLabels = showTimeLabels;
 
   const labelColumn = effectiveShowTimeLabels
-    ? TIMELINE_LABEL_COLUMN_FALLBACK
+    ? isDashboardRail
+      ? "3.25rem"
+      : TIMELINE_LABEL_COLUMN_FALLBACK
     : "0px";
-  const rightGutter = isDesktopColumn ? "0px" : TIMELINE_RIGHT_GUTTER_FALLBACK;
+  const rightGutter =
+    isDesktopColumn || isDashboardRail ? "0px" : TIMELINE_RIGHT_GUTTER_FALLBACK;
   const gridLeft = effectiveShowTimeLabels ? TIMELINE_GRID_LEFT_FALLBACK : "0px";
   const cardLeft = effectiveShowTimeLabels ? TIMELINE_CARD_LEFT_FALLBACK : "0px";
-  const gridRight = isDesktopColumn ? "0px" : TIMELINE_GRID_RIGHT_FALLBACK;
-  const cardRight = isDesktopColumn
+  const gridRight =
+    isDesktopColumn || isDashboardRail ? "0px" : TIMELINE_GRID_RIGHT_FALLBACK;
+  const cardRight = isDesktopColumn || isDashboardRail
     ? "0px"
     : TIMELINE_CARD_RIGHT_FALLBACK;
 
@@ -101,7 +106,7 @@ export function DayTimeline({
     "--timeline-grid-right": gridRight,
     "--timeline-card-left": cardLeft,
     "--timeline-card-right": cardRight,
-    "--schedule-instance-title-size": isDesktopColumn ? "12px" : "14px",
+    "--schedule-instance-title-size": isDesktopColumn || isDashboardRail ? "12px" : "14px",
   };
 
   useEffect(() => {
@@ -140,7 +145,7 @@ export function DayTimeline({
     paddingLeft: 0,
     paddingRight: `var(--timeline-right-gutter, ${rightGutter})`,
     height: heightExpression,
-    background: isDesktopColumn
+    background: isDesktopColumn || isDashboardRail
       ? "linear-gradient(180deg, rgba(10, 10, 10, 0.82), rgba(18, 18, 20, 0.74))"
       : backgroundGradient,
     touchAction: "pan-y pinch-zoom",
@@ -153,6 +158,8 @@ export function DayTimeline({
         "relative isolate w-full overflow-hidden border border-white/10",
         isDesktopColumn
           ? "rounded-none border-x border-y-0 shadow-none"
+          : isDashboardRail
+            ? "rounded-none border-x-0 border-b-0 border-t border-white/10 bg-[#090a0b]/72 shadow-none"
           : "rounded-[28px] backdrop-blur shadow-[0_22px_48px_rgba(15,23,42,0.4)]",
         className
       )}

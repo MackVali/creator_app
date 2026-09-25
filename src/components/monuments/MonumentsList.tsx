@@ -87,56 +87,82 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
           query = query.range(0, limit - 1);
         }
         const { data, error } = await query;
-        if (!isCancelled()) {
-          if (error) console.error(error);
-          const monumentsData = (data ?? []) as {
-            id: string;
-            title: string;
-            emoji: string | null;
-            priority_rank: number | null;
-          }[];
+        if (isCancelled()) return;
 
-          let goalCounts: Record<string, number> = {};
-          if (monumentsData.length) {
-            const monumentIds = monumentsData.map((monument) => monument.id);
-            const { data: goalsData, error: goalsError } = await supabase
-              .from("goals")
-              .select("monument_id,status,active")
-              .in("monument_id", monumentIds);
-            if (goalsError) {
-              console.error(goalsError);
-            } else {
-              goalCounts = ((goalsData ?? []) as MonumentGoalCountRow[]).reduce<
-                Record<string, number>
-              >(
-                (acc, goal) => {
-                  const monumentId = goal.monument_id;
-                  if (
-                    monumentId &&
-                    normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
-                  ) {
-                    acc[monumentId] = (acc[monumentId] ?? 0) + 1;
-                  }
-                  return acc;
-                },
-                {},
-              );
-            }
-          }
-
-          if (isCancelled()) {
-            return;
-          }
-
-          setMonuments(
-            monumentsData.map((monument) => ({
-              ...monument,
-              goalCount: goalCounts[monument.id] ?? 0,
-              priorityRank: monument.priority_rank,
-            })),
-          );
-          setLoading(false);
+        if (error) {
+          console.error(error);
         }
+
+        const monumentsData = (data ?? []) as {
+          id: string;
+          title: string;
+          emoji: string | null;
+          priority_rank: number | null;
+        }[];
+
+        // First paint: Monument cards should not wait for the secondary
+        // Goal-count query. Preserve any counts we already have on refresh.
+        setMonuments((current) => {
+          const existingCounts = new Map(
+            current.map((monument) => [monument.id, monument.goalCount])
+          );
+
+          return monumentsData.map((monument) => ({
+            ...monument,
+            goalCount: existingCounts.get(monument.id) ?? 0,
+            priorityRank: monument.priority_rank,
+          }));
+        });
+        setLoading(false);
+
+        if (monumentsData.length === 0) {
+          return;
+        }
+
+        // Secondary hydration: Goal counts update after the cards are usable.
+        const monumentIds = monumentsData.map((monument) => monument.id);
+        const monumentIdSet = new Set(monumentIds);
+
+        const { data: goalsData, error: goalsError } = await supabase
+          .from("goals")
+          .select("monument_id,status,active")
+          .in("monument_id", monumentIds);
+
+        if (isCancelled()) return;
+
+        if (goalsError) {
+          console.error(goalsError);
+          return;
+        }
+
+        const goalCounts = ((goalsData ?? []) as MonumentGoalCountRow[]).reduce<
+          Record<string, number>
+        >(
+          (acc, goal) => {
+            const monumentId = goal.monument_id;
+
+            if (
+              monumentId &&
+              normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+            ) {
+              acc[monumentId] = (acc[monumentId] ?? 0) + 1;
+            }
+
+            return acc;
+          },
+          {}
+        );
+
+        setMonuments((current) =>
+          current.map((monument) =>
+            monumentIdSet.has(monument.id)
+              ? {
+                  ...monument,
+                  goalCount: goalCounts[monument.id] ?? 0,
+                }
+              : monument
+          )
+        );
       },
       [areaId, limit, supabase],
     );

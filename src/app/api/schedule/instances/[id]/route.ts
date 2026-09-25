@@ -242,6 +242,45 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
   }
 
+  if (
+    instance.source_type === "EVENT" &&
+    typeof instance.source_id === "string" &&
+    instance.source_id.trim().length > 0
+  ) {
+    const { error: eventUpdateError } = await supabase
+      .from("events")
+      .update({
+        start_at: nextStartIso,
+        end_at: nextEndIso,
+        timezone: timeZone,
+        start_date: formatDateKeyInTimeZone(parsedStart, timeZone),
+        end_date: formatDateKeyInTimeZone(nextEnd, timeZone),
+      })
+      .eq("id", instance.source_id)
+      .eq("user_id", user.id);
+
+    if (eventUpdateError) {
+      console.error("Linked Event timing sync error", {
+        scheduleInstanceId: instance.id,
+        eventId: instance.source_id,
+        message: eventUpdateError.message,
+        details: eventUpdateError.details,
+        hint: eventUpdateError.hint,
+        code: eventUpdateError.code,
+      });
+      return NextResponse.json(
+        {
+          error: "Unable to sync linked Event timing",
+          message: eventUpdateError.message,
+          details: eventUpdateError.details,
+          hint: eventUpdateError.hint,
+          code: eventUpdateError.code,
+        },
+        { status: 500 }
+      );
+    }
+  }
+
   const displacedProjectWarnings: Array<{
     instanceId: string;
     projectId: string;

@@ -49,17 +49,50 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
 
-function isSiteNavigationItem(value: unknown) {
+function isSiteNavigationItem(
+  value: unknown,
+  depth = 0,
+): boolean {
+  if (
+    depth > 8 ||
+    !isRecord(value)
+  ) {
+    return false;
+  }
+
+  const kindValid =
+    value.kind === undefined ||
+    value.kind === "page" ||
+    value.kind === "link" ||
+    value.kind === "dropdown";
+
+  const childrenValid =
+    value.children === undefined ||
+    (
+      Array.isArray(
+        value.children,
+      ) &&
+      value.children.every(
+        (child) =>
+          isSiteNavigationItem(
+            child,
+            depth + 1,
+          ),
+      )
+    );
+
   return (
-    isRecord(value) &&
     isString(value.id) &&
     isString(value.label) &&
     isString(value.href) &&
+    kindValid &&
+    childrenValid &&
     (
       value.pageId === undefined ||
       isString(value.pageId)
     ) &&
-    typeof value.visible === "boolean"
+    typeof value.visible ===
+      "boolean"
   );
 }
 
@@ -409,6 +442,25 @@ function isSiteSectionStyleConfig(
       "contrast"
   ) {
     return false;
+  }
+
+  for (
+    const key of [
+      "backgroundColor",
+      "textColor",
+      "accentColor",
+    ]
+  ) {
+    if (
+      key in value &&
+      value[key] !==
+        undefined &&
+      !isHexColor(
+        value[key],
+      )
+    ) {
+      return false;
+    }
   }
 
   if (

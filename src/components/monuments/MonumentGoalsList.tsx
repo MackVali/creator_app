@@ -15,6 +15,7 @@ import {
 import type { DragEndEvent } from "@dnd-kit/core";
 import { Grid2x2, Grid3x3, List, Plus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   hapticLevelUp,
   hapticSnap,
@@ -2580,6 +2581,7 @@ export function MonumentGoalsList({
   ) => void;
   roadmapEmptyState?: ReactNode;
 }) {
+  const { user, ready: authReady } = useAuth();
   const resolvedSourceType: GoalsSourceType = sourceType;
   const resolvedSourceId =
     resolvedSourceType === "circle"
@@ -2605,8 +2607,10 @@ export function MonumentGoalsList({
   const [loading, setLoading] = useState(true);
   const goalsDisplayReady = goalsDisplayReadyKey === goalsDisplayKey;
   const roadmapsDisplayReady = roadmapsDisplayReadyKey === goalsDisplayKey;
-  const goalsGridLoading =
-    loading || !goalsDisplayReady || !roadmapsDisplayReady;
+  const goalsGridLoading = loading || !goalsDisplayReady;
+  const roadmapGridLoading = loading || !roadmapsDisplayReady;
+  const activeViewLoading =
+    monumentView === "roadmap" ? roadmapGridLoading : goalsGridLoading;
   const [goals, setGoals] = useState<Goal[]>([]);
   const [goalCampaignCards, setGoalCampaignCards] = useState<
     GoalCampaignCardData[]
@@ -4397,9 +4401,9 @@ export function MonumentGoalsList({
         hydratedGoalIdsRef.current.clear();
       }
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        if (!authReady) {
+          return;
+        }
         if (cancelled) return;
         if (!user) {
           setGoalCampaignCards([]);
@@ -4493,8 +4497,32 @@ export function MonumentGoalsList({
             error,
           }));
 
+        // First paint: do not make the visible Goal list wait for
+        // Roadmaps, priority data, Skills, or full relation hydration.
+        const rows = await goalsPromise;
+        if (cancelled) return;
+
+        const mapped: Goal[] = sortGoalsForDisplay(
+          rows.map((g) => mapGoalRowToDisplayGoal(g, new Map()))
+        );
+
+        setGoals(mapped);
+        hydratedGoalIdsRef.current.clear();
+        loadedGoalsSourceKeyRef.current = goalsSourceKey;
+        setGoalsDisplayReadyKey(goalsDisplayKey);
+        setLoading(false);
+
+        // Give React/browser a chance to paint the usable Goal list
+        // before processing the secondary hydration results.
+        if (typeof window !== "undefined") {
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => resolve());
+          });
+        }
+
+        if (cancelled) return;
+
         const [
-          rows,
           trueMonumentRoadmaps,
           skills,
           campaignCards,
@@ -4503,7 +4531,6 @@ export function MonumentGoalsList({
           fullGoalsResult,
         ] =
           await Promise.all([
-            goalsPromise,
             roadmapsPromise,
             skillsPromise,
             campaignCardsPromise,
@@ -4512,10 +4539,6 @@ export function MonumentGoalsList({
             fullGoalsResultPromise,
           ]);
         if (cancelled) return;
-
-        const mapped: Goal[] = sortGoalsForDisplay(
-          rows.map((g) => mapGoalRowToDisplayGoal(g, new Map()))
-        );
 
         setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
         setGoalCampaignCards(campaignCards);
@@ -4606,6 +4629,8 @@ export function MonumentGoalsList({
     goalsDisplayKey,
     mapGoalRowToDisplayGoal,
     refreshVersion,
+    authReady,
+    user,
   ]);
 
   const refreshGoalStatus = useCallback(
@@ -5770,7 +5795,7 @@ export function MonumentGoalsList({
       </div>
     );
 
-    if (goalsGridLoading) {
+    if (activeViewLoading) {
       const loadingGoalsContent = (
         <section
           className={cn(
@@ -6772,7 +6797,7 @@ export function MonumentGoalsList({
 
     return renderGoalsRoadmapViewport(goalsContent, roadmapContent);
   }, [
-    goalsGridLoading,
+    activeViewLoading,
     goals,
     goalCampaignCards,
     circleHabitRoadmapItems,

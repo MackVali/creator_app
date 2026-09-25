@@ -321,7 +321,7 @@ function getDesktopCommandMonumentDetailRect(): MeasuredMonumentRect | null {
 
   const centerRect = centerPanel.getBoundingClientRect();
   const rightRail =
-    document.querySelector<HTMLElement>("[data-my-list-sheet]");
+    document.querySelector<HTMLElement>("[data-dashboard-right-rail]");
   const rightRailRect = rightRail?.getBoundingClientRect() ?? null;
 
   const left = Math.max(0, centerRect.left);
@@ -635,9 +635,11 @@ export function MonumentGridWithSharedTransition({
           appViewportRect: nextViewport,
           targetRect: getDashboardDetailPopupRect(nextViewport),
           targetBorderRadius:
-            window.innerWidth >= 768
-              ? MONUMENT_DETAIL_BORDER_RADIUS
-              : MONUMENT_CARD_BORDER_RADIUS,
+            getDesktopCommandMonumentDetailRect()
+              ? 0
+              : window.innerWidth >= 768
+                ? MONUMENT_DETAIL_BORDER_RADIUS
+                : MONUMENT_CARD_BORDER_RADIUS,
         };
       });
     };
@@ -712,9 +714,11 @@ export function MonumentGridWithSharedTransition({
       appViewportRect: nextViewport,
       sourceBorderRadius: getElementBorderRadius(sourceElement),
       targetBorderRadius:
-        window.innerWidth >= 768
-          ? MONUMENT_DETAIL_BORDER_RADIUS
-          : MONUMENT_CARD_BORDER_RADIUS,
+        getDesktopCommandMonumentDetailRect()
+          ? 0
+          : window.innerWidth >= 768
+            ? MONUMENT_DETAIL_BORDER_RADIUS
+            : MONUMENT_CARD_BORDER_RADIUS,
       closeRect: null,
     });
     setActiveId(monumentId);
@@ -855,7 +859,12 @@ export function MonumentGridWithSharedTransition({
           return (
             <div
               ref={detailOverlayScrollRef}
-              className="fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+              className={cn(
+                "fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]",
+                isMonumentCommandCenterDetail
+                  ? "bg-black pb-0"
+                  : "bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+              )}
               style={detailOverlayScrollStyle}
             >
               <motion.div
@@ -872,11 +881,15 @@ export function MonumentGridWithSharedTransition({
               <motion.div
                 role="dialog"
                 aria-modal={!isMonumentCommandCenterDetail}
-                className={`app-card relative z-10 mx-auto flex min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] flex-col rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)] ${
+                className={cn(
+                  "relative z-10 flex min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full flex-col",
+                  isMonumentCommandCenterDetail
+                    ? "rounded-none border-0 bg-black shadow-none ring-0"
+                    : "app-card mx-auto max-w-[min(100vw-1.25rem,420px)] rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
                   monumentTransition.phase === "open"
                     ? "overflow-visible"
                     : "overflow-hidden"
-                }`}
+                )}
                 style={{
                   ...detailOverlayStyle,
                   width: monumentTransition.targetRect.width,

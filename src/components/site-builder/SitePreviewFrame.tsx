@@ -10,6 +10,7 @@ import {
 import { migrateLegacyMackSite } from "@/lib/site-builder/migrateLegacyMackSite";
 import {
   createSitePreviewContentEditRequestMessage,
+  createSitePreviewMediaEditRequestMessage,
   createSitePreviewSectionInsertRequestMessage,
   createSitePreviewReadyMessage,
   createSitePreviewSelectionRequestMessage,
@@ -399,6 +400,18 @@ export default function SitePreviewFrame() {
             : (edit) => {
                 window.parent.postMessage(
                   createSitePreviewContentEditRequestMessage(
+                    edit,
+                  ),
+                  window.location.origin,
+                );
+              }
+        }
+        onEditorMediaEditRequest={
+          standaloneMode
+            ? undefined
+            : (edit) => {
+                window.parent.postMessage(
+                  createSitePreviewMediaEditRequestMessage(
                     edit,
                   ),
                   window.location.origin,

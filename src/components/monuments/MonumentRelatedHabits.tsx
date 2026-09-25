@@ -20,7 +20,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
-import { useProfile } from "@/lib/hooks/useProfile";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useProfileContext } from "@/components/ProfileProvider";
 import {
   RelatedRoutineCard,
   type RelatedRoutineCardRoutine,
@@ -558,10 +559,13 @@ function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
 async function fetchRoutineMetadataById(
   supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
   userId: string,
-  routineIds: string[]
+  routineIds?: string[]
 ): Promise<Map<string, RoutineMetadata>> {
-  const uniqueRoutineIds = Array.from(new Set(routineIds.filter(Boolean)));
-  if (uniqueRoutineIds.length === 0) return new Map();
+  const uniqueRoutineIds = routineIds
+    ? Array.from(new Set(routineIds.filter(Boolean)))
+    : null;
+
+  if (routineIds && uniqueRoutineIds?.length === 0) return new Map();
 
   const selectColumns = [
     "id, name, description, icon, emoji, icon_emoji",
@@ -574,11 +578,16 @@ async function fetchRoutineMetadataById(
   let data: unknown[] | null = null;
 
   for (const columns of selectColumns) {
-    const { data: routinesData, error } = await supabase
+    let query = supabase
       .from("habit_routines")
       .select(columns)
-      .eq("user_id", userId)
-      .in("id", uniqueRoutineIds);
+      .eq("user_id", userId);
+
+    if (uniqueRoutineIds) {
+      query = query.in("id", uniqueRoutineIds);
+    }
+
+    const { data: routinesData, error } = await query;
 
     if (!error) {
       data = routinesData ?? [];
@@ -603,7 +612,8 @@ export function MonumentRelatedHabits({
   const supabase = getSupabaseBrowser();
   const toast = useToastHelpers();
   const fabCreation = useFabCreation();
-  const { localTimeZone } = useProfile();
+  const { user, ready: authReady } = useAuth();
+  const { localTimeZone } = useProfileContext();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [relatedHabitSkillIds, setRelatedHabitSkillIds] = useState<string[]>(
@@ -1989,14 +1999,11 @@ export function MonumentRelatedHabits({
       }
 
       try {
-        const { data: authData, error: authError } =
-          await supabase.auth.getUser();
-
-        if (authError) {
-          throw authError;
+        if (!authReady) {
+          return;
         }
 
-        const userId = authData.user?.id ?? null;
+        const userId = user?.id ?? null;
         setCurrentUserId(userId);
 
         if (!userId) {
@@ -2006,6 +2013,13 @@ export function MonumentRelatedHabits({
           }
           return;
         }
+
+        // Start routine metadata immediately instead of waiting for
+        // Skills -> Habits -> routine IDs to finish first.
+        const routineMetadataPromise = fetchRoutineMetadataById(
+          supabase,
+          userId
+        );
 
         const [directSkillsResult, relationResult] =
           sourceType === "area"
@@ -2050,31 +2064,15 @@ export function MonumentRelatedHabits({
         const missingSkillIds = Array.from(relationSkillIds).filter(
           (skillId) => !directSkills.some((skill) => skill.id === skillId)
         );
-        const relatedSkills = [...directSkills];
 
-        if (missingSkillIds.length > 0) {
-          const { data: relationSkillsData, error: relationSkillsError } =
-            await supabase
-              .from("skills")
-              .select("id,name,icon")
-              .eq("user_id", userId)
-              .in("id", missingSkillIds);
-
-          if (relationSkillsError) {
-            throw relationSkillsError;
-          }
-
-          relatedSkills.push(
-            ...(relationSkillsData ?? [])
-              .map(formatSkillRecord)
-              .filter((skill): skill is RelatedSkillSummary => skill !== null)
-          );
-        }
-
-        const skillById = new Map(
-          relatedSkills.map((skill) => [skill.id, skill])
+        // Habit rows only need the Skill IDs. Do not make the Habits query
+        // wait for Skill names/icons to finish loading.
+        const skillIds = Array.from(
+          new Set([
+            ...directSkills.map((skill) => skill.id),
+            ...relationSkillIds,
+          ])
         );
-        const skillIds = Array.from(skillById.keys());
 
         if (skillIds.length === 0) {
           if (!cancelled) {
@@ -2084,11 +2082,21 @@ export function MonumentRelatedHabits({
           }
           return;
         }
+
         if (!cancelled) {
           setRelatedHabitSkillIds(skillIds);
         }
 
-        const { data: habitsData, error: habitsError } = await supabase
+        const relationSkillsPromise =
+          missingSkillIds.length > 0
+            ? supabase
+                .from("skills")
+                .select("id,name,icon")
+                .eq("user_id", userId)
+                .in("id", missingSkillIds)
+            : Promise.resolve({ data: [], error: null });
+
+        const habitsPromise = supabase
           .from("habits")
           .select(
             "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, skill_id, routine_id, routine_position"
@@ -2098,23 +2106,36 @@ export function MonumentRelatedHabits({
           .in("skill_id", skillIds)
           .order("name", { ascending: true });
 
+        const [relationSkillsResult, habitsResult] = await Promise.all([
+          relationSkillsPromise,
+          habitsPromise,
+        ]);
+
+        if (relationSkillsResult.error) {
+          throw relationSkillsResult.error;
+        }
+
+        const relatedSkills = [
+          ...directSkills,
+          ...(relationSkillsResult.data ?? [])
+            .map(formatSkillRecord)
+            .filter(
+              (skill): skill is RelatedSkillSummary => skill !== null
+            ),
+        ];
+
+        const skillById = new Map(
+          relatedSkills.map((skill) => [skill.id, skill])
+        );
+
+        const { data: habitsData, error: habitsError } = habitsResult;
+
         if (habitsError) {
           throw habitsError;
         }
 
         if (!cancelled) {
-          const routineIds = (habitsData ?? [])
-            .map((habit) =>
-              habit && typeof habit === "object"
-                ? readString((habit as Record<string, unknown>).routine_id)
-                : null
-            )
-            .filter((routineId): routineId is string => routineId !== null);
-          const routineById = await fetchRoutineMetadataById(
-            supabase,
-            userId,
-            routineIds
-          );
+          const routineById = await routineMetadataPromise;
           if (cancelled) return;
 
           const formattedHabits = (habitsData ?? [])
@@ -2155,6 +2176,8 @@ export function MonumentRelatedHabits({
     sourceType,
     refreshVersion,
     supabase,
+    authReady,
+    user,
   ]);
 
   useEffect(() => {

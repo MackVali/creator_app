@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useMemo } from "react";
-import { useProfile } from "@/lib/hooks/useProfile";
+import { useProfileContext } from "@/components/ProfileProvider";
 import { useUserProgress } from "@/lib/hooks/useUserProgress";
 import { calculateLevelProgress } from "@/lib/leveling";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ export type LevelBannerHandle = {
 
 export const LevelBanner = forwardRef<LevelBannerHandle, LevelBannerProps>(
   function LevelBanner({ className }, ref) {
-    const { userId } = useProfile();
+    const { userId } = useProfileContext();
     const { progress, loading, refresh } = useUserProgress(userId, {
       subscribe: true,
     });

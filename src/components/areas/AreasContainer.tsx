@@ -23,7 +23,7 @@ import {
   useAreaCardStatuses,
   type AreaCardStatus,
 } from "@/lib/hooks/useAreaCardStatuses";
-import { useProfile } from "@/lib/hooks/useProfile";
+import { useProfileContext } from "@/components/ProfileProvider";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -144,7 +144,7 @@ function getDesktopCommandAreaDetailRect(): MeasuredAreaRect | null {
 
   const centerRect = centerPanel.getBoundingClientRect();
   const rightRail =
-    document.querySelector<HTMLElement>("[data-my-list-sheet]");
+    document.querySelector<HTMLElement>("[data-dashboard-right-rail]");
   const rightRailRect = rightRail?.getBoundingClientRect() ?? null;
 
   const left = Math.max(0, centerRect.left);
@@ -300,7 +300,7 @@ function AreasGrid() {
   );
   const areaIds = useMemo(() => sortedAreas.map((area) => area.id), [sortedAreas]);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
-  const { userId, localTimeZone } = useProfile();
+  const { userId, localTimeZone } = useProfileContext();
   const areaStatuses = useAreaCardStatuses({
     areaIds,
     userId,
@@ -332,17 +332,7 @@ function AreasGrid() {
       return;
     }
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      console.error("Failed to load Area goal counts", userError);
-      return;
-    }
-
-    if (!user) {
+    if (!userId) {
       setGoalCounts({});
       return;
     }
@@ -356,7 +346,7 @@ function AreasGrid() {
       .select(
         "area_id,monument_id,status,active,monument:monuments(area_id)"
       )
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     if (error) {
       console.error("Failed to load Area goal counts", error);
@@ -385,7 +375,7 @@ function AreasGrid() {
     }, {});
 
     setGoalCounts(nextCounts);
-  }, [sortedAreas, supabase]);
+  }, [sortedAreas, supabase, userId]);
 
   useEffect(() => {
     void loadAreaGoalCounts();
@@ -558,9 +548,11 @@ function AreasGrid() {
           ...currentTransition,
           targetRect: getAreaDetailPopupRect(nextViewport),
           targetBorderRadius:
-            window.innerWidth >= 768
-              ? AREA_DETAIL_BORDER_RADIUS
-              : AREA_CARD_BORDER_RADIUS,
+            getDesktopCommandAreaDetailRect()
+              ? 0
+              : window.innerWidth >= 768
+                ? AREA_DETAIL_BORDER_RADIUS
+                : AREA_CARD_BORDER_RADIUS,
         };
       });
     };
@@ -636,9 +628,11 @@ function AreasGrid() {
       targetRect,
       sourceBorderRadius: getElementBorderRadius(sourceElement),
       targetBorderRadius:
-        window.innerWidth >= 768
-          ? AREA_DETAIL_BORDER_RADIUS
-          : AREA_CARD_BORDER_RADIUS,
+        getDesktopCommandAreaDetailRect()
+          ? 0
+          : window.innerWidth >= 768
+            ? AREA_DETAIL_BORDER_RADIUS
+            : AREA_CARD_BORDER_RADIUS,
       closeRect: null,
     });
     setActiveAreaId(areaId);
@@ -712,7 +706,12 @@ function AreasGrid() {
           return (
             <div
               ref={detailOverlayScrollRef}
-              className="fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+              className={cn(
+                "fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]",
+                isAreaCommandCenterDetail
+                  ? "bg-black pb-0"
+                  : "bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+              )}
               style={detailOverlayScrollStyle}
             >
               <motion.div
@@ -731,7 +730,10 @@ function AreasGrid() {
                 aria-modal={!isAreaCommandCenterDetail}
                 aria-label={`${selectedArea.label} area dashboard`}
                 className={cn(
-                  "app-card relative z-10 mx-auto flex min-h-[var(--area-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] flex-col shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
+                  "relative z-10 flex min-h-[var(--area-detail-overlay-height,100dvh)] max-h-none w-full flex-col",
+                  isAreaCommandCenterDetail
+                    ? "rounded-none border-0 bg-black shadow-none ring-0"
+                    : "app-card mx-auto max-w-[min(100vw-1.25rem,420px)] shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
                   areaTransition.phase === "open"
                     ? "overflow-visible"
                     : "overflow-hidden"
