@@ -1105,8 +1105,23 @@ function FocusGateSettingsCard() {
     setSaving(true);
     setSaveError(null);
     try {
-      await updateFocusGateSettings(updates);
+      const nextStatus = await updateFocusGateSettings(updates);
+
+      const synced = await syncFocusGateAllowance({
+        enabled: nextStatus.enabled,
+        xpToday: nextStatus.xpToday,
+        baselineAllowedMinutes: nextStatus.baselineAllowedMinutes,
+        allowedMinutes: nextStatus.allowedMinutes,
+        creatorDayStartsAt: nextStatus.creatorDay.startsAt,
+        creatorDayEndsAt: nextStatus.creatorDay.endsAt,
+        timezone: nextStatus.creatorDay.timezone,
+      });
+      if (synced.ok) {
+        setEnforcementState(synced.state);
+      }
+
       await invalidate();
+      await refreshNativeState();
       void hapticComplete();
     } catch (error) {
       console.error("Failed to save Focus Gate settings:", error);
