@@ -4,11 +4,28 @@ import Foundation
 
 enum FocusGateDeviceActivity {
     static let activityName = DeviceActivityName("creator.focusGate.protectedUsage")
-    static let protectedUsageEventName = DeviceActivityEvent.Name("creator.focusGate.protectedUsage.threshold")
+    static let protectedUsageEventPrefix = "creator.focusGate.protectedUsage.threshold"
+
+    static func protectedUsageEventName(generation: Int) -> DeviceActivityEvent.Name {
+        DeviceActivityEvent.Name("\(protectedUsageEventPrefix).\(generation)")
+    }
+
+    static func protectedUsageEventGeneration(_ event: DeviceActivityEvent.Name) -> Int? {
+        let prefix = "\(protectedUsageEventPrefix)."
+        guard event.rawValue.hasPrefix(prefix) else {
+            return nil
+        }
+        return Int(event.rawValue.dropFirst(prefix.count))
+    }
 
     static func stopMonitoring() {
+        let generation = FocusGateSharedState.advanceMonitorGeneration()
         DeviceActivityCenter().stopMonitoring([activityName])
-        FocusGateSharedState.recordDebugEvent(source: "deviceActivity", message: "monitoring_stopped")
+        FocusGateSharedState.recordDebugEvent(
+            source: "deviceActivity",
+            message: "monitoring_stopped",
+            details: ["generation": "\(generation)"]
+        )
     }
 
     static func configureMonitoring(
@@ -27,7 +44,9 @@ enum FocusGateDeviceActivity {
             guard state.allowedMinutes > 0 else {
                 throw FocusGateDeviceActivityError.invalidThreshold
             }
-            events[protectedUsageEventName] = makeEvent(
+            let generation = FocusGateSharedState.advanceMonitorGeneration()
+            let eventName = protectedUsageEventName(generation: generation)
+            events[eventName] = makeEvent(
                 selection: selection,
                 thresholdMinutes: state.allowedMinutes
             )
@@ -36,6 +55,8 @@ enum FocusGateDeviceActivity {
                 message: "monitoring_threshold_registered",
                 details: [
                     "thresholdMinutes": "\(state.allowedMinutes)",
+                    "generation": "\(generation)",
+                    "eventName": eventName.rawValue,
                     "includesPastActivity": "true"
                 ]
             )
