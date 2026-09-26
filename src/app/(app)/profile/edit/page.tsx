@@ -24,7 +24,6 @@ import {
   upsertLinkedAccount,
 } from "@/lib/db/linked-accounts";
 import { deleteSocialLink, getSocialLinks } from "@/lib/db/profile-management";
-import { updateMyOnboarding } from "@/lib/db/profiles-client";
 import { Profile, ProfileFormData, SocialLink, LinkedAccount } from "@/lib/types";
 import { uploadAvatar } from "@/lib/storage";
 import { buildSocialUrl, normalizeUsername, resolveSocialLink } from "@/lib/profile/socialLinks";
@@ -1440,29 +1439,6 @@ export default function ProfileEditPage() {
         setAvatarMarkedForRemoval(false);
         setAvatarPreview(savedProfile.avatar_url || null);
 
-        if (onboarding) {
-          try {
-            const onboardingRes = await updateMyOnboarding({
-              onboarding_version: 1,
-              onboarding_step: null,
-              onboarding_completed_at: new Date().toISOString(),
-            });
-
-            if (!onboardingRes.success) {
-              console.error(
-                "Failed to persist onboarding completion:",
-                onboardingRes.error
-              );
-              setError(
-                onboardingRes.error ??
-                  "Failed to persist onboarding completion"
-              );
-            }
-          } catch (e) {
-            console.error("Failed to persist onboarding completion:", e);
-          }
-        }
-
         try {
           await refreshProfile();
         } catch (err) {
@@ -1476,8 +1452,12 @@ export default function ProfileEditPage() {
             ? redirectPath
             : "/profile";
 
+        const nextTarget = onboarding
+          ? `/onboarding?redirect=${encodeURIComponent(redirectTarget)}`
+          : redirectTarget;
+
         setTimeout(() => {
-          router.replace(redirectTarget);
+          router.replace(nextTarget);
         }, 1500);
       } else {
         showAvatarError(result.error || "Failed to update profile", "Profile not updated");
