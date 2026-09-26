@@ -62,9 +62,8 @@ interface GoalOption {
 }
 
 const HABIT_PAYWALL_FEATURES = [
-  "More room for habits and routines.",
-  "Build deeper systems without cutting rituals out.",
-  "The full CREATOR Pro planning and execution layer.",
+  "Unlimited goals, projects, tasks, and habits.",
+  "Source, Analytics, and ILAV included.",
 ];
 
 export default function NewHabitPage() {
@@ -878,8 +877,8 @@ export default function NewHabitPage() {
         <PaywallModal
           open={paywallOpen}
           onOpenChange={setPaywallOpen}
-          title="Your routine system is full"
-          description="You’ve hit the free habit limit. CREATOR Pro gives you more room to build the routines that hold everything together."
+          title="You’ve reached 20 habits"
+          description="Free includes up to 20 habits. CREATOR Pro removes the habit limit."
           featureList={HABIT_PAYWALL_FEATURES}
           ctaLabel="Upgrade to CREATOR Pro"
           onCta={handlePaywallCta}

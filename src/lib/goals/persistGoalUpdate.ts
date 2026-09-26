@@ -20,7 +20,6 @@ export const LIMIT_ERROR_CODES = [
   "HABIT_LIMIT_REACHED",
   "DAY_TYPE_LIMIT_REACHED",
   "TIME_BLOCK_LIMIT_REACHED",
-  "SKILL_LIMIT_REACHED",
   "MONUMENT_LIMIT_REACHED",
 ] as const;
 export type LimitErrorCode = (typeof LIMIT_ERROR_CODES)[number];
@@ -50,7 +49,9 @@ export function getLimitCodeFromError(error: unknown): LimitErrorCode | null {
     return null;
   }
   return (
-    LIMIT_ERROR_CODES.find((code) => message.includes(code)) ?? null
+    [...LIMIT_ERROR_CODES]
+      .sort((a, b) => b.length - a.length)
+      .find((code) => message.includes(code)) ?? null
   );
 }
 

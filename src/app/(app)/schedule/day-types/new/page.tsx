@@ -9,8 +9,10 @@ import {
   type UIEvent,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PaywallModal } from "@/components/billing/PaywallModal";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { ChevronUp, ChevronDown, MoreVertical, Pencil, Trash2, Wand2, MapPin, Check, Plus } from "lucide-react";
@@ -135,6 +137,28 @@ const DAY_PREVIEWS = [
 ];
 
 const SHOW_INTERNAL_DAY_TYPE_CONTROLS = false;
+
+const isDayTypeLimitError = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+
+  const message =
+    typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : "";
+
+  return message.includes("DAY_TYPE_LIMIT_REACHED");
+};
+
+const isTimeBlockLimitError = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+
+  const message =
+    typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : "";
+
+  return message.includes("TIME_BLOCK_LIMIT_REACHED");
+};
 
 const DAY_KEY_TO_INDEX: Record<string, number> = Object.fromEntries(
   DAYS_OF_WEEK.map((day) => [day.key, day.index])
@@ -433,6 +457,9 @@ const DEFAULT_FORM = {
 
 export default function NewDayTypePage() {
   const supabase = getSupabaseBrowser();
+  const router = useRouter();
+  const [dayTypePaywallOpen, setDayTypePaywallOpen] = useState(false);
+  const [timeBlockPaywallOpen, setTimeBlockPaywallOpen] = useState(false);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [dayTypes, setDayTypes] = useState<DayType[]>([]);
   const [dayTypeBlockMap, setDayTypeBlockMap] = useState<Map<string, Set<string>>>(() => new Map());
@@ -1721,11 +1748,25 @@ export default function NewDayTypePage() {
       setSaveMessage(`Created Day Type: ${created.name}`);
     } catch (err) {
       console.error(err);
+
+      if (isDayTypeLimitError(err)) {
+        resetDayTypeCreateForm();
+        setShowCreateForm(false);
+        setDayTypePaywallOpen(true);
+        return;
+      }
+
       setDayTypeCreateError("Unable to create Day Type right now.");
     } finally {
       setSaving(false);
     }
-  }, [dayTypeName, dayTypes, selectedDays, supabase]);
+  }, [
+    dayTypeName,
+    dayTypes,
+    resetDayTypeCreateForm,
+    selectedDays,
+    supabase,
+  ]);
 
   const customDayTypes = useMemo(
     () =>
@@ -2324,6 +2365,16 @@ export default function NewDayTypePage() {
       emitTimeBlockSavedEvent();
     } catch (err) {
       console.error(err);
+
+      if (isTimeBlockLimitError(err)) {
+        resetBlockForm();
+        setMenuOpenId(null);
+        setConstraintsTarget(null);
+        setCreateError(null);
+        setTimeBlockPaywallOpen(true);
+        return;
+      }
+
       setCreateError("Unable to save time block. Try again.");
     } finally {
       setSavingBlock(false);
@@ -3469,6 +3520,18 @@ export default function NewDayTypePage() {
       }
     } catch (err) {
       console.error(err);
+
+      if (isDayTypeLimitError(err)) {
+        setIsCreatingDayType(false);
+        setIsEditingExisting(false);
+        setShowCreateForm(false);
+        setCreateError(null);
+        setDayTypeCreateError(null);
+        setSaveMessage(null);
+        setDayTypePaywallOpen(true);
+        return;
+      }
+
       setSaveMessage("Unable to save preset right now.");
     } finally {
       setSaving(false);
@@ -5212,6 +5275,41 @@ export default function NewDayTypePage() {
         ) : null}
           </section>
         </div>
+      <PaywallModal
+        open={timeBlockPaywallOpen}
+        onOpenChange={setTimeBlockPaywallOpen}
+        title="You’ve reached 100 Time Blocks"
+        description="Free includes up to 100 Time Blocks. CREATOR Pro removes the Time Block limit."
+        featureList={[
+          "Unlimited Time Blocks.",
+          "Source, Analytics, and ILAV included.",
+        ]}
+        ctaLabel="Upgrade to CREATOR Pro"
+        onCta={() => {
+          setTimeBlockPaywallOpen(false);
+          router.push("/settings/billing");
+        }}
+        secondaryLabel="Maybe later"
+        onSecondary={() => setTimeBlockPaywallOpen(false)}
+      />
+
+      <PaywallModal
+        open={dayTypePaywallOpen}
+        onOpenChange={setDayTypePaywallOpen}
+        title="You’ve reached 3 custom Day Types"
+        description="Free includes up to 3 custom Day Types. CREATOR Pro removes the Day Type limit."
+        featureList={[
+          "Unlimited custom Day Types.",
+          "Source, Analytics, and ILAV included.",
+        ]}
+        ctaLabel="Upgrade to CREATOR Pro"
+        onCta={() => {
+          setDayTypePaywallOpen(false);
+          router.push("/settings/billing");
+        }}
+        secondaryLabel="Maybe later"
+        onSecondary={() => setDayTypePaywallOpen(false)}
+      />
       </main>
     </ProtectedRoute>
   );

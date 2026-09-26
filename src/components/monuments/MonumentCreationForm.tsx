@@ -13,12 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown } from "lucide-react";
-import { AREAS } from "@/config/areas";
-import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
-import { getMaxMonumentsPerArea } from "@/lib/monuments/constants";
 import {
   getMonumentIconOrDefault,
   normalizeMonumentIconInput,
@@ -35,6 +32,7 @@ type MonumentCreationFormProps = {
   submitButtonClassName?: string;
   variant?: "default" | "dialog";
   defaultAreaId?: string | null;
+  onLimitReached?: () => void;
 };
 
 type SkillGroup = {
@@ -49,10 +47,10 @@ export function MonumentCreationForm({
   submitButtonClassName,
   variant = "default",
   defaultAreaId = null,
+  onLimitReached,
 }: MonumentCreationFormProps) {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
-  const { isPlus } = useEntitlement();
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("🏛️");
   const [areaId, setAreaId] = useState(defaultAreaId ?? "");
@@ -240,32 +238,6 @@ export function MonumentCreationForm({
       return;
     }
 
-    const monumentLimit = getMaxMonumentsPerArea(isPlus);
-
-    const { count, error: countError } = await supabase
-      .from("monuments")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("area_id", areaId);
-
-    if (countError) {
-      console.error("Failed to count Area monuments", countError);
-      setError("Unable to verify your monuments right now.");
-      setLoading(false);
-      return;
-    }
-
-    if ((count ?? 0) >= monumentLimit) {
-      const areaLabel =
-        AREAS.find((area) => area.id === areaId)?.label ?? "this Area";
-
-      setError(
-        `You’ve reached the ${monumentLimit} Monument limit for ${areaLabel}.`,
-      );
-      setLoading(false);
-      return;
-    }
-
     const nextEmoji = getMonumentIconOrDefault(emoji);
 
     const { error: insertError } = await supabase
@@ -278,6 +250,18 @@ export function MonumentCreationForm({
       });
 
     if (insertError) {
+      if (insertError.message.includes("MONUMENT_LIMIT_REACHED")) {
+        setLoading(false);
+
+        if (onLimitReached) {
+          onLimitReached();
+        } else {
+          setError("MONUMENT_LIMIT_REACHED");
+        }
+
+        return;
+      }
+
       setError(insertError.message);
       setLoading(false);
       return;

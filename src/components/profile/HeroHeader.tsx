@@ -132,39 +132,26 @@ export default function HeroHeader({
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
-  const getInitials = (name: string | null, username: string) => {
-    if (name) {
-      return name
-        .split(" ")
-        .map((word) => word.charAt(0))
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-    }
-    return username.slice(0, 2).toUpperCase();
-  };
-
   const formatBioSegments = (bio: string | null | undefined) => {
     if (!bio) return [] as string[];
 
-    return bio
-      .split(/[\n•|]+/)
-      .flatMap((segment) =>
-        segment
-          .split(",")
-          .map((part) => part.trim())
-          .filter(Boolean),
-      );
+    return bio.split(/[\n•|]+/).flatMap((segment) =>
+      segment
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    );
   };
 
-  const initials = getInitials(profile.name || null, profile.username);
   const displayName = profile.name?.trim() || profile.username;
   const bioSegments = formatBioSegments(profile.bio);
   const bioText = bioSegments.length ? bioSegments.join(" • ") : null;
 
   const pronouns = profile.pronouns?.trim() || null;
   const heroImageSizes = "(min-width: 420px) 104px, 92px";
-  const hasSocialLinks = Object.values(socials ?? {}).some((url) => url && url !== "#");
+  const hasSocialLinks = Object.values(socials ?? {}).some(
+    (url) => url && url !== "#",
+  );
   const showSocialLinksRow = hasSocialLinks || socialsLoading;
   const partnerBadges = (profile.partner_badges ?? [])
     .filter((badge) => badge && badge.label?.trim())
@@ -186,14 +173,20 @@ export default function HeroHeader({
     "absolute inset-0 z-10 rounded-full transition duration-200 disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black";
   const followedByPreviewUsers = followedByUsers.slice(0, 3);
   const followedByNameUsers = followedByPreviewUsers.slice(0, 2);
-  const followedByTotal = Math.max(followedByTotalCount, followedByPreviewUsers.length);
-  const followedByOtherCount = Math.max(followedByTotal - followedByNameUsers.length, 0);
+  const followedByTotal = Math.max(
+    followedByTotalCount,
+    followedByPreviewUsers.length,
+  );
+  const followedByOtherCount = Math.max(
+    followedByTotal - followedByNameUsers.length,
+    0,
+  );
   const hasFollowedByPreview = !isOwner && followedByPreviewUsers.length > 0;
-  const showFollowedByPreview = hasFollowedByPreview || (!isOwner && followedByPreviewLoading);
+  const showFollowedByPreview =
+    hasFollowedByPreview || (!isOwner && followedByPreviewLoading);
   const actionButtonBaseClass =
     "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md px-3 text-[0.82rem] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-45";
-  const actionButtonClass =
-    `${actionButtonBaseClass} border border-black bg-white/[0.14] text-white/90 hover:border-black hover:bg-white/[0.2] disabled:hover:border-black disabled:hover:bg-white/[0.14]`;
+  const actionButtonClass = `${actionButtonBaseClass} border border-black bg-white/[0.14] text-white/90 hover:border-black hover:bg-white/[0.2] disabled:hover:border-black disabled:hover:bg-white/[0.14]`;
   const professionalDashboardButtonClass =
     "inline-flex min-h-[3.4rem] w-full flex-col items-start justify-center rounded-md border border-black bg-white/[0.14] px-3 py-2 text-left transition hover:border-black hover:bg-white/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
@@ -239,7 +232,10 @@ export default function HeroHeader({
                 onClick={onBack}
                 className="inline-flex h-[2.375rem] w-[2.375rem] shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               >
-                <ChevronLeft className="h-[1.3rem] w-[1.3rem]" aria-hidden="true" />
+                <ChevronLeft
+                  className="h-[1.3rem] w-[1.3rem]"
+                  aria-hidden="true"
+                />
                 <span className="sr-only">Back</span>
               </button>
             ) : null}
@@ -266,7 +262,7 @@ export default function HeroHeader({
 
         <div className="pt-2 sm:pt-3">
           <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] items-center gap-x-3.5 gap-y-3 min-[420px]:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-x-5">
-            <div className="relative h-[5.75rem] w-[5.75rem] overflow-hidden rounded-full min-[420px]:h-[6.5rem] min-[420px]:w-[6.5rem]">
+            <div className="relative h-[5.75rem] w-[5.75rem] rounded-full min-[420px]:h-[6.5rem] min-[420px]:w-[6.5rem]">
               {profile.avatar_url ? (
                 <Image
                   src={profile.avatar_url}
@@ -274,12 +270,12 @@ export default function HeroHeader({
                   fill
                   sizes={heroImageSizes}
                   unoptimized
-                  className="object-cover"
+                  className="rounded-full object-cover"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white sm:text-5xl">
-                  <span aria-hidden="true">{initials}</span>
-                  <span className="sr-only">{`${displayName}'s initials`}</span>
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-white/[0.025]">
+                  <User className="h-8 w-8 text-zinc-500" aria-hidden="true" />
+                  <span className="sr-only">{`${displayName}'s profile photo`}</span>
                 </div>
               )}
               {isOwner && (
@@ -331,88 +327,112 @@ export default function HeroHeader({
               {bioText}
             </p>
           ) : null}
-
         </div>
 
         <div className="flex flex-col gap-1 pt-2.5 sm:pt-3">
           {hasRelationshipExtras ? (
             <section className="flex flex-col space-y-1 px-6 py-3 text-center text-white sm:px-8">
+              <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
+                {pronouns ? (
+                  <span
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"
+                    aria-label={`Pronouns ${pronouns}`}
+                  >
+                    {pronouns}
+                  </span>
+                ) : null}
+              </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
-              {pronouns ? (
-                <span
-                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em]"
-                  aria-label={`Pronouns ${pronouns}`}
-                >
-                  {pronouns}
-                </span>
-              ) : null}
-            </div>
+              {hasPartnerBadges ? (
+                <ul role="list" className="flex flex-wrap justify-center gap-2">
+                  {partnerBadges.map((badge, index) => {
+                    const Icon = getPartnerBadgeIcon(badge.icon);
+                    const tooltipId = `${tooltipIdBase}-badge-${index}`;
 
-            {hasPartnerBadges ? (
-              <ul role="list" className="flex flex-wrap justify-center gap-2">
-                {partnerBadges.map((badge, index) => {
-                  const Icon = getPartnerBadgeIcon(badge.icon);
-                  const tooltipId = `${tooltipIdBase}-badge-${index}`;
-
-                  return (
-                    <li key={badge.id ?? `${badge.label}-${index}`} role="listitem" className="group relative">
-                      <span
-                        tabIndex={0}
-                        role="button"
-                        aria-label={`${badge.label}${badge.description ? `. ${badge.description}` : ""}`}
-                        aria-describedby={badge.description ? tooltipId : undefined}
-                        className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85 shadow-[0_14px_32px_rgba(15,23,42,0.35)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                    return (
+                      <li
+                        key={badge.id ?? `${badge.label}-${index}`}
+                        role="listitem"
+                        className="group relative"
                       >
-                        <Icon className="h-4 w-4 text-white/65" aria-hidden="true" />
-                        <span>{badge.label}</span>
-                      </span>
-                      {badge.description ? (
-                        <div
-                          id={tooltipId}
-                          role="tooltip"
-                          className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-2xl border border-white/10 bg-black/90 px-4 py-3 text-left text-[0.7rem] leading-snug text-white/85 opacity-0 shadow-xl transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100"
+                        <span
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`${badge.label}${badge.description ? `. ${badge.description}` : ""}`}
+                          aria-describedby={
+                            badge.description ? tooltipId : undefined
+                          }
+                          className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85 shadow-[0_14px_32px_rgba(15,23,42,0.35)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                         >
-                          <p>{badge.description}</p>
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-
-            {hasQuickActions ? (
-              <ul role="list" className="flex flex-wrap justify-center gap-3">
-                {quickActions.map((action, index) => {
-                  const Icon = getQuickActionIcon(action.icon);
-                  const key = action.id ?? `${action.label}-${index}`;
-                  const ariaLabel = action.aria_label?.trim() || `${action.label} quick action`;
-                  const commonClasses =
-                    "group inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/12 px-4 py-2 text-xs font-semibold text-white/90 shadow-[0_14px_32px_rgba(15,23,42,0.35)] transition-all hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
-
-                  return (
-                    <li key={key} role="listitem">
-                      {action.href ? (
-                        <a href={action.href ?? undefined} className={commonClasses} aria-label={ariaLabel}>
-                          <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
-                          <span>{action.label}</span>
-                          <ArrowUpRight
-                            className="h-4 w-4 text-white/60 transition-transform duration-150 ease-out group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                          <Icon
+                            className="h-4 w-4 text-white/65"
                             aria-hidden="true"
                           />
-                        </a>
-                      ) : (
-                        <span tabIndex={0} role="button" aria-label={ariaLabel} className={`${commonClasses} cursor-default`}>
-                          <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
-                          <span>{action.label}</span>
+                          <span>{badge.label}</span>
                         </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
+                        {badge.description ? (
+                          <div
+                            id={tooltipId}
+                            role="tooltip"
+                            className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-2xl border border-white/10 bg-black/90 px-4 py-3 text-left text-[0.7rem] leading-snug text-white/85 opacity-0 shadow-xl transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100"
+                          >
+                            <p>{badge.description}</p>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+
+              {hasQuickActions ? (
+                <ul role="list" className="flex flex-wrap justify-center gap-3">
+                  {quickActions.map((action, index) => {
+                    const Icon = getQuickActionIcon(action.icon);
+                    const key = action.id ?? `${action.label}-${index}`;
+                    const ariaLabel =
+                      action.aria_label?.trim() ||
+                      `${action.label} quick action`;
+                    const commonClasses =
+                      "group inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/12 px-4 py-2 text-xs font-semibold text-white/90 shadow-[0_14px_32px_rgba(15,23,42,0.35)] transition-all hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+
+                    return (
+                      <li key={key} role="listitem">
+                        {action.href ? (
+                          <a
+                            href={action.href ?? undefined}
+                            className={commonClasses}
+                            aria-label={ariaLabel}
+                          >
+                            <Icon
+                              className="h-4 w-4 text-white/70"
+                              aria-hidden="true"
+                            />
+                            <span>{action.label}</span>
+                            <ArrowUpRight
+                              className="h-4 w-4 text-white/60 transition-transform duration-150 ease-out group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                              aria-hidden="true"
+                            />
+                          </a>
+                        ) : (
+                          <span
+                            tabIndex={0}
+                            role="button"
+                            aria-label={ariaLabel}
+                            className={`${commonClasses} cursor-default`}
+                          >
+                            <Icon
+                              className="h-4 w-4 text-white/70"
+                              aria-hidden="true"
+                            />
+                            <span>{action.label}</span>
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
             </section>
           ) : null}
 
@@ -426,7 +446,9 @@ export default function HeroHeader({
               >
                 <span className="flex shrink-0 -space-x-2">
                   {followedByPreviewUsers.map((follower) => {
-                    const fallbackInitials = (follower.displayName || follower.username)
+                    const fallbackInitials = (
+                      follower.displayName || follower.username
+                    )
                       .trim()
                       .slice(0, 2)
                       .toUpperCase();
@@ -448,7 +470,9 @@ export default function HeroHeader({
                           />
                         ) : (
                           <span className="flex h-full w-full items-center justify-center bg-zinc-900 text-[0.58rem] font-semibold text-white/50">
-                            {fallbackInitials || <User className="h-3 w-3" aria-hidden="true" />}
+                            {fallbackInitials || (
+                              <User className="h-3 w-3" aria-hidden="true" />
+                            )}
                           </span>
                         )}
                       </span>
@@ -459,7 +483,11 @@ export default function HeroHeader({
                   <span>Followed by </span>
                   {followedByNameUsers.map((follower, index) => {
                     const separator =
-                      index === 0 ? "" : followedByOtherCount > 0 ? ", " : " and ";
+                      index === 0
+                        ? ""
+                        : followedByOtherCount > 0
+                          ? ", "
+                          : " and ";
 
                     return (
                       <span key={follower.id}>
@@ -514,8 +542,12 @@ export default function HeroHeader({
                 <button
                   type="button"
                   onClick={actionButtons.onPrimaryClick}
-                  disabled={actionButtons.primaryDisabled || actionButtons.primaryBusy}
-                  aria-label={actionButtons.primaryAriaLabel ?? actionButtons.primaryLabel}
+                  disabled={
+                    actionButtons.primaryDisabled || actionButtons.primaryBusy
+                  }
+                  aria-label={
+                    actionButtons.primaryAriaLabel ?? actionButtons.primaryLabel
+                  }
                   aria-busy={actionButtons.primaryBusy || undefined}
                   className={actionButtonClass}
                 >
@@ -525,7 +557,10 @@ export default function HeroHeader({
                   type="button"
                   onClick={actionButtons.onSecondaryClick}
                   disabled={actionButtons.secondaryDisabled}
-                  aria-label={actionButtons.secondaryAriaLabel ?? actionButtons.secondaryLabel}
+                  aria-label={
+                    actionButtons.secondaryAriaLabel ??
+                    actionButtons.secondaryLabel
+                  }
                   className={actionButtonClass}
                 >
                   {actionButtons.secondaryLabel}
@@ -553,7 +588,6 @@ export default function HeroHeader({
               )}
             </div>
           ) : null}
-
         </div>
       </div>
     </section>
