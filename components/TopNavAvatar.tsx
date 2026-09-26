@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { LogIn, Settings, LogOut, Inbox } from "lucide-react";
+import { LogIn, Settings, LogOut, Inbox, User } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { hapticPress } from "@/lib/haptics/creatorHaptics";
 
@@ -32,7 +32,9 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const handleProfileClick = () => {
     void hapticPress();
     if (user) {
-      router.push(profile?.username ? `/profile/${profile.username}` : "/profile");
+      router.push(
+        profile?.username ? `/profile/${profile.username}` : "/profile",
+      );
     } else {
       router.push("/auth");
     }
@@ -60,21 +62,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     await signOut();
   };
 
-  const getInitials = (name: string | null, username: string) => {
-    if (name) {
-      return name
-        .split(" ")
-        .map((word) => word.charAt(0))
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-    }
-    return username.slice(0, 2).toUpperCase();
-  };
-
-  const initials = getInitials(profile?.name || null, profile?.username || "U");
   const displayName = profile?.name?.trim() || profile?.username || "You";
-  const handleTagline = profile?.username ? `@${profile.username}` : user?.email;
+  const handleTagline = profile?.username
+    ? `@${profile.username}`
+    : user?.email;
 
   return (
     <DropdownMenu>
@@ -94,8 +85,8 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                 alt={`${profile.name || profile.username}'s avatar`}
               />
             ) : null}
-            <AvatarFallback className="bg-gray-700 text-white text-sm font-medium">
-              {initials}
+            <AvatarFallback className="bg-white/[0.025]">
+              <User className="h-4 w-4 text-zinc-500" aria-hidden="true" />
             </AvatarFallback>
           </Avatar>
         </button>
@@ -119,8 +110,8 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                     alt={`${profile.name || profile.username}'s avatar`}
                   />
                 ) : null}
-                <AvatarFallback className="bg-white/10 text-xs font-medium text-white">
-                  {initials}
+                <AvatarFallback className="bg-white/[0.025]">
+                  <User className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                 </AvatarFallback>
               </Avatar>
 
@@ -129,7 +120,9 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                   {displayName}
                 </p>
                 {handleTagline ? (
-                  <p className="truncate text-xs text-white/50">{handleTagline}</p>
+                  <p className="truncate text-xs text-white/50">
+                    {handleTagline}
+                  </p>
                 ) : null}
               </div>
             </DropdownMenuItem>

@@ -21,7 +21,10 @@ interface ProfileContentProps {
   userId: string;
 }
 
-export default function ProfileContent({ profile, userId }: ProfileContentProps) {
+export default function ProfileContent({
+  profile,
+  userId,
+}: ProfileContentProps) {
   const ownerId = profile?.user_id || userId;
 
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
@@ -86,13 +89,13 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
     return data;
   }, [socialLinks]);
 
-
   const composedModules = useMemo(
     () => buildProfileModules({ profile, contentCards, socialLinks }),
     [profile, contentCards, socialLinks],
   );
 
-  const [moduleLayout, setModuleLayout] = useState<ProfileModule[]>(composedModules);
+  const [moduleLayout, setModuleLayout] =
+    useState<ProfileModule[]>(composedModules);
 
   useEffect(() => {
     setModuleLayout((prev) => {
@@ -100,7 +103,9 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
         return composedModules;
       }
 
-      const nextMap = new Map(composedModules.map((module) => [module.id, module]));
+      const nextMap = new Map(
+        composedModules.map((module) => [module.id, module]),
+      );
       const prevIds = new Set(prev.map((module) => module.id));
 
       const merged = prev
@@ -132,14 +137,7 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
   );
 
   return (
-    <div className="app-profile-bg relative min-h-screen pb-[env(safe-area-inset-bottom)]">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
-        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
-        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[170px]" />
-        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
-      </div>
-
+    <div className="relative min-h-screen bg-black pb-[env(safe-area-inset-bottom)] text-white">
       <main className="relative z-10 pb-28 pt-12 sm:pb-36">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4">
           <header className="flex flex-col gap-4 text-center sm:flex-row sm:items-start sm:justify-between sm:text-left">
@@ -148,9 +146,13 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
                 Preview
               </span>
               <div>
-                <h1 className="text-3xl font-semibold text-[var(--text)] sm:text-4xl">Your public profile</h1>
+                <h1 className="text-3xl font-semibold text-[var(--text)] sm:text-4xl">
+                  Your public profile
+                </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted)] sm:text-base">
-                  This live preview mirrors what visitors see on your bio link page. Use the quick actions below to edit details or curate new links.
+                  This live preview mirrors what visitors see on your bio link
+                  page. Use the quick actions below to edit details or curate
+                  new links.
                 </p>
               </div>
             </div>
@@ -162,17 +164,18 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
                 variant="outline"
                 className="app-button self-center rounded-full"
               >
-                <Link href={`/profile/${profile.username}`} target="_blank" rel="noopener noreferrer">
+                <Link
+                  href={`/profile/${profile.username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   View live page
                 </Link>
               </Button>
             ) : null}
           </header>
 
-          <HeroHeader
-            profile={profile}
-            socials={socialsData}
-          />
+          <HeroHeader profile={profile} socials={socialsData} />
 
           <section className="mx-auto mt-6 w-full max-w-5xl px-1 pb-12 sm:mt-10">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -181,14 +184,16 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
                   Modular link & media blocks
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted)]">
-                  Drag, reorder, and curate immersive modules to orchestrate your narrative.
+                  Drag, reorder, and curate immersive modules to orchestrate
+                  your narrative.
                 </p>
               </div>
 
               {activeModuleCount > 0 ? (
                 <span className="app-button inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium shadow-[0_10px_25px_rgba(15,23,42,0.12)]">
                   <span className="inline-block h-2 w-2 rounded-full bg-[var(--muted)]" />
-                  {activeModuleCount} {activeModuleCount === 1 ? "active module" : "active modules"}
+                  {activeModuleCount}{" "}
+                  {activeModuleCount === 1 ? "active module" : "active modules"}
                 </span>
               ) : null}
             </div>

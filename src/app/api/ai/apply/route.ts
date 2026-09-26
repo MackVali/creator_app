@@ -1742,6 +1742,16 @@ const derivePreviewCandidates = async (
             .single();
           if (dayTypeError || !dayTypeData?.id) {
             console.error("Failed to create day type", dayTypeError);
+
+            if (
+              dayTypeError?.message?.includes("DAY_TYPE_LIMIT_REACHED")
+            ) {
+              return NextResponse.json(
+                { error: "DAY_TYPE_LIMIT_REACHED" },
+                { status: 409 }
+              );
+            }
+
             return NextResponse.json(
               { error: "Unable to create day type" },
               { status: 500 }
@@ -1800,6 +1810,16 @@ const derivePreviewCandidates = async (
                   .single();
               if (timeBlockError || !timeBlockData?.id) {
                 console.error("Failed to insert time block", timeBlockError);
+
+                if (
+                  timeBlockError?.message?.includes("TIME_BLOCK_LIMIT_REACHED")
+                ) {
+                  return NextResponse.json(
+                    { error: "TIME_BLOCK_LIMIT_REACHED" },
+                    { status: 409 }
+                  );
+                }
+
                 return NextResponse.json(
                   { error: "Unable to create time block" },
                   { status: 500 }

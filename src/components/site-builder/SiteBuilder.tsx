@@ -12762,6 +12762,7 @@ export default function SiteBuilder() {
           <SectionLibrary
             open={showSectionLibrary && !editorLocked}
             insertionLabel={sectionInsertionLabel}
+            theme={site.theme}
             onClose={closeSectionLibrary}
             onInsert={addSection}
           />

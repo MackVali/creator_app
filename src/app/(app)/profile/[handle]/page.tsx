@@ -73,24 +73,37 @@ export default function ProfileByHandlePage() {
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [sourceProducts, setSourceProducts] = useState<SourceListing[]>([]);
   const [sourceProductsLoading, setSourceProductsLoading] = useState(true);
-  const [sourceProductsError, setSourceProductsError] = useState<string | null>(null);
+  const [sourceProductsError, setSourceProductsError] = useState<string | null>(
+    null,
+  );
   const [serviceOffers, setServiceOffers] = useState<ProfileOffer[]>([]);
   const [serviceOffersLoading, setServiceOffersLoading] = useState(true);
-  const [serviceOffersError, setServiceOffersError] = useState<string | null>(null);
+  const [serviceOffersError, setServiceOffersError] = useState<string | null>(
+    null,
+  );
   const [secondaryProfileLoading, setSecondaryProfileLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
+  const [relationshipStatus, setRelationshipStatus] =
+    useState<RelationshipStatus | null>(null);
   const [relationshipLoading, setRelationshipLoading] = useState(true);
   const [requestingFriend, setRequestingFriend] = useState(false);
-  const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
+  const [incomingRequestId, setIncomingRequestId] = useState<string | null>(
+    null,
+  );
   const [respondingRequest, setRespondingRequest] = useState(false);
-  const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
-  const [relationshipCountsLoading, setRelationshipCountsLoading] = useState(true);
-  const [followedByPreviewUsers, setFollowedByPreviewUsers] = useState<FollowedByPreviewUser[]>([]);
+  const [relationshipCounts, setRelationshipCounts] =
+    useState<RelationshipViewCounts | null>(null);
+  const [relationshipCountsLoading, setRelationshipCountsLoading] =
+    useState(true);
+  const [followedByPreviewUsers, setFollowedByPreviewUsers] = useState<
+    FollowedByPreviewUser[]
+  >([]);
   const [followedByTotalCount, setFollowedByTotalCount] = useState(0);
-  const [followedByPreviewLoading, setFollowedByPreviewLoading] = useState(false);
-  const [detailSheetItem, setDetailSheetItem] = useState<ProfileDetailSheetItem | null>(null);
+  const [followedByPreviewLoading, setFollowedByPreviewLoading] =
+    useState(false);
+  const [detailSheetItem, setDetailSheetItem] =
+    useState<ProfileDetailSheetItem | null>(null);
   const [relationshipPopupView, setRelationshipPopupView] =
     useState<ProfileRelationshipView | null>(null);
 
@@ -139,7 +152,11 @@ export default function ProfileByHandlePage() {
   }, [rawHandleParam]);
 
   useEffect(() => {
-    if (!profile?.username || !normalizedHandle || user?.id === profile.user_id) {
+    if (
+      !profile?.username ||
+      !normalizedHandle ||
+      user?.id === profile.user_id
+    ) {
       setRelationshipStatus(null);
       setRelationshipLoading(false);
       return;
@@ -153,7 +170,7 @@ export default function ProfileByHandlePage() {
       try {
         const response = await fetch(
           `/api/friends/relationship/${encodeURIComponent(profile.username)}`,
-          { signal: controller.signal }
+          { signal: controller.signal },
         );
 
         if (!isActive) return;
@@ -164,7 +181,9 @@ export default function ProfileByHandlePage() {
           return;
         }
 
-        const payload = (await response.json()) as { relationship?: RelationshipStatus };
+        const payload = (await response.json()) as {
+          relationship?: RelationshipStatus;
+        };
         const relationship = payload?.relationship;
 
         if (!relationship) {
@@ -213,15 +232,15 @@ export default function ProfileByHandlePage() {
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as
-          | { requests?: { id: string; username?: string }[] }
-          | null;
+        const payload = (await response.json().catch(() => null)) as {
+          requests?: { id: string; username?: string }[];
+        } | null;
         const requests = payload?.requests ?? [];
 
         const match = requests.find(
           (req) =>
             typeof req.username === "string" &&
-            req.username.toLowerCase() === profile.username.toLowerCase()
+            req.username.toLowerCase() === profile.username.toLowerCase(),
         );
 
         if (match) {
@@ -282,8 +301,10 @@ export default function ProfileByHandlePage() {
 
         setRelationshipCounts({
           friends: typeof payload.friends === "number" ? payload.friends : 0,
-          following: typeof payload.following === "number" ? payload.following : 0,
-          followers: typeof payload.followers === "number" ? payload.followers : 0,
+          following:
+            typeof payload.following === "number" ? payload.following : 0,
+          followers:
+            typeof payload.followers === "number" ? payload.followers : 0,
         });
       } catch (err) {
         if (!isActive) {
@@ -338,20 +359,20 @@ export default function ProfileByHandlePage() {
           return;
         }
 
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              users?: Array<{
-                id?: string | null;
-                username?: string | null;
-                displayName?: string | null;
-                avatarUrl?: string | null;
-              }>;
-            }
-          | null;
+        const payload = (await response.json().catch(() => null)) as {
+          users?: Array<{
+            id?: string | null;
+            username?: string | null;
+            displayName?: string | null;
+            avatarUrl?: string | null;
+          }>;
+        } | null;
         const users = Array.isArray(payload?.users) ? payload.users : [];
         const normalizedUsers = users
           .filter(
-            (follower): follower is {
+            (
+              follower,
+            ): follower is {
               id: string;
               username: string;
               displayName?: string | null;
@@ -492,7 +513,10 @@ export default function ProfileByHandlePage() {
         } catch (secondaryError) {
           if (!isActive) return;
 
-          console.error("Error loading secondary profile data:", secondaryError);
+          console.error(
+            "Error loading secondary profile data:",
+            secondaryError,
+          );
           setSocialLinks([]);
           setContentCards([]);
           setLinkedAccounts([]);
@@ -551,10 +575,12 @@ export default function ProfileByHandlePage() {
           throw new Error(`Failed to load products (${response.status})`);
         }
 
-        const payload = (await response.json().catch(() => null)) as
-          | { listings?: SourceListing[] }
-          | null;
-        const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+        const payload = (await response.json().catch(() => null)) as {
+          listings?: SourceListing[];
+        } | null;
+        const listings = Array.isArray(payload?.listings)
+          ? payload.listings
+          : [];
 
         if (isActive) {
           setSourceProducts(listings);
@@ -568,7 +594,9 @@ export default function ProfileByHandlePage() {
         console.error("Failed to load profile products:", error);
         setSourceProducts([]);
         setSourceProductsError(
-          error instanceof Error ? error.message : "Unable to load product listings.",
+          error instanceof Error
+            ? error.message
+            : "Unable to load product listings.",
         );
       } finally {
         if (isActive) {
@@ -585,37 +613,41 @@ export default function ProfileByHandlePage() {
     };
   }, [profile?.username]);
 
-  const handleAddProductToCart = useCallback((product: SourceListing) => {
-    if (!profile?.username || !profile.user_id) {
-      return "Profile unavailable";
-    }
-    if (user?.id && user.id === profile.user_id) {
-      return "You cannot add your own listing";
-    }
+  const handleAddProductToCart = useCallback(
+    (product: SourceListing) => {
+      if (!profile?.username || !profile.user_id) {
+        return "Profile unavailable";
+      }
+      if (user?.id && user.id === profile.user_id) {
+        return "You cannot add your own listing";
+      }
 
-    const metadata = product.metadata ?? null;
-    const productKind = resolveProductKind(metadata);
-    const quantityBehavior = resolveQuantityBehavior(metadata);
-    const isDigitalProduct = productKind === "digital";
-    const allowsMultipleUnits =
-      !isDigitalProduct &&
-      (quantityBehavior === "per_unit" || quantityBehavior === "always_available");
-    const fallbackImage = resolveListingImage(product);
+      const metadata = product.metadata ?? null;
+      const productKind = resolveProductKind(metadata);
+      const quantityBehavior = resolveQuantityBehavior(metadata);
+      const isDigitalProduct = productKind === "digital";
+      const allowsMultipleUnits =
+        !isDigitalProduct &&
+        (quantityBehavior === "per_unit" ||
+          quantityBehavior === "always_available");
+      const fallbackImage = resolveListingImage(product);
 
-    return addCartItem(
-      {
-        id: product.id,
-        title: product.title,
-        price: product.price,
-        currency: product.currency,
-        image_url: fallbackImage,
-        quantity: 1,
-        sellerHandle: profile.username,
-        sellerUserId: profile.user_id,
-      },
-      { allowMultipleUnits: allowsMultipleUnits },
-    );
-  }, [addCartItem, profile?.user_id, profile?.username, user?.id]);
+      return addCartItem(
+        {
+          id: product.id,
+          title: product.title,
+          price: product.price,
+          currency: product.currency,
+          image_url: fallbackImage,
+          quantity: 1,
+          sellerHandle: profile.username,
+          sellerUserId: profile.user_id,
+        },
+        { allowMultipleUnits: allowsMultipleUnits },
+      );
+    },
+    [addCartItem, profile?.user_id, profile?.username, user?.id],
+  );
 
   // Handle share functionality
   const handleShare = async () => {
@@ -713,20 +745,24 @@ export default function ProfileByHandlePage() {
 
       if (!response.ok) {
         const payload = await response.text().catch(() => null);
-        console.error("Failed to add follow connection", response.status, payload);
+        console.error(
+          "Failed to add follow connection",
+          response.status,
+          payload,
+        );
         return;
       }
 
       setRelationshipLoading(true);
       try {
         const refreshResponse = await fetch(
-          `/api/friends/relationship/${encodeURIComponent(profile.username)}`
+          `/api/friends/relationship/${encodeURIComponent(profile.username)}`,
         );
 
         if (!refreshResponse.ok) {
           console.error(
             "Failed to refresh relationship status",
-            refreshResponse.status
+            refreshResponse.status,
           );
           setRelationshipStatus("none");
           return;
@@ -803,7 +839,8 @@ export default function ProfileByHandlePage() {
   const linkCardsModule = useMemo(
     () =>
       modules.find(
-        (module): module is ProfileModuleLinkCards => module.type === "link_cards",
+        (module): module is ProfileModuleLinkCards =>
+          module.type === "link_cards",
       ),
     [modules],
   );
@@ -814,49 +851,56 @@ export default function ProfileByHandlePage() {
   );
 
   const activeContentCards = useMemo(
-    () => linkCardsModule?.cards.filter((card) => card.is_active !== false) ?? [],
+    () =>
+      linkCardsModule?.cards.filter((card) => card.is_active !== false) ?? [],
     [linkCardsModule?.cards],
   );
   const hasActiveContentCards = activeContentCards.length > 0;
 
   const offerPopupRows = useMemo<ProfileOfferPopupRow[]>(() => {
-    const productRows: ProfileOfferPopupRow[] = sourceProducts.map((product) => ({
-      id: `product-${product.id}`,
-      label: product.title.trim() || "Untitled product",
-      typeLabel: "Product",
-      imageUrl: resolveListingImage(product),
-      onSelect: () => openProductSheet(product),
-    }));
+    const productRows: ProfileOfferPopupRow[] = sourceProducts.map(
+      (product) => ({
+        id: `product-${product.id}`,
+        label: product.title.trim() || "Untitled product",
+        typeLabel: "Product",
+        imageUrl: resolveListingImage(product),
+        onSelect: () => openProductSheet(product),
+      }),
+    );
 
-    const serviceRows: ProfileOfferPopupRow[] = serviceOffers.map((service) => ({
-      id: `service-${service.id}`,
-      label: service.title.trim() || "Untitled service",
-      typeLabel: "Service",
-      imageUrl: resolveServiceImage(service),
-      onSelect: () => openServiceSheet(service),
-    }));
+    const serviceRows: ProfileOfferPopupRow[] = serviceOffers.map(
+      (service) => ({
+        id: `service-${service.id}`,
+        label: service.title.trim() || "Untitled service",
+        typeLabel: "Service",
+        imageUrl: resolveServiceImage(service),
+        onSelect: () => openServiceSheet(service),
+      }),
+    );
 
-    const contentRows: ProfileOfferPopupRow[] = activeContentCards.map((card) => ({
-      id: `content-${card.id}`,
-      label: card.title.trim() || card.url,
-      typeLabel: "Content",
-      imageUrl: card.thumbnail_url?.trim() || null,
-      href: card.url,
-      external: true,
-      onSelect: () => {
-        if (!linkCardsModule) return;
+    const contentRows: ProfileOfferPopupRow[] = activeContentCards.map(
+      (card) => ({
+        id: `content-${card.id}`,
+        label: card.title.trim() || card.url,
+        typeLabel: "Content",
+        imageUrl: card.thumbnail_url?.trim() || null,
+        href: card.url,
+        external: true,
+        onSelect: () => {
+          if (!linkCardsModule) return;
 
-        emitProfileModuleEvent({
-          moduleId: linkCardsModule.id,
-          moduleType: linkCardsModule.type,
-          action: "link_card_click",
-          label: card.id,
-          metadata: {
-            href: card.url,
-          },
-        });
-      },
-    }));
+          emitProfileModuleEvent({
+            moduleId: linkCardsModule.id,
+            moduleType: linkCardsModule.type,
+            action: "link_card_click",
+            label: card.id,
+            metadata: {
+              href: card.url,
+            },
+          });
+        },
+      }),
+    );
 
     return [...productRows, ...serviceRows, ...contentRows];
   }, [
@@ -895,14 +939,19 @@ export default function ProfileByHandlePage() {
   }, [linkedAccounts, socialLinks]);
 
   const profileStatCounts = useMemo<RelationshipViewCounts>(() => {
-    const offerCount = sourceProducts.length + serviceOffers.length + activeContentCards.length;
+    const offerCount =
+      sourceProducts.length + serviceOffers.length + activeContentCards.length;
     const counts: RelationshipViewCounts = {};
 
     if (!relationshipCountsLoading) {
       counts.following = relationshipCounts?.following ?? 0;
       counts.followers = relationshipCounts?.followers ?? 0;
     }
-    if (!secondaryProfileLoading && !sourceProductsLoading && !serviceOffersLoading) {
+    if (
+      !secondaryProfileLoading &&
+      !sourceProductsLoading &&
+      !serviceOffersLoading
+    ) {
       counts.offers = offerCount;
     }
 
@@ -932,9 +981,12 @@ export default function ProfileByHandlePage() {
         </div>
 
         <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/70 p-8 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
-          <h1 className="text-2xl font-semibold text-white">{error || "Profile not found"}</h1>
+          <h1 className="text-2xl font-semibold text-white">
+            {error || "Profile not found"}
+          </h1>
           <p className="mt-3 text-sm text-white/60">
-            Something went wrong while loading this profile. Try again or head back to your dashboard.
+            Something went wrong while loading this profile. Try again or head
+            back to your dashboard.
           </p>
           <button
             onClick={() => router.push("/dashboard")}
@@ -952,7 +1004,8 @@ export default function ProfileByHandlePage() {
     relationshipStatus === "friends" || relationshipStatus === "following";
   const relationshipCheckPending =
     !isOwner && relationshipLoading && relationshipStatus === null;
-  const canMessageProfile = !isOwner && viewerFollowsProfile && Boolean(profile.user_id);
+  const canMessageProfile =
+    !isOwner && viewerFollowsProfile && Boolean(profile.user_id);
   const primaryActionLabel = isOwner
     ? "Edit Profile"
     : requestingFriend || respondingRequest
@@ -961,7 +1014,8 @@ export default function ProfileByHandlePage() {
         ? "Following"
         : relationshipStatus === "outgoing_request"
           ? "Requested"
-          : relationshipStatus === "followed_by" || relationshipStatus === "incoming_request"
+          : relationshipStatus === "followed_by" ||
+              relationshipStatus === "incoming_request"
             ? "Follow back"
             : "Follow";
   const profileActionButtons: ProfileHeaderActionButtons = isOwner
@@ -1003,14 +1057,7 @@ export default function ProfileByHandlePage() {
       };
 
   return (
-    <div className="relative min-h-screen pb-[env(safe-area-inset-bottom)] text-white">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
-        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
-        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[170px]" />
-        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
-      </div>
-
+    <div className="relative min-h-screen bg-black pb-[env(safe-area-inset-bottom)] text-white">
       <main className="relative z-10 pb-14 pt-0">
         <HeroHeader
           profile={profile}
@@ -1057,7 +1104,11 @@ export default function ProfileByHandlePage() {
 
           {otherModules.length > 0 ? (
             <div className="space-y-10">
-              <ProfileModules modules={otherModules} loading={false} isOwner={isOwner} />
+              <ProfileModules
+                modules={otherModules}
+                loading={false}
+                isOwner={isOwner}
+              />
             </div>
           ) : null}
         </div>

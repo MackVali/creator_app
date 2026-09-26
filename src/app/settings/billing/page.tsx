@@ -10,17 +10,15 @@ export default function BillingPage() {
   return (
     <div className="min-h-screen bg-[#02050a] text-white">
       <div className="safe-page-y mx-auto flex w-full max-w-5xl flex-col px-5 sm:px-6 lg:px-8">
-        <div className="relative flex min-h-14 items-center justify-center sm:min-h-16">
+        <div className="relative flex h-10 items-center sm:h-11">
           <Link
             href="/settings"
-            className="absolute left-0 inline-flex h-11 items-center gap-2 rounded-full border border-white/25 bg-white/[0.035] px-4 text-sm font-bold uppercase tracking-[0.08em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/40 hover:bg-white/[0.06] sm:h-16 sm:gap-3 sm:px-7 sm:text-2xl"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.025] px-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.06em] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.05] hover:text-white sm:h-9 sm:px-3 sm:text-xs"
           >
-            <ArrowLeft className="h-5 w-5 sm:h-8 sm:w-8" aria-hidden="true" />
+            <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
             Back
           </Link>
-          <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-4xl">
-            Billing
-          </h1>
+          <h1 className="sr-only">Billing</h1>
         </div>
         <div className="mt-8 w-full sm:mt-11">
           <BillingPageClient />

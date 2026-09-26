@@ -6,7 +6,11 @@ import { ArrowUpRight, GripVertical } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { emitProfileModuleEvent } from "@/lib/analytics";
-import { ContentCard, ProfileModule, ProfileModuleLinkCards } from "@/lib/types";
+import {
+  ContentCard,
+  ProfileModule,
+  ProfileModuleLinkCards,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface ProfileModulesProps {
@@ -22,7 +26,8 @@ export function ProfileModules({
   isOwner = false,
   onReorder,
 }: ProfileModulesProps) {
-  const [internalModules, setInternalModules] = useState<ProfileModule[]>(modules);
+  const [internalModules, setInternalModules] =
+    useState<ProfileModule[]>(modules);
 
   useEffect(() => {
     setInternalModules((prev) => {
@@ -51,24 +56,37 @@ export function ProfileModules({
     });
   }, [modules]);
 
-  const hasModules = (internalModules || []).length > 0;
+  const visibleModules = useMemo(
+    () =>
+      (internalModules || []).filter((module) => {
+        if (module.type === "link_cards") {
+          return (module.cards || []).some((card) => card.is_active);
+        }
+
+        return false;
+      }),
+    [internalModules],
+  );
 
   if (loading) {
     return <ProfileModulesSkeleton />;
   }
 
-  if (!hasModules) {
-    return <ProfileModulesEmptyState isOwner={isOwner} />;
+  if (visibleModules.length === 0) {
+    return null;
   }
 
   if (isOwner) {
     return (
       <Reorder.Group
         axis="y"
-        values={internalModules}
+        values={visibleModules}
         onReorder={(next) => {
           const previousIndexMap = new Map(
-            internalModules.map((module, index) => [module.id, module.position ?? index]),
+            visibleModules.map((module, index) => [
+              module.id,
+              module.position ?? index,
+            ]),
           );
 
           const normalized = next.map((module, index) => ({
@@ -96,7 +114,7 @@ export function ProfileModules({
         }}
         className="flex flex-col gap-10"
       >
-        {internalModules.map((module) => (
+        {visibleModules.map((module) => (
           <Reorder.Item
             key={module.id}
             value={module}
@@ -112,14 +130,20 @@ export function ProfileModules({
 
   return (
     <div className="flex flex-col gap-10">
-      {internalModules.map((module) => (
+      {visibleModules.map((module) => (
         <ModuleCard key={module.id} module={module} />
       ))}
     </div>
   );
 }
 
-function ModuleCard({ module, isOwner = false }: { module: ProfileModule; isOwner?: boolean }) {
+function ModuleCard({
+  module,
+  isOwner = false,
+}: {
+  module: ProfileModule;
+  isOwner?: boolean;
+}) {
   return (
     <article className="group relative overflow-hidden rounded-[36px] border border-white/12 bg-black/50 shadow-[0_60px_120px_-50px_rgba(15,23,42,0.85)] backdrop-blur-xl">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-white/20 via-white/40 to-white/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
@@ -155,7 +179,10 @@ function ModuleHeading({ module }: { module: ProfileModule }) {
       </div>
 
       <div className="flex items-center gap-2 text-xs uppercase tracking-[0.35em] text-white/40">
-        <span className="inline-flex h-2 w-2 rounded-full bg-white/50" aria-hidden="true" />
+        <span
+          className="inline-flex h-2 w-2 rounded-full bg-white/50"
+          aria-hidden="true"
+        />
         {module.analytics_event_prefix?.replace("profile.", "") || module.type}
       </div>
     </header>
@@ -235,7 +262,9 @@ export function ContentCardTile({
       }
     : undefined;
 
-  const sizeClasses = isMedium ? "min-h-[220px] sm:aspect-[5/2]" : "aspect-square";
+  const sizeClasses = isMedium
+    ? "min-h-[220px] sm:aspect-[5/2]"
+    : "aspect-square";
 
   return (
     <Link
@@ -263,7 +292,8 @@ export function ContentCardTile({
         <div
           className={cn(
             "absolute inset-0 bg-cover bg-center",
-            !card.thumbnail_url && "bg-gradient-to-br from-indigo-500/40 via-purple-500/40 to-rose-500/30",
+            !card.thumbnail_url &&
+              "bg-gradient-to-br from-indigo-500/40 via-purple-500/40 to-rose-500/30",
           )}
           style={backgroundStyle}
         />
@@ -277,7 +307,6 @@ export function ContentCardTile({
     </Link>
   );
 }
-
 
 function ModuleEmptyState({
   icon,
@@ -308,8 +337,8 @@ function ProfileModulesEmptyState({ isOwner }: { isOwner?: boolean }) {
       <h3 className="text-lg font-semibold text-white">No modules yet</h3>
       <p className="max-w-md text-sm leading-relaxed text-white/60">
         {isOwner
-        ? "Add your first block to unlock a cinematic profile narrative with curated link cards."
-        : "This creator hasn't published any modules yet. Check back soon for new experiences."}
+          ? "Add your first block to unlock a cinematic profile narrative with curated link cards."
+          : "This creator hasn't published any modules yet. Check back soon for new experiences."}
       </p>
     </div>
   );
@@ -342,8 +371,12 @@ export function ProfileModulesSkeleton() {
           <div className="relative z-10 grid gap-6 px-6 py-8 sm:px-9 sm:py-10">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-2">
-                <div className={`h-6 rounded-full bg-white/15 ${module.titleWidth}`} />
-                <div className={`h-4 rounded-full bg-white/10 ${module.subtitleWidth}`} />
+                <div
+                  className={`h-6 rounded-full bg-white/15 ${module.titleWidth}`}
+                />
+                <div
+                  className={`h-4 rounded-full bg-white/10 ${module.subtitleWidth}`}
+                />
               </div>
               <div className="h-4 w-28 rounded-full bg-white/10" />
             </div>

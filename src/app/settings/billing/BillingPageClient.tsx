@@ -1,7 +1,7 @@
 "use client";
 
 import { Capacitor } from "@capacitor/core";
-import { ArrowRight, BarChart3, Box, CalendarDays, Map } from "lucide-react";
+import { ArrowRight, Box } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -19,20 +19,12 @@ import type { PurchasesStoreProduct } from "@revenuecat/purchases-typescript-int
 
 const PREMIUM_BENEFITS = [
   {
-    label: "Higher limits",
+    label: "Unlimited goals, projects, tasks, and habits.",
     Icon: Box,
   },
   {
-    label: "Bigger roadmaps",
-    Icon: Map,
-  },
-  {
-    label: "Progress analytics",
-    Icon: BarChart3,
-  },
-  {
-    label: "Advanced scheduling",
-    Icon: CalendarDays,
+    label: "Source included.",
+    Icon: Box,
   },
 ];
 const UPGRADE_PLAN_NAME = "CREATOR Pro";
@@ -43,8 +35,7 @@ const PURCHASE_FAILED_MESSAGE =
   "Purchase could not be completed. Please try again.";
 const RESTORE_FAILED_MESSAGE =
   "Restore could not be completed. Please try again.";
-const premiumIconShellClassName =
-  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-200/25 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(16,185,129,0.16)_32%,rgba(0,0,0,0.58)_100%)] text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-10px_18px_rgba(0,0,0,0.42),0_8px_18px_rgba(0,0,0,0.45),0_0_18px_rgba(52,211,153,0.16)] md:h-11 md:w-11";
+const premiumIconShellClassName = "hidden";
 const recommendedPillClassName =
   "inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-300/50 bg-[linear-gradient(180deg,rgba(110,231,183,0.16),rgba(16,185,129,0.08))] px-2 py-1 text-[0.58rem] font-bold uppercase tracking-[0.18em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-10px_20px_rgba(0,0,0,0.35),0_0_24px_rgba(52,211,153,0.18)] md:px-2.5 md:text-[0.6rem]";
 const selectedPlanOuterClassName =
@@ -197,7 +188,7 @@ function getAnnualSavingsLabel(
   }
 
   const savingsPercent = Math.round((1 - annualValue / monthlyTotal) * 100);
-  return `Save ${savingsPercent}% vs 12 months of the monthly plan.`;
+  return `Save ${savingsPercent}% annually.`;
 }
 
 function getBillingCadenceLabel(pkg: AvailableUpgradePackage) {
@@ -218,12 +209,17 @@ function getBillingCadenceLabel(pkg: AvailableUpgradePackage) {
 }
 
 function getPlanDescription(pkg: AvailableUpgradePackage) {
-  const product = getPackageProduct(pkg);
-  if (product?.description) {
-    return getReviewSafeCopy(product.description);
+  const cadence = getBillingCadenceLabel(pkg);
+
+  if (cadence === "Annual") {
+    return "Billed annually.";
   }
 
-  return "The full CREATOR Pro planning and execution layer.";
+  if (cadence === "Monthly") {
+    return "Billed monthly.";
+  }
+
+  return "CREATOR Pro.";
 }
 
 function getPlanLabel(pkg: AvailableUpgradePackage) {
@@ -425,8 +421,8 @@ function BillingPageClient() {
 
   const canPurchase = Boolean(selectedPackage && loadState === "success");
   return (
-    <div className="mx-auto max-w-[930px] space-y-3 pb-3 pt-1 text-zinc-100 sm:px-4 sm:pb-5 sm:pt-2 md:space-y-4">
-      <Card className="relative overflow-hidden rounded-[1.35rem] border-white/15 bg-[#070808] shadow-[0_14px_34px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] md:rounded-[1.65rem]">
+    <div className="mx-auto max-w-[930px] space-y-2 pb-3 pt-0 text-zinc-100 sm:px-4 sm:pb-5 sm:pt-2 md:space-y-4">
+      <Card className="relative gap-0 overflow-hidden rounded-[1.35rem] border-white/15 bg-[#070808] py-0 shadow-[0_14px_34px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] md:rounded-[1.65rem]">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.22]"
@@ -440,37 +436,37 @@ function BillingPageClient() {
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
         />
-        <CardContent className="relative z-10 p-6 sm:p-9 md:p-10">
-          <div className="min-w-0">
-            <div className="flex items-start gap-5 md:gap-7">
-              <span className="relative flex h-20 w-20 shrink-0 overflow-hidden rounded-[1.45rem] bg-[linear-gradient(145deg,rgba(236,253,245,0.7)_0%,rgba(110,231,183,0.72)_18%,rgba(5,150,105,0.58)_42%,rgba(6,78,59,0.72)_68%,rgba(255,255,255,0.22)_100%)] p-[1px] shadow-[0_16px_34px_rgba(0,0,0,0.52),0_0_30px_rgba(52,211,153,0.18)] md:h-28 md:w-28 md:rounded-[1.7rem]">
-                <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[1.35rem] bg-[linear-gradient(145deg,rgba(255,255,255,0.16),rgba(16,185,129,0.16)_28%,rgba(0,0,0,0.62)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-18px_28px_rgba(0,0,0,0.58)] md:rounded-[1.6rem]">
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-1.5 z-20 rounded-[1rem] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] md:rounded-[1.25rem]"
-                  />
-                  <Image
-                    src="/images/creator-logo.png"
-                    alt=""
-                    width={112}
-                    height={112}
-                    className="relative z-10 h-full w-full object-cover"
-                  />
-                </span>
+        <CardContent className="relative z-10 p-4 sm:p-5 md:p-6">
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <span className="relative flex h-14 w-14 shrink-0 overflow-hidden rounded-[1.05rem] bg-[linear-gradient(145deg,rgba(236,253,245,0.7)_0%,rgba(110,231,183,0.72)_18%,rgba(5,150,105,0.58)_42%,rgba(6,78,59,0.72)_68%,rgba(255,255,255,0.22)_100%)] p-px shadow-[0_10px_24px_rgba(0,0,0,0.45),0_0_20px_rgba(52,211,153,0.14)] md:h-16 md:w-16">
+              <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[1rem] bg-[linear-gradient(145deg,rgba(255,255,255,0.16),rgba(16,185,129,0.16)_28%,rgba(0,0,0,0.62)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),inset_0_-12px_20px_rgba(0,0,0,0.5)]">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-1 z-20 rounded-[0.75rem] border border-white/10"
+                />
+                <Image
+                  src="/images/creator-logo.png"
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="relative z-10 h-full w-full object-cover"
+                />
               </span>
-              <div className="min-w-0 pt-1 md:pt-1.5">
-                <p className="text-[0.72rem] font-bold uppercase tracking-[0.32em] text-emerald-300 md:text-[0.9rem] md:tracking-[0.36em]">
-                  CREATOR PRO
-                </p>
-                <h2 className="mt-4 text-3xl font-semibold leading-tight tracking-normal text-white md:text-4xl">
-                  Build beyond the free roadmap
-                </h2>
-              </div>
+            </span>
+
+            <div className="min-w-0">
+              <p className="text-[0.6rem] font-bold uppercase tracking-[0.28em] text-emerald-300">
+                CREATOR PRO
+              </p>
+
+              <h2 className="mt-1 text-lg font-semibold leading-tight tracking-normal text-white md:text-xl">
+                CREATOR Pro
+              </h2>
+
+              <p className="mt-1.5 max-w-[28rem] text-xs leading-[1.15rem] text-zinc-400 sm:text-sm sm:leading-5">
+                Unlimited goals, projects, tasks, and habits. Source included.
+              </p>
             </div>
-            <p className="mt-7 max-w-[31rem] text-lg leading-8 text-zinc-300 md:mt-8 md:text-2xl md:leading-10">
-              Upgrade when your system outgrows the free tier. CREATOR Pro gives you more room
-              for goals, projects, tasks, and habits.
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -487,7 +483,7 @@ function BillingPageClient() {
         />
         <CardContent className="relative z-10 space-y-3 p-4 md:space-y-4 md:p-5">
           <div>
-            <h2 className="text-xl font-semibold tracking-normal text-white md:text-2xl">Choose your plan</h2>
+            <h2 className="text-lg font-semibold tracking-normal text-white md:text-xl">Choose your plan</h2>
           </div>
           {isPlus ? (
             <div className="space-y-3">

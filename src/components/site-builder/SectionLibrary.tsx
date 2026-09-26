@@ -7,6 +7,10 @@ import {
 
 import PortfolioSite from "@/components/portfolio/PortfolioSite";
 import type { PortfolioSiteData } from "@/lib/portfolio/types";
+import {
+  getSiteThemeConfig,
+  getSiteThemeStyle,
+} from "@/lib/site-builder/siteTheme";
 import type {
   SiteDocument,
   SiteSection,
@@ -447,9 +451,11 @@ function buildSectionPreview(
 function SectionTypePreview({
   type,
   variant,
+  theme,
 }: {
   type: SiteSectionDefinition["type"];
   variant?: string;
+  theme: SiteDocument["theme"];
 }) {
   const section =
     buildSectionPreview(type);
@@ -464,6 +470,7 @@ function SectionTypePreview({
   const previewDocument:
     SiteDocument = {
       ...SECTION_PREVIEW_DOCUMENT,
+      theme,
       pages: [
         {
           id:
@@ -476,6 +483,16 @@ function SectionTypePreview({
     };
 
   const previewScale = 0.72;
+
+  const previewTheme =
+    getSiteThemeConfig({
+      theme,
+    });
+
+  const previewThemeStyle =
+    getSiteThemeStyle(
+      previewTheme,
+    );
 
   const previewContentRef =
     useRef<HTMLDivElement | null>(
@@ -542,12 +559,14 @@ function SectionTypePreview({
   }, [
     type,
     variant,
+    theme,
   ]);
 
   return (
     <div
-      className="relative overflow-hidden rounded-[10px] bg-[#f7f5f0] transition-[height] duration-200"
+      className="relative overflow-hidden rounded-[10px] transition-[height] duration-200"
       style={{
+        ...previewThemeStyle,
         height:
           `${measuredHeight}px`,
       }}
@@ -587,8 +606,10 @@ function SectionTypePreview({
 
 function SectionCard({
   definition,
+  theme,
 }: {
   definition: SiteSectionDefinition;
+  theme: SiteDocument["theme"];
 }) {
   return (
     <div className="block w-full">
@@ -611,6 +632,7 @@ function SectionCard({
       <div className="overflow-hidden rounded-[12px] border border-white/[0.07] bg-[#0d0e10] p-2 transition-all duration-150 group-hover:border-white/[0.16]">
         <SectionTypePreview
           type={definition.type}
+          theme={theme}
         />
       </div>
     </div>
@@ -621,11 +643,13 @@ function SectionCard({
 export function SectionLibrary({
   open,
   insertionLabel,
+  theme,
   onClose,
   onInsert,
 }: {
   open: boolean;
   insertionLabel: string;
+  theme: SiteDocument["theme"];
   onClose: () => void;
   onInsert: (type: AddableSiteSectionType, variant: string) => void;
 }) {
@@ -761,6 +785,7 @@ export function SectionLibrary({
                   variant={
                     selectedVariant
                   }
+                  theme={theme}
                 />
               </div>
 
@@ -845,6 +870,9 @@ export function SectionLibrary({
                           <SectionCard
                             definition={
                               definition
+                            }
+                            theme={
+                              theme
                             }
                           />
                         </div>

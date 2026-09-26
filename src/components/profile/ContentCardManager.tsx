@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Reorder } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -8,10 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToastHelpers } from "@/components/ui/toast";
-import {
-  ContentCard,
-  ContentCardFormData,
-} from "@/lib/types";
+import { ContentCard, ContentCardFormData } from "@/lib/types";
 import {
   createContentCard,
   deleteContentCard,
@@ -46,7 +50,10 @@ const DEFAULT_FORM_STATE: CardFormState = {
   is_active: true,
 };
 
-export default function ContentCardManager({ userId, onCardsChange }: ContentCardManagerProps) {
+export default function ContentCardManager({
+  userId,
+  onCardsChange,
+}: ContentCardManagerProps) {
   const [cards, setCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -108,7 +115,10 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
     loadCards();
   }, [loadCards]);
 
-  const sortedCards = useMemo(() => [...cards].sort((a, b) => a.position - b.position), [cards]);
+  const sortedCards = useMemo(
+    () => [...cards].sort((a, b) => a.position - b.position),
+    [cards],
+  );
 
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
@@ -142,7 +152,9 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
     setDialogOpen(true);
   };
 
-  const handleCoverFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
@@ -177,7 +189,10 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
     }
 
     if (!thumbnailUrl) {
-      toastRef.current.error("Missing cover", "Please upload an image for this tile.");
+      toastRef.current.error(
+        "Missing cover",
+        "Please upload an image for this tile.",
+      );
       setIsSubmitting(false);
       return;
     }
@@ -199,7 +214,9 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
         }
         setCards((prev) =>
           prev
-            .map((card) => (card.id === activeCard.id ? result.contentCard! : card))
+            .map((card) =>
+              card.id === activeCard.id ? result.contentCard! : card,
+            )
             .sort((a, b) => a.position - b.position),
         );
         toast.success("Card updated", "Your tile has been refreshed.");
@@ -208,7 +225,11 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
         if (!result.success || !result.contentCard) {
           throw new Error(result.error ?? "Failed to create card");
         }
-        setCards((prev) => [...prev, result.contentCard!].sort((a, b) => a.position - b.position));
+        setCards((prev) =>
+          [...prev, result.contentCard!].sort(
+            (a, b) => a.position - b.position,
+          ),
+        );
         toast.success("Card created", "Your new link tile is live.");
       }
       handleDialogOpenChange(false);
@@ -250,7 +271,10 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
       })),
     );
     try {
-      await reorderContentCards(userId, nextState.map((card) => card.id));
+      await reorderContentCards(
+        userId,
+        nextState.map((card) => card.id),
+      );
       toast.success("Order saved", "Tiles have been reordered.");
       onCardsChange?.();
     } catch (error) {
@@ -267,11 +291,13 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
   }
 
   return (
-    <Card className="overflow-hidden border-white/10 bg-[#0b0c14] shadow-[0_30px_70px_-40px_rgba(2,6,23,0.9)]">
+    <Card className="border-0 bg-transparent shadow-none">
       <Dialog.Root open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-        <CardHeader className="gap-3">
+        <CardHeader className="px-0 pb-2 pt-0">
           <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-lg font-semibold text-white">Content Cards</CardTitle>
+            <CardTitle className="text-base font-semibold text-white">
+              Content Cards
+            </CardTitle>
 
             <Dialog.Trigger asChild>
               <Button
@@ -285,70 +311,73 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
               </Button>
             </Dialog.Trigger>
           </div>
-          <div>
-            <p className="mt-1 text-sm text-white/60">
-              Curate link tiles that show up on your public profile. Drag to reorder and edit on
-              the fly.
-            </p>
-          </div>
         </CardHeader>
 
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xl" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(90vw,540px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070b] p-6 text-white shadow-[0_25px_60px_rgba(0,0,0,0.65)] focus:outline-none">
-            <Dialog.Title className="text-xl font-semibold">
-              {activeCard ? "Edit content card" : "Add a new card"}
-            </Dialog.Title>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" />
 
-              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-[22px] border border-white/[0.08] bg-[#101012] text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)] focus:outline-none">
+            <div className="px-5 pb-3 pt-5">
+              <Dialog.Title className="text-[20px] font-semibold tracking-[-0.02em] text-white">
+                {activeCard ? "Edit card" : "Add card"}
+              </Dialog.Title>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div className="space-y-5 px-5 pb-5">
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.35em] text-white/60">
+                  <Label className="text-[13px] font-medium text-white/55">
                     Title
                   </Label>
                   <Input
                     required
                     value={formState.title}
                     onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, title: event.target.value }))
+                      setFormState((prev) => ({
+                        ...prev,
+                        title: event.target.value,
+                      }))
                     }
                     placeholder="Event or media title"
-                    className="h-11 rounded-2xl border border-white/10 bg-white/[0.03] text-sm text-white placeholder:text-white/40"
+                    className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-[15px] text-white shadow-none outline-none ring-0 placeholder:text-white/25 focus-visible:border-white/[0.16] focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="text-xs text-white/50">
-                    This is the visible event or media name shown on the tile.
-                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.35em] text-white/60">
+                  <Label className="text-[13px] font-medium text-white/55">
                     Cover photo
                   </Label>
-                  <div className="flex flex-col gap-3">
-                    <div className="relative h-32 w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+
+                  <label
+                    htmlFor={coverInputId}
+                    className="group flex h-[92px] cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-2.5 transition hover:bg-white/[0.04]"
+                  >
+                    <div className="relative h-[70px] w-[70px] shrink-0 overflow-hidden rounded-lg bg-white/[0.05]">
                       {coverPreview ? (
                         <div
                           aria-label="Cover preview"
-                          className="h-full w-full rounded-2xl bg-cover bg-center"
+                          className="h-full w-full bg-cover bg-center"
                           style={{
                             backgroundImage: `url(${coverPreview})`,
                           }}
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-[0.35em] text-white/40">
-                          Cover preview
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Plus className="h-5 w-5 text-white/30" />
                         </div>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label
-                        htmlFor={coverInputId}
-                        className="inline-flex items-center justify-center rounded-full border border-white/20 px-4 py-2 text-sm font-semibold uppercase tracking-[0.35em] text-white transition hover:border-white/40"
-                      >
-                        {coverPreview ? "Change cover photo" : "Upload cover photo"}
-                      </label>
-                      <span className="text-xs text-white/50">PNG, JPG, or WEBP up to 5MB.</span>
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white/85">
+                        {coverPreview ? "Change photo" : "Add cover photo"}
+                      </p>
+                      <p className="mt-0.5 text-xs text-white/35">
+                        PNG, JPG or WEBP · 5MB max
+                      </p>
                     </div>
-                  </div>
+                  </label>
+
                   <input
                     id={coverInputId}
                     type="file"
@@ -359,155 +388,181 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.35em] text-white/60">
-                    Destination URL
+                  <Label className="text-[13px] font-medium text-white/55">
+                    Destination
                   </Label>
                   <Input
                     required
                     value={formState.url}
                     onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, url: event.target.value }))
+                      setFormState((prev) => ({
+                        ...prev,
+                        url: event.target.value,
+                      }))
                     }
                     placeholder="https://example.com"
-                    className="h-11 rounded-2xl border border-white/10 bg-white/[0.03] text-sm text-white placeholder:text-white/40"
+                    className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-[15px] text-white shadow-none outline-none ring-0 placeholder:text-white/25 focus-visible:border-white/[0.16] focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="text-xs text-white/50">
-                    Every tile needs a destination link so visitors can tap through.
-                  </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.35em] text-white/60">
-                      Size
-                    </Label>
-                    <div className="flex gap-2">
-                      {(["small", "medium"] as CardFormState["size"][]).map((option) => {
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-medium text-white/55">
+                    Card size
+                  </Label>
+
+                  <div className="grid grid-cols-2 rounded-xl bg-white/[0.045] p-1">
+                    {(["small", "medium"] as CardFormState["size"][]).map(
+                      (option) => {
                         const isActive = formState.size === option;
+
                         return (
                           <button
                             key={option}
                             type="button"
                             onClick={() =>
-                              setFormState((prev) => ({ ...prev, size: option }))
+                              setFormState((prev) => ({
+                                ...prev,
+                                size: option,
+                              }))
                             }
                             className={cn(
-                              "flex-1 rounded-2xl border px-3 py-2 text-sm font-semibold uppercase tracking-[0.25em] transition",
+                              "h-9 rounded-lg text-[13px] font-semibold transition",
                               isActive
-                                ? "border-white bg-white text-black"
-                                : "border-white/20 bg-black/40 text-white/60 hover:border-white/40",
+                                ? "bg-white/[0.12] text-white shadow-sm"
+                                : "text-white/40 hover:text-white/65",
                             )}
                           >
-                            {option === "small" ? "Small tile" : "Medium tile"}
+                            {option === "small" ? "Small" : "Medium"}
                           </button>
                         );
-                      })}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.35em] text-white/60">
-                      Visibility
-                    </Label>
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 px-3 py-2 text-sm font-semibold uppercase tracking-[0.25em] text-white/80 transition hover:border-white/30">
-                      <span>{formState.is_active ? "Live" : "Paused"}</span>
-                      <input
-                        type="checkbox"
-                        className="peer sr-only"
-                        checked={formState.is_active}
-                        onChange={(event) =>
-                          setFormState((prev) => ({ ...prev, is_active: event.target.checked }))
-                        }
-                      />
-                      <span className="relative inline-flex h-5 w-10 items-center rounded-full bg-white/10 transition duration-200 after:absolute after:left-1 after:top-1 after:h-3 after:w-3 after:rounded-full after:bg-white after:transition-all peer-checked:bg-emerald-400 peer-checked:after:translate-x-4" />
-                    </label>
+                      },
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-3">
-                  <Dialog.Close asChild>
-                    <Button variant="ghost" type="button">
-                      Cancel
-                    </Button>
-                  </Dialog.Close>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "Saving…" : activeCard ? "Save card" : "Add card"}
-                  </Button>
+                <div className="flex min-h-11 items-center justify-between border-t border-white/[0.06] pt-4">
+                  <div>
+                    <p className="text-sm font-medium text-white/85">
+                      Show on profile
+                    </p>
+                    <p className="mt-0.5 text-xs text-white/35">
+                      {formState.is_active ? "Visible" : "Hidden"}
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={formState.is_active}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          is_active: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span className="relative h-7 w-12 rounded-full bg-white/10 transition peer-checked:bg-emerald-500 after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5" />
+                  </label>
                 </div>
-              </form>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg px-3 text-sm font-semibold text-white/55 transition hover:bg-white/[0.05] hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </Dialog.Close>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="h-9 shrink-0 rounded-lg border border-white/[0.42] bg-white/72 px-4 text-xs font-semibold text-zinc-950 outline-none transition hover:bg-white/84 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28"
+                >
+                  {isSubmitting
+                    ? "Saving..."
+                    : activeCard
+                      ? "Save card"
+                      : "Add card"}
+                </button>
+              </div>
+            </form>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3 px-0 pb-0 pt-0">
         {loading ? (
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 text-center text-sm text-white/50">
             Loading cards…
           </div>
-        ) : sortedCards.length === 0 ? (
-          <div className="flex flex-col gap-2 rounded-[28px] border border-dashed border-white/10 bg-white/5 p-6 text-sm text-white/60">
-            <p>Create a card to activate the full LinkMe tile grid on your profile.</p>
-            <p className="text-xs text-white/40">
-              Add a destination URL, choose a thumbnail, and reorder your highlights.
-            </p>
-          </div>
-        ) : (
-          <Reorder.Group axis="y" values={sortedCards} onReorder={handleReorder} className="space-y-1.5">
+        ) : sortedCards.length === 0 ? null : (
+          <Reorder.Group
+            axis="y"
+            values={sortedCards}
+            onReorder={handleReorder}
+            className="space-y-1.5"
+          >
             {sortedCards.map((card) => (
-                <Reorder.Item
-                  key={card.id}
-                  value={card}
-                  whileDrag={{ scale: 1.01 }}
-                  className="group cursor-grab rounded-[16px] border border-white/10 bg-white/5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.85)] focus-within:ring-2 focus-within:ring-white/60 focus-within:cursor-grabbing"
-                >
-                  <div className="flex items-center gap-3 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-500">
-                        <GripVertical className="h-4 w-4 text-white/60" />
-                      </span>
-                      <div
-                        className={cn(
-                          "flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-[10px] font-semibold text-white/70 overflow-hidden",
-                          !card.thumbnail_url && "bg-gradient-to-br from-indigo-500/30 via-purple-500/30 to-rose-500/35",
-                        )}
-                        style={
-                          card.thumbnail_url
-                            ? {
-                                backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.3)), url(${card.thumbnail_url})`,
-                                backgroundSize: "cover",
-                              }
-                            : undefined
-                        }
-                      >
-                        {!card.thumbnail_url ? "Preview" : null}
-                      </div>
-                    </div>
-                    <div className="flex min-w-0 flex-1">
-                      <p className="text-[14px] font-semibold text-white line-clamp-1">
-                        {card.title || "Untitled card"}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openCardForm(card)}
-                        className="h-7 w-7 rounded-full border border-white/10 p-0"
-                      >
-                        <Edit3 className="h-3.5 w-3.5 text-white/80" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(card)}
-                        className="h-7 w-7 rounded-full border border-white/10 p-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-rose-400" />
-                      </Button>
+              <Reorder.Item
+                key={card.id}
+                value={card}
+                whileDrag={{ scale: 1.01 }}
+                className="group cursor-grab rounded-[16px] border border-white/10 bg-white/5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.85)] focus-within:ring-2 focus-within:ring-white/60 focus-within:cursor-grabbing"
+              >
+                <div className="flex items-center gap-3 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500">
+                      <GripVertical className="h-4 w-4 text-white/60" />
+                    </span>
+                    <div
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-[10px] font-semibold text-white/70 overflow-hidden",
+                        !card.thumbnail_url &&
+                          "bg-gradient-to-br from-indigo-500/30 via-purple-500/30 to-rose-500/35",
+                      )}
+                      style={
+                        card.thumbnail_url
+                          ? {
+                              backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.3)), url(${card.thumbnail_url})`,
+                              backgroundSize: "cover",
+                            }
+                          : undefined
+                      }
+                    >
+                      {!card.thumbnail_url ? "Preview" : null}
                     </div>
                   </div>
-                </Reorder.Item>
-              ))}
+                  <div className="flex min-w-0 flex-1">
+                    <p className="text-[14px] font-semibold text-white line-clamp-1">
+                      {card.title || "Untitled card"}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openCardForm(card)}
+                      className="h-7 w-7 rounded-full border border-white/10 p-0"
+                    >
+                      <Edit3 className="h-3.5 w-3.5 text-white/80" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(card)}
+                      className="h-7 w-7 rounded-full border border-white/10 p-0"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                    </Button>
+                  </div>
+                </div>
+              </Reorder.Item>
+            ))}
           </Reorder.Group>
         )}
         {sortedCards.length > 0 &&
