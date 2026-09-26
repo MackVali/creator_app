@@ -2571,13 +2571,31 @@ function HeroSection({
         )}`}
       >
         {showcase && media ? (
-          <div>
+          <div
+            className="relative overflow-hidden"
+            style={{
+              "--site-text":
+                "#ffffff",
+              "--site-text-muted":
+                "rgba(255,255,255,0.74)",
+              "--site-text-subtle":
+                "rgba(255,255,255,0.52)",
+              "--site-accent":
+                "#ffffff",
+              "--site-border-strong":
+                "rgba(255,255,255,0.32)",
+            } as CSSProperties}
+          >
             <div className="w-full">
               {media}
             </div>
 
-            <div className="relative mt-7 max-w-[780px] md:-mt-24 md:ml-[7%] md:bg-[var(--site-bg)] md:pr-10 md:pt-8">
-              {copy}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+
+            <div className="absolute inset-x-0 bottom-0 z-10 p-6 sm:p-8 md:p-10 lg:p-12">
+              <div className="max-w-[760px]">
+                {copy}
+              </div>
             </div>
           </div>
         ) : variant === "split" &&
@@ -2608,13 +2626,154 @@ function HeroSection({
           </div>
         ) : editorial &&
           media ? (
-          <div className="grid gap-10 lg:grid-cols-12 lg:gap-y-14">
-            <div className="lg:col-span-9">
-              {copy}
+          <div>
+            <div
+              data-creator-editor-node={
+                editorContext.editorPreview
+                  ? "text"
+                  : undefined
+              }
+              onClick={(event) =>
+                handleEditorNodeClick(
+                  event,
+                  editorContext,
+                  section?.id,
+                  "text",
+                )
+              }
+              className={editorNodeClass(
+                editorContext,
+                section?.id,
+                "text",
+              )}
+            >
+              {eyebrow ? (
+                <InlineEditableText
+                  as="p"
+                  value={eyebrow}
+                  field="eyebrow"
+                  sectionId={
+                    section?.id
+                  }
+                  node="text"
+                  editorContext={
+                    editorContext
+                  }
+                  className="text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--site-text-subtle)]"
+                />
+              ) : null}
+
+              <InlineEditableText
+                as="h1"
+                value={headline}
+                field="headline"
+                sectionId={
+                  section?.id
+                }
+                node="text"
+                editorContext={
+                  editorContext
+                }
+                style={{
+                  ...sectionHeadingTextStyle(
+                    section,
+                    textDefaults,
+                  ),
+                  maxWidth:
+                    `${Math.max(
+                      960,
+                      section?.layout
+                        ?.headingWidth ??
+                        1040,
+                    )}px`,
+                }}
+                className={`${
+                  eyebrow
+                    ? "mt-4"
+                    : ""
+                } whitespace-pre-line leading-[0.92] tracking-[-0.06em] text-[var(--site-text)]`}
+              />
             </div>
 
-            <div className="lg:col-span-7 lg:col-start-6">
-              {media}
+            <div
+              className="mt-10 grid items-start lg:grid-cols-12"
+              style={{
+                gap:
+                  `${gap}px`,
+              }}
+            >
+              <div className="lg:col-span-4">
+                <div className="max-w-[440px]">
+                  {intro ? (
+                    <InlineEditableText
+                      as="p"
+                      value={intro}
+                      field="intro"
+                      sectionId={
+                        section?.id
+                      }
+                      node="text"
+                      editorContext={
+                        editorContext
+                      }
+                      multiline
+                      style={
+                        sectionBodyTextStyle(
+                          section,
+                          textDefaults,
+                        )
+                      }
+                      className="leading-[1.75] text-[var(--site-text-muted)]"
+                    />
+                  ) : null}
+
+                  {ctaLabel ? (
+                    <a
+                      href={
+                        resolvedCtaHref
+                      }
+                      data-creator-editor-node={
+                        editorContext.editorPreview
+                          ? "button"
+                          : undefined
+                      }
+                      onClick={(event) =>
+                        handleEditorNodeClick(
+                          event,
+                          editorContext,
+                          section?.id,
+                          "button",
+                        )
+                      }
+                      className={`mt-7 inline-flex w-fit items-center gap-3 border-b border-[var(--site-border-strong)] pb-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-[var(--site-accent)] ${editorNodeClass(
+                        editorContext,
+                        section?.id,
+                        "button",
+                      )}`}
+                    >
+                      <InlineEditableText
+                        value={
+                          ctaLabel
+                        }
+                        field="primaryCtaLabel"
+                        sectionId={
+                          section?.id
+                        }
+                        node="button"
+                        editorContext={
+                          editorContext
+                        }
+                      />
+
+                      <span>→</span>
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="lg:col-span-8">
+                {media}
+              </div>
             </div>
           </div>
         ) : (
@@ -2685,10 +2844,13 @@ function ProductsSection({
     section.layout?.gap ??
     20;
 
+  const serviceMode =
+    section.type === "services";
+
   const variant =
     sectionVariant(
       section,
-      section.type === "services"
+      serviceMode
         ? "list"
         : "grid",
     );
@@ -2903,11 +3065,15 @@ function ProductsSection({
         : "lg:grid-cols-3";
 
   const gridClass =
-    listMode
+    serviceMode
       ? "grid"
-      : editorialMode
-        ? "grid grid-cols-1 md:grid-cols-2"
-        : `grid grid-cols-2 ${desktopColumns}`;
+      : listMode
+        ? "grid"
+        : featuredMode
+          ? "grid grid-cols-1 sm:grid-cols-2"
+          : editorialMode
+            ? "grid grid-cols-1 md:grid-cols-2"
+            : `grid grid-cols-2 ${desktopColumns}`;
 
   if (
     products.length === 0 &&
@@ -3055,9 +3221,11 @@ function ProductsSection({
                 const media = (
                   <div
                     className={`relative overflow-hidden bg-[var(--site-surface-strong)] ${
-                      sideLayout
-                        ? "min-h-[220px]"
-                        : ""
+                      featured
+                        ? "min-h-[340px] md:min-h-[420px]"
+                        : sideLayout
+                          ? "min-h-[220px]"
+                          : ""
                     }`}
                     style={
                       !sideLayout &&
@@ -3128,11 +3296,13 @@ function ProductsSection({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <h3
-                          className={`leading-[1.15] tracking-[-0.025em] text-[var(--site-text)] ${
-                            sideLayout ||
-                            editorialMode
-                              ? "text-[21px] sm:text-[25px]"
-                              : "text-[14px] sm:text-[15px]"
+                          className={`leading-[1.1] tracking-[-0.03em] text-[var(--site-text)] ${
+                            serviceMode
+                              ? "text-[24px] sm:text-[30px]"
+                              : sideLayout ||
+                                  editorialMode
+                                ? "text-[21px] sm:text-[25px]"
+                                : "text-[14px] sm:text-[15px]"
                           }`}
                         >
                           {
@@ -3184,22 +3354,28 @@ function ProductsSection({
                     }
                     className={[
                       "overflow-hidden",
-                      itemFrameClass(
-                        frame,
-                      ),
+                      serviceMode
+                        ? "border-b border-[var(--site-border)] py-7 last:border-b-0 md:py-9"
+                        : itemFrameClass(
+                            frame,
+                          ),
+                      !serviceMode &&
                       frame === "none" &&
                       listMode
                         ? "border-b border-[var(--site-border)] py-6 last:border-b-0"
                         : "",
-                      featured
-                        ? "col-span-2"
+                      featured &&
+                      !serviceMode
+                        ? "sm:col-span-2"
                         : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
                     style={{
                       borderRadius:
-                        `${radius}px`,
+                        serviceMode
+                          ? "0px"
+                          : `${radius}px`,
                     }}
                   >
                     {sideLayout ? (
@@ -3215,7 +3391,9 @@ function ProductsSection({
                                 gridTemplateColumns:
                                   listMode
                                     ? "minmax(150px, 26%) minmax(0, 1fr)"
-                                    : "minmax(0, 1.35fr) minmax(0, 0.65fr)",
+                                    : featured
+                                      ? "minmax(0, 1.55fr) minmax(260px, 0.75fr)"
+                                      : "minmax(0, 1.35fr) minmax(0, 0.65fr)",
                               }
                             : undefined
                         }
@@ -3451,7 +3629,10 @@ function CardsSection({
             className={
               variant === "list"
                 ? "grid"
-                : `grid sm:grid-cols-2 ${gridColumns}`
+                : variant ===
+                    "featured"
+                  ? "grid sm:grid-cols-2"
+                  : `grid sm:grid-cols-2 ${gridColumns}`
             }
             style={gridStyle}
           >
@@ -3533,7 +3714,10 @@ function CardsSection({
                   (
                     featured
                       ? 460
-                      : 320
+                      : variant ===
+                          "featured"
+                        ? 340
+                        : 320
                   );
 
                 const cardPadding =
@@ -4618,7 +4802,9 @@ function TestimonialsSection({
             className={
               variant === "list"
                 ? "grid gap-3"
-                : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
+                : variant === "featured"
+                  ? "grid gap-8 sm:grid-cols-2 md:gap-x-10 md:gap-y-9"
+                  : `grid gap-3 sm:grid-cols-2 ${gridColumns}`
             }
           >
             {items.map((item, index) => {
@@ -4628,25 +4814,37 @@ function TestimonialsSection({
               return (
                 <article
                   key={item.id}
-                  className={`flex flex-col justify-between border border-[var(--site-border)] bg-[var(--site-surface)] p-5 rounded-[var(--site-radius)] ${
-                    featured
-                      ? "min-h-[260px] sm:col-span-2"
-                      : variant === "list"
-                      ? "min-h-[150px]"
-                      : "min-h-[190px]"
-                  }`}
+                  className={
+                    variant === "featured"
+                      ? `flex flex-col justify-between ${
+                          featured
+                            ? "min-h-[300px] border-b border-[var(--site-border)] pb-10 sm:col-span-2 md:pb-14"
+                            : "min-h-[170px] border-t border-[var(--site-border)] pt-5"
+                        }`
+                      : `flex flex-col justify-between border border-[var(--site-border)] bg-[var(--site-surface)] p-5 rounded-[var(--site-radius)] ${
+                          variant === "list"
+                            ? "min-h-[150px]"
+                            : "min-h-[190px]"
+                        }`
+                  }
                 >
                   <p
                     className={`leading-[1.45] tracking-[-0.025em] text-[var(--site-text)] ${
                       featured
-                        ? "max-w-[900px] text-[clamp(1.8rem,3vw,3rem)]"
+                        ? "max-w-[980px] text-[clamp(2.1rem,4vw,3.8rem)] leading-[1.08] tracking-[-0.045em]"
                         : "text-[18px]"
                     }`}
                   >
                     “{item.quote}”
                   </p>
 
-                  <div className="mt-8 border-t border-[var(--site-border)] pt-3">
+                  <div
+                    className={
+                      variant === "featured"
+                        ? "mt-8"
+                        : "mt-8 border-t border-[var(--site-border)] pt-3"
+                    }
+                  >
                     <p className="text-[10px] font-medium text-[var(--site-accent)]">
                       {item.name}
                     </p>
@@ -5077,7 +5275,7 @@ function GallerySection({
 
   const gap =
     section.layout?.gap ??
-    28;
+    16;
 
   const frame =
     sectionItemFrame(
@@ -5117,10 +5315,24 @@ function GallerySection({
     return null;
   }
 
+  const leadLayout =
+    items.length >= 3;
+
+  const supportingCount =
+    leadLayout
+      ? items.length - 1
+      : items.length;
+
+  const resolvedColumns =
+    leadLayout &&
+    supportingCount === 2
+      ? 2
+      : columns;
+
   const gridColumns =
-    columns === 4
+    resolvedColumns === 4
       ? "lg:grid-cols-4"
-      : columns === 2
+      : resolvedColumns === 2
         ? "lg:grid-cols-2"
         : "lg:grid-cols-3";
 
@@ -5230,50 +5442,60 @@ function GallerySection({
               }}
             >
               {items.map(
-                (item) => (
-                  <div
-                    key={item.id}
-                    className={`relative overflow-hidden ${itemFrameClass(
-                      frame,
-                    )} ${
-                      fixedRatio ||
-                      mediaFit ===
-                        "contain"
-                        ? "bg-[var(--site-surface-strong)]"
-                        : ""
-                    }`}
-                    style={{
-                      borderRadius:
-                        `${radius}px`,
-                      aspectRatio:
-                        fixedRatio
-                          ? mediaAspectRatio(
-                              mediaRatio,
-                            )
-                          : undefined,
-                    }}
-                  >
-                    <img
-                      src={item.url}
-                      alt={item.alt}
-                      className={
-                        fixedRatio
-                          ? "absolute inset-0 h-full w-full"
-                          : "block h-auto w-full"
-                      }
-                      style={
-                        fixedRatio
-                          ? {
-                              objectFit:
-                                mediaFit,
-                              objectPosition:
-                                "50% 50%",
-                            }
-                          : undefined
-                      }
-                    />
-                  </div>
-                ),
+                (item, index) => {
+                  const lead =
+                    leadLayout &&
+                    index === 0;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`relative overflow-hidden ${itemFrameClass(
+                        frame,
+                      )} ${
+                        lead
+                          ? "sm:col-span-2 lg:col-span-full"
+                          : ""
+                      } ${
+                        fixedRatio ||
+                        mediaFit ===
+                          "contain"
+                          ? "bg-[var(--site-surface-strong)]"
+                          : ""
+                      }`}
+                      style={{
+                        borderRadius:
+                          `${radius}px`,
+                        aspectRatio:
+                          fixedRatio
+                            ? mediaAspectRatio(
+                                mediaRatio,
+                              )
+                            : undefined,
+                      }}
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.alt}
+                        className={
+                          fixedRatio
+                            ? "absolute inset-0 h-full w-full"
+                            : "block h-auto w-full"
+                        }
+                        style={
+                          fixedRatio
+                            ? {
+                                objectFit:
+                                  mediaFit,
+                                objectPosition:
+                                  "50% 50%",
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
+                  );
+                },
               )}
             </div>
           ) : (

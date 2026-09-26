@@ -2231,8 +2231,8 @@ function ProjectScheduleInstanceCard({
     heightPx > 0 &&
     heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
   const titleClass = isCompact
-    ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
-    : "min-w-0 leading-tight truncate";
+    ? "min-w-0 uppercase leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
+    : "min-w-0 uppercase leading-tight truncate";
 
   return (
     <div
@@ -2302,8 +2302,8 @@ function ManualPlacementHabitCard({
   const showHabitStreakBadge = safeStreakDays >= 2;
   const streakLabel = `${safeStreakDays}x`;
   const titleClass = wrapTitle
-    ? "pr-8 font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate text-[length:var(--schedule-instance-title-size,14px)]"
-    : "truncate pr-8 font-medium leading-snug text-[length:var(--schedule-instance-title-size,14px)]";
+    ? "pr-8 uppercase font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate text-[length:var(--schedule-instance-title-size,14px)]"
+    : "truncate pr-8 uppercase font-medium leading-snug text-[length:var(--schedule-instance-title-size,14px)]";
   return (
     <>
       {practiceContextLabel ? (
@@ -15922,7 +15922,7 @@ export default function ScheduleTabContent({
                     className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
                   >
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="schedule-instance-title min-w-0 font-semibold text-white text-[length:var(--schedule-instance-title-size,14px)]">
+                      <span className="schedule-instance-title min-w-0 uppercase font-semibold text-white text-[length:var(--schedule-instance-title-size,14px)]">
                         {card.title}
                       </span>
                       {card.meetingUrl ? (
@@ -15990,7 +15990,7 @@ export default function ScheduleTabContent({
                 0
               );
               const habitTitleClass =
-                "schedule-instance-title pr-8 font-medium text-[length:var(--schedule-instance-title-size,14px)]";
+                "schedule-instance-title pr-8 uppercase font-medium text-[length:var(--schedule-instance-title-size,14px)]";
               const pendingStatus = placement.instanceId
                 ? pendingInstanceStatuses.get(placement.instanceId)
                 : undefined;
@@ -16751,7 +16751,7 @@ export default function ScheduleTabContent({
                             onChange={(event) => {
                               const nextDraft = {
                                 ...quickCreateDraftEvent,
-                                title: event.target.value,
+                                title: event.target.value.toUpperCase(),
                               };
                               setQuickCreateDraftEvent(nextDraft);
                               quickCreateDraftEventRef.current = nextDraft;
@@ -17043,7 +17043,7 @@ export default function ScheduleTabContent({
                 const cardEnergyLevel: FlameLevel =
                   instanceEnergyLevel ?? projectEnergyLevel ?? "NO";
                 const projectTitleInnerClass =
-                  "schedule-instance-title min-w-0 font-medium text-[length:var(--schedule-instance-title-size,14px)]";
+                  "schedule-instance-title min-w-0 uppercase font-medium text-[length:var(--schedule-instance-title-size,14px)]";
                 if (isDraggedInstance) return null;
                 return (
                   <motion.div
@@ -19382,6 +19382,7 @@ export default function ScheduleTabContent({
             onToggleSimpleSchedulingMode={handleToggleSimpleSchedulingMode}
             onHeightChange={setTopBarHeight}
             position={isDashboardRail ? "sticky" : "fixed"}
+            compactActionButtons={isDashboardRail}
             className={
               isDashboardRail
                 ? "z-[90]"
