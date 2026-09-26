@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -37,6 +38,22 @@ export default function AppShellNavVisibility({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+
+    const syncDesktopViewport = () => {
+      setIsDesktopViewport(media.matches);
+    };
+
+    syncDesktopViewport();
+    media.addEventListener("change", syncDesktopViewport);
+
+    return () => {
+      media.removeEventListener("change", syncDesktopViewport);
+    };
+  }, []);
 
   // /site/preview is rendered inside the Site Builder iframe.
   // It must behave like the public website itself, not like
@@ -68,11 +85,13 @@ export default function AppShellNavVisibility({
 
       <AppMain>{children}</AppMain>
 
-      {!hideNav && pathname === "/dashboard" ? (
+      {!hideNav &&
+      pathname === "/dashboard" &&
+      isDesktopViewport ? (
         <aside
           data-dashboard-right-rail
           data-dashboard-schedule-rail-scroll
-          className="fixed inset-y-0 right-0 z-30 hidden w-[360px] overflow-y-auto overscroll-contain border-l border-white/10 bg-[#070708] text-white shadow-[inset_1px_0_0_rgba(255,255,255,0.035)] lg:block"
+          className="fixed inset-y-0 right-0 z-30 w-[360px] overflow-y-auto overscroll-contain border-l border-white/10 bg-[#070708] text-white shadow-[inset_1px_0_0_rgba(255,255,255,0.035)]"
         >
           <ScheduleTabContent presentation="dashboard-rail" />
         </aside>
