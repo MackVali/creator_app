@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -184,6 +185,23 @@ type MoneyRecurringItemRow = {
   icon_key: MoneyRecurringIconKey | string | null;
 };
 
+type MoneyRecurringOccurrenceRow = {
+  id: string;
+  user_id: string;
+  recurring_item_id: string;
+  occurrence_date: string;
+  account_id: string | null;
+  category_id: string | null;
+  name: string;
+  direction: MoneyRecurringDirection | string;
+  amount_minor: number | string;
+  currency_code: string | null;
+  status: "pending" | "posted" | "void" | string;
+  posted_transaction_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 type MoneyRecurringItemMutationPayload = {
   user_id?: string;
   account_id?: string | null;
@@ -226,6 +244,16 @@ type CreateManualMoneyTransactionRpcArgs = {
   p_transaction_date: string;
   p_description: string;
   p_note: string | null;
+};
+
+type MaterializeMoneyRecurringOccurrenceRpcArgs = {
+  p_recurring_item_id: string;
+  p_occurrence_date: string;
+};
+
+type ConfirmMoneyRecurringOccurrenceRpcArgs = {
+  p_occurrence_id: string;
+  p_account_id: string | null;
 };
 
 type MoneySelectValue = string | boolean | number;
@@ -279,6 +307,10 @@ type MoneyRecurringItemsTableClient = {
   ) => MoneyAccountsMutationBuilder;
 };
 
+type MoneyRecurringOccurrencesTableClient = {
+  select: (columns: string) => MoneySelectBuilder<MoneyRecurringOccurrenceRow>;
+};
+
 type MoneyAccountsSupabaseClient = {
   from: {
     (table: "money_accounts"): MoneyAccountsTableClient;
@@ -286,11 +318,22 @@ type MoneyAccountsSupabaseClient = {
     (table: "money_budgets"): MoneyBudgetsTableClient;
     (table: "money_transactions"): MoneyTransactionsTableClient;
     (table: "money_recurring_items"): MoneyRecurringItemsTableClient;
+    (table: "money_recurring_occurrences"): MoneyRecurringOccurrencesTableClient;
   };
-  rpc: (
-    fn: "create_manual_money_transaction",
-    args: CreateManualMoneyTransactionRpcArgs
-  ) => PromiseLike<MoneyQueryResult<null>>;
+  rpc: {
+    (
+      fn: "create_manual_money_transaction",
+      args: CreateManualMoneyTransactionRpcArgs
+    ): PromiseLike<MoneyQueryResult<null>>;
+    (
+      fn: "materialize_money_recurring_occurrence",
+      args: MaterializeMoneyRecurringOccurrenceRpcArgs
+    ): PromiseLike<MoneyQueryResult<null>>;
+    (
+      fn: "confirm_money_recurring_occurrence",
+      args: ConfirmMoneyRecurringOccurrenceRpcArgs
+    ): PromiseLike<MoneyQueryResult<null>>;
+  };
 };
 
 const MONEY_ACCOUNTS_QUERY_ROOT = ["money", "accounts"] as const;
@@ -301,6 +344,11 @@ const MONEY_MONTH_METRICS_QUERY_ROOT = ["money", "month-metrics"] as const;
 const MONEY_SPENDING_HISTORY_QUERY_ROOT = ["money", "spending-history"] as const;
 const MONEY_BALANCE_HISTORY_QUERY_ROOT = ["money", "balance-history"] as const;
 const MONEY_RECURRING_ITEMS_QUERY_ROOT = ["money", "recurring-items"] as const;
+const MONEY_RECURRING_OCCURRENCES_QUERY_ROOT = [
+  "money",
+  "recurring-occurrences",
+] as const;
+const MONEY_RECURRING_OCCURRENCE_ROLLOUT_DATE = "2026-09-26";
 const NO_CATEGORY_VALUE = "__none__";
 const NO_ACCOUNT_VALUE = "__none__";
 const PROJECTION_HORIZONS = [7, 30, 90] as const;
@@ -429,6 +477,10 @@ function getMoneyBalanceHistoryQueryKey({
 
 function getMoneyRecurringItemsQueryKey(userId: string | null) {
   return [...MONEY_RECURRING_ITEMS_QUERY_ROOT, userId] as const;
+}
+
+function getMoneyRecurringOccurrencesQueryKey(userId: string | null) {
+  return [...MONEY_RECURRING_OCCURRENCES_QUERY_ROOT, userId] as const;
 }
 
 function getTodayDateString() {
@@ -1019,6 +1071,35 @@ async function fetchActiveMoneyRecurringItems({
   return (data ?? []).filter((item) => item.user_id === userId);
 }
 
+async function fetchPendingMoneyRecurringOccurrences({
+  userId,
+  signal,
+}: {
+  userId: string;
+  signal?: AbortSignal;
+}) {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  const client = getSupabaseBrowser();
+  if (!client) throw new Error("Supabase is not configured.");
+
+  const db = getMoneyDb(client);
+  const { data, error } = await db
+    .from("money_recurring_occurrences")
+    .select(
+      "id,user_id,recurring_item_id,occurrence_date,account_id,category_id,name,direction,amount_minor,currency_code,status,posted_transaction_id,created_at,updated_at"
+    )
+    .eq("user_id", userId)
+    .eq("status", "pending")
+    .order("occurrence_date", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Unable to load pending Money.");
+  }
+
+  return (data ?? []).filter((occurrence) => occurrence.user_id === userId);
+}
+
 function MoneyForecastSummary({
   projection,
   horizon,
@@ -1545,28 +1626,39 @@ function RecurringTypeSegment({
   return (
     <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-white/[0.035] p-1">
       {[
-        { value: "expense", label: "Bill / Expense", symbol: "↓" },
-        { value: "income", label: "Income", symbol: "↑" },
-      ].map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value as ManualRecurringType)}
-          className={cn(
-            "min-h-10 rounded-lg border px-3 text-xs font-semibold transition",
-            value === option.value && option.value === "expense"
-              ? "border-rose-200/15 bg-rose-100/[0.09] text-rose-50/90"
-              : value === option.value
-                ? "border-emerald-200/15 bg-emerald-100/[0.09] text-emerald-50/90"
-                : "border-transparent text-white/46 hover:bg-white/[0.055] hover:text-white/78",
-          )}
-        >
-          <span className="mr-1.5 text-sm" aria-hidden="true">
-            {option.symbol}
-          </span>
-          {option.label}
-        </button>
-      ))}
+        { value: "expense", label: "Expense" },
+        { value: "income", label: "Income" },
+      ].map((option) => {
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value as ManualRecurringType)}
+            className={cn(
+              "min-h-10 rounded-lg border px-3 text-xs font-semibold transition",
+              value === option.value && option.value === "expense"
+                ? "border-rose-200/15 bg-rose-100/[0.09] text-rose-50/90"
+                : value === option.value
+                  ? "border-emerald-200/15 bg-emerald-100/[0.09] text-emerald-50/90"
+                  : "border-transparent text-white/46 hover:bg-white/[0.055] hover:text-white/78",
+            )}
+          >
+            <span
+              className="mr-1.5 inline-block text-[17px] font-black leading-none"
+              style={{
+                color:
+                  option.value === "expense"
+                    ? "#813D58"
+                    : "#4A8557",
+              }}
+              aria-hidden="true"
+            >
+              {option.value === "expense" ? "▼" : "▲"}
+            </span>
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1646,9 +1738,8 @@ function MoneyRecurringItemForm({
         </button>
         <div className="text-center">
           <h3 className="text-sm font-semibold text-white/86">
-            {mode === "add" ? "Add Scheduled Money" : "Edit Scheduled Money"}
+            {mode === "add" ? "add FORECAST" : "edit FORECAST"}
           </h3>
-          <p className="text-[10px] text-white/32">Planning only</p>
         </div>
         <button
           type="submit"
@@ -2056,6 +2147,119 @@ function TransactionRow({
       >
         {formatVisualTransactionAmount(transaction)}
       </span>
+    </div>
+  );
+}
+
+function PendingRecurringOccurrenceRow({
+  occurrence,
+  accounts,
+  accountName,
+  categoryName,
+  isConfirming,
+  onConfirm,
+}: {
+  occurrence: MoneyRecurringOccurrenceRow;
+  accounts: MoneyAccountRow[];
+  accountName: string | null;
+  categoryName: string | null;
+  isConfirming: boolean;
+  onConfirm: (accountId: string | null) => void;
+}) {
+  const [accountId, setAccountId] = useState(
+    occurrence.account_id ?? NO_ACCOUNT_VALUE
+  );
+  const isOutflow = occurrence.direction === "outflow";
+  const amountMinor = Math.abs(normalizeTransactionMinor(occurrence.amount_minor));
+  const visualAmount = formatMoneyFromMinor(
+    isOutflow ? -amountMinor : amountMinor,
+    occurrence.currency_code ?? "USD"
+  );
+
+  return (
+    <div className="border-b border-white/[0.06] px-3 py-2.5 last:border-b-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/[0.07] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/46">
+              Pending
+            </span>
+            <span className="truncate text-sm font-semibold text-white/84">
+              {occurrence.name.trim() || "Scheduled money"}
+            </span>
+          </div>
+
+          <p className="mt-1 truncate text-[11px] font-medium text-white/38">
+            {formatReadableDate(occurrence.occurrence_date)}
+            {accountName ? ` · ${accountName}` : ""}
+            {categoryName ? ` · ${categoryName}` : ""}
+          </p>
+        </div>
+
+        <span
+          className="font-mono text-sm font-semibold tabular-nums"
+          style={{
+            color: isOutflow
+              ? MONEY_SEMANTIC_COLORS.negative
+              : MONEY_SEMANTIC_COLORS.positive,
+          }}
+        >
+          {visualAmount}
+        </span>
+      </div>
+
+      {!occurrence.account_id ? (
+        <div className="mt-2 flex items-center gap-2">
+          <Select
+            value={accountId}
+            onValueChange={setAccountId}
+            placeholder="Choose account"
+            className="min-w-0 flex-1"
+            triggerClassName="h-8 justify-start rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-xs text-white/62 shadow-none focus:ring-0"
+          >
+            <SelectContent>
+              <SelectItem value={NO_ACCOUNT_VALUE}>Choose account</SelectItem>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.name?.trim() || "Untitled account"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <button
+            type="button"
+            disabled={isConfirming || accountId === NO_ACCOUNT_VALUE}
+            onClick={() =>
+              onConfirm(accountId === NO_ACCOUNT_VALUE ? null : accountId)
+            }
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black disabled:opacity-35"
+          >
+            {isConfirming ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            Confirm
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            disabled={isConfirming}
+            onClick={() => onConfirm(occurrence.account_id)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black disabled:opacity-35"
+          >
+            {isConfirming ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            Confirm
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2712,45 +2916,59 @@ function MoneyProjectionChart({
 }) {
   const gradientId = useId().replace(/:/g, "");
   const width = 720;
-  const height = 220;
-  const padding = { top: 18, right: 18, bottom: 38, left: 76 };
+  const height = 190;
+  const padding = { top: 16, right: 78, bottom: 30, left: 12 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
+
   const showBehavioralProjection =
     behavioralProjection?.status === "sufficient" &&
     behavioralProjection.points.length === projection.points.length;
+
   const behavioralPoints = showBehavioralProjection
     ? behavioralProjection.points
     : [];
+
   const balances = [
     ...projection.points.map((point) => point.balanceMinor),
     ...behavioralPoints.map((point) => point.balanceMinor),
   ];
-  const actualMin = Math.min(...balances);
-  const actualMax = Math.max(...balances);
-  const actualRange = Math.max(0, actualMax - actualMin);
-  const includeZero =
-    actualMin <= 0 || (actualMax > 0 && actualMin <= actualMax * 0.15);
-  const domainMin = includeZero ? Math.min(0, actualMin) : actualMin;
-  const domainMax = includeZero ? Math.max(0, actualMax) : actualMax;
-  const paddingAmount =
-    Math.max(actualRange, Math.abs(actualMax) * 0.08, 100) * 0.1;
-  const minBalance =
-    includeZero && actualMin >= 0 ? 0 : domainMin - paddingAmount;
-  const maxBalance = domainMax + paddingAmount;
+
+  const firstBalance = projection.points[0]?.balanceMinor ?? 0;
+  const lastBalance =
+    projection.points[projection.points.length - 1]?.balanceMinor ?? firstBalance;
+
+  const isUp = lastBalance >= firstBalance;
+  const lineColor = isUp
+    ? MONEY_SEMANTIC_COLORS.positive
+    : MONEY_SEMANTIC_COLORS.negative;
+
+  const actualMin = balances.length ? Math.min(...balances) : 0;
+  const actualMax = balances.length ? Math.max(...balances) : 0;
+  const actualRange = Math.max(1, actualMax - actualMin);
+
+  const crossesZero = actualMin < 0 && actualMax > 0;
+  const verticalPadding = Math.max(actualRange * 0.18, Math.abs(actualMax) * 0.04, 100);
+
+  const minBalance = actualMin - verticalPadding;
+  const maxBalance = actualMax + verticalPadding;
   const range = Math.max(1, maxBalance - minBalance);
-  const hasNegativeBalance = balances.some((balance) => balance < 0);
-  const changedPoints = projection.points.filter(
-    (point) => point.changeMinor !== 0
-  );
-  const markerStep = Math.max(1, Math.ceil(changedPoints.length / 12));
 
   const getX = (index: number) => {
-    if (projection.points.length <= 1) return padding.left + chartWidth / 2;
-    return padding.left + (index / (projection.points.length - 1)) * chartWidth;
+    if (projection.points.length <= 1) {
+      return padding.left + chartWidth / 2;
+    }
+
+    return (
+      padding.left +
+      (index / (projection.points.length - 1)) * chartWidth
+    );
   };
+
   const getY = (balance: number) =>
-    padding.top + chartHeight - ((balance - minBalance) / range) * chartHeight;
+    padding.top +
+    chartHeight -
+    ((balance - minBalance) / range) * chartHeight;
 
   const linePath = projection.points
     .map((point, index) => {
@@ -2759,6 +2977,7 @@ function MoneyProjectionChart({
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
+
   const behavioralLinePath = behavioralPoints
     .map((point, index) => {
       const x = getX(index);
@@ -2766,182 +2985,221 @@ function MoneyProjectionChart({
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
-  const baselineY = getY(includeZero ? 0 : minBalance);
+
+  const areaBottom = padding.top + chartHeight;
+
   const areaPath =
     projection.points.length > 0
       ? [
-          `M${getX(0).toFixed(2)},${baselineY.toFixed(2)}`,
+          `M${getX(0).toFixed(2)},${areaBottom.toFixed(2)}`,
           ...projection.points.map(
             (point, index) =>
               `L${getX(index).toFixed(2)},${getY(point.balanceMinor).toFixed(2)}`
           ),
-          `L${getX(projection.points.length - 1).toFixed(2)},${baselineY.toFixed(
-            2
-          )}`,
+          `L${getX(projection.points.length - 1).toFixed(2)},${areaBottom.toFixed(2)}`,
           "Z",
         ].join(" ")
       : "";
+
   const labelIndexes = Array.from(
     new Set([
       0,
-      projection.points.length > 8
+      projection.points.length > 2
         ? Math.floor((projection.points.length - 1) / 2)
         : null,
       projection.points.length - 1,
     ])
   ).filter((index): index is number => index !== null && index >= 0);
 
+  const gridRatios = [0.25, 0.5, 0.75];
+
+  const lastPointIndex = Math.max(0, projection.points.length - 1);
+  const lastPointY = getY(lastBalance);
+  const priceLabelY = Math.min(
+    height - padding.bottom - 10,
+    Math.max(padding.top + 10, lastPointY)
+  );
+
   return (
     <div className="min-w-0">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-[140px] w-full opacity-95 sm:h-[170px]"
+        className="h-[150px] w-full sm:h-[175px]"
         role="img"
         aria-label={`Projected Money balance from ${formatReadableDate(
           projection.startDate
         )} to ${formatReadableDate(projection.endDate)}`}
       >
         <defs>
-          <linearGradient id={`${gradientId}-area`} x1="0" x2="0" y1="0" y2="1">
+          <linearGradient
+            id={`${gradientId}-area`}
+            x1="0"
+            x2="0"
+            y1="0"
+            y2="1"
+          >
             <stop
               offset="0%"
-              stopColor={
-                hasNegativeBalance
-                  ? `${MONEY_SEMANTIC_COLORS.negative}24`
-                  : `${MONEY_SEMANTIC_COLORS.positive}18`
-              }
+              stopColor={lineColor}
+              stopOpacity="0.24"
             />
-            <stop offset="100%" stopColor="rgba(244,244,245,0.01)" />
+            <stop
+              offset="58%"
+              stopColor={lineColor}
+              stopOpacity="0.07"
+            />
+            <stop
+              offset="100%"
+              stopColor={lineColor}
+              stopOpacity="0"
+            />
           </linearGradient>
         </defs>
 
-        {[maxBalance, minBalance].map((balance) => {
-          const y = getY(balance);
+        {gridRatios.map((ratio) => {
+          const y = padding.top + chartHeight * ratio;
+
           return (
-            <g key={`projection-grid-${balance}`}>
-              <line
-                x1={padding.left}
-                x2={padding.left + chartWidth}
-                y1={y}
-                y2={y}
-                stroke="rgba(161,161,170,0.13)"
-              />
-              <text
-                x={padding.left - 10}
-                y={y + 4}
-                textAnchor="end"
-                fill="rgba(161,161,170,0.72)"
-                fontSize="11"
-              >
-                {formatCompactMoneyFromMinor(balance)}
-              </text>
-            </g>
+            <line
+              key={ratio}
+              x1={padding.left}
+              x2={padding.left + chartWidth}
+              y1={y}
+              y2={y}
+              stroke="rgba(255,255,255,0.055)"
+              strokeWidth="1"
+            />
           );
         })}
 
-        {includeZero ? (
-          <>
-            <line
-              x1={padding.left}
-              x2={padding.left + chartWidth}
-              y1={baselineY}
-              y2={baselineY}
-              stroke={
-                hasNegativeBalance
-                  ? `${MONEY_SEMANTIC_COLORS.negative}70`
-                  : "rgba(82,82,91,0.34)"
-              }
-              strokeDasharray="4 7"
-            />
-            <text
-              x={padding.left - 10}
-              y={baselineY + 4}
-              textAnchor="end"
-              fill={
-                hasNegativeBalance
-                  ? "rgba(254,202,202,0.72)"
-                  : "rgba(161,161,170,0.58)"
-              }
-              fontSize="11"
-            >
-              $0
-            </text>
-          </>
+        {crossesZero ? (
+          <line
+            x1={padding.left}
+            x2={padding.left + chartWidth}
+            y1={getY(0)}
+            y2={getY(0)}
+            stroke="rgba(255,255,255,0.16)"
+            strokeDasharray="4 6"
+            strokeWidth="1"
+          />
         ) : null}
 
-        <path d={areaPath} fill={`url(#${gradientId}-area)`} />
+        <path
+          d={areaPath}
+          fill={`url(#${gradientId}-area)`}
+        />
+
         <path
           d={linePath}
           fill="none"
-          stroke={hasNegativeBalance ? MONEY_SEMANTIC_COLORS.negative : "#f4f4f5"}
+          stroke={lineColor}
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth={2}
+          strokeWidth="3"
+          vectorEffect="non-scaling-stroke"
         />
+
         {showBehavioralProjection ? (
           <path
             d={behavioralLinePath}
             fill="none"
-            stroke="rgba(125,211,252,0.82)"
+            stroke="rgba(255,255,255,0.38)"
             strokeDasharray="5 6"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth={2}
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
           />
         ) : null}
 
-        {changedPoints.map((point, index) => {
-          if (index % markerStep !== 0) return null;
-          const pointIndex = projection.points.findIndex(
-            (candidate) => candidate.date === point.date
-          );
-          return (
+        {projection.points.length ? (
+          <>
             <circle
-              key={`projection-marker-${point.date}`}
-              cx={getX(pointIndex)}
-              cy={getY(point.balanceMinor)}
-              r={2.8}
-              fill={
-                point.changeMinor < 0
-                  ? MONEY_SEMANTIC_COLORS.negative
-                  : MONEY_SEMANTIC_COLORS.positive
-              }
-              stroke="rgba(5,6,8,0.95)"
-              strokeWidth={1}
+              cx={getX(lastPointIndex)}
+              cy={lastPointY}
+              r="4"
+              fill={lineColor}
+              stroke="#090909"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
             />
-          );
-        })}
+
+            <line
+              x1={getX(lastPointIndex)}
+              x2={padding.left + chartWidth + 8}
+              y1={lastPointY}
+              y2={lastPointY}
+              stroke={lineColor}
+              strokeOpacity="0.5"
+              strokeDasharray="2 4"
+              vectorEffect="non-scaling-stroke"
+            />
+
+            <rect
+              x={padding.left + chartWidth + 10}
+              y={priceLabelY - 11}
+              width="64"
+              height="22"
+              rx="6"
+              fill={lineColor}
+            />
+
+            <text
+              x={padding.left + chartWidth + 42}
+              y={priceLabelY + 4}
+              textAnchor="middle"
+              fill="white"
+              fontSize="10"
+              fontWeight="700"
+            >
+              {formatCompactMoneyFromMinor(lastBalance)}
+            </text>
+          </>
+        ) : null}
 
         {labelIndexes.map((index) => {
           const point = projection.points[index];
           if (!point) return null;
+
           return (
             <text
               key={`projection-label-${point.date}`}
               x={getX(index)}
-              y={height - 15}
-              textAnchor="middle"
-              fill="rgba(161,161,170,0.82)"
-              fontSize="11"
+              y={height - 9}
+              textAnchor={
+                index === 0
+                  ? "start"
+                  : index === projection.points.length - 1
+                    ? "end"
+                    : "middle"
+              }
+              fill="rgba(255,255,255,0.34)"
+              fontSize="10"
             >
               {formatCompactDate(point.date)}
             </text>
           );
         })}
       </svg>
+
       {showBehavioralProjection ? (
-        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/34">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-px w-5 bg-white/72" aria-hidden="true" />
-            Known cash flow
-          </span>
+        <div className="mt-1 flex items-center gap-4 px-1 text-[10px] font-medium text-white/30">
           <span className="inline-flex items-center gap-1.5">
             <span
-              className="h-px w-5 border-t border-dashed border-sky-200/82"
+              className="h-[2px] w-4 rounded-full"
+              style={{ backgroundColor: lineColor }}
               aria-hidden="true"
             />
-            Spending estimate
+            Known
+          </span>
+
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="w-4 border-t border-dashed border-white/35"
+              aria-hidden="true"
+            />
+            Estimate
           </span>
         </div>
       ) : null}
@@ -2962,7 +3220,13 @@ export function MoneyAreaDashboard() {
   const [transactionFormOpen, setTransactionFormOpen] = useState(false);
   const [transactionSaving, setTransactionSaving] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
+  const [confirmingOccurrenceId, setConfirmingOccurrenceId] =
+    useState<string | null>(null);
+  const [pendingOccurrenceActionError, setPendingOccurrenceActionError] =
+    useState<string | null>(null);
   const [recurringFormOpen, setRecurringFormOpen] = useState(false);
+  const recurringAddFormRef = useRef<HTMLDivElement | null>(null);
+
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(
     null
   );
@@ -2983,6 +3247,19 @@ export function MoneyAreaDashboard() {
     useState<ProjectionHorizonDays>(30);
   const [dashboardRange, setDashboardRange] =
     useState<MoneyDashboardRange>("30D");
+
+  useEffect(() => {
+    if (workspace !== "forecast" || !recurringFormOpen) return;
+
+    const frame = requestAnimationFrame(() => {
+      recurringAddFormRef.current?.scrollIntoView({
+        behavior: "auto",
+        block: "start",
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [workspace, recurringFormOpen]);
 
   useEffect(() => {
     if (workspace !== "forecast") {
@@ -3096,6 +3373,10 @@ export function MoneyAreaDashboard() {
     () => getMoneyRecurringItemsQueryKey(userId),
     [userId]
   );
+  const recurringOccurrencesQueryKey = useMemo(
+    () => getMoneyRecurringOccurrencesQueryKey(userId),
+    [userId]
+  );
 
   const accountsQuery = useQuery({
     queryKey,
@@ -3185,6 +3466,18 @@ export function MoneyAreaDashboard() {
     gcTime: 10 * 60 * 1000,
   });
 
+  const recurringOccurrencesQuery = useQuery({
+    queryKey: recurringOccurrencesQueryKey,
+    queryFn: ({ signal }) =>
+      fetchPendingMoneyRecurringOccurrences({
+        userId: userId!,
+        signal,
+      }),
+    enabled: Boolean(userId),
+    staleTime: 15 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
   const accounts = useMemo(
     () => accountsQuery.data ?? [],
     [accountsQuery.data]
@@ -3202,6 +3495,72 @@ export function MoneyAreaDashboard() {
     () => recurringItemsQuery.data ?? [],
     [recurringItemsQuery.data]
   );
+  const pendingRecurringOccurrences = useMemo(
+    () => recurringOccurrencesQuery.data ?? [],
+    [recurringOccurrencesQuery.data]
+  );
+
+  useEffect(() => {
+    if (!supabase || !userId || recurringItems.length === 0) return;
+
+    const dueOccurrences = recurringItems.flatMap((item) => {
+      const createdDate = item.created_at?.slice(0, 10) ?? item.anchor_date;
+      const rangeStartDate = [
+        item.anchor_date,
+        createdDate,
+        MONEY_RECURRING_OCCURRENCE_ROLLOUT_DATE,
+      ].sort().at(-1) ?? item.anchor_date;
+
+      if (rangeStartDate > todayDate) return [];
+
+      return getRecurringOccurrencesInRange({
+        anchorDate: item.anchor_date,
+        frequency: item.frequency,
+        recurrenceEndDate: item.end_date,
+        rangeStartDate,
+        rangeEndDate: todayDate,
+      }).map((occurrenceDate) => ({
+        recurringItemId: item.id,
+        occurrenceDate,
+      }));
+    });
+
+    if (dueOccurrences.length === 0) return;
+
+    let cancelled = false;
+
+    void Promise.all(
+      dueOccurrences.map(({ recurringItemId, occurrenceDate }) =>
+        getMoneyDb(supabase).rpc("materialize_money_recurring_occurrence", {
+          p_recurring_item_id: recurringItemId,
+          p_occurrence_date: occurrenceDate,
+        })
+      )
+    )
+      .then(async (results) => {
+        if (cancelled) return;
+
+        const firstError = results.find((result) => result.error)?.error;
+        if (firstError) {
+          throw new Error(
+            firstError.message || "Unable to prepare scheduled Money."
+          );
+        }
+
+        await queryClient.invalidateQueries({
+          queryKey: getMoneyRecurringOccurrencesQueryKey(userId),
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Unable to materialize recurring Money occurrences", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient, recurringItems, supabase, todayDate, userId]);
+
   const upcomingRecurringItems = useMemo(() => {
     const today = getTodayDateString();
     return recurringItems
@@ -3303,7 +3662,7 @@ export function MoneyAreaDashboard() {
     [accounts, recurringItems, todayDate]
   );
 
-  const moneyBalanceSparklinePath = useMemo(() => {
+  const moneyBalanceSparkline = useMemo(() => {
     const transactions = balanceHistoryQuery.data ?? [];
     const dates: string[] = [];
 
@@ -3315,10 +3674,15 @@ export function MoneyAreaDashboard() {
       cursor = next;
     }
 
-    if (!dates.length) return "M2 17 L92 17";
+    if (!dates.length) {
+      return {
+        path: "M2 17 L92 17",
+        color: "rgba(255,255,255,0.48)",
+      };
+    }
 
-    const eligibleAccounts = accounts.filter((account) =>
-      SAFE_TO_SPEND_ACCOUNT_TYPES.has(normalizeAccountType(account.account_type))
+    const eligibleAccounts = accounts.filter(
+      (account) => normalizeAccountType(account.account_type) !== "credit_card"
     );
 
     const transactionsByAccount = new Map<string, MoneyTransactionRow[]>();
@@ -3363,7 +3727,7 @@ export function MoneyAreaDashboard() {
     const min = Math.min(...values);
     const max = Math.max(...values);
 
-    return values
+    const path = values
       .map((value, index) => {
         const x =
           values.length === 1
@@ -3378,6 +3742,18 @@ export function MoneyAreaDashboard() {
         return `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
       })
       .join(" ");
+
+    const startBalance = values[0] ?? 0;
+    const endBalance = values[values.length - 1] ?? startBalance;
+
+    const color =
+      endBalance > startBalance
+        ? MONEY_SEMANTIC_COLORS.positive
+        : endBalance < startBalance
+          ? MONEY_SEMANTIC_COLORS.negative
+          : "rgba(255,255,255,0.48)";
+
+    return { path, color };
   }, [
     accounts,
     balanceHistoryQuery.data,
@@ -3504,12 +3880,22 @@ export function MoneyAreaDashboard() {
       queryClient.invalidateQueries({
         queryKey: [...MONEY_SPENDING_HISTORY_QUERY_ROOT, userId],
       }),
+      queryClient.invalidateQueries({
+        queryKey: [...MONEY_BALANCE_HISTORY_QUERY_ROOT, userId],
+      }),
     ]);
   }, [monthRange.start, queryClient, userId]);
   const invalidateRecurringItems = useCallback(async () => {
     if (!userId) return;
     await queryClient.invalidateQueries({
       queryKey: getMoneyRecurringItemsQueryKey(userId),
+    });
+  }, [queryClient, userId]);
+
+  const invalidateRecurringOccurrences = useCallback(async () => {
+    if (!userId) return;
+    await queryClient.invalidateQueries({
+      queryKey: getMoneyRecurringOccurrencesQueryKey(userId),
     });
   }, [queryClient, userId]);
   const invalidateBudgets = useCallback(async () => {
@@ -3693,6 +4079,70 @@ export function MoneyAreaDashboard() {
       accounts,
       categories,
       invalidateAccounts,
+      invalidateTransactions,
+      supabase,
+      userId,
+    ]
+  );
+
+  const confirmRecurringOccurrence = useCallback(
+    async (
+      occurrence: MoneyRecurringOccurrenceRow,
+      accountId: string | null
+    ) => {
+      if (!supabase || !userId) {
+        setPendingOccurrenceActionError(
+          "Sign in before confirming scheduled Money."
+        );
+        return false;
+      }
+
+      if (!accountId) {
+        setPendingOccurrenceActionError(
+          "Choose an account before confirming this transaction."
+        );
+        return false;
+      }
+
+      setConfirmingOccurrenceId(occurrence.id);
+      setPendingOccurrenceActionError(null);
+
+      try {
+        const result = await getMoneyDb(supabase).rpc(
+          "confirm_money_recurring_occurrence",
+          {
+            p_occurrence_id: occurrence.id,
+            p_account_id: accountId,
+          }
+        );
+
+        if (result.error) {
+          throw new Error(
+            result.error.message || "Unable to confirm scheduled Money."
+          );
+        }
+
+        await Promise.all([
+          invalidateAccounts(),
+          invalidateTransactions(),
+          invalidateRecurringOccurrences(),
+        ]);
+
+        return true;
+      } catch (error) {
+        setPendingOccurrenceActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to confirm scheduled Money."
+        );
+        return false;
+      } finally {
+        setConfirmingOccurrenceId(null);
+      }
+    },
+    [
+      invalidateAccounts,
+      invalidateRecurringOccurrences,
       invalidateTransactions,
       supabase,
       userId,
@@ -4080,6 +4530,12 @@ export function MoneyAreaDashboard() {
     : recurringItemsQuery.error
       ? "Unable to load recurring Money items."
       : null;
+  const recurringOccurrencesError =
+    recurringOccurrencesQuery.error instanceof Error
+      ? recurringOccurrencesQuery.error.message
+      : recurringOccurrencesQuery.error
+        ? "Unable to load pending Money."
+        : null;
   const budgetsError = budgetsQuery.error instanceof Error
     ? budgetsQuery.error.message
     : budgetsQuery.error
@@ -4098,6 +4554,8 @@ export function MoneyAreaDashboard() {
     authLoading || (transactionsQuery.isPending && Boolean(userId));
   const recurringItemsLoading =
     authLoading || (recurringItemsQuery.isPending && Boolean(userId));
+  const recurringOccurrencesLoading =
+    authLoading || (recurringOccurrencesQuery.isPending && Boolean(userId));
   const budgetsLoading =
     authLoading || (budgetsQuery.isPending && Boolean(userId));
   const hasAccounts = accounts.length > 0;
@@ -4149,10 +4607,10 @@ export function MoneyAreaDashboard() {
                 aria-label={`${dashboardRange} available cash history`}
               >
                 <path
-                  d={moneyBalanceSparklinePath}
+                  d={moneyBalanceSparkline.path}
                   fill="none"
-                  stroke={MONEY_SEMANTIC_COLORS.positive}
-                  strokeWidth="1.75"
+                  stroke={moneyBalanceSparkline.color}
+                  strokeWidth="2.25"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
@@ -4503,7 +4961,6 @@ export function MoneyAreaDashboard() {
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
                   Activity
                 </p>
-                <p className="text-xs text-white/46">What actually happened</p>
               </div>
               <Button
                 type="button"
@@ -4574,6 +5031,52 @@ export function MoneyAreaDashboard() {
                 />
               </div>
             ) : null}
+            {recurringOccurrencesLoading ? (
+              <div className="border-b border-white/[0.06] px-3 py-3 text-xs text-white/42">
+                Loading pending money...
+              </div>
+            ) : recurringOccurrencesError ? (
+              <div className="border-b border-white/[0.06] px-3 py-3 text-xs text-red-100/76">
+                {recurringOccurrencesError}
+              </div>
+            ) : pendingRecurringOccurrences.length ? (
+              <div className="border-b border-white/[0.06]">
+                <div className="px-3 pb-1 pt-2.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/34">
+                    Pending
+                  </p>
+                </div>
+
+                {pendingRecurringOccurrences.map((occurrence) => (
+                  <PendingRecurringOccurrenceRow
+                    key={occurrence.id}
+                    occurrence={occurrence}
+                    accounts={accounts}
+                    accountName={
+                      occurrence.account_id
+                        ? accountNameById[occurrence.account_id] ?? "Unknown account"
+                        : null
+                    }
+                    categoryName={
+                      occurrence.category_id
+                        ? categoryNameById[occurrence.category_id] ?? null
+                        : null
+                    }
+                    isConfirming={confirmingOccurrenceId === occurrence.id}
+                    onConfirm={(accountId) =>
+                      void confirmRecurringOccurrence(occurrence, accountId)
+                    }
+                  />
+                ))}
+
+                {pendingOccurrenceActionError ? (
+                  <p className="px-3 py-2 text-[11px] text-red-100/76">
+                    {pendingOccurrenceActionError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {transactionsLoading ? (
               <div className="px-3 py-4 text-xs text-white/42">
                 Loading activity...
@@ -4765,11 +5268,11 @@ export function MoneyAreaDashboard() {
                 <p className="text-sm font-semibold text-white/82">
                   Scheduled money
                 </p>
-                <p className="text-[11px] text-white/36">Planning only</p>
               </div>
               {!recurringFormOpen ? (
-                <Button
+                <button
                   type="button"
+                  aria-label="Add forecast"
                   onClick={() => {
                     setIconPickerRecurringId(null);
                     setIconError(null);
@@ -4777,15 +5280,14 @@ export function MoneyAreaDashboard() {
                     setRecurringError(null);
                     setRecurringFormOpen(true);
                   }}
-                  className="h-8 rounded-lg border border-white/[0.09] bg-white/[0.05] px-2.5 text-[11px] text-white/76 hover:bg-white/[0.09]"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-white/58 transition hover:bg-white/[0.06] hover:text-white/78"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Scheduled
-                </Button>
+                  <Plus className="h-4 w-4" />
+                </button>
               ) : null}
             </div>
             {recurringFormOpen ? (
-              <div>
+              <div ref={recurringAddFormRef}>
                 <MoneyRecurringItemForm
                   mode="add"
                   initialState={getDefaultRecurringItemFormState()}
