@@ -299,6 +299,7 @@ const MONEY_BUDGETS_QUERY_ROOT = ["money", "budgets"] as const;
 const MONEY_TRANSACTIONS_QUERY_ROOT = ["money", "transactions"] as const;
 const MONEY_MONTH_METRICS_QUERY_ROOT = ["money", "month-metrics"] as const;
 const MONEY_SPENDING_HISTORY_QUERY_ROOT = ["money", "spending-history"] as const;
+const MONEY_BALANCE_HISTORY_QUERY_ROOT = ["money", "balance-history"] as const;
 const MONEY_RECURRING_ITEMS_QUERY_ROOT = ["money", "recurring-items"] as const;
 const NO_CATEGORY_VALUE = "__none__";
 const NO_ACCOUNT_VALUE = "__none__";
@@ -306,6 +307,17 @@ const PROJECTION_HORIZONS = [7, 30, 90] as const;
 const SAFE_TO_SPEND_FALLBACK_DAYS = 30;
 const BEHAVIORAL_SPENDING_HISTORY_DAYS = 30;
 const BEHAVIORAL_SPENDING_MIN_COVERAGE_DAYS = 7;
+
+const MONEY_DASHBOARD_RANGE_OPTIONS = [
+  { value: "7D", days: 7 },
+  { value: "30D", days: 30 },
+  { value: "90D", days: 90 },
+  { value: "6M", days: 180 },
+  { value: "1Y", days: 365 },
+] as const;
+
+type MoneyDashboardRange =
+  (typeof MONEY_DASHBOARD_RANGE_OPTIONS)[number]["value"];
 
 type ProjectionHorizonDays = (typeof PROJECTION_HORIZONS)[number];
 
@@ -405,6 +417,16 @@ function getMoneySpendingHistoryQueryKey({
   ] as const;
 }
 
+function getMoneyBalanceHistoryQueryKey({
+  userId,
+  startDate,
+}: {
+  userId: string | null;
+  startDate: string;
+}) {
+  return [...MONEY_BALANCE_HISTORY_QUERY_ROOT, userId, startDate] as const;
+}
+
 function getMoneyRecurringItemsQueryKey(userId: string | null) {
   return [...MONEY_RECURRING_ITEMS_QUERY_ROOT, userId] as const;
 }
@@ -439,6 +461,17 @@ function addDaysToDateString(value: string, days: number) {
   if (!parts) return null;
   const date = new Date(parts.year, parts.month - 1, parts.day + days);
   return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
+}
+
+function getMoneyDashboardRangeStartDate(
+  todayDate: string,
+  range: MoneyDashboardRange
+) {
+  const option =
+    MONEY_DASHBOARD_RANGE_OPTIONS.find((candidate) => candidate.value === range) ??
+    MONEY_DASHBOARD_RANGE_OPTIONS[1];
+
+  return addDaysToDateString(todayDate, -(option.days - 1)) ?? todayDate;
 }
 
 function getDayDifference(start: string, end: string) {
@@ -845,6 +878,40 @@ async function fetchRecentMoneyTransactions({
 
   if (error) {
     throw new Error(error.message || "Unable to load Money transactions.");
+  }
+
+  return (data ?? []).filter((transaction) => transaction.user_id === userId);
+}
+
+async function fetchMoneyBalanceHistoryTransactions({
+  userId,
+  startDate,
+  signal,
+}: {
+  userId: string;
+  startDate: string;
+  signal?: AbortSignal;
+}) {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  const client = getSupabaseBrowser();
+  if (!client) throw new Error("Supabase is not configured.");
+
+  const db = getMoneyDb(client);
+  const { data, error } = await db
+    .from("money_transactions")
+    .select(
+      "id,user_id,account_id,category_id,transaction_type,direction,amount_minor,currency_code,transaction_date,description,note,status,source,created_at,reconciled_to_transaction_id,excluded_from_analytics"
+    )
+    .eq("user_id", userId)
+    .eq("status", "posted")
+    .is("reconciled_to_transaction_id", null)
+    .gte("transaction_date", startDate)
+    .order("transaction_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Unable to load Money balance history.");
   }
 
   return (data ?? []).filter((transaction) => transaction.user_id === userId);
@@ -2048,14 +2115,17 @@ function RecurringItemRow({
         type="button"
         onClick={onIconClick}
         aria-label={`Change icon for ${name}`}
-        className={cn(
-          "mr-2 flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-lg border transition active:scale-95",
-          isOutflow
-            ? "border-red-200/10 bg-red-200/[0.035] text-red-100/70"
-            : "border-emerald-200/10 bg-emerald-200/[0.04] text-emerald-100/72"
-        )}
+        className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-full transition active:scale-95"
+        style={{
+          backgroundColor: isOutflow
+            ? "#813D58"
+            : "#4A8557",
+        }}
       >
-        <RecurringIcon item={item} className="h-4 w-4" />
+        <RecurringIcon
+          item={item}
+          className="h-[17px] w-[17px] stroke-[2.1] text-white"
+        />
       </button>
       <button type="button" onClick={onEdit} aria-label={`Edit ${name} scheduled money`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-left active:scale-[0.995]">
       <span className="min-w-0 self-center">
@@ -2882,8 +2952,6 @@ function MoneyProjectionChart({
 export function MoneyAreaDashboard() {
   const queryClient = useQueryClient();
   const supabase = useMemo(() => getSupabaseBrowser(), []);
-  const dashboardBodyId = useId();
-  const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -2913,6 +2981,8 @@ export function MoneyAreaDashboard() {
   );
   const [projectionHorizonDays, setProjectionHorizonDays] =
     useState<ProjectionHorizonDays>(30);
+  const [dashboardRange, setDashboardRange] =
+    useState<MoneyDashboardRange>("30D");
 
   useEffect(() => {
     if (workspace !== "forecast") {
@@ -2985,6 +3055,18 @@ export function MoneyAreaDashboard() {
   );
   const monthRange = useMemo(() => getMonthDateRange(), []);
   const todayDate = getTodayDateString();
+  const dashboardRangeStartDate = useMemo(
+    () => getMoneyDashboardRangeStartDate(todayDate, dashboardRange),
+    [dashboardRange, todayDate]
+  );
+  const balanceHistoryQueryKey = useMemo(
+    () =>
+      getMoneyBalanceHistoryQueryKey({
+        userId,
+        startDate: dashboardRangeStartDate,
+      }),
+    [dashboardRangeStartDate, userId]
+  );
   const historicalSpendingRange = useMemo(
     () =>
       getTrailingCompletedDateRange(
@@ -3035,6 +3117,19 @@ export function MoneyAreaDashboard() {
     queryKey: transactionsQueryKey,
     queryFn: ({ signal }) =>
       fetchRecentMoneyTransactions({ userId: userId!, signal }),
+    enabled: Boolean(userId),
+    staleTime: 30 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  const balanceHistoryQuery = useQuery({
+    queryKey: balanceHistoryQueryKey,
+    queryFn: ({ signal }) =>
+      fetchMoneyBalanceHistoryTransactions({
+        userId: userId!,
+        startDate: dashboardRangeStartDate,
+        signal,
+      }),
     enabled: Boolean(userId),
     staleTime: 30 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -3207,6 +3302,88 @@ export function MoneyAreaDashboard() {
       }),
     [accounts, recurringItems, todayDate]
   );
+
+  const moneyBalanceSparklinePath = useMemo(() => {
+    const transactions = balanceHistoryQuery.data ?? [];
+    const dates: string[] = [];
+
+    let cursor = dashboardRangeStartDate;
+    while (cursor <= todayDate) {
+      dates.push(cursor);
+      const next = addDaysToDateString(cursor, 1);
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+
+    if (!dates.length) return "M2 17 L92 17";
+
+    const eligibleAccounts = accounts.filter((account) =>
+      SAFE_TO_SPEND_ACCOUNT_TYPES.has(normalizeAccountType(account.account_type))
+    );
+
+    const transactionsByAccount = new Map<string, MoneyTransactionRow[]>();
+
+    for (const transaction of transactions) {
+      const rows = transactionsByAccount.get(transaction.account_id) ?? [];
+      rows.push(transaction);
+      transactionsByAccount.set(transaction.account_id, rows);
+    }
+
+    const values = dates.map(() => 0);
+
+    for (const account of eligibleAccounts) {
+      const rows = transactionsByAccount.get(account.id) ?? [];
+      const flowByDate = new Map<string, number>();
+
+      for (const transaction of rows) {
+        const amount = normalizeMinorUnits(transaction.amount_minor);
+        const signed =
+          transaction.direction === "inflow" ? amount : -amount;
+
+        flowByDate.set(
+          transaction.transaction_date,
+          (flowByDate.get(transaction.transaction_date) ?? 0) + signed
+        );
+      }
+
+      let balance = normalizeMinorUnits(account.balance_minor);
+      const createdDate = account.created_at?.slice(0, 10) ?? null;
+
+      for (let index = dates.length - 1; index >= 0; index -= 1) {
+        const date = dates[index];
+
+        if (!createdDate || date >= createdDate) {
+          values[index] += balance;
+        }
+
+        balance -= flowByDate.get(date) ?? 0;
+      }
+    }
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    return values
+      .map((value, index) => {
+        const x =
+          values.length === 1
+            ? 92
+            : 2 + (index / (values.length - 1)) * 90;
+
+        const y =
+          max === min
+            ? 17
+            : 30 - ((value - min) / (max - min)) * 26;
+
+        return `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(" ");
+  }, [
+    accounts,
+    balanceHistoryQuery.data,
+    dashboardRangeStartDate,
+    todayDate,
+  ]);
   const behavioralProjection = useMemo(
     () =>
       buildMoneyBehavioralProjection({
@@ -3926,108 +4103,115 @@ export function MoneyAreaDashboard() {
   const hasAccounts = accounts.length > 0;
 
   return (
-    <div
-      className={cn(
-        "space-y-2 sm:space-y-3",
-        dashboardExpanded ? "py-2 sm:py-3" : "-mb-1 py-0"
-      )}
-    >
-      <button
-        type="button"
-        aria-expanded={dashboardExpanded}
-        aria-controls={dashboardBodyId}
-        onClick={() => setDashboardExpanded((expanded) => !expanded)}
-        className={cn(
-          "grid w-full grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 rounded-2xl border border-white/[0.075] bg-[#090909] px-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] transition hover:border-white/[0.12] hover:bg-[#101011] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24 active:scale-[0.995]",
-          dashboardExpanded ? "min-h-12 py-2" : "min-h-11 py-1",
-        )}
-      >
-        <span className="text-sm font-semibold text-white/84">Money</span>
-        <span className="min-w-0 text-right">
-          <span
-            className="block truncate text-sm font-semibold tabular-nums"
-            style={{
-              color:
-                safeToSpendSummary.safeToSpendMinor >= 0
-                  ? MONEY_SEMANTIC_COLORS.positive
-                  : MONEY_SEMANTIC_COLORS.negative,
-            }}
-          >
-            {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
-          </span>
-          <span className="block truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-white/32">
-            Safe
-          </span>
-        </span>
-        <span className="min-w-0 text-right">
-          <span className="block truncate text-sm font-semibold tabular-nums text-white/78">
-            {formatMoneyFromMinor(summary.totalAvailable)}
-          </span>
-          <span className="block truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-white/32">
-            Total
-          </span>
-        </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-white/32 transition-transform",
-            dashboardExpanded && "rotate-180",
-          )}
-          aria-hidden="true"
-        />
-      </button>
-
-      <div id={dashboardBodyId} hidden={!dashboardExpanded} className="space-y-2 sm:space-y-3">
+    <div className="space-y-2 py-2 sm:space-y-3 sm:py-3">
+      <div className="space-y-2 sm:space-y-3">
         <section
           className="overflow-hidden rounded-2xl border border-white/[0.075] bg-[linear-gradient(145deg,#070708_0%,#0a0a0b_60%,#101113_100%)]"
           aria-label="Money overview"
         >
-        <div className="px-4 pb-4 pt-5 text-center">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
-            <span
-              className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
-              style={{
-                backgroundColor:
-                  safeToSpendSummary.safeToSpendMinor >= 0
-                    ? MONEY_SEMANTIC_COLORS.positive
-                    : MONEY_SEMANTIC_COLORS.negative,
-              }}
-            />
-            Safe to spend
-          </p>
-          <p className="mt-1 text-[clamp(2.25rem,12vw,3.25rem)] font-semibold tabular-nums tracking-[-0.045em] text-white">
-            {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
-          </p>
-          <p className="mt-1 text-xs text-white/42">
-            After scheduled bills through{" "}
-            {formatCompactDate(safeToSpendSummary.obligationWindowEndDate)}
-          </p>
+        <div className="px-4 pb-3.5 pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold tracking-[-0.01em] text-white/64">
+                Available
+              </p>
+              <p className="mt-1 text-[2rem] font-semibold tabular-nums tracking-[-0.045em] text-white">
+                {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <div className="relative">
+                <select
+                  aria-label="Money history range"
+                  value={dashboardRange}
+                  onChange={(event) =>
+                    setDashboardRange(event.target.value as MoneyDashboardRange)
+                  }
+                  className="appearance-none rounded-full border border-white/[0.08] bg-white/[0.04] py-1 pl-2.5 pr-6 text-[10px] font-semibold text-white/58 outline-none"
+                >
+                  {MONEY_DASHBOARD_RANGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/34"
+                />
+              </div>
+
+              <svg
+                viewBox="0 0 94 34"
+                className="h-[34px] w-[94px] overflow-visible"
+                role="img"
+                aria-label={`${dashboardRange} available cash history`}
+              >
+                <path
+                  d={moneyBalanceSparklinePath}
+                  fill="none"
+                  stroke={MONEY_SEMANTIC_COLORS.positive}
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
         </div>
+
         <dl className="grid grid-cols-3 border-t border-white/[0.06]">
           {[
-            ["Cash", summary.totalAvailable],
-            ["Debt", summary.debt],
-            ["Net", summary.netPosition],
-          ].map(([label, value], index) => (
-            <div
-              key={String(label)}
+            {
+              label: "Cash",
+              value: summary.totalAvailable,
+              accountCount: accounts.filter(
+                (account) =>
+                  normalizeAccountType(account.account_type) !== "credit_card"
+              ).length,
+              dotColor: MONEY_SEMANTIC_COLORS.positive,
+            },
+            {
+              label: "Debt",
+              value: summary.debt,
+              accountCount: accounts.filter(
+                (account) =>
+                  normalizeAccountType(account.account_type) === "credit_card"
+              ).length,
+              dotColor: MONEY_SEMANTIC_COLORS.negative,
+            },
+            {
+              label: "Net",
+              value: summary.netPosition,
+              accountCount: null,
+              dotColor: null,
+            },
+          ].map(({ label, value, accountCount, dotColor }, index) => (
+            <button
+              key={label}
+              type="button"
+              onClick={
+                label === "Cash" || label === "Debt"
+                  ? () => setAccountsOpen((open) => !open)
+                  : undefined
+              }
               className={cn(
                 "min-w-0 px-2 py-3 text-center",
                 index > 0 && "border-l border-white/[0.06]",
+                label !== "Net" && "transition-colors hover:bg-white/[0.025]",
               )}
             >
-              <dt
-                className="text-[9px] font-semibold uppercase tracking-[0.15em]"
-                style={{
-                  color:
-                    label === "Cash"
-                      ? MONEY_SEMANTIC_COLORS.positive
-                      : label === "Debt" && Number(value) > 0
-                        ? MONEY_SEMANTIC_COLORS.negative
-                        : "rgba(255,255,255,0.34)",
-                }}
-              >
+              <dt className="flex items-center justify-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.15em] text-white/36">
+                {dotColor ? (
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: dotColor }}
+                  />
+                ) : null}
                 {label}
               </dt>
+
               <dd
                 className="mt-1 truncate text-sm font-semibold tabular-nums"
                 style={{
@@ -4040,27 +4224,15 @@ export function MoneyAreaDashboard() {
               >
                 {formatMoneyFromMinor(Number(value))}
               </dd>
-            </div>
+
+              <dd className="mt-0.5 text-[9px] text-white/30">
+                {accountCount === null
+                  ? "Net position"
+                  : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`}
+              </dd>
+            </button>
           ))}
         </dl>
-        <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-3 py-2.5">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
-              Accounts
-            </p>
-            <p className="mt-0.5 truncate text-xs text-white/56">
-              {accounts.length} active ·{" "}
-              {formatMoneyFromMinor(summary.totalAvailable)} available
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setAccountsOpen((open) => !open)}
-            className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/[0.06]"
-          >
-            {accountsOpen ? "Done" : "Manage"}
-          </button>
-        </div>
         {accountsOpen ? (
           <div className="border-t border-white/[0.06]">
             <div className="flex justify-end px-3 py-2">
@@ -4177,15 +4349,18 @@ export function MoneyAreaDashboard() {
         >
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2.5">
           <div>
-            <p className="text-sm font-semibold text-white/84">Upcoming</p>
-            <p className="text-[11px] text-white/36">Next scheduled money</p>
+            <p className="text-sm font-semibold text-white/38">Upcoming</p>
           </div>
           <button
             type="button"
-            onClick={() => setWorkspace("forecast")}
-            className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white/58 hover:bg-white/[0.06]"
+            aria-label="Add scheduled money"
+            onClick={() => {
+              setWorkspace("forecast");
+              setRecurringFormOpen(true);
+            }}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/58 transition hover:bg-white/[0.06] hover:text-white/78"
           >
-            View all
+            <Plus className="h-4 w-4" />
           </button>
         </div>
         {recurringItemsLoading ? (
@@ -4200,40 +4375,79 @@ export function MoneyAreaDashboard() {
           <div>
             {upcomingRecurringItems.slice(0, 3).map(({ item, nextDate }) => {
               const days = getDayDifference(todayDate, nextDate);
+              const isOutflow = item.direction === "outflow";
+              const name = item.name.trim() || "Untitled recurring item";
+
               return (
                 <div
                   key={item.id}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-white/[0.055] px-3 py-2.5 last:border-b-0"
+                  className="border-b border-white/[0.055] last:border-b-0"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white/82">
-                      {item.name}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] text-white/38">
-                      {formatCompactDate(nextDate)}
-                      {item.account_id
-                        ? ` · ${accountNameById[item.account_id] ?? "Unknown account"}`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className="text-sm font-semibold tabular-nums"
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5">
+                    <button
+                      type="button"
+                      aria-label={`Change icon for ${name}`}
+                      onClick={() => {
+                        setEditingRecurringId(null);
+                        setRecurringFormOpen(false);
+                        setRecurringError(null);
+                        setIconError(null);
+                        setIconPickerRecurringId((current) =>
+                          current === item.id ? null : item.id
+                        );
+                      }}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
                       style={{
-                        color:
-                          item.direction === "outflow"
-                            ? MONEY_SEMANTIC_COLORS.negative
-                            : MONEY_SEMANTIC_COLORS.positive,
+                        backgroundColor: isOutflow
+                          ? "#813D58"
+                          : "#4A8557",
                       }}
                     >
-                      {formatVisualRecurringAmount(item)}
-                    </p>
-                    <p className="mt-0.5 text-[10px] tabular-nums text-white/34">
-                      {days === 0
-                        ? "today"
-                        : `in ${days} ${days === 1 ? "day" : "days"}`}
-                    </p>
+                      <RecurringIcon
+                        item={item}
+                        className="h-[17px] w-[17px] stroke-[2.1] text-white"
+                      />
+                    </button>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white/82">
+                        {name}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-white/38">
+                        {formatCompactDate(nextDate)}
+                        {item.account_id
+                          ? ` · ${accountNameById[item.account_id] ?? "Unknown account"}`
+                          : ""}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <p
+                        className="text-sm font-semibold tabular-nums"
+                        style={{
+                          color: isOutflow
+                            ? MONEY_SEMANTIC_COLORS.negative
+                            : MONEY_SEMANTIC_COLORS.positive,
+                        }}
+                      >
+                        {formatVisualRecurringAmount(item)}
+                      </p>
+                      <p className="mt-0.5 text-[10px] tabular-nums text-white/34">
+                        {days === 0
+                          ? "today"
+                          : `in ${days} ${days === 1 ? "day" : "days"}`}
+                      </p>
+                    </div>
                   </div>
+
+                  {iconPickerRecurringId === item.id ? (
+                    <RecurringIconPicker
+                      item={item}
+                      saving={iconSaving}
+                      error={iconError}
+                      onSelect={(key) => saveRecurringIcon(item.id, key)}
+                    />
+                  ) : null}
                 </div>
               );
             })}
@@ -4249,16 +4463,7 @@ export function MoneyAreaDashboard() {
                 context.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setWorkspace("forecast");
-                setRecurringFormOpen(true);
-              }}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-white/68"
-            >
-              Add
-            </button>
+
           </div>
         )}
         </section>
@@ -4405,9 +4610,6 @@ export function MoneyAreaDashboard() {
             <div className="px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/38">
                 Monthly budget
-              </p>
-              <p className="mt-0.5 text-xs text-white/46">
-                What you allow yourself to spend
               </p>
             </div>
             <dl className="grid grid-cols-3 border-y border-white/[0.06]">
