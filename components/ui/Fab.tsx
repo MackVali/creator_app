@@ -1890,38 +1890,37 @@ const OVERLAY_DYNAMIC_BLOCK_TYPE_OPTIONS: OverlayConstraintChipOption[] = [
 ];
 
 const LIMIT_MODAL_FEATURES = [
-  "More room for goals, projects, tasks, and habits.",
-  "Bigger roadmaps for bigger life systems.",
-  "The full CREATOR Pro planning and execution layer.",
+  "Unlimited goals, projects, tasks, and habits.",
+  "Source, Analytics, and ILAV included.",
 ];
 
 const LIMIT_MODAL_COPY: Partial<
   Record<LimitErrorCode, { title: string; description: string }>
 > = {
   GOAL_LIMIT_REACHED: {
-    title: "Build beyond the free roadmap",
+    title: "You’ve reached 5 active goals",
     description:
-      "The free roadmap is full. CREATOR Pro unlocks the space to keep building without cutting the plan short.",
+      "Free includes up to 5 active goals. CREATOR Pro removes the goal limit.",
   },
   PROJECT_LIMIT_REACHED: {
-    title: "Your execution layer is full",
+    title: "You’ve reached 20 active projects",
     description:
-      "You’ve hit the free project limit. Upgrade to keep building the work behind your bigger goals.",
+      "Free includes up to 20 active projects. CREATOR Pro removes the project limit.",
   },
   PROJECTS_PER_GOAL_LIMIT_REACHED: {
-    title: "This goal needs more room",
+    title: "This goal already has 5 projects",
     description:
-      "The free project limit for this goal is full. CREATOR Pro gives you space to break it down properly.",
+      "Free includes up to 5 projects per goal. CREATOR Pro removes the project limit.",
   },
   TASK_LIMIT_REACHED: {
-    title: "Your task layer is full",
+    title: "This project already has 5 tasks",
     description:
-      "You’ve hit the free task limit. Upgrade to keep adding the details that move the system forward.",
+      "Free includes up to 5 tasks per project. CREATOR Pro removes the task limit.",
   },
   HABIT_LIMIT_REACHED: {
-    title: "Your routine system is full",
+    title: "You’ve reached 20 habits",
     description:
-      "You’ve hit the free habit limit. CREATOR Pro gives you more room to build the routines that hold everything together.",
+      "Free includes up to 20 habits. CREATOR Pro removes the habit limit.",
   },
 };
 
@@ -26078,7 +26077,13 @@ export function Fab({
         if (error instanceof LimitReachedError) {
           void hapticWarningPattern();
           setSaveError(null);
-          setActiveLimitCode(error.limitCode);
+          const limitCode = error.limitCode;
+          closeExpandedPanel({ notifyEditClose: false });
+          if (typeof window !== "undefined") {
+            window.requestAnimationFrame(() => setActiveLimitCode(limitCode));
+          } else {
+            setActiveLimitCode(limitCode);
+          }
           return;
         }
         const errorMessage =
