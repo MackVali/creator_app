@@ -28,13 +28,7 @@ import {
   upsertLinkedAccount,
 } from "@/lib/db/linked-accounts";
 import { deleteSocialLink, getSocialLinks } from "@/lib/db/profile-management";
-import { updateMyOnboarding } from "@/lib/db/profiles-client";
-import {
-  Profile,
-  ProfileFormData,
-  SocialLink,
-  LinkedAccount,
-} from "@/lib/types";
+import { Profile, ProfileFormData, SocialLink, LinkedAccount } from "@/lib/types";
 import { uploadAvatar } from "@/lib/storage";
 import {
   buildSocialUrl,
@@ -1657,8 +1651,12 @@ export default function ProfileEditPage() {
             ? redirectPath
             : "/profile";
 
+        const nextTarget = onboarding
+          ? `/onboarding?redirect=${encodeURIComponent(redirectTarget)}`
+          : redirectTarget;
+
         setTimeout(() => {
-          router.replace(redirectTarget);
+          router.replace(nextTarget);
         }, 1500);
       } else {
         showAvatarError(

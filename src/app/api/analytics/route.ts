@@ -28,6 +28,7 @@ import {
   weekdayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { requirePlus } from "@/lib/entitlements/requirePlus";
+import { sumCanonicalXp } from "@/lib/xp/canonicalXp";
 import type { Database } from "@/types/supabase";
 import type {
   AnalyticsActivityEvent,
@@ -495,7 +496,7 @@ export async function GET(request: NextRequest) {
   ] = await Promise.all([
     supabase
       .from("xp_events")
-      .select("id, created_at, amount, kind, skill_id, completion_event_id")
+      .select("id, created_at, amount, kind, skill_id, award_key, completion_event_id")
       .eq("user_id", user.id)
       .gte("created_at", combinedStartIso)
       .order("created_at", { ascending: false }),
@@ -1142,14 +1143,8 @@ export async function GET(request: NextRequest) {
     (event) => parseDate(event.created_at)
   );
 
-  const currentXp = xpSplit.current.reduce(
-    (sum, event) => sum + (event.amount ?? 0),
-    0
-  );
-  const previousXp = xpSplit.previous.reduce(
-    (sum, event) => sum + (event.amount ?? 0),
-    0
-  );
+  const currentXp = sumCanonicalXp(xpSplit.current);
+  const previousXp = sumCanonicalXp(xpSplit.previous);
 
   const kpis: AnalyticsKpi[] = [
     makeKpi("skill_xp", "Skill XP", currentXp, previousXp),

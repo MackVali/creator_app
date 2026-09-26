@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveCreatorDay } from "@/lib/creatorDay";
 import type { Database } from "@/types/supabase";
+import { sumCanonicalXp } from "@/lib/xp/canonicalXp";
 import { isReversalKey, reversalKeyFor } from "@/lib/xp/reversibleXpAwards";
 import {
   DEFAULT_FOCUS_GATE_SETTINGS,
@@ -14,7 +15,7 @@ type FocusGateSettingsRow =
   Database["public"]["Tables"]["focus_gate_settings"]["Row"];
 type FocusGateXpEventRow = Pick<
   Database["public"]["Tables"]["xp_events"]["Row"],
-  "amount" | "award_key"
+  "id" | "amount" | "award_key" | "completion_event_id"
 >;
 
 export function mapFocusGateSettingsRow(
@@ -117,7 +118,7 @@ export async function calculateFocusGateXpToday({
 }): Promise<number> {
   const { data, error } = await client
     .from("xp_events")
-    .select("amount, award_key")
+    .select("id, amount, award_key, completion_event_id")
     .eq("user_id", userId)
     .gt("amount", 0)
     .gte("created_at", startsAt)
@@ -156,18 +157,15 @@ export async function calculateFocusGateXpToday({
     }
   }
 
-  const activeXp = currentDayAwards.reduce((total, row) => {
+  const activeAwards = currentDayAwards.filter((row) => {
     const awardKey = row.award_key;
-    if (
-      typeof awardKey === "string" &&
-      reversedAwardKeys.has(awardKey)
-    ) {
-      return total;
-    }
-    return total + row.amount;
-  }, 0);
+    return (
+      typeof awardKey !== "string" ||
+      !reversedAwardKeys.has(awardKey)
+    );
+  });
 
-  return Math.max(0, Math.trunc(activeXp));
+  return Math.max(0, Math.trunc(sumCanonicalXp(activeAwards)));
 }
 
 export async function getFocusGateStatus({
