@@ -12,7 +12,11 @@ import {
   CameraSource,
   MediaTypeSelection,
 } from "@capacitor/camera";
-import type { CameraPermissionState, CameraPermissionType, MediaResult } from "@capacitor/camera";
+import type {
+  CameraPermissionState,
+  CameraPermissionType,
+  MediaResult,
+} from "@capacitor/camera";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -26,14 +30,31 @@ import {
 import { deleteSocialLink, getSocialLinks } from "@/lib/db/profile-management";
 import { Profile, ProfileFormData, SocialLink, LinkedAccount } from "@/lib/types";
 import { uploadAvatar } from "@/lib/storage";
-import { buildSocialUrl, normalizeUsername, resolveSocialLink } from "@/lib/profile/socialLinks";
+import {
+  buildSocialUrl,
+  normalizeUsername,
+  resolveSocialLink,
+} from "@/lib/profile/socialLinks";
 import { getSocialIconDefinition } from "@/components/profile/SocialIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
-import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  AtSign,
+  AlignLeft,
+  User,
+  Calendar,
+  MapPin,
+  Images,
+  Camera,
+  Trash2,
+  X,
+  ChevronRight,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import ContentCardManager from "@/components/profile/ContentCardManager";
@@ -41,7 +62,8 @@ import SocialPillsRow from "@/components/profile/SocialPillsRow";
 
 type AvatarPhotoSource = "camera" | "photos";
 type AvatarPermissionResult = "granted" | "limited" | "denied";
-type PhotoLibraryPermissionState = CameraPermissionState | "restricted" | undefined;
+type PhotoLibraryPermissionState =
+  CameraPermissionState | "restricted" | undefined;
 type EditableProfileField = "name" | "username" | "bio" | "dob" | "city";
 type EditableProfileFieldConfig = {
   key: EditableProfileField;
@@ -79,26 +101,32 @@ const EDITABLE_PROFILE_FIELDS: EditableProfileFieldConfig[] = [
     placeholder: "Add your full name",
     helper: "This appears on your profile and helps people recognize you.",
     required: true,
+    icon: User,
   },
   {
     key: "username",
     label: "Username",
     placeholder: "Choose a username",
-    helper: "This is your unique profile identifier. Changes are saved when you save the page.",
+    helper:
+      "This is your unique profile identifier. Changes are saved when you save the page.",
     required: true,
+    icon: AtSign,
   },
   {
     key: "bio",
     label: "Bio",
     placeholder: "Add a short bio",
-    helper: "Keep it tight. A short intro, niche, or current focus usually works best.",
+    helper:
+      "Keep it tight. A short intro, niche, or current focus usually works best.",
     multiline: true,
+    icon: AlignLeft,
   },
   {
     key: "dob",
     label: "Date of Birth",
     placeholder: "Add date of birth",
-    helper: "Used for eligibility and personalization. It is not shown as a profile headline.",
+    helper:
+      "Used for eligibility and personalization. It is not shown as a profile headline.",
     required: true,
     inputType: "date",
     icon: Calendar,
@@ -107,7 +135,8 @@ const EDITABLE_PROFILE_FIELDS: EditableProfileFieldConfig[] = [
     key: "city",
     label: "City",
     placeholder: "Add your city",
-    helper: "Optional. Add a city if location context helps your audience understand your work.",
+    helper:
+      "Optional. Add a city if location context helps your audience understand your work.",
     icon: MapPin,
   },
 ];
@@ -139,7 +168,11 @@ function getImageMimeType(format?: string) {
 
 function getImageFileExtension(format?: string) {
   const normalizedFormat = format?.toLowerCase();
-  if (normalizedFormat === "png" || normalizedFormat === "gif" || normalizedFormat === "webp") {
+  if (
+    normalizedFormat === "png" ||
+    normalizedFormat === "gif" ||
+    normalizedFormat === "webp"
+  ) {
     return normalizedFormat;
   }
   return "jpg";
@@ -167,11 +200,15 @@ function isPromptableCameraPermission(permission: CameraPermissionState) {
   return permission === "prompt" || permission === "prompt-with-rationale";
 }
 
-function isUsablePhotoLibraryPermission(permission: PhotoLibraryPermissionState) {
+function isUsablePhotoLibraryPermission(
+  permission: PhotoLibraryPermissionState,
+) {
   return permission === "granted" || permission === "limited";
 }
 
-function isDeniedPhotoLibraryPermission(permission: PhotoLibraryPermissionState) {
+function isDeniedPhotoLibraryPermission(
+  permission: PhotoLibraryPermissionState,
+) {
   return permission === "denied" || permission === "restricted";
 }
 
@@ -224,7 +261,8 @@ export default function ProfileEditPage() {
   const [success, setSuccess] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [activeProfileField, setActiveProfileField] = useState<EditableProfileField | null>(null);
+  const [activeProfileField, setActiveProfileField] =
+    useState<EditableProfileField | null>(null);
 
   const [formData, setFormData] = useState<ProfileFormData>({
     name: "",
@@ -238,20 +276,32 @@ export default function ProfileEditPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarMarkedForRemoval, setAvatarMarkedForRemoval] = useState(false);
-  const [isAvatarSourceDialogOpen, setIsAvatarSourceDialogOpen] = useState(false);
-  const [avatarSourceLoading, setAvatarSourceLoading] = useState<AvatarPhotoSource | null>(null);
+  const [isAvatarSourceDialogOpen, setIsAvatarSourceDialogOpen] =
+    useState(false);
+  const [avatarSourceLoading, setAvatarSourceLoading] =
+    useState<AvatarPhotoSource | null>(null);
   const [isWebCameraOpen, setIsWebCameraOpen] = useState(false);
   const [webCameraStarting, setWebCameraStarting] = useState(false);
   const [webCameraCapturing, setWebCameraCapturing] = useState(false);
   const [webCameraError, setWebCameraError] = useState<string | null>(null);
-  const [webCameraStream, setWebCameraStream] = useState<MediaStream | null>(null);
+  const [webCameraStream, setWebCameraStream] = useState<MediaStream | null>(
+    null,
+  );
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<string | null>(null);
+  const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<
+    string | null
+  >(null);
   const [editorZoom, setEditorZoom] = useState(1);
   const [editorOffset, setEditorOffset] = useState({ x: 0, y: 0 });
-  const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
-  const [editorFrameSize, setEditorFrameSize] = useState({ width: 0, height: 0 });
+  const [editorImageSize, setEditorImageSize] = useState({
+    width: 0,
+    height: 0,
+  });
+  const [editorFrameSize, setEditorFrameSize] = useState({
+    width: 0,
+    height: 0,
+  });
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
   const webCameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const webCameraStreamRef = useRef<MediaStream | null>(null);
@@ -270,13 +320,14 @@ export default function ProfileEditPage() {
   editorOffsetRef.current = editorOffset;
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
-  const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
-    null,
-  );
+  const [inlineSelectedPlatform, setInlineSelectedPlatform] =
+    useState<SupportedPlatform | null>(null);
   const [isSocialPickerOpen, setIsSocialPickerOpen] = useState(false);
   const [inlineHandle, setInlineHandle] = useState("");
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const [inlineAction, setInlineAction] = useState<"save" | "remove" | null>(null);
+  const [inlineAction, setInlineAction] = useState<"save" | "remove" | null>(
+    null,
+  );
   const inlineSaving = inlineAction !== null;
   const inlinePlatformDefinition = inlineSelectedPlatform
     ? getSocialIconDefinition(inlineSelectedPlatform)
@@ -296,20 +347,20 @@ export default function ProfileEditPage() {
       try {
         setLoading(true);
         const userProfile = await getProfileByUserId(user.id);
-        
-      if (userProfile) {
-        setProfile(userProfile);
-        setFormData({
-          name: userProfile.name || "",
-          username: userProfile.username || "",
-          dob: userProfile.dob || "",
-          city: userProfile.city || "",
-          bio: userProfile.bio || "",
-          is_private: userProfile.is_private ?? false,
-        });
-        setAvatarPreview(userProfile.avatar_url || null);
-        setAvatarMarkedForRemoval(false);
-      }
+
+        if (userProfile) {
+          setProfile(userProfile);
+          setFormData({
+            name: userProfile.name || "",
+            username: userProfile.username || "",
+            dob: userProfile.dob || "",
+            city: userProfile.city || "",
+            bio: userProfile.bio || "",
+            is_private: userProfile.is_private ?? false,
+          });
+          setAvatarPreview(userProfile.avatar_url || null);
+          setAvatarMarkedForRemoval(false);
+        }
       } catch (err) {
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
@@ -335,7 +386,10 @@ export default function ProfileEditPage() {
         if (isActive) {
           const normalizedLinks = links.map((link) => {
             const usernameSource = link.username ?? link.url;
-            const normalizedUsername = normalizeUsername(link.platform, usernameSource);
+            const normalizedUsername = normalizeUsername(
+              link.platform,
+              usernameSource,
+            );
             const canonicalUrl = normalizedUsername
               ? buildSocialUrl(link.platform, normalizedUsername)
               : link.url;
@@ -417,7 +471,10 @@ export default function ProfileEditPage() {
       if (!platformKey || prefills[platformKey]) return;
 
       const resolved = resolveSocialLink(link);
-      const handle = normalizeUsername(platformKey, link.username ?? resolved.url);
+      const handle = normalizeUsername(
+        platformKey,
+        link.username ?? resolved.url,
+      );
       if (handle) {
         prefills[platformKey] = handle;
       }
@@ -434,10 +491,13 @@ export default function ProfileEditPage() {
       )
     : undefined;
   const inlineSelectedSocialLinks = inlineSelectedPlatform
-    ? socialLinks.filter((link) => link.platform?.toLowerCase?.() === inlineSelectedPlatform)
+    ? socialLinks.filter(
+        (link) => link.platform?.toLowerCase?.() === inlineSelectedPlatform,
+      )
     : [];
   const inlineCanRemove =
-    Boolean(inlineSelectedLinkedAccount) || inlineSelectedSocialLinks.length > 0;
+    Boolean(inlineSelectedLinkedAccount) ||
+    inlineSelectedSocialLinks.length > 0;
 
   const closeSocialEditor = useCallback(() => {
     setInlineSelectedPlatform(null);
@@ -488,7 +548,13 @@ export default function ProfileEditPage() {
     } else {
       setInlineError(saveError || "Failed to link account");
     }
-  }, [closeSocialEditor, inlineHandle, inlineSelectedPlatform, refreshLinkedAccounts, user?.id]);
+  }, [
+    closeSocialEditor,
+    inlineHandle,
+    inlineSelectedPlatform,
+    refreshLinkedAccounts,
+    user?.id,
+  ]);
 
   const handleInlineRemove = useCallback(async () => {
     if (!user?.id || !inlineSelectedPlatform) {
@@ -528,7 +594,9 @@ export default function ProfileEditPage() {
     }
 
     setSocialLinks((currentLinks) =>
-      currentLinks.filter((link) => link.platform?.toLowerCase?.() !== inlineSelectedPlatform),
+      currentLinks.filter(
+        (link) => link.platform?.toLowerCase?.() !== inlineSelectedPlatform,
+      ),
     );
     closeSocialEditor();
     await refreshLinkedAccounts();
@@ -542,9 +610,9 @@ export default function ProfileEditPage() {
   ]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
@@ -557,9 +625,9 @@ export default function ProfileEditPage() {
   );
 
   const handlePrivacyChange = (checked: boolean) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      is_private: checked
+      is_private: checked,
     }));
   };
 
@@ -600,9 +668,15 @@ export default function ProfileEditPage() {
     y: (a.clientY + b.clientY) / 2,
   });
 
-  const getEditorSurfaceSize = useCallback((frameSize: EditorSize = editorFrameSize) => {
-    return Math.min(frameSize.width, frameSize.height) || FALLBACK_EDITOR_SURFACE_SIZE;
-  }, [editorFrameSize]);
+  const getEditorSurfaceSize = useCallback(
+    (frameSize: EditorSize = editorFrameSize) => {
+      return (
+        Math.min(frameSize.width, frameSize.height) ||
+        FALLBACK_EDITOR_SURFACE_SIZE
+      );
+    },
+    [editorFrameSize],
+  );
 
   const getEditorCropSize = useCallback(
     (frameSize: EditorSize = editorFrameSize) => {
@@ -612,7 +686,10 @@ export default function ProfileEditPage() {
   );
 
   const getEditorBaseCoverScale = useCallback(
-    (imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
+    (
+      imageSize: EditorSize = editorImageSize,
+      frameSize: EditorSize = editorFrameSize,
+    ) => {
       const cropSize = getEditorCropSize(frameSize);
       if (!imageSize.width || !imageSize.height || !cropSize) {
         return 1;
@@ -632,7 +709,10 @@ export default function ProfileEditPage() {
       const surfaceSize = getEditorSurfaceSize(frameSize);
       const cropSize = getEditorCropSize(frameSize);
       const baseCoverScale = getEditorBaseCoverScale(imageSize, frameSize);
-      const clampedZoom = Math.min(MAX_EDITOR_ZOOM, Math.max(1, zoomMultiplier || 1));
+      const clampedZoom = Math.min(
+        MAX_EDITOR_ZOOM,
+        Math.max(1, zoomMultiplier || 1),
+      );
       const renderedWidth = imageSize.width
         ? imageSize.width * baseCoverScale * clampedZoom
         : 1;
@@ -649,21 +729,30 @@ export default function ProfileEditPage() {
         renderedHeight,
       };
     },
-    [editorFrameSize, editorImageSize, getEditorBaseCoverScale, getEditorCropSize, getEditorSurfaceSize],
+    [
+      editorFrameSize,
+      editorImageSize,
+      getEditorBaseCoverScale,
+      getEditorCropSize,
+      getEditorSurfaceSize,
+    ],
   );
 
-  const getEditorPointFromCenter = useCallback((point: { x: number; y: number }) => {
-    const frame = avatarEditorFrameRef.current;
-    if (!frame) {
-      return { x: 0, y: 0 };
-    }
+  const getEditorPointFromCenter = useCallback(
+    (point: { x: number; y: number }) => {
+      const frame = avatarEditorFrameRef.current;
+      if (!frame) {
+        return { x: 0, y: 0 };
+      }
 
-    const rect = frame.getBoundingClientRect();
-    return {
-      x: point.x - (rect.left + rect.width / 2),
-      y: point.y - (rect.top + rect.height / 2),
-    };
-  }, []);
+      const rect = frame.getBoundingClientRect();
+      return {
+        x: point.x - (rect.left + rect.width / 2),
+        y: point.y - (rect.top + rect.height / 2),
+      };
+    },
+    [],
+  );
 
   const getOffsetForZoom = useCallback(
     (
@@ -695,11 +784,7 @@ export default function ProfileEditPage() {
         imageSize,
         frameSize,
       );
-      if (
-        !imageSize.width ||
-        !imageSize.height ||
-        !cropSize
-      ) {
+      if (!imageSize.width || !imageSize.height || !cropSize) {
         return nextOffset;
       }
 
@@ -714,34 +799,41 @@ export default function ProfileEditPage() {
     [editorFrameSize, editorImageSize, getEditorRenderState],
   );
 
-  const openAvatarEditorFromFile = useCallback((file: File) => {
-    try {
-      if (!file.type.startsWith("image/")) {
-        showAvatarError("Please choose an image file for your profile photo.");
+  const openAvatarEditorFromFile = useCallback(
+    (file: File) => {
+      try {
+        if (!file.type.startsWith("image/")) {
+          showAvatarError(
+            "Please choose an image file for your profile photo.",
+          );
+          return false;
+        }
+
+        const sourceUrl = URL.createObjectURL(file);
+        setPendingAvatarSourceUrl((currentSourceUrl) => {
+          if (currentSourceUrl) {
+            URL.revokeObjectURL(currentSourceUrl);
+          }
+          return sourceUrl;
+        });
+        setPendingAvatarFile(file);
+        setEditorZoom(1);
+        setEditorOffset({ x: 0, y: 0 });
+        setEditorImageSize({ width: 0, height: 0 });
+        setEditorFrameSize({ width: 0, height: 0 });
+        setIsAvatarEditorOpen(true);
+        setError(null);
+        return true;
+      } catch (err) {
+        console.error("Error opening selected profile photo:", err);
+        showAvatarError(
+          "We couldn't open that photo. Please try choosing another image.",
+        );
         return false;
       }
-
-      const sourceUrl = URL.createObjectURL(file);
-      setPendingAvatarSourceUrl((currentSourceUrl) => {
-        if (currentSourceUrl) {
-          URL.revokeObjectURL(currentSourceUrl);
-        }
-        return sourceUrl;
-      });
-      setPendingAvatarFile(file);
-      setEditorZoom(1);
-      setEditorOffset({ x: 0, y: 0 });
-      setEditorImageSize({ width: 0, height: 0 });
-      setEditorFrameSize({ width: 0, height: 0 });
-      setIsAvatarEditorOpen(true);
-      setError(null);
-      return true;
-    } catch (err) {
-      console.error("Error opening selected profile photo:", err);
-      showAvatarError("We couldn't open that photo. Please try choosing another image.");
-      return false;
-    }
-  }, [showAvatarError]);
+    },
+    [showAvatarError],
+  );
 
   const stopWebCameraStream = useCallback(() => {
     webCameraStreamRef.current?.getTracks().forEach((track) => {
@@ -798,7 +890,9 @@ export default function ProfileEditPage() {
         let permissionState = status[permission];
 
         if (isPromptableCameraPermission(permissionState)) {
-          status = await CapacitorCamera.requestPermissions({ permissions: [permission] });
+          status = await CapacitorCamera.requestPermissions({
+            permissions: [permission],
+          });
           permissionState = status[permission];
         }
 
@@ -809,8 +903,13 @@ export default function ProfileEditPage() {
         showAvatarError(permissionMessage);
         return "denied";
       } catch (permissionError) {
-        console.error(`Error checking ${permissionLabel} permission:`, permissionError);
-        showAvatarError(`We couldn't check ${permissionLabel} permission. Please try again.`);
+        console.error(
+          `Error checking ${permissionLabel} permission:`,
+          permissionError,
+        );
+        showAvatarError(
+          `We couldn't check ${permissionLabel} permission. Please try again.`,
+        );
         return "denied";
       }
     },
@@ -839,7 +938,9 @@ export default function ProfileEditPage() {
         const media = mediaResults.results[0];
 
         if (!media) {
-          showAvatarError("We couldn't read that photo. Please try another image.");
+          showAvatarError(
+            "We couldn't read that photo. Please try another image.",
+          );
           return;
         }
 
@@ -847,22 +948,33 @@ export default function ProfileEditPage() {
         try {
           blob = await blobFromNativeMediaResult(media);
         } catch (conversionError) {
-          console.error("Error converting selected profile photo:", conversionError);
-          showAvatarError("We couldn't process that photo. Please try another image.");
+          console.error(
+            "Error converting selected profile photo:",
+            conversionError,
+          );
+          showAvatarError(
+            "We couldn't process that photo. Please try another image.",
+          );
           return;
         }
 
         if (!blob.size) {
-          showAvatarError("We couldn't read that photo. Please try another image.");
+          showAvatarError(
+            "We couldn't read that photo. Please try another image.",
+          );
           return;
         }
 
         const format = media.metadata?.format ?? "jpeg";
         const mimeType = blob.type || getImageMimeType(format);
         const extension = getImageFileExtension(format);
-        const file = new File([blob], `avatar-${source}-${Date.now()}.${extension}`, {
-          type: mimeType,
-        });
+        const file = new File(
+          [blob],
+          `avatar-${source}-${Date.now()}.${extension}`,
+          {
+            type: mimeType,
+          },
+        );
 
         openAvatarEditorFromFile(file);
         return;
@@ -877,7 +989,9 @@ export default function ProfileEditPage() {
       });
 
       if (!photo.base64String) {
-        showAvatarError("We couldn't read that photo. Please try another image.");
+        showAvatarError(
+          "We couldn't read that photo. Please try another image.",
+        );
         return;
       }
 
@@ -886,20 +1000,31 @@ export default function ProfileEditPage() {
       try {
         blob = base64ToBlob(photo.base64String, mimeType);
       } catch (conversionError) {
-        console.error("Error converting profile photo result:", conversionError);
-        showAvatarError("We couldn't process that photo. Please try another image.");
+        console.error(
+          "Error converting profile photo result:",
+          conversionError,
+        );
+        showAvatarError(
+          "We couldn't process that photo. Please try another image.",
+        );
         return;
       }
 
       if (!blob.size) {
-        showAvatarError("We couldn't read that photo. Please try another image.");
+        showAvatarError(
+          "We couldn't read that photo. Please try another image.",
+        );
         return;
       }
 
       const extension = getImageFileExtension(photo.format);
-      const file = new File([blob], `avatar-${source}-${Date.now()}.${extension}`, {
-        type: mimeType,
-      });
+      const file = new File(
+        [blob],
+        `avatar-${source}-${Date.now()}.${extension}`,
+        {
+          type: mimeType,
+        },
+      );
 
       openAvatarEditorFromFile(file);
     } catch (err) {
@@ -934,7 +1059,9 @@ export default function ProfileEditPage() {
     const getUserMedia = mediaDevices?.getUserMedia?.bind(mediaDevices);
 
     if (!getUserMedia) {
-      setWebCameraError("Camera preview is not available in this browser. Choose from Library instead.");
+      setWebCameraError(
+        "Camera preview is not available in this browser. Choose from Library instead.",
+      );
       setWebCameraStarting(false);
       setAvatarSourceLoading(null);
       return;
@@ -960,7 +1087,9 @@ export default function ProfileEditPage() {
       if (webCameraRequestIdRef.current === requestId) {
         console.error("Error opening web profile camera:", cameraError);
         stopWebCameraStream();
-        setWebCameraError("Camera preview is not available in this browser. Choose from Library instead.");
+        setWebCameraError(
+          "Camera preview is not available in this browser. Choose from Library instead.",
+        );
       }
     } finally {
       if (webCameraRequestIdRef.current === requestId) {
@@ -1000,7 +1129,9 @@ export default function ProfileEditPage() {
     handleWebAvatarLibrary();
   };
 
-  const handleWebLibraryFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWebLibraryFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
 
@@ -1023,8 +1154,15 @@ export default function ProfileEditPage() {
 
   const handleWebCameraCapture = useCallback(async () => {
     const video = webCameraVideoRef.current;
-    if (!video || !webCameraStreamRef.current || !video.videoWidth || !video.videoHeight) {
-      setWebCameraError("The camera preview isn't ready yet. Please try again.");
+    if (
+      !video ||
+      !webCameraStreamRef.current ||
+      !video.videoWidth ||
+      !video.videoHeight
+    ) {
+      setWebCameraError(
+        "The camera preview isn't ready yet. Please try again.",
+      );
       return;
     }
 
@@ -1059,7 +1197,10 @@ export default function ProfileEditPage() {
       setIsWebCameraOpen(false);
       openAvatarEditorFromFile(file);
     } catch (captureError) {
-      console.error("Error capturing profile photo from web camera:", captureError);
+      console.error(
+        "Error capturing profile photo from web camera:",
+        captureError,
+      );
       stopWebCameraStream();
       setIsWebCameraOpen(false);
       setError("We couldn't capture that photo. Please try again.");
@@ -1134,13 +1275,16 @@ export default function ProfileEditPage() {
       const [touchA, touchB] = [event.touches[0], event.touches[1]];
       const nextDistance = getTouchDistance(touchA, touchB);
       const nextMidpoint = getTouchMidpoint(touchA, touchB);
-      const baselineDistance = gestureStateRef.current.startDistance || nextDistance;
+      const baselineDistance =
+        gestureStateRef.current.startDistance || nextDistance;
       const zoomRatio = nextDistance / baselineDistance;
       const nextZoom = Math.min(
         MAX_EDITOR_ZOOM,
         Math.max(1, gestureStateRef.current.startZoom * zoomRatio),
       );
-      const startFocalPoint = getEditorPointFromCenter(gestureStateRef.current.startMidpoint);
+      const startFocalPoint = getEditorPointFromCenter(
+        gestureStateRef.current.startMidpoint,
+      );
       const nextFocalPoint = getEditorPointFromCenter(nextMidpoint);
       const focalOffset = getOffsetForZoom(
         gestureStateRef.current.startOffset,
@@ -1171,7 +1315,9 @@ export default function ProfileEditPage() {
     gestureStateRef.current = null;
   };
 
-  const handleEditorTouchEndWithEvent = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleEditorTouchEndWithEvent = (
+    event: React.TouchEvent<HTMLDivElement>,
+  ) => {
     if (event.touches.length === 1) {
       const touch = event.touches[0];
       gestureStateRef.current = {
@@ -1187,7 +1333,9 @@ export default function ProfileEditPage() {
     handleEditorTouchEnd();
   };
 
-  const handleEditorPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleEditorPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
     if (event.pointerType === "touch" || event.button !== 0) {
       return;
     }
@@ -1202,8 +1350,13 @@ export default function ProfileEditPage() {
     };
   };
 
-  const handleEditorPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "touch" || gestureStateRef.current?.mode !== "pan") {
+  const handleEditorPointerMove = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (
+      event.pointerType === "touch" ||
+      gestureStateRef.current?.mode !== "pan"
+    ) {
       return;
     }
 
@@ -1220,7 +1373,9 @@ export default function ProfileEditPage() {
     setEditorOffset(nextOffset);
   };
 
-  const handleEditorPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleEditorPointerEnd = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
     if (event.pointerType === "touch") {
       return;
     }
@@ -1246,8 +1401,15 @@ export default function ProfileEditPage() {
   };
 
   const handleAvatarEditorSave = async () => {
-    if (!pendingAvatarFile || !pendingAvatarSourceUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
-      showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
+    if (
+      !pendingAvatarFile ||
+      !pendingAvatarSourceUrl ||
+      !avatarEditorFrameRef.current ||
+      !editorImageSize.width
+    ) {
+      showAvatarError(
+        "We couldn't prepare that photo. Please try choosing it again.",
+      );
       return;
     }
 
@@ -1256,7 +1418,9 @@ export default function ProfileEditPage() {
       const frameWidth = frameRect.width;
       const frameHeight = frameRect.height;
       if (!frameWidth || !frameHeight) {
-        showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
+        showAvatarError(
+          "We couldn't prepare that photo. Please try choosing it again.",
+        );
         return;
       }
 
@@ -1268,14 +1432,17 @@ export default function ProfileEditPage() {
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        showAvatarError("We couldn't edit that photo in this browser. Please try another image.");
+        showAvatarError(
+          "We couldn't edit that photo in this browser. Please try another image.",
+        );
         return;
       }
 
       const image = new Image();
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
-        image.onerror = () => reject(new Error("Failed to load selected image"));
+        image.onerror = () =>
+          reject(new Error("Failed to load selected image"));
         image.src = pendingAvatarSourceUrl;
       });
 
@@ -1283,13 +1450,12 @@ export default function ProfileEditPage() {
       ctx.fillRect(0, 0, outputWidth, outputHeight);
 
       const frameSize = { width: frameWidth, height: frameHeight };
-      const { surfaceSize, cropSize, renderedWidth, renderedHeight } = getEditorRenderState(
-        editorZoom,
-        editorImageSize,
-        frameSize,
-      );
+      const { surfaceSize, cropSize, renderedWidth, renderedHeight } =
+        getEditorRenderState(editorZoom, editorImageSize, frameSize);
       if (!surfaceSize || !cropSize) {
-        showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
+        showAvatarError(
+          "We couldn't prepare that photo. Please try choosing it again.",
+        );
         return;
       }
 
@@ -1301,8 +1467,10 @@ export default function ProfileEditPage() {
       );
       const cropLeft = (surfaceSize - cropSize) / 2;
       const cropTop = (surfaceSize - cropSize) / 2;
-      const drawX = (surfaceSize - renderedWidth) / 2 + clampedOffset.x - cropLeft;
-      const drawY = (surfaceSize - renderedHeight) / 2 + clampedOffset.y - cropTop;
+      const drawX =
+        (surfaceSize - renderedWidth) / 2 + clampedOffset.x - cropLeft;
+      const drawY =
+        (surfaceSize - renderedHeight) / 2 + clampedOffset.y - cropTop;
       const renderToCanvasScale = outputWidth / cropSize;
 
       ctx.drawImage(
@@ -1317,11 +1485,15 @@ export default function ProfileEditPage() {
         canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
       });
       if (!blob?.size) {
-        showAvatarError("We couldn't save that photo. Please try another image.");
+        showAvatarError(
+          "We couldn't save that photo. Please try another image.",
+        );
         return;
       }
 
-      const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
+      const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
       const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
       setAvatarFile(croppedAvatarFile);
       setAvatarPreview(croppedAvatarDataUrl);
@@ -1385,41 +1557,42 @@ export default function ProfileEditPage() {
       if (avatarFile) {
         const uploadRes = await uploadAvatar(avatarFile, user.id);
         if (!uploadRes.success || !uploadRes.url) {
-          showAvatarError(uploadRes.error || "Failed to upload profile picture", "Upload failed");
+          showAvatarError(
+            uploadRes.error || "Failed to upload profile picture",
+            "Upload failed",
+          );
           setSaving(false);
           return;
         }
         avatarUrl = uploadRes.url;
       }
 
-      const result = await updateProfile(
-        user.id,
-        formData,
-        avatarUrl
-      );
-      
+      const result = await updateProfile(user.id, formData, avatarUrl);
+
       if (result.success && result.profile) {
         let savedProfile = result.profile;
 
         if (shouldRemoveAvatar) {
           const supabase = getSupabaseBrowser();
           if (!supabase) {
-            showAvatarError("Supabase client not initialized", "Profile photo not removed");
+            showAvatarError(
+              "Supabase client not initialized",
+              "Profile photo not removed",
+            );
             setSaving(false);
             return;
           }
 
-          const { data: clearedProfile, error: clearAvatarError } = await supabase
-            .from("profiles")
-            .update(
-              {
+          const { data: clearedProfile, error: clearAvatarError } =
+            await supabase
+              .from("profiles")
+              .update({
                 avatar_url: null,
                 updated_at: new Date().toISOString(),
-              } as never,
-            )
-            .eq("user_id", user.id)
-            .select()
-            .maybeSingle();
+              } as never)
+              .eq("user_id", user.id)
+              .select()
+              .maybeSingle();
 
           if (clearAvatarError || !clearedProfile) {
             showAvatarError(
@@ -1439,13 +1612,39 @@ export default function ProfileEditPage() {
         setAvatarMarkedForRemoval(false);
         setAvatarPreview(savedProfile.avatar_url || null);
 
+        if (onboarding) {
+          try {
+            const onboardingRes = await updateMyOnboarding({
+              onboarding_version: 1,
+              onboarding_step: null,
+              onboarding_completed_at: new Date().toISOString(),
+            });
+
+            if (!onboardingRes.success) {
+              console.error(
+                "Failed to persist onboarding completion:",
+                onboardingRes.error,
+              );
+              setError(
+                onboardingRes.error ??
+                  "Failed to persist onboarding completion",
+              );
+            }
+          } catch (e) {
+            console.error("Failed to persist onboarding completion:", e);
+          }
+        }
+
         try {
           await refreshProfile();
         } catch (err) {
           console.error("Failed to refresh profile context:", err);
         }
 
-        toast.success("Profile updated", avatarUrl ? "Your profile photo has been updated." : undefined);
+        toast.success(
+          "Profile updated",
+          avatarUrl ? "Your profile photo has been updated." : undefined,
+        );
 
         const redirectTarget =
           redirectPath && redirectPath.startsWith("/")
@@ -1460,7 +1659,10 @@ export default function ProfileEditPage() {
           router.replace(nextTarget);
         }, 1500);
       } else {
-        showAvatarError(result.error || "Failed to update profile", "Profile not updated");
+        showAvatarError(
+          result.error || "Failed to update profile",
+          "Profile not updated",
+        );
       }
     } catch (err) {
       console.error("Error updating profile:", err);
@@ -1491,11 +1693,17 @@ export default function ProfileEditPage() {
   }, [isAvatarEditorOpen]);
 
   useEffect(() => {
-    if (!isAvatarEditorOpen || !editorImageSize.width || !editorFrameSize.width) {
+    if (
+      !isAvatarEditorOpen ||
+      !editorImageSize.width ||
+      !editorFrameSize.width
+    ) {
       return;
     }
 
-    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, editorZoom));
+    setEditorOffset((currentOffset) =>
+      clampEditorOffset(currentOffset, editorZoom),
+    );
   }, [
     clampEditorOffset,
     editorFrameSize.width,
@@ -1514,7 +1722,9 @@ export default function ProfileEditPage() {
     webCameraVideoRef.current.srcObject = webCameraStream;
     void webCameraVideoRef.current.play().catch((playError) => {
       console.error("Error playing web profile camera preview:", playError);
-      setWebCameraError("Camera preview is not available in this browser. Choose from Library instead.");
+      setWebCameraError(
+        "Camera preview is not available in this browser. Choose from Library instead.",
+      );
       stopWebCameraStream();
     });
   }, [isWebCameraOpen, stopWebCameraStream, webCameraStream]);
@@ -1579,12 +1789,12 @@ export default function ProfileEditPage() {
         </section>
 
         <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-2">
-          <div className="border-y border-white/[0.08]">
+          <div className="border-t border-white/[0.055]">
             <div className="flex min-h-[50px] items-center justify-between gap-3 py-2.5">
               <div className="h-3 w-20 rounded-full bg-white/10" />
               <div className="h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
             </div>
-            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+            <div className="flex min-h-[58px] items-center justify-between gap-3 border-t border-white/[0.045] py-2.5">
               <div className="h-3 w-20 rounded-full bg-white/10" />
               <div className="h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
             </div>
@@ -1594,7 +1804,10 @@ export default function ProfileEditPage() {
             </div>
             <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
               <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                <Calendar
+                  className="h-4 w-4 text-zinc-500"
+                  aria-hidden="true"
+                />
                 <div className="h-3 w-24 rounded-full bg-white/10" />
               </div>
               <div className="h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
@@ -1643,7 +1856,7 @@ export default function ProfileEditPage() {
 
   const heroAvatarUrl = avatarMarkedForRemoval
     ? null
-    : avatarPreview ?? profile.avatar_url ?? null;
+    : (avatarPreview ?? profile.avatar_url ?? null);
   const heroName =
     formData.name.trim() ||
     formData.username.trim() ||
@@ -1651,7 +1864,9 @@ export default function ProfileEditPage() {
     profile.username ||
     "Your profile";
   const activeProfileFieldConfig = activeProfileField
-    ? EDITABLE_PROFILE_FIELDS.find((field) => field.key === activeProfileField) ?? null
+    ? (EDITABLE_PROFILE_FIELDS.find(
+        (field) => field.key === activeProfileField,
+      ) ?? null)
     : null;
   const getProfileFieldDisplayValue = (field: EditableProfileFieldConfig) => {
     const value = formData[field.key]?.trim();
@@ -1671,7 +1886,9 @@ export default function ProfileEditPage() {
 
     return value;
   };
-  const renderProfileFieldEditorControl = (field: EditableProfileFieldConfig) => {
+  const renderProfileFieldEditorControl = (
+    field: EditableProfileFieldConfig,
+  ) => {
     const editorId = `profile-field-${field.key}`;
     const hasError = hasAttemptedSubmit && fieldErrors[field.key];
     const inputClasses = `bg-[#202126] text-base text-white placeholder:text-zinc-500 ${
@@ -1747,8 +1964,8 @@ export default function ProfileEditPage() {
             </span>
           </header>
 
-          <div className="relative overflow-visible rounded-2xl border border-white/10 bg-[#15161A]/85 px-3.5 py-3 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-4 sm:py-4">
-            <div className="flex items-center gap-3 sm:gap-4">
+          <div className="px-1 pt-2">
+            <div className="flex items-center gap-5">
               <Dialog.Root
                 modal={false}
                 open={isAvatarSourceDialogOpen}
@@ -1764,31 +1981,40 @@ export default function ProfileEditPage() {
                       type="button"
                       disabled={avatarSourceLoading !== null}
                       aria-label="Change profile photo"
-                      className="group relative h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] outline-none transition hover:border-white/30 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#15161A] disabled:cursor-not-allowed disabled:opacity-70 sm:h-24 sm:w-24"
+                      className="group relative flex h-24 w-24 items-center justify-center rounded-full border border-white/15 bg-white/[0.025] outline-none transition hover:border-white/65 hover:bg-white/[0.04] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {heroAvatarUrl ? (
                         <NextImage
                           src={heroAvatarUrl}
                           alt={`${heroName}'s profile photo`}
                           fill
-                          sizes="(min-width: 640px) 96px, 80px"
+                          sizes="96px"
                           unoptimized
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 via-zinc-900 to-black text-zinc-500">
-                          <User className="h-8 w-8 sm:h-10 sm:w-10" aria-hidden="true" />
-                        </span>
+                        <User
+                          className="h-8 w-8 text-zinc-500"
+                          aria-hidden="true"
+                        />
                       )}
                       <span
-                        className="absolute inset-0 bg-black/0 transition group-hover:bg-black/10 group-active:bg-black/15"
+                        className="absolute inset-0 rounded-full bg-black/0 transition group-hover:bg-black/10 group-active:bg-black/15"
                         aria-hidden="true"
                       />
+                      <span
+                        className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#0F0F12] bg-zinc-700 text-white shadow-md"
+                        aria-hidden="true"
+                      >
+                        <Camera className="h-3.5 w-3.5" />
+                      </span>
                     </button>
                   </Dialog.Trigger>
                   <Dialog.Portal>
                     <Dialog.Content className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+8.75rem)] z-50 w-[calc(100vw-2rem)] max-w-[17rem] -translate-x-1/2 rounded-[20px] border border-white/10 bg-[#05070c]/95 p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl focus:outline-none">
-                      <Dialog.Title className="sr-only">Edit profile photo</Dialog.Title>
+                      <Dialog.Title className="sr-only">
+                        Edit profile photo
+                      </Dialog.Title>
                       <div className="grid gap-1">
                         <button
                           type="button"
@@ -1796,7 +2022,10 @@ export default function ProfileEditPage() {
                           onClick={() => handleAvatarSourceSelect("photos")}
                           className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Images className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                          <Images
+                            className="h-4 w-4 shrink-0 text-zinc-300"
+                            aria-hidden="true"
+                          />
                           <span>{AVATAR_PHOTO_SOURCE_LABELS.photos}</span>
                         </button>
                         <button
@@ -1805,7 +2034,10 @@ export default function ProfileEditPage() {
                           onClick={() => handleAvatarSourceSelect("camera")}
                           className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Camera className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                          <Camera
+                            className="h-4 w-4 shrink-0 text-zinc-300"
+                            aria-hidden="true"
+                          />
                           <span>{AVATAR_PHOTO_SOURCE_LABELS.camera}</span>
                         </button>
                         <button
@@ -1814,7 +2046,10 @@ export default function ProfileEditPage() {
                           onClick={handleAvatarRemove}
                           className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Trash2 className="h-4 w-4 shrink-0 text-red-300/85" aria-hidden="true" />
+                          <Trash2
+                            className="h-4 w-4 shrink-0 text-red-300/85"
+                            aria-hidden="true"
+                          />
                           <span>Remove Photo</span>
                         </button>
                       </div>
@@ -1822,25 +2057,21 @@ export default function ProfileEditPage() {
                   </Dialog.Portal>
                 </div>
               </Dialog.Root>
+
               <div className="min-w-0 flex-1">
-                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/55">
-                  Profile photo
-                </p>
-                <p className="mt-0.5 text-sm font-medium text-white">
+                <p className="text-base font-semibold text-white">
                   {heroAvatarUrl ? "Update your photo" : "Add a profile photo"}
                 </p>
-                <p className="mt-0.5 text-xs leading-4 text-zinc-400">
-                  Tap the avatar to choose, capture, adjust, or remove it.
+                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                  This will be visible on your profile.
                 </p>
               </div>
             </div>
 
-            <div className="mt-3 border-t border-white/10 pt-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/55">
-                  Social links
-                </p>
-              </div>
+            <div className="mt-7">
+              <p className="mb-3 text-sm font-medium text-zinc-300">
+                Social Links
+              </p>
               <SocialPillsRow
                 socials={socialsData}
                 editMode
@@ -1870,7 +2101,9 @@ export default function ProfileEditPage() {
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(95vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
             <div className="space-y-4">
               <div className="space-y-1">
-                <Dialog.Title className="text-lg font-semibold">Take Photo</Dialog.Title>
+                <Dialog.Title className="text-lg font-semibold">
+                  Take Photo
+                </Dialog.Title>
               </div>
               <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[24px] border border-white/10 bg-black">
                 <video
@@ -1887,21 +2120,35 @@ export default function ProfileEditPage() {
                 ) : null}
                 {webCameraError ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
-                    <p className="text-sm leading-6 text-zinc-200">{webCameraError}</p>
-                    <Button type="button" size="sm" onClick={handleWebAvatarLibrary}>
+                    <p className="text-sm leading-6 text-zinc-200">
+                      {webCameraError}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleWebAvatarLibrary}
+                    >
                       Choose from Library
                     </Button>
                   </div>
                 ) : null}
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
-                <Button type="button" variant="ghost" onClick={handleWebCameraCancel}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleWebCameraCancel}
+                >
                   Cancel
                 </Button>
                 <Button
                   type="button"
                   onClick={handleWebCameraCapture}
-                  disabled={webCameraStarting || webCameraCapturing || Boolean(webCameraError)}
+                  disabled={
+                    webCameraStarting ||
+                    webCameraCapturing ||
+                    Boolean(webCameraError)
+                  }
                 >
                   {webCameraCapturing ? "Capturing..." : "Capture"}
                 </Button>
@@ -1923,7 +2170,9 @@ export default function ProfileEditPage() {
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] max-h-[calc(100dvh-1.5rem)] w-[min(94vw,460px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
             <div className="space-y-3.5">
               <div className="space-y-1">
-                <Dialog.Title className="text-lg font-semibold">Adjust profile photo</Dialog.Title>
+                <Dialog.Title className="text-lg font-semibold">
+                  Adjust profile photo
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-zinc-400">
                   Move and zoom to frame your avatar.
                 </Dialog.Description>
@@ -1994,7 +2243,11 @@ export default function ProfileEditPage() {
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
-                <Button type="button" variant="ghost" onClick={handleAvatarEditorCancel}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleAvatarEditorCancel}
+                >
                   Cancel
                 </Button>
                 <Button type="button" onClick={handleAvatarEditorSave}>
@@ -2006,16 +2259,18 @@ export default function ProfileEditPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-10 pt-2">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-10 pt-4">
         {onboarding && (
           <div className="rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-zinc-200">
             <p className="font-medium">Complete your profile to continue.</p>
             <p className="mt-0.5 text-zinc-400">
-              Add your name, username, and details so we can personalize your experience.
+              Add your name, username, and details so we can personalize your
+              experience.
             </p>
             {redirectPath && redirectPath.startsWith("/") && (
               <p className="mt-1.5 text-xs text-zinc-500">
-                You&apos;ll be redirected back to {redirectPath} once you&apos;re finished.
+                You&apos;ll be redirected back to {redirectPath} once
+                you&apos;re finished.
               </p>
             )}
           </div>
@@ -2047,12 +2302,15 @@ export default function ProfileEditPage() {
                   type="button"
                   onClick={() => setActiveProfileField(field.key)}
                   className={`flex min-h-[50px] w-full items-center gap-3 py-2.5 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${
-                    index === 0 ? "" : "border-t border-white/[0.07]"
+                    index === 0 ? "" : "border-t border-white/[0.045]"
                   }`}
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     {Icon ? (
-                      <Icon className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden="true" />
+                      <Icon
+                        className="h-4 w-4 shrink-0 text-zinc-500"
+                        aria-hidden="true"
+                      />
                     ) : null}
                     <span className="min-w-0">
                       <span className="block text-sm font-medium text-zinc-200">
@@ -2075,7 +2333,10 @@ export default function ProfileEditPage() {
                   >
                     {getProfileFieldDisplayValue(field)}
                   </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+                  <ChevronRight
+                    className="h-4 w-4 shrink-0 text-zinc-600"
+                    aria-hidden="true"
+                  />
                 </button>
               );
             })}
@@ -2111,7 +2372,7 @@ export default function ProfileEditPage() {
             <Button
               type="submit"
               disabled={saving}
-              className="h-12 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-base font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 shrink-0 rounded-lg border border-white/[0.42] bg-white/72 px-3 text-xs font-semibold text-zinc-950 outline-none transition hover:bg-white/84 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28"
             >
               {saving ? (
                 <div className="flex items-center space-x-2">
@@ -2136,7 +2397,11 @@ export default function ProfileEditPage() {
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "tween", duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+            transition={{
+              type: "tween",
+              duration: 0.22,
+              ease: [0.32, 0.72, 0, 1],
+            }}
             className="fixed inset-0 z-[240] overflow-y-auto bg-[#0F0F12] text-zinc-100 shadow-[0_0_80px_rgba(0,0,0,0.55)]"
             aria-label={`Edit ${activeProfileFieldConfig.label}`}
           >
@@ -2184,7 +2449,8 @@ export default function ProfileEditPage() {
                       Current preview: @{formData.username.trim() || "username"}
                     </p>
                   ) : null}
-                  {hasAttemptedSubmit && fieldErrors[activeProfileFieldConfig.key] ? (
+                  {hasAttemptedSubmit &&
+                  fieldErrors[activeProfileFieldConfig.key] ? (
                     <p className="text-sm text-red-400">
                       {fieldErrors[activeProfileFieldConfig.key]}
                     </p>
@@ -2202,7 +2468,10 @@ export default function ProfileEditPage() {
         </section>
       ) : null}
 
-      <Dialog.Root open={isSocialPickerOpen} onOpenChange={setIsSocialPickerOpen}>
+      <Dialog.Root
+        open={isSocialPickerOpen}
+        onOpenChange={setIsSocialPickerOpen}
+      >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[260] bg-black/75 backdrop-blur-sm" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[270] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-white/10 bg-[#07090E]/95 p-4 text-white shadow-[0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl focus:outline-none sm:p-5">
@@ -2249,7 +2518,9 @@ export default function ProfileEditPage() {
                         {definition.label}
                       </span>
                       <span className="block truncate text-xs text-zinc-500">
-                        {prefilledHandle ? `@${prefilledHandle}` : "Add account"}
+                        {prefilledHandle
+                          ? `@${prefilledHandle}`
+                          : "Add account"}
                       </span>
                     </span>
                   </button>
@@ -2329,11 +2600,19 @@ export default function ProfileEditPage() {
                 )}
                 <div className="flex justify-end gap-2">
                   <Dialog.Close asChild>
-                    <Button type="button" variant="ghost" disabled={inlineSaving}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={inlineSaving}
+                    >
                       Cancel
                     </Button>
                   </Dialog.Close>
-                  <Button type="button" onClick={handleInlineSave} disabled={inlineSaving}>
+                  <Button
+                    type="button"
+                    onClick={handleInlineSave}
+                    disabled={inlineSaving}
+                  >
                     {inlineAction === "save" ? "Saving..." : "Save link"}
                   </Button>
                 </div>

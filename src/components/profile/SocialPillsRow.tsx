@@ -59,6 +59,12 @@ export default function SocialPillsRow({
 
   const hasSocials = availableSocials.length > 0;
 
+  const emptyEditPlatforms = editMode
+    ? LINKED_PLATFORMS.filter(
+        (platform) => !socials[platform] || socials[platform] === "#",
+      ).sort((a, b) => getPriority(a) - getPriority(b))
+    : [];
+
   const circleClasses = editMode
     ? "group relative inline-flex h-10 w-10 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_10px_22px_rgba(0,0,0,0.25)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
     : "group relative inline-flex h-11 w-11 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
@@ -88,6 +94,21 @@ export default function SocialPillsRow({
   return (
     <>
       <div className={rowClasses}>
+        {editMode && onPlatformSelect ? (
+          <button
+            type="button"
+            onClick={() => onPlatformSelect()}
+            aria-label="Add social link"
+            className={circleClasses}
+          >
+            <span
+              className={`${iconShellClasses} border border-white/10 bg-black/35`}
+            >
+              <Plus className={iconClassName} aria-hidden="true" />
+            </span>
+          </button>
+        ) : null}
+
         {availableSocials.map(([platform, url]) => {
           const definition = getSocialIconDefinition(platform);
           if (!url) return null;
@@ -137,23 +158,31 @@ export default function SocialPillsRow({
           );
         })}
 
-        {editMode && onPlatformSelect ? (
-          <div className="relative">
+        {emptyEditPlatforms.map((platform) => {
+          const definition = getSocialIconDefinition(platform);
+
+          return (
             <button
+              key={`empty-${platform}`}
               type="button"
-              onClick={() => onPlatformSelect()}
-              aria-label="Add or edit social links"
-              className={circleClasses}
+              onClick={() => onPlatformSelect?.(platform)}
+              aria-label={`Add ${definition.label}`}
+              className={`${circleClasses} border-white/[0.06] bg-white/[0.025] text-white/35 shadow-none`}
             >
-              <span className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
               <span
-                className={`${iconShellClasses} border border-white/10 bg-black/35`}
+                className={`${iconShellClasses} opacity-40 grayscale`}
+                aria-hidden="true"
               >
-                <Plus className={iconClassName} aria-hidden="true" />
+                <SocialIcon
+                  platform={platform}
+                  className={`${editMode ? "h-7 w-7" : "h-8 w-8"} shadow-none`}
+                  iconClassName={iconClassName}
+                />
               </span>
+              <span className="sr-only">{definition.label}</span>
             </button>
-          </div>
-        ) : null}
+          );
+        })}
       </div>
       {!hasSocials && !editMode ? (
         <div className="mt-2 w-full text-center text-sm text-white/60">
