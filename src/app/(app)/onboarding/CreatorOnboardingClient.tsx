@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -166,6 +166,8 @@ export default function CreatorOnboardingClient({
   catalog,
 }: CreatorOnboardingClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [stepIndex, setStepIndex] = useState(0);
   const [selectedIdentityDirections, setSelectedIdentityDirections] = useState<string[]>([]);
   const [customIdentity, setCustomIdentity] = useState("");
@@ -365,7 +367,10 @@ export default function CreatorOnboardingClient({
         throw new Error(body?.error ?? "Unable to finish CREATOR initiation.");
       }
 
-      router.replace("/dashboard");
+      const redirectParam = searchParams.get("redirect");
+      const redirectTarget =
+        redirectParam && redirectParam.startsWith("/") ? redirectParam : "/dashboard";
+      router.replace(redirectTarget);
       router.refresh();
     } catch (error) {
       setSubmitError(
