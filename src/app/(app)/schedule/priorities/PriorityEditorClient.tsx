@@ -1384,7 +1384,7 @@ export default function PriorityEditorClient({
     return (
       <div className="flex h-full min-h-0 flex-col bg-black text-white">
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] pt-3 [-webkit-overflow-scrolling:touch]">
-          <div className="mx-auto flex max-w-7xl flex-col gap-3">{content}</div>
+          <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3">{content}</div>
         </div>
       </div>
     );
@@ -1392,7 +1392,7 @@ export default function PriorityEditorClient({
 
   return (
     <main className="min-h-screen bg-[#050507] text-white">
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-12 sm:pt-2">
+      <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-12 sm:pt-2">
         {content}
       </div>
     </main>
