@@ -123,6 +123,13 @@ function getAreaDetailViewport(): AreaDetailViewportRect {
     }
   }
 
+  if (window.innerWidth < 768) {
+    return {
+      top: 0,
+      height: viewportHeight,
+    };
+  }
+
   return {
     top,
     height: Math.max(0, viewportHeight - top),
@@ -183,7 +190,7 @@ function getAreaDetailPopupRect(
         ? 48
         : viewportWidth >= 640
           ? 32
-          : 10;
+          : 0;
   const maxWidth =
     viewportWidth >= 1280
       ? 1160
@@ -191,7 +198,7 @@ function getAreaDetailPopupRect(
         ? 960
         : viewportWidth >= 640
           ? 640
-          : 420;
+          : viewportWidth;
   const availableWidth = Math.max(0, viewportWidth - horizontalInset * 2);
   const width = Math.min(maxWidth, availableWidth || viewportWidth);
 
@@ -552,7 +559,7 @@ function AreasGrid() {
               ? 0
               : window.innerWidth >= 768
                 ? AREA_DETAIL_BORDER_RADIUS
-                : AREA_CARD_BORDER_RADIUS,
+                : 0,
         };
       });
     };
@@ -632,7 +639,7 @@ function AreasGrid() {
           ? 0
           : window.innerWidth >= 768
             ? AREA_DETAIL_BORDER_RADIUS
-            : AREA_CARD_BORDER_RADIUS,
+            : 0,
       closeRect: null,
     });
     setActiveAreaId(areaId);
@@ -710,7 +717,7 @@ function AreasGrid() {
                 "fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]",
                 isAreaCommandCenterDetail
                   ? "bg-black pb-0"
-                  : "bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+                  : "bg-black pb-0 sm:bg-transparent sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
               )}
               style={detailOverlayScrollStyle}
             >
@@ -733,7 +740,7 @@ function AreasGrid() {
                   "relative z-10 flex min-h-[var(--area-detail-overlay-height,100dvh)] max-h-none w-full flex-col",
                   isAreaCommandCenterDetail
                     ? "rounded-none border-0 bg-black shadow-none ring-0"
-                    : "app-card mx-auto max-w-[min(100vw-1.25rem,420px)] shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
+                    : "mx-auto max-w-none rounded-none border-0 bg-black shadow-none ring-0 sm:app-card sm:max-w-[min(100vw-4rem,640px)] sm:rounded-3xl sm:shadow-[0_6px_24px_rgba(0,0,0,0.18)] lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]",
                   areaTransition.phase === "open"
                     ? "overflow-visible"
                     : "overflow-hidden"
