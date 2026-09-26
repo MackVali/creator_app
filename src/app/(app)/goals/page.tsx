@@ -169,9 +169,8 @@ function energyToDbValue(energy: Goal["energy"]): string {
 }
 
 const GOAL_PAYWALL_FEATURES = [
-  "More room for goals, projects, tasks, and habits.",
-  "Bigger roadmaps for bigger life systems.",
-  "The full CREATOR Pro planning and execution layer.",
+  "Unlimited goals, projects, tasks, and habits.",
+  "Source, Analytics, and ILAV included.",
 ];
 const GOAL_BATCH_SIZE = 6;
 const GOALS_PAGE_REFRESH_ENTITY_TYPES = new Set([
@@ -1892,8 +1891,8 @@ export default function GoalsPage() {
         <PaywallModal
           open={paywallOpen}
           onOpenChange={handlePaywallOpenChange}
-          title="Build beyond the free roadmap"
-          description="The free roadmap is full. CREATOR Pro unlocks the space to keep building without cutting the plan short."
+          title="You’ve reached 5 active goals"
+          description="Free includes up to 5 active goals. CREATOR Pro removes the goal limit."
           featureList={GOAL_PAYWALL_FEATURES}
           ctaLabel="Upgrade to CREATOR Pro"
           onCta={handlePaywallCta}
