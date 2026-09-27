@@ -63,6 +63,7 @@ import {
   isSitePreviewReadyMessage,
   isSitePreviewSectionInsertRequestMessage,
   isSitePreviewSelectionRequestMessage,
+  isSitePreviewStorefrontNavigationRequestMessage,
   sectionTypeSupportsInlineEditField,
 } from "@/lib/site-builder/previewMessages";
 import {
@@ -83,6 +84,7 @@ import type {
   SiteSection,
   SiteSectionLayoutConfig,
   SiteSectionStyleConfig,
+  SiteStorefrontNavigationItem,
   SiteThemeConfig,
 } from "@/lib/site-builder/types";
 import type { ListingsResponse, SourceListing } from "@/types/source";
@@ -104,6 +106,7 @@ type SiteChromeSelection =
   | "catalog"
   | "header"
   | "navigation"
+  | "storefront-navigation"
   | "footer";
 type SectionNavigationChild =
   | {
@@ -133,6 +136,14 @@ type SiteInquiry = {
   created_at: string;
 };
 
+type SiteBuilderSiteSummary = {
+  id: string;
+  name: string;
+  handle: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 type InquiryLoadStatus =
   | "idle"
   | "loading"
@@ -144,6 +155,13 @@ type SiteGalleryItem = {
   url: string;
   path: string;
   alt: string;
+};
+
+type SiteStoreNavigationItem = {
+  id: string;
+  label: string;
+  href: string;
+  visible: boolean;
 };
 
 type SiteCardItem = {
@@ -222,6 +240,97 @@ function cloneInitialSite(): SiteDocument {
   return migrateLegacyMackSite(site);
 }
 
+function createBlankSiteDocument(
+  index: number,
+): SiteDocument {
+  const base =
+    cloneInitialSite();
+
+  const stamp =
+    Date.now().toString(36);
+
+  const homePageId =
+    `home-${stamp}`;
+
+  const name =
+    index <= 1
+      ? "Untitled site"
+      : `Untitled site ${index}`;
+
+  return {
+    ...base,
+
+    id:
+      `site-${stamp}`,
+
+    name,
+
+    handle:
+      `site-${stamp}`,
+
+    homePageId,
+
+    header: {
+      brandLabel:
+        name,
+
+      tagline:
+        "",
+
+      navigation: [
+        {
+          id:
+            `nav-home-${stamp}`,
+
+          kind:
+            "page",
+
+          label:
+            "HOME",
+
+          href:
+            "",
+
+          pageId:
+            homePageId,
+
+          visible:
+            true,
+        },
+      ],
+    },
+
+    footer: {
+      brandLabel:
+        name,
+
+      tagline:
+        "",
+    },
+
+    catalog: {
+      collections: [],
+      items: [],
+    },
+
+    pages: [
+      {
+        id:
+          homePageId,
+
+        title:
+          "Home",
+
+        slug:
+          "",
+
+        sections: [],
+      },
+    ],
+  };
+}
+
+
 function getInitialEditorSelection(
   _site: SiteDocument,
 ): SiteEditorSelection | null {
@@ -250,6 +359,8 @@ function createPageId(title: string) {
 function createDuplicatePageId(pageId: string) {
   return `${pageId}-copy-${Date.now().toString(36)}`;
 }
+
+
 
 function uniqueSlug(
   desiredSlug: string,
@@ -539,6 +650,9 @@ function getSectionTreeIcon(
     case "contact":
       return MousePointerClick;
 
+    case "store-navigation":
+      return Menu;
+
     case "cards":
     case "projects":
     case "products":
@@ -767,6 +881,60 @@ function getGalleryItems(section: SiteSection): SiteGalleryItem[] {
     }];
   });
 }
+
+function getStoreNavigationItems(
+  section: SiteSection,
+): SiteStoreNavigationItem[] {
+  const value =
+    section.content.items;
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap(
+    (item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return [];
+      }
+
+      const record =
+        item as Record<
+          string,
+          unknown
+        >;
+
+      if (
+        typeof record.id !==
+          "string" ||
+        typeof record.label !==
+          "string" ||
+        typeof record.href !==
+          "string"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: record.id,
+          label:
+            record.label,
+          href:
+            record.href,
+          visible:
+            record.visible !==
+            false,
+        },
+      ];
+    },
+  );
+}
+
 
 function getCardItems(section: SiteSection): SiteCardItem[] {
   const value = section.content.items;
@@ -3554,6 +3722,335 @@ function GalleryEditor({
   );
 }
 
+function StoreNavigationEditor({
+  section,
+  onContentChange,
+}: {
+  section: SiteSection;
+  onContentChange:
+    SiteContentChangeHandler;
+}) {
+  const items =
+    getStoreNavigationItems(
+      section,
+    );
+
+  function commitItems(
+    nextItems:
+      SiteStoreNavigationItem[],
+  ) {
+    onContentChange(
+      "items",
+      nextItems,
+    );
+  }
+
+  function updateItem(
+    itemId: string,
+    update: (
+      item:
+        SiteStoreNavigationItem,
+    ) =>
+      SiteStoreNavigationItem,
+  ) {
+    commitItems(
+      items.map(
+        (item) =>
+          item.id === itemId
+            ? update(item)
+            : item,
+      ),
+    );
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: -1 | 1,
+  ) {
+    const index =
+      items.findIndex(
+        (item) =>
+          item.id === itemId,
+      );
+
+    const nextIndex =
+      index + direction;
+
+    if (
+      index < 0 ||
+      nextIndex < 0 ||
+      nextIndex >=
+        items.length
+    ) {
+      return;
+    }
+
+    const next = [
+      ...items,
+    ];
+
+    const [moved] =
+      next.splice(
+        index,
+        1,
+      );
+
+    next.splice(
+      nextIndex,
+      0,
+      moved,
+    );
+
+    commitItems(next);
+  }
+
+  function addItem() {
+    commitItems([
+      ...items,
+      {
+        id:
+          `store-link-${Date.now().toString(36)}`,
+        label:
+          "NEW ITEM",
+        href:
+          "#",
+        visible:
+          true,
+      },
+    ]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <InspectorGroup title="Store">
+        <TextInput
+          id={`store-nav-brand-${section.id}`}
+          label="Brand"
+          value={
+            getContentString(
+              section,
+              "brandLabel",
+            )
+          }
+          placeholder="Store"
+          onChange={(
+            value,
+          ) =>
+            onContentChange(
+              "brandLabel",
+              value,
+            )
+          }
+        />
+
+        <ToggleRow
+          label="Search"
+          checked={
+            section.content
+              .showSearch !==
+            false
+          }
+          onChange={(
+            checked,
+          ) =>
+            onContentChange(
+              "showSearch",
+              checked,
+            )
+          }
+        />
+
+        <ToggleRow
+          label="Bag"
+          checked={
+            section.content
+              .showBag !==
+            false
+          }
+          onChange={(
+            checked,
+          ) =>
+            onContentChange(
+              "showBag",
+              checked,
+            )
+          }
+        />
+      </InspectorGroup>
+
+      <InspectorGroup title="Navigation">
+        <div className="space-y-1.5">
+          {items.map(
+            (
+              item,
+              index,
+            ) => (
+              <details
+                key={item.id}
+                className="group overflow-hidden rounded-[8px] border border-white/[0.055] bg-white/[0.012]"
+              >
+                <summary className="flex min-h-[42px] cursor-pointer list-none items-center gap-2 px-2.5 [&::-webkit-details-marker]:hidden">
+                  <Menu className="h-3 w-3 shrink-0 text-zinc-700" />
+
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-zinc-300">
+                    {item.label ||
+                      "Untitled"}
+                  </span>
+
+                  {!item.visible ? (
+                    <span className="text-[8px] text-zinc-700">
+                      Hidden
+                    </span>
+                  ) : null}
+
+                  <span className="text-[11px] text-zinc-700 transition group-open:rotate-90">
+                    ›
+                  </span>
+                </summary>
+
+                <div className="space-y-2 border-t border-white/[0.045] p-2">
+                  <TextInput
+                    id={`store-nav-label-${section.id}-${item.id}`}
+                    label="Label"
+                    value={
+                      item.label
+                    }
+                    onChange={(
+                      value,
+                    ) =>
+                      updateItem(
+                        item.id,
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          label:
+                            value,
+                        }),
+                      )
+                    }
+                  />
+
+                  <TextInput
+                    id={`store-nav-target-${section.id}-${item.id}`}
+                    label="Target"
+                    value={
+                      item.href
+                    }
+                    placeholder="#section"
+                    onChange={(
+                      value,
+                    ) =>
+                      updateItem(
+                        item.id,
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          href:
+                            value,
+                        }),
+                      )
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Visible"
+                    checked={
+                      item.visible
+                    }
+                    onChange={(
+                      checked,
+                    ) =>
+                      updateItem(
+                        item.id,
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          visible:
+                            checked,
+                        }),
+                      )
+                    }
+                  />
+
+                  <div className="flex items-center gap-1 border-t border-white/[0.04] pt-2">
+                    <button
+                      type="button"
+                      disabled={
+                        index === 0
+                      }
+                      onClick={() =>
+                        moveItem(
+                          item.id,
+                          -1,
+                        )
+                      }
+                      className="flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-25"
+                      title="Move up"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        index ===
+                        items.length -
+                          1
+                      }
+                      onClick={() =>
+                        moveItem(
+                          item.id,
+                          1,
+                        )
+                      }
+                      className="flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-25"
+                      title="Move down"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        commitItems(
+                          items.filter(
+                            (
+                              candidate,
+                            ) =>
+                              candidate.id !==
+                              item.id,
+                          ),
+                        )
+                      }
+                      className="ml-auto flex h-7 w-7 items-center justify-center rounded text-zinc-700 transition hover:bg-red-400/[0.06] hover:text-red-200"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </details>
+            ),
+          )}
+
+          <button
+            type="button"
+            onClick={addItem}
+            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.07] text-[10px] text-zinc-500 transition hover:border-white/[0.13] hover:bg-white/[0.025] hover:text-zinc-300"
+          >
+            <Plus className="h-3 w-3" />
+            Add item
+          </button>
+        </div>
+      </InspectorGroup>
+    </div>
+  );
+}
+
+
 function InspectorContentPanel({
   site,
   section,
@@ -3588,6 +4085,20 @@ function InspectorContentPanel({
     listingType: "product" | "service",
   ) => void;
 }) {
+  if (
+    section.type ===
+    "store-navigation"
+  ) {
+    return (
+      <StoreNavigationEditor
+        section={section}
+        onContentChange={
+          onContentChange
+        }
+      />
+    );
+  }
+
   if (section.type === "hero") {
     return (
       <div className="space-y-3">
@@ -7353,6 +7864,54 @@ function InspectorDesignPanel({
               )
             }
           />
+
+          {section.type ===
+          "products" ? (
+            <>
+              <ToggleRow
+                label="Swap image on hover"
+                checked={
+                  section.style
+                    ?.swapImageOnHover !==
+                  false
+                }
+                onChange={(checked) =>
+                  onStyleChange(
+                    "swapImageOnHover",
+                    checked,
+                  )
+                }
+              />
+
+              <ToggleRow
+                label="Show sizes"
+                checked={
+                  section.style
+                    ?.showSizes !== false
+                }
+                onChange={(checked) =>
+                  onStyleChange(
+                    "showSizes",
+                    checked,
+                  )
+                }
+              />
+
+              <ToggleRow
+                label="Show colors"
+                checked={
+                  section.style
+                    ?.showColors !== false
+                }
+                onChange={(checked) =>
+                  onStyleChange(
+                    "showColors",
+                    checked,
+                  )
+                }
+              />
+            </>
+          ) : null}
         </InspectorGroup>
       ) : null}
     </div>
@@ -7875,6 +8434,429 @@ function PageInspector({
             </>
           ) : null}
         </InspectorGroup>
+      </div>
+    </>
+  );
+}
+
+
+function StorefrontNavigationInspector({
+  page,
+  onPageChange,
+}: {
+  page:
+    SiteDocument["pages"][number];
+  onPageChange: (
+    page:
+      SiteDocument["pages"][number],
+  ) => void;
+}) {
+  const items =
+    page.storefrontNavigation ??
+    [];
+
+  function updateItem(
+    itemId: string,
+    update: (
+      item:
+        SiteStorefrontNavigationItem,
+    ) =>
+      SiteStorefrontNavigationItem,
+  ) {
+    onPageChange({
+      ...page,
+      storefrontNavigation:
+        items.map(
+          (item) =>
+            item.id === itemId
+              ? update(item)
+              : item,
+        ),
+    });
+  }
+
+  function moveItem(
+    itemId: string,
+    direction: -1 | 1,
+  ) {
+    const index =
+      items.findIndex(
+        (item) =>
+          item.id === itemId,
+      );
+
+    const nextIndex =
+      index + direction;
+
+    if (
+      index < 0 ||
+      nextIndex < 0 ||
+      nextIndex >=
+        items.length
+    ) {
+      return;
+    }
+
+    const next = [
+      ...items,
+    ];
+
+    const [moved] =
+      next.splice(
+        index,
+        1,
+      );
+
+    next.splice(
+      nextIndex,
+      0,
+      moved,
+    );
+
+    onPageChange({
+      ...page,
+      storefrontNavigation:
+        next,
+    });
+  }
+
+  function deleteItem(
+    itemId: string,
+  ) {
+    onPageChange({
+      ...page,
+      storefrontNavigation:
+        items.filter(
+          (item) =>
+            item.id !== itemId,
+        ),
+    });
+  }
+
+  function addItem() {
+    const nextItem:
+      SiteStorefrontNavigationItem =
+      {
+        id:
+          `store-nav-${Date.now().toString(36)}`,
+        label:
+          "NEW ITEM",
+        href:
+          page.sections[0]
+            ? `#${page.sections[0].id}`
+            : "#",
+        visible:
+          true,
+      };
+
+    onPageChange({
+      ...page,
+      storefrontNavigation: [
+        ...items,
+        nextItem,
+      ],
+    });
+  }
+
+  return (
+    <>
+      <div className="border-b border-white/[0.07] px-4 py-3">
+        <p className="text-[15px] font-medium text-zinc-100">
+          Storefront
+        </p>
+
+        <p className="mt-0.5 text-[11px] text-zinc-600">
+          {page.title} · storefront chrome
+        </p>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <InspectorGroup title="Navigation layout">
+          <div>
+            <p className="text-[10px] font-medium text-zinc-500">
+              Placement
+            </p>
+
+            <select
+              value={
+                page
+                  .storefrontNavigationLayout ??
+                "sidebar"
+              }
+              onChange={(
+                event,
+              ) =>
+                onPageChange({
+                  ...page,
+
+                  storefrontNavigationLayout:
+                    event.target
+                      .value as
+                      | "sidebar"
+                      | "top"
+                      | "both"
+                      | "none",
+                })
+              }
+              className="mt-1.5 h-8 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 text-[10px] text-zinc-400 outline-none focus:border-white/[0.14]"
+            >
+              <option value="sidebar">
+                Left sidebar
+              </option>
+
+              <option value="top">
+                Top navigation
+              </option>
+
+              <option value="both">
+                Top + left
+              </option>
+
+              <option value="none">
+                No navigation
+              </option>
+            </select>
+          </div>
+        </InspectorGroup>
+
+        <InspectorGroup title="Utilities">
+          <ToggleRow
+            label="Search"
+            checked={
+              page
+                .storefrontShowSearch !==
+              false
+            }
+            onChange={(
+              checked,
+            ) =>
+              onPageChange({
+                ...page,
+
+                storefrontShowSearch:
+                  checked,
+              })
+            }
+          />
+
+          <ToggleRow
+            label="Bag"
+            checked={
+              page
+                .storefrontShowBag !==
+              false
+            }
+            onChange={(
+              checked,
+            ) =>
+              onPageChange({
+                ...page,
+
+                storefrontShowBag:
+                  checked,
+              })
+            }
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Brand">
+          <TextInput
+            id={`storefront-brand-${page.id}`}
+            label="Store label"
+            value={
+              page.brandLabel ??
+              ""
+            }
+            placeholder={
+              page.title
+            }
+            onChange={(
+              value,
+            ) =>
+              onPageChange({
+                ...page,
+                brandLabel:
+                  value,
+              })
+            }
+          />
+        </InspectorGroup>
+
+        <InspectorGroup title="Left navigation">
+          <div className="space-y-1.5">
+            {items.map(
+              (
+                item,
+                index,
+              ) => (
+                <details
+                  key={
+                    item.id
+                  }
+                  className="group overflow-hidden rounded-[8px] border border-white/[0.055] bg-white/[0.012]"
+                >
+                  <summary className="flex min-h-[42px] cursor-pointer list-none items-center gap-2 px-2.5 [&::-webkit-details-marker]:hidden">
+                    <Menu className="h-3 w-3 shrink-0 text-zinc-700" />
+
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-zinc-300">
+                      {
+                        item.label ||
+                        "Untitled"
+                      }
+                    </span>
+
+                    {!item.visible ? (
+                      <span className="text-[8px] text-zinc-700">
+                        Hidden
+                      </span>
+                    ) : null}
+
+                    <span className="text-[11px] text-zinc-700 transition group-open:rotate-90">
+                      ›
+                    </span>
+                  </summary>
+
+                  <div className="space-y-3 border-t border-white/[0.045] p-2.5">
+                    <TextInput
+                      id={`storefront-nav-label-${item.id}`}
+                      label="Label"
+                      value={
+                        item.label
+                      }
+                      onChange={(
+                        value,
+                      ) =>
+                        updateItem(
+                          item.id,
+                          (
+                            current,
+                          ) => ({
+                            ...current,
+                            label:
+                              value,
+                          }),
+                        )
+                      }
+                    />
+
+                    <TextInput
+                      id={`storefront-nav-href-${item.id}`}
+                      label="Target"
+                      value={
+                        item.href
+                      }
+                      placeholder="#section-id"
+                      onChange={(
+                        value,
+                      ) =>
+                        updateItem(
+                          item.id,
+                          (
+                            current,
+                          ) => ({
+                            ...current,
+                            href:
+                              value,
+                          }),
+                        )
+                      }
+                    />
+
+                    <ToggleRow
+                      label="Visible"
+                      checked={
+                        item.visible
+                      }
+                      onChange={(
+                        checked,
+                      ) =>
+                        updateItem(
+                          item.id,
+                          (
+                            current,
+                          ) => ({
+                            ...current,
+                            visible:
+                              checked,
+                          }),
+                        )
+                      }
+                    />
+
+                    <div className="flex items-center gap-1 border-t border-white/[0.045] pt-2">
+                      <button
+                        type="button"
+                        disabled={
+                          index === 0
+                        }
+                        onClick={() =>
+                          moveItem(
+                            item.id,
+                            -1,
+                          )
+                        }
+                        className="flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-25"
+                        title="Move up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={
+                          index ===
+                          items.length -
+                            1
+                        }
+                        onClick={() =>
+                          moveItem(
+                            item.id,
+                            1,
+                          )
+                        }
+                        className="flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-25"
+                        title="Move down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          deleteItem(
+                            item.id,
+                          )
+                        }
+                        className="ml-auto flex h-7 w-7 items-center justify-center rounded text-zinc-700 transition hover:bg-red-400/[0.06] hover:text-red-200"
+                        title="Delete item"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              ),
+            )}
+
+            <button
+              type="button"
+              onClick={
+                addItem
+              }
+              className="mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.07] text-[10px] text-zinc-500 transition hover:border-white/[0.13] hover:bg-white/[0.025] hover:text-zinc-300"
+            >
+              <Plus className="h-3 w-3" />
+              Add navigation item
+            </button>
+          </div>
+        </InspectorGroup>
+
+        <p className="px-1 text-[9px] leading-4 text-zinc-700">
+          This renders as the
+          desktop left sidebar and
+          collapses into the mobile
+          store menu.
+        </p>
       </div>
     </>
   );
@@ -8867,6 +9849,10 @@ function countNavigationTreeItems(
 function SiteChromeInspector({
   selection,
   site,
+  sites,
+  activeSiteId,
+  onSwitchSite,
+  onCreateSite,
   onSiteNameChange,
   onSiteHandleChange,
   onThemeChange,
@@ -8876,6 +9862,20 @@ function SiteChromeInspector({
 }: {
   selection: SiteChromeSelection;
   site: SiteDocument;
+
+  sites:
+    SiteBuilderSiteSummary[];
+
+  activeSiteId:
+    string | null;
+
+  onSwitchSite:
+    (siteId: string) =>
+      void;
+
+  onCreateSite:
+    () => void;
+
   onSiteNameChange: (value: string) => void;
   onSiteHandleChange: (value: string) => void;
   onThemeChange: (theme: SiteThemeConfig) => void;
@@ -8944,6 +9944,76 @@ function SiteChromeInspector({
         </div>
 
         <div className="space-y-4 p-4">
+          <InspectorGroup title="Site">
+            <div className="space-y-2">
+              <div>
+                <FieldLabel htmlFor="site-switcher">
+                  Current site
+                </FieldLabel>
+
+                <select
+                  id="site-switcher"
+                  value={
+                    activeSiteId ??
+                    ""
+                  }
+                  onChange={(
+                    event,
+                  ) => {
+                    const nextId =
+                      event.target
+                        .value;
+
+                    if (
+                      !nextId ||
+                      nextId ===
+                        activeSiteId
+                    ) {
+                      return;
+                    }
+
+                    onSwitchSite(
+                      nextId,
+                    );
+                  }}
+                  className="mt-1.5 h-8 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.14]"
+                >
+                  {sites.map(
+                    (
+                      option,
+                    ) => (
+                      <option
+                        key={
+                          option.id
+                        }
+                        value={
+                          option.id
+                        }
+                      >
+                        {
+                          option.name ||
+                          option.handle ||
+                          "Untitled site"
+                        }
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  onCreateSite
+                }
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] text-[10px] text-zinc-500 transition hover:border-white/[0.15] hover:bg-white/[0.025] hover:text-zinc-200"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New site
+              </button>
+            </div>
+          </InspectorGroup>
+
           <InspectorGroup title="Identity">
             <TextInput
               id="site-name"
@@ -10087,6 +11157,20 @@ function SiteChromeInspector({
 
 export default function SiteBuilder() {
   const [site, setSite] = useState<SiteDocument>(cloneInitialSite);
+
+  const [
+    sites,
+    setSites,
+  ] = useState<
+    SiteBuilderSiteSummary[]
+  >([]);
+
+  const [
+    activeSiteId,
+    setActiveSiteId,
+  ] = useState<
+    string | null
+  >(null);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const initialSite = cloneInitialSite();
     return initialSite.homePageId;
@@ -10126,6 +11210,8 @@ export default function SiteBuilder() {
   const [pageDraftTitle, setPageDraftTitle] = useState("");
   const [pageDraftSlug, setPageDraftSlug] = useState("");
   const [pageDraftSlugTouched, setPageDraftSlugTouched] = useState(false);
+
+
   const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
   const [activeInspectorMode, setActiveInspectorMode] =
     useState<InspectorMode>("content");
@@ -10151,47 +11237,97 @@ export default function SiteBuilder() {
     latestSiteJsonRef.current = JSON.stringify(site);
   }, [site]);
 
-  const loadPublicationState = useCallback(async () => {
-    setPublishRequestStatus("checking");
-    setPublishError(null);
-
-    try {
-      const response = await fetch("/api/site-builder/publish", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-
-      const payload = (await response.json()) as {
-        published?: boolean;
-        site?: SiteDocument | null;
-        publishedAt?: string | null;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(
-          payload.error ?? "Unable to load publication state.",
+  const loadPublicationState =
+    useCallback(
+      async (
+        siteId: string,
+      ) => {
+        setPublishRequestStatus(
+          "checking",
         );
-      }
 
-      setPublishedSiteJson(
-        payload.published && payload.site
-          ? JSON.stringify(payload.site)
-          : null,
-      );
-      setPublishedAt(payload.publishedAt ?? null);
-      setPublishRequestStatus("ready");
-    } catch (error) {
-      setPublishError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load publication state.",
-      );
-      setPublishRequestStatus("error");
-    }
-  }, []);
+        setPublishError(
+          null,
+        );
+
+        try {
+          const response =
+            await fetch(
+              `/api/site-builder/publish?siteId=${encodeURIComponent(
+                siteId,
+              )}`,
+              {
+                method:
+                  "GET",
+
+                headers: {
+                  Accept:
+                    "application/json",
+                },
+
+                cache:
+                  "no-store",
+              },
+            );
+
+          const payload =
+            (
+              await response.json()
+            ) as {
+              published?:
+                boolean;
+
+              site?:
+                SiteDocument |
+                null;
+
+              publishedAt?:
+                string |
+                null;
+
+              error?:
+                string;
+            };
+
+          if (!response.ok) {
+            throw new Error(
+              payload.error ??
+                "Unable to load publication state.",
+            );
+          }
+
+          setPublishedSiteJson(
+            payload.published &&
+            payload.site
+              ? JSON.stringify(
+                  payload.site,
+                )
+              : null,
+          );
+
+          setPublishedAt(
+            payload.publishedAt ??
+              null,
+          );
+
+          setPublishRequestStatus(
+            "ready",
+          );
+        } catch (error) {
+          setPublishError(
+            error instanceof
+              Error
+              ? error.message
+              : "Unable to load publication state.",
+          );
+
+          setPublishRequestStatus(
+            "error",
+          );
+        }
+      },
+      [],
+    );
 
   const loadSiteInquiries = useCallback(async () => {
     setInquiryLoadStatus("loading");
@@ -10233,87 +11369,329 @@ export default function SiteBuilder() {
     }
   }, []);
 
-  const loadDraft = useCallback(async () => {
-    const requestId = draftLoadRequestIdRef.current + 1;
-    draftLoadRequestIdRef.current = requestId;
-    setDraftLoadStatus("loading");
-    setDraftLoadError(null);
+  const loadDraft =
+    useCallback(
+      async (
+        requestedSiteId?:
+          string,
+      ) => {
+        const requestId =
+          draftLoadRequestIdRef
+            .current +
+          1;
 
-    try {
-      const response = await fetch("/api/site-builder/draft", {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-      const payload = (await response.json()) as {
-        site?: SiteDocument | null;
-        error?: string;
-      };
+        draftLoadRequestIdRef.current =
+          requestId;
 
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to load site draft.");
-      }
-
-      if (!mountedRef.current || draftLoadRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      const loadedSite =
-        payload.site ?? cloneInitialSite();
-
-      const nextSite =
-        migrateLegacyMackSite(
-          loadedSite,
+        setDraftLoadStatus(
+          "loading",
         );
 
-      const nextSelection =
-        getInitialEditorSelection(
-          nextSite,
-        );
-      const nextPageId =
-        nextSite.pages.find((page) => page.id === nextSite.homePageId)?.id ??
-        nextSite.pages[0]?.id ??
-        "";
-      const loadedSiteJson =
-        JSON.stringify(
-          loadedSite,
+        setDraftLoadError(
+          null,
         );
 
-      const nextSiteJson =
-        JSON.stringify(
-          nextSite,
-        );
+        try {
+          const sitesResponse =
+            await fetch(
+              "/api/site-builder/sites",
+              {
+                method:
+                  "GET",
 
-      setSite(nextSite);
-      setSelectedPageId(nextPageId);
-      setEditorSelection(nextSelection);
-      setSiteChromeSelection(null);
-      setRailMode("structure");
-      setExpandedSectionIds(new Set());
-      setExpandedPageIds(nextPageId ? new Set([nextPageId]) : new Set());
-      latestSiteJsonRef.current =
-        nextSiteJson;
+                headers: {
+                  Accept:
+                    "application/json",
+                },
 
-      lastPersistedSiteJsonRef.current =
-        loadedSiteJson;
-      setDraftSaveStatus("idle");
-      setDraftSaveError(null);
-      setDraftLoadStatus("ready");
-    } catch (error) {
-      if (!mountedRef.current || draftLoadRequestIdRef.current !== requestId) {
-        return;
-      }
+                cache:
+                  "no-store",
+              },
+            );
 
-      lastPersistedSiteJsonRef.current = latestSiteJsonRef.current;
-      setDraftLoadError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load site draft.",
-      );
-      setDraftLoadStatus("error");
-    }
-  }, []);
+          const sitesPayload =
+            (
+              await sitesResponse.json()
+            ) as {
+              sites?:
+                SiteBuilderSiteSummary[];
+
+              error?:
+                string;
+            };
+
+          if (
+            !sitesResponse.ok
+          ) {
+            throw new Error(
+              sitesPayload.error ??
+                "Unable to load sites.",
+            );
+          }
+
+          let nextSites =
+            sitesPayload.sites ??
+            [];
+
+          if (
+            nextSites.length ===
+            0
+          ) {
+            const initialSite =
+              createBlankSiteDocument(
+                1,
+              );
+
+            const createResponse =
+              await fetch(
+                "/api/site-builder/sites",
+                {
+                  method:
+                    "POST",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+
+                    Accept:
+                      "application/json",
+                  },
+
+                  body:
+                    JSON.stringify({
+                      site:
+                        initialSite,
+                    }),
+                },
+              );
+
+            const createPayload =
+              (
+                await createResponse.json()
+              ) as {
+                siteRecord?:
+                  SiteBuilderSiteSummary;
+
+                error?:
+                  string;
+              };
+
+            if (
+              !createResponse.ok ||
+              !createPayload.siteRecord
+            ) {
+              throw new Error(
+                createPayload.error ??
+                  "Unable to create initial site.",
+              );
+            }
+
+            nextSites = [
+              createPayload.siteRecord,
+            ];
+          }
+
+          const selectedRecord =
+            (
+              requestedSiteId
+                ? nextSites.find(
+                    (
+                      candidate,
+                    ) =>
+                      candidate.id ===
+                      requestedSiteId,
+                  )
+                : null
+            ) ??
+            nextSites[0];
+
+          if (!selectedRecord) {
+            throw new Error(
+              "No site was available.",
+            );
+          }
+
+          const response =
+            await fetch(
+              `/api/site-builder/draft?siteId=${encodeURIComponent(
+                selectedRecord.id,
+              )}`,
+              {
+                method:
+                  "GET",
+
+                headers: {
+                  Accept:
+                    "application/json",
+                },
+
+                cache:
+                  "no-store",
+              },
+            );
+
+          const payload =
+            (
+              await response.json()
+            ) as {
+              site?:
+                SiteDocument |
+                null;
+
+              siteId?:
+                string;
+
+              error?:
+                string;
+            };
+
+          if (!response.ok) {
+            throw new Error(
+              payload.error ??
+                "Unable to load site draft.",
+            );
+          }
+
+          if (
+            !mountedRef.current ||
+            draftLoadRequestIdRef
+              .current !==
+              requestId
+          ) {
+            return;
+          }
+
+          const loadedSite =
+            payload.site ??
+            createBlankSiteDocument(
+              1,
+            );
+
+          const nextSite =
+            migrateLegacyMackSite(
+              loadedSite,
+            );
+
+          const nextSelection =
+            getInitialEditorSelection(
+              nextSite,
+            );
+
+          const nextPageId =
+            nextSite.pages.find(
+              (
+                page,
+              ) =>
+                page.id ===
+                nextSite.homePageId,
+            )?.id ??
+            nextSite.pages[0]
+              ?.id ??
+            "";
+
+          const loadedSiteJson =
+            JSON.stringify(
+              loadedSite,
+            );
+
+          const nextSiteJson =
+            JSON.stringify(
+              nextSite,
+            );
+
+          setSites(
+            nextSites,
+          );
+
+          setActiveSiteId(
+            selectedRecord.id,
+          );
+
+          setSite(
+            nextSite,
+          );
+
+          setSelectedPageId(
+            nextPageId,
+          );
+
+          setEditorSelection(
+            nextSelection,
+          );
+
+          setSiteChromeSelection(
+            null,
+          );
+
+          setRailMode(
+            "structure",
+          );
+
+          setExpandedSectionIds(
+            new Set(),
+          );
+
+          setExpandedPageIds(
+            nextPageId
+              ? new Set([
+                  nextPageId,
+                ])
+              : new Set(),
+          );
+
+          latestSiteJsonRef.current =
+            nextSiteJson;
+
+          lastPersistedSiteJsonRef.current =
+            loadedSiteJson;
+
+          setPublishedSiteJson(
+            null,
+          );
+
+          setPublishedAt(
+            null,
+          );
+
+          setPublishRequestStatus(
+            "checking",
+          );
+
+          setDraftSaveStatus(
+            "idle",
+          );
+
+          setDraftSaveError(
+            null,
+          );
+
+          setDraftLoadStatus(
+            "ready",
+          );
+        } catch (error) {
+          if (
+            !mountedRef.current ||
+            draftLoadRequestIdRef
+              .current !==
+              requestId
+          ) {
+            return;
+          }
+
+          setDraftLoadError(
+            error instanceof
+              Error
+              ? error.message
+              : "Unable to load site draft.",
+          );
+
+          setDraftLoadStatus(
+            "error",
+          );
+        }
+      },
+      [],
+    );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -10326,10 +11704,22 @@ export default function SiteBuilder() {
   }, [loadDraft]);
 
   useEffect(() => {
-    if (draftLoadStatus !== "ready") return;
+    if (
+      draftLoadStatus !==
+        "ready" ||
+      !activeSiteId
+    ) {
+      return;
+    }
 
-    void loadPublicationState();
-  }, [draftLoadStatus, loadPublicationState]);
+    void loadPublicationState(
+      activeSiteId,
+    );
+  }, [
+    activeSiteId,
+    draftLoadStatus,
+    loadPublicationState,
+  ]);
 
   useEffect(() => {
     if (draftLoadStatus !== "ready") return;
@@ -10338,7 +11728,13 @@ export default function SiteBuilder() {
   }, [draftLoadStatus, loadSiteInquiries]);
 
   useEffect(() => {
-    if (draftLoadStatus !== "ready") return;
+    if (
+      draftLoadStatus !==
+        "ready" ||
+      !activeSiteId
+    ) {
+      return;
+    }
 
     const siteJson = JSON.stringify(site);
     latestSiteJsonRef.current = siteJson;
@@ -10364,7 +11760,13 @@ export default function SiteBuilder() {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({ site: requestSite }),
+        body: JSON.stringify({
+          siteId:
+            activeSiteId,
+
+          site:
+            requestSite,
+        }),
       })
         .then(async (response) => {
           const payload = (await response.json().catch(() => ({}))) as {
@@ -10406,7 +11808,11 @@ export default function SiteBuilder() {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [draftLoadStatus, site]);
+  }, [
+    activeSiteId,
+    draftLoadStatus,
+    site,
+  ]);
 
   const selectedPage =
     site.pages.find((page) => page.id === selectedPageId) ?? site.pages[0];
@@ -10449,6 +11855,231 @@ export default function SiteBuilder() {
     (inquiry) => inquiry.status === "new",
   ).length;
 
+  async function persistCurrentSiteNow() {
+    if (!activeSiteId) {
+      return true;
+    }
+
+    if (
+      saveTimerRef.current
+    ) {
+      clearTimeout(
+        saveTimerRef.current,
+      );
+
+      saveTimerRef.current =
+        null;
+    }
+
+    const currentJson =
+      JSON.stringify(
+        site,
+      );
+
+    if (
+      currentJson ===
+      lastPersistedSiteJsonRef.current
+    ) {
+      return true;
+    }
+
+    setDraftSaveStatus(
+      "saving",
+    );
+
+    setDraftSaveError(
+      null,
+    );
+
+    try {
+      const response =
+        await fetch(
+          "/api/site-builder/draft",
+          {
+            method:
+              "PUT",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                siteId:
+                  activeSiteId,
+
+                site,
+              }),
+          },
+        );
+
+      const payload =
+        (
+          await response
+            .json()
+            .catch(
+              () => ({}),
+            )
+        ) as {
+          error?:
+            string;
+        };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ??
+            "Unable to save site draft.",
+        );
+      }
+
+      lastPersistedSiteJsonRef.current =
+        currentJson;
+
+      latestSiteJsonRef.current =
+        currentJson;
+
+      setDraftSaveStatus(
+        "saved",
+      );
+
+      return true;
+    } catch (error) {
+      setDraftSaveStatus(
+        "error",
+      );
+
+      setDraftSaveError(
+        error instanceof
+          Error
+          ? error.message
+          : "Unable to save site draft.",
+      );
+
+      return false;
+    }
+  }
+
+
+  async function switchSite(
+    siteId: string,
+  ) {
+    if (
+      editorLocked ||
+      siteId ===
+        activeSiteId
+    ) {
+      return;
+    }
+
+    const saved =
+      await persistCurrentSiteNow();
+
+    if (!saved) {
+      return;
+    }
+
+    await loadDraft(
+      siteId,
+    );
+  }
+
+
+  async function createSite() {
+    if (editorLocked) {
+      return;
+    }
+
+    const saved =
+      await persistCurrentSiteNow();
+
+    if (!saved) {
+      return;
+    }
+
+    const blankSite =
+      createBlankSiteDocument(
+        sites.length + 1,
+      );
+
+    setDraftLoadStatus(
+      "loading",
+    );
+
+    setDraftLoadError(
+      null,
+    );
+
+    try {
+      const response =
+        await fetch(
+          "/api/site-builder/sites",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                site:
+                  blankSite,
+              }),
+          },
+        );
+
+      const payload =
+        (
+          await response.json()
+        ) as {
+          siteRecord?:
+            SiteBuilderSiteSummary;
+
+          error?:
+            string;
+        };
+
+      if (
+        !response.ok ||
+        !payload.siteRecord
+      ) {
+        throw new Error(
+          payload.error ??
+            "Unable to create site.",
+        );
+      }
+
+      await loadDraft(
+        payload.siteRecord.id,
+      );
+
+      setSiteChromeSelection(
+        "site",
+      );
+    } catch (error) {
+      setDraftLoadError(
+        error instanceof
+          Error
+          ? error.message
+          : "Unable to create site.",
+      );
+
+      setDraftLoadStatus(
+        "error",
+      );
+    }
+  }
+
+
   function selectSiteChrome(selection: SiteChromeSelection) {
     if (editorLocked) return;
 
@@ -10476,15 +12107,53 @@ export default function SiteBuilder() {
       ...current,
       name: value,
     }));
+
+    if (activeSiteId) {
+      setSites(
+        (current) =>
+          current.map(
+            (record) =>
+              record.id ===
+              activeSiteId
+                ? {
+                    ...record,
+                    name:
+                      value,
+                  }
+                : record,
+          ),
+      );
+    }
   }
 
   function updateSiteHandle(value: string) {
     if (editorLocked) return;
 
+    const handle =
+      sanitizeSiteHandle(
+        value,
+      );
+
     setSite((current) => ({
       ...current,
-      handle: sanitizeSiteHandle(value),
+      handle,
     }));
+
+    if (activeSiteId) {
+      setSites(
+        (current) =>
+          current.map(
+            (record) =>
+              record.id ===
+              activeSiteId
+                ? {
+                    ...record,
+                    handle,
+                  }
+                : record,
+          ),
+      );
+    }
   }
 
   function applyThemeToPreview(
@@ -10612,6 +12281,63 @@ export default function SiteBuilder() {
       ...current,
       catalog,
     }));
+  }
+
+  function updateStorefrontPage(
+    pageId: string,
+    update: (
+      page:
+        SiteDocument["pages"][number],
+    ) =>
+      SiteDocument["pages"][number],
+  ) {
+    if (editorLocked) return;
+
+    setSite((current) => ({
+      ...current,
+      pages:
+        current.pages.map(
+          (page) =>
+            page.id === pageId
+              ? update(page)
+              : page,
+        ),
+    }));
+  }
+
+  function selectStorefrontNavigation(
+    pageId: string,
+  ) {
+    const page =
+      site.pages.find(
+        (candidate) =>
+          candidate.id === pageId,
+      );
+
+    if (
+      !page ||
+      page.presentation !==
+        "storefront"
+    ) {
+      return;
+    }
+
+    setRailMode("structure");
+    setSelectedPageId(page.id);
+    setEditorSelection(null);
+    setSiteChromeSelection(
+      "storefront-navigation",
+    );
+    setActiveInspectorMode(
+      "content",
+    );
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(current).add(
+          page.id,
+        ),
+    );
   }
 
   function selectPage(pageId: string) {
@@ -10773,6 +12499,8 @@ export default function SiteBuilder() {
     setPageDraftTitle("");
     setPageDraftSlug("");
     setPageDraftSlugTouched(false);
+
+
     setShowPageDialog(true);
   }
 
@@ -10786,6 +12514,8 @@ export default function SiteBuilder() {
     setPageDraftTitle(page.title);
     setPageDraftSlug(page.slug);
     setPageDraftSlugTouched(true);
+
+
     setShowPageDialog(true);
   }
 
@@ -10795,6 +12525,7 @@ export default function SiteBuilder() {
     setPageDraftTitle("");
     setPageDraftSlug("");
     setPageDraftSlugTouched(false);
+
   }
 
   function updatePageDraftTitle(value: string) {
@@ -10816,57 +12547,136 @@ export default function SiteBuilder() {
   function savePageDraft() {
     if (editorLocked) return;
 
-    const title = pageDraftTitle.trim();
+    const title =
+      pageDraftTitle.trim();
+
     if (!title) return;
 
     if (editingPageId) {
-      const editingPage = site.pages.find((page) => page.id === editingPageId);
-      if (!editingPage) return;
+      const editingPage =
+        site.pages.find(
+          (page) =>
+            page.id ===
+            editingPageId,
+        );
+
+      if (!editingPage) {
+        return;
+      }
+
       const nextSlug =
-        editingPage.id === site.homePageId
+        editingPage.id ===
+        site.homePageId
           ? ""
-          : sanitizeSlug(pageDraftSlug);
+          : sanitizeSlug(
+              pageDraftSlug,
+            );
 
       if (
-        editingPage.id !== site.homePageId &&
-        (!nextSlug || isDuplicateSlug(nextSlug, site.pages, editingPage.id))
+        editingPage.id !==
+          site.homePageId &&
+        (
+          !nextSlug ||
+          isDuplicateSlug(
+            nextSlug,
+            site.pages,
+            editingPage.id,
+          )
+        )
       ) {
         return;
       }
 
-      setSite((current) => ({
-        ...current,
-        pages: current.pages.map((page) =>
-          page.id === editingPage.id
-            ? {
-                ...page,
-                title,
-                slug: page.id === current.homePageId ? "" : nextSlug,
-              }
-            : page,
-        ),
-      }));
+      setSite(
+        (current) => ({
+          ...current,
+
+          pages:
+            current.pages.map(
+              (page) =>
+                page.id ===
+                editingPage.id
+                  ? {
+                      ...page,
+                      title,
+
+                      slug:
+                        page.id ===
+                        current.homePageId
+                          ? ""
+                          : nextSlug,
+                    }
+                  : page,
+            ),
+        }),
+      );
+
       closePageDialog();
       return;
     }
 
-    const slug = sanitizeSlug(pageDraftSlug || title);
-    if (!slug || isDuplicateSlug(slug, site.pages)) return;
+    const slug =
+      sanitizeSlug(
+        pageDraftSlug ||
+          title,
+      );
+
+    if (
+      !slug ||
+      isDuplicateSlug(
+        slug,
+        site.pages,
+      )
+    ) {
+      return;
+    }
 
     const page = {
-      id: createPageId(title),
+      id:
+        createPageId(
+          title,
+        ),
+
       title,
       slug,
+
+      // Every page begins as an empty canvas.
+      // Store Navigation, Products, Media, etc. are sections.
       sections: [],
     };
 
-    setSite((current) => ({
-      ...current,
-      pages: [...current.pages, page],
-    }));
-    setSelectedPageId(page.id);
-    setEditorSelection(null);
-    setExpandedPageIds((current) => new Set(current).add(page.id));
+    setSite(
+      (current) => ({
+        ...current,
+
+        pages: [
+          ...current.pages,
+          page,
+        ],
+      }),
+    );
+
+    setSelectedPageId(
+      page.id,
+    );
+
+    setSiteChromeSelection(
+      null,
+    );
+
+    setEditorSelection(
+      null,
+    );
+
+    setExpandedPageIds(
+      (current) =>
+        new Set(
+          current,
+        ).add(
+          page.id,
+        ),
+    );
+
     closePageDialog();
   }
 
@@ -11544,7 +13354,12 @@ export default function SiteBuilder() {
   }
 
   async function publishSite() {
-    if (editorLocked || publishRequestStatus === "publishing") {
+    if (
+      editorLocked ||
+      !activeSiteId ||
+      publishRequestStatus ===
+        "publishing"
+    ) {
       return;
     }
 
@@ -11558,7 +13373,12 @@ export default function SiteBuilder() {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({ site }),
+        body: JSON.stringify({
+          siteId:
+            activeSiteId,
+
+          site,
+        }),
       });
 
       const payload = (await response.json()) as {
@@ -11799,6 +13619,61 @@ export default function SiteBuilder() {
         if (!sectionTypeSupportsInlineEditField(section.type, field)) return;
 
         updateSectionContent(page.id, section.id, field, value);
+        return;
+      }
+
+      if (
+        isSitePreviewStorefrontNavigationRequestMessage(
+          event.data,
+        )
+      ) {
+        const {
+          pageId,
+        } =
+          event.data.payload;
+
+        const storefrontPage =
+          site.pages.find(
+            (candidate) =>
+              candidate.id ===
+                pageId &&
+              candidate.presentation ===
+                "storefront",
+          );
+
+        if (!storefrontPage) {
+          return;
+        }
+
+        setRailMode(
+          "structure",
+        );
+
+        setSelectedPageId(
+          storefrontPage.id,
+        );
+
+        setEditorSelection(
+          null,
+        );
+
+        setSiteChromeSelection(
+          "storefront-navigation",
+        );
+
+        setActiveInspectorMode(
+          "content",
+        );
+
+        setExpandedPageIds(
+          (current) =>
+            new Set(
+              current,
+            ).add(
+              storefrontPage.id,
+            ),
+        );
+
         return;
       }
 
@@ -12085,6 +13960,7 @@ export default function SiteBuilder() {
                 onChange={updatePageDraftTitle}
                 placeholder="About"
               />
+
 
               <div>
                 <TextInput
@@ -12451,6 +14327,40 @@ export default function SiteBuilder() {
 
                     {pageExpanded ? (
                       <div className="ml-[17px] border-l border-white/[0.05] pl-2.5">
+                        {page.presentation ===
+                        "storefront" ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              selectStorefrontNavigation(
+                                page.id,
+                              )
+                            }
+                            className={`flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
+                              activePage &&
+                              siteChromeSelection ===
+                                "storefront-navigation"
+                                ? "bg-white/[0.055] text-zinc-100"
+                                : "text-zinc-500 hover:bg-white/[0.025] hover:text-zinc-200"
+                            }`}
+                          >
+                            <Menu className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+
+                            <span className="min-w-0 flex-1 truncate font-medium">
+                              Store navigation
+                            </span>
+
+                            <span className="text-[9px] tabular-nums text-zinc-700">
+                              {
+                                (
+                                  page.storefrontNavigation ??
+                                  []
+                                ).length
+                              }
+                            </span>
+                          </button>
+                        ) : null}
+
                         {page.sections.length === 0 ? (
                           <p className="h-8 px-2 pt-2 text-[11px] text-zinc-700">
                             Empty
@@ -12992,10 +14902,37 @@ export default function SiteBuilder() {
                 updateSiteCatalog
               }
             />
+          ) : siteChromeSelection ===
+              "storefront-navigation" &&
+            selectedPage ? (
+            <StorefrontNavigationInspector
+              page={
+                selectedPage
+              }
+              onPageChange={(
+                nextPage,
+              ) =>
+                updateStorefrontPage(
+                  selectedPage.id,
+                  () =>
+                    nextPage,
+                )
+              }
+            />
           ) : siteChromeSelection ? (
             <SiteChromeInspector
               selection={siteChromeSelection}
               site={site}
+              sites={sites}
+              activeSiteId={activeSiteId}
+              onSwitchSite={(siteId) => {
+                void switchSite(
+                  siteId,
+                );
+              }}
+              onCreateSite={() => {
+                void createSite();
+              }}
               onSiteNameChange={updateSiteName}
               onSiteHandleChange={updateSiteHandle}
               onThemeChange={updateSiteTheme}

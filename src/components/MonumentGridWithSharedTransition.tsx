@@ -300,13 +300,6 @@ function getDashboardDetailViewport(): MonumentDetailViewportRect {
     }
   }
 
-  if (window.innerWidth < 768) {
-    return {
-      top: 0,
-      height: viewportHeight,
-    };
-  }
-
   return {
     top,
     height: Math.max(0, viewportHeight - top),
@@ -516,24 +509,25 @@ export function MonumentGridWithSharedTransition({
       return;
     }
 
-    detailOverlayScrollRef.current?.scrollTo({
-      top: 0,
-      left: 0,
-      behavior: "auto",
-    });
+    const closingId = activeId;
 
-    const closeRect = getMonumentCardRect(activeId);
+    // Measure after the close interaction has painted, without mutating the
+    // detail scroller first. This keeps the destination rect tied to the
+    // actual originating dashboard card.
+    window.requestAnimationFrame(() => {
+      const closeRect = getMonumentCardRect(closingId);
 
-    setMonumentTransition((currentTransition) => {
-      if (!currentTransition || currentTransition.phase === "closing") {
-        return currentTransition;
-      }
+      setMonumentTransition((currentTransition) => {
+        if (!currentTransition || currentTransition.phase === "closing") {
+          return currentTransition;
+        }
 
-      return {
-        ...currentTransition,
-        phase: "closing",
-        closeRect,
-      };
+        return {
+          ...currentTransition,
+          phase: "closing",
+          closeRect,
+        };
+      });
     });
   }, [activeId, getMonumentCardRect]);
 
@@ -935,12 +929,19 @@ export function MonumentGridWithSharedTransition({
                   borderRadius: monumentShellBorderRadius,
                   opacity: monumentShellIsFallbackClose ? 0 : 1,
                 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 520,
-                  damping: 44,
-                  mass: 0.9,
-                }}
+                transition={
+                  monumentTransition.phase === "closing"
+                    ? {
+                        duration: 0.32,
+                        ease: [0.22, 1, 0.36, 1],
+                      }
+                    : {
+                        type: "spring",
+                        stiffness: 520,
+                        damping: 44,
+                        mass: 0.9,
+                      }
+                }
                 onAnimationComplete={handleMonumentShellAnimationComplete}
               >
                 <motion.div

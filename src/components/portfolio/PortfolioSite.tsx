@@ -64,6 +64,11 @@ type PortfolioSiteProps = {
     node?: SiteContentNodeId;
     blockId?: string;
   }) => void;
+  onEditorStorefrontNavigationRequest?: (
+    request: {
+      pageId: string;
+    },
+  ) => void;
   onEditorContentEditRequest?: (edit: {
     pageId: string;
     sectionId: string;
@@ -2810,9 +2815,18 @@ function ProductsSection({
     title: string;
     description: string;
     image: string;
+    hoverImage: string;
     priceLabel: string;
     metaLabel: string;
     href: string;
+    sizes: Array<{
+      label: string;
+      available: boolean;
+    }>;
+    colors: Array<{
+      name: string;
+      hex?: string;
+    }>;
   };
 
   const heading =
@@ -2835,6 +2849,18 @@ function ProductsSection({
   const showDescription =
     section.style?.showDescription ===
     true;
+
+  const showSizes =
+    section.style?.showSizes !==
+    false;
+
+  const showColors =
+    section.style?.showColors !==
+    false;
+
+  const swapImageOnHover =
+    section.style?.swapImageOnHover !==
+    false;
 
   const columns =
     section.layout?.columns ??
@@ -2894,10 +2920,6 @@ function ProductsSection({
 
   const catalog =
     siteDocument?.catalog;
-
-  const catalogCollections =
-    catalog?.collections ??
-    [];
 
   const catalogItems =
     catalog?.items ??
@@ -2959,13 +2981,6 @@ function ProductsSection({
               b.sortOrder,
           )
           .map((item) => {
-            const collection =
-              catalogCollections.find(
-                (candidate) =>
-                  candidate.id ===
-                  item.collectionId,
-              );
-
             const statusLabel =
               item.status ===
               "coming-soon"
@@ -2983,15 +2998,18 @@ function ProductsSection({
                 "",
               image:
                 item.imageUrl,
+              hoverImage:
+                item.hoverImageUrl ??
+                "",
               priceLabel:
                 item.priceLabel ??
                 "",
-              metaLabel: [
-                collection?.title,
+              sizes:
+                item.sizes ?? [],
+              colors:
+                item.colors ?? [],
+              metaLabel:
                 statusLabel,
-              ]
-                .filter(Boolean)
-                .join(" · "),
               href:
                 item.href ?? "",
             };
@@ -3038,9 +3056,12 @@ function ProductsSection({
                     ) ??
                     card.image ??
                     "",
+                  hoverImage: "",
                   priceLabel:
                     card.priceLabel ??
                     "",
+                  sizes: [],
+                  colors: [],
                   metaLabel: "",
                   href: "",
                 };
@@ -3240,36 +3261,70 @@ function ProductsSection({
                     }
                   >
                     {product.image ? (
-                      <img
-                        src={
-                          product.image
-                        }
-                        alt={
-                          product.title
-                        }
-                        className={
-                          sideLayout ||
-                          fixedRatio
-                            ? "absolute inset-0 h-full w-full"
-                            : "block h-auto w-full"
-                        }
-                        style={
-                          sideLayout ||
-                          fixedRatio
-                            ? {
-                                objectFit:
-                                  mediaFit,
-                                objectPosition:
-                                  "50% 50%",
-                              }
-                            : undefined
-                        }
-                      />
+                      <>
+                        <img
+                          src={
+                            product.image
+                          }
+                          alt={
+                            product.title
+                          }
+                          className={`${
+                            sideLayout ||
+                            fixedRatio
+                              ? "absolute inset-0 h-full w-full"
+                              : "block h-auto w-full"
+                          } transition-[opacity,transform] duration-500 ease-out ${
+                            product.hoverImage &&
+                            swapImageOnHover
+                              ? "group-hover:scale-[1.01] group-hover:opacity-0"
+                              : "group-hover:scale-[1.01]"
+                          }`}
+                          style={
+                            sideLayout ||
+                            fixedRatio
+                              ? {
+                                  objectFit:
+                                    mediaFit,
+                                  objectPosition:
+                                    "50% 50%",
+                                }
+                              : undefined
+                          }
+                        />
+
+                        {product.hoverImage &&
+                        swapImageOnHover ? (
+                          <img
+                            src={
+                              product.hoverImage
+                            }
+                            alt=""
+                            aria-hidden="true"
+                            className="absolute inset-0 h-full w-full scale-[1.01] opacity-0 transition-[opacity,transform] duration-500 ease-out group-hover:scale-100 group-hover:opacity-100"
+                            style={{
+                              objectFit:
+                                mediaFit,
+                              objectPosition:
+                                "50% 50%",
+                            }}
+                          />
+                        ) : null}
+                      </>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-[10px] text-[var(--site-text-faint)]">
                         No image
                       </div>
                     )}
+
+                    {!serviceMode &&
+                    product.metaLabel ? (
+                      <span className="absolute left-3 top-3 z-10 bg-[var(--site-bg)]/90 px-2 py-1 text-[9px] uppercase tracking-[0.08em] text-[var(--site-text)] backdrop-blur-sm">
+                        {
+                          product.metaLabel
+                        }
+                      </span>
+                    ) : null}
                   </div>
                 );
 
@@ -3280,7 +3335,7 @@ function ProductsSection({
                       "none"
                         ? sideLayout
                           ? "py-1 md:py-2"
-                          : "pt-4"
+                          : "pt-3"
                         : ""
                     }`}
                     style={
@@ -3302,7 +3357,7 @@ function ProductsSection({
                               : sideLayout ||
                                   editorialMode
                                 ? "text-[21px] sm:text-[25px]"
-                                : "text-[14px] sm:text-[15px]"
+                                : "text-[12px] font-medium sm:text-[13px]"
                           }`}
                         >
                           {
@@ -3310,13 +3365,6 @@ function ProductsSection({
                           }
                         </h3>
 
-                        {product.metaLabel ? (
-                          <p className="mt-1.5 truncate text-[10px] leading-4 text-[var(--site-text-muted)] sm:text-[11px]">
-                            {
-                              product.metaLabel
-                            }
-                          </p>
-                        ) : null}
                       </div>
 
                       {showPrice &&
@@ -3344,6 +3392,75 @@ function ProductsSection({
                         }
                       </p>
                     ) : null}
+
+                    {!serviceMode &&
+                    (
+                      (
+                        showSizes &&
+                        product.sizes.length >
+                          0
+                      ) ||
+                      (
+                        showColors &&
+                        product.colors.length >
+                          1
+                      )
+                    ) ? (
+                      <div className="mt-2.5 flex min-h-[18px] items-center justify-between gap-3">
+                        {showSizes &&
+                        product.sizes.length >
+                          0 ? (
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 transition-[opacity,transform] duration-200 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100">
+                            {product.sizes.map(
+                              (size) => (
+                                <span
+                                  key={
+                                    size.label
+                                  }
+                                  className={`text-[9px] tracking-[0.05em] ${
+                                    size.available
+                                      ? "text-[var(--site-text-muted)]"
+                                      : "text-[var(--site-text-faint)] line-through opacity-40"
+                                  }`}
+                                >
+                                  {
+                                    size.label
+                                  }
+                                </span>
+                              ),
+                            )}
+                          </div>
+                        ) : (
+                          <span />
+                        )}
+
+                        {showColors &&
+                        product.colors.length >
+                          1 ? (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {product.colors.map(
+                              (
+                                color,
+                                colorIndex,
+                              ) => (
+                                <span
+                                  key={`${color.name}-${colorIndex}`}
+                                  title={
+                                    color.name
+                                  }
+                                  className="h-2 w-2 rounded-full border border-[var(--site-border)]"
+                                  style={{
+                                    backgroundColor:
+                                      color.hex ??
+                                      "var(--site-surface-strong)",
+                                  }}
+                                />
+                              ),
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 );
 
@@ -3353,7 +3470,7 @@ function ProductsSection({
                       product.id
                     }
                     className={[
-                      "overflow-hidden",
+                      "group overflow-hidden transition-opacity duration-200",
                       serviceMode
                         ? "border-b border-[var(--site-border)] py-7 last:border-b-0 md:py-9"
                         : itemFrameClass(
@@ -6421,6 +6538,267 @@ function BannerSection({
 }
 
 
+type StoreNavigationItem = {
+  id: string;
+  label: string;
+  href: string;
+  visible: boolean;
+};
+
+function readStoreNavigationItems(
+  section: SiteSection,
+): StoreNavigationItem[] {
+  const value =
+    section.content.items;
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap(
+    (item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return [];
+      }
+
+      const record =
+        item as Record<
+          string,
+          unknown
+        >;
+
+      if (
+        typeof record.id !==
+          "string" ||
+        typeof record.label !==
+          "string" ||
+        typeof record.href !==
+          "string"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: record.id,
+          label:
+            record.label,
+          href:
+            record.href,
+          visible:
+            record.visible !==
+            false,
+        },
+      ];
+    },
+  );
+}
+
+function StoreNavigationSection({
+  section,
+  editorContext,
+  mode,
+  showDesktopNavigation,
+}: {
+  section: SiteSection;
+  editorContext:
+    EditorSelectionContext;
+  mode:
+    | "topbar"
+    | "sidebar";
+  showDesktopNavigation?: boolean;
+}) {
+  const brandLabel =
+    readContentString(
+      section,
+      "brandLabel",
+      "Store",
+    );
+
+  const showSearch =
+    section.content
+      .showSearch !== false;
+
+  const showBag =
+    section.content
+      .showBag !== false;
+
+  const items =
+    readStoreNavigationItems(
+      section,
+    ).filter(
+      (item) =>
+        item.visible,
+    );
+
+  const sectionStyle =
+    sectionShellOuterStyle(
+      section,
+    );
+
+  if (mode === "sidebar") {
+    return (
+      <aside
+        data-creator-editor-section={
+          editorContext.editorPreview
+            ? section.id
+            : undefined
+        }
+        onClick={(event) =>
+          handleEditorSectionClick(
+            event,
+            editorContext,
+            section.id,
+          )
+        }
+        style={sectionStyle}
+        className={`hidden min-h-full md:block ${sectionBackgroundClass(
+          section,
+        )} ${editorSectionClass(
+          editorContext,
+          section.id,
+        )}`}
+      >
+        <nav className="sticky top-[52px] px-5 py-5">
+          <div className="space-y-[2px]">
+            {items.map(
+              (item) => (
+                <a
+                  key={item.id}
+                  href={
+                    item.href ||
+                    "#"
+                  }
+                  className="block text-[10px] leading-[1.55] transition-opacity hover:opacity-40"
+                >
+                  {
+                    item.label
+                  }
+                </a>
+              ),
+            )}
+          </div>
+        </nav>
+      </aside>
+    );
+  }
+
+  return (
+    <section
+      data-creator-editor-section={
+        editorContext.editorPreview
+          ? section.id
+          : undefined
+      }
+      onClick={(event) =>
+        handleEditorSectionClick(
+          event,
+          editorContext,
+          section.id,
+        )
+      }
+      style={sectionStyle}
+      className={`sticky top-0 z-50 ${sectionBackgroundClass(
+        section,
+      )} ${editorSectionClass(
+        editorContext,
+        section.id,
+      )}`}
+    >
+      <div className="flex h-[48px] items-center justify-between gap-5 px-4 md:h-[52px] md:px-5">
+        <span className="shrink-0 text-[14px] font-semibold leading-none tracking-[-0.04em]">
+          {brandLabel}
+        </span>
+
+        <div className="hidden min-w-0 items-center gap-5 text-[10px] leading-none md:flex">
+          {showDesktopNavigation ? (
+            <nav className="flex min-w-0 items-center gap-4">
+              {items.map(
+                (item) => (
+                  <a
+                    key={
+                      `top-${item.id}`
+                    }
+                    href={
+                      item.href ||
+                      "#"
+                    }
+                    className="whitespace-nowrap transition-opacity hover:opacity-45"
+                  >
+                    {
+                      item.label
+                    }
+                  </a>
+                ),
+              )}
+            </nav>
+          ) : null}
+
+          {showSearch ? (
+            <button
+              type="button"
+              className="transition-opacity hover:opacity-45"
+            >
+              SEARCH
+            </button>
+          ) : null}
+
+          {showBag ? (
+            <button
+              type="button"
+              className="transition-opacity hover:opacity-45"
+            >
+              BAG (0)
+            </button>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-4 text-[10px] md:hidden">
+          {showSearch ? (
+            <span>
+              SEARCH
+            </span>
+          ) : null}
+
+          {showBag ? (
+            <span>
+              BAG
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {items.length > 0 ? (
+        <nav className="flex gap-4 overflow-x-auto px-4 pb-3 text-[10px] leading-none md:hidden">
+          {items.map(
+            (item) => (
+              <a
+                key={
+                  `mobile-${item.id}`
+                }
+                href={
+                  item.href ||
+                  "#"
+                }
+                className="shrink-0"
+              >
+                {
+                  item.label
+                }
+              </a>
+            ),
+          )}
+        </nav>
+      ) : null}
+    </section>
+  );
+}
+
+
 function MackHomeSections({
   site,
   siteDocument,
@@ -6440,13 +6818,66 @@ function MackHomeSections({
     sections.filter(
       (section) =>
         section.visible &&
-        section.type !== "banner",
+        section.type !==
+          "banner",
     );
-  const nodes: ReactNode[] = [];
 
-  for (let index = 0; index < visibleSections.length; index += 1) {
-    const section = visibleSections[index];
-    const kind = section.type;
+  const storeNavigationSection =
+    visibleSections.find(
+      (section) =>
+        section.type ===
+        "store-navigation",
+    );
+
+  const storeNavigationVariant =
+    sectionVariant(
+      storeNavigationSection,
+      "sidebar",
+    );
+
+  const showSideNavigation =
+    Boolean(
+      storeNavigationSection,
+    ) &&
+    (
+      storeNavigationVariant ===
+        "sidebar" ||
+      storeNavigationVariant ===
+        "both"
+    );
+
+  const showTopNavigation =
+    Boolean(
+      storeNavigationSection,
+    ) &&
+    (
+      storeNavigationVariant ===
+        "top" ||
+      storeNavigationVariant ===
+        "both"
+    );
+
+  const flowSections =
+    visibleSections.filter(
+      (section) =>
+        section.type !==
+        "store-navigation",
+    );
+
+  const nodes: ReactNode[] =
+    [];
+
+  for (
+    let index = 0;
+    index <
+    flowSections.length;
+    index += 1
+  ) {
+    const section =
+      flowSections[index];
+
+    const kind =
+      section.type;
 
     const originalIndex =
       sections.findIndex(
@@ -6469,130 +6900,232 @@ function MackHomeSections({
       />,
     );
 
+    nodes.push(
+      <span
+        key={`anchor-${section.id}`}
+        id={section.id}
+        aria-hidden="true"
+        className="block h-0 scroll-mt-[64px]"
+      />,
+    );
+
     if (kind === "hero") {
       nodes.push(
         <HeroSection
           key={section.id}
           site={site}
-          siteDocument={siteDocument}
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "products") {
+    } else if (
+      kind === "products"
+    ) {
       nodes.push(
         <ProductsSection
           key={section.id}
-          siteDocument={siteDocument}
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          listings={sourceListings}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          listings={
+            sourceListings
+          }
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "services") {
+    } else if (
+      kind === "services"
+    ) {
       nodes.push(
         <ProductsSection
           key={section.id}
-          siteDocument={siteDocument}
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          listings={sourceListings}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          listings={
+            sourceListings
+          }
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "split") {
+    } else if (
+      kind === "split"
+    ) {
       nodes.push(
         <SplitSection
           key={section.id}
-          siteHandle={site.handle}
-          siteDocument={siteDocument}
+          siteHandle={
+            site.handle
+          }
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "stats") {
+    } else if (
+      kind === "stats"
+    ) {
       nodes.push(
         <StatsSection
           key={section.id}
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "cards") {
+    } else if (
+      kind === "cards"
+    ) {
       nodes.push(
         <CardsSection
           key={section.id}
-          siteHandle={site.handle}
-          siteDocument={siteDocument}
+          siteHandle={
+            site.handle
+          }
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "faq") {
+    } else if (
+      kind === "faq"
+    ) {
       nodes.push(
         <FaqSection
           key={section.id}
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "testimonials") {
+    } else if (
+      kind ===
+      "testimonials"
+    ) {
       nodes.push(
         <TestimonialsSection
           key={section.id}
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "gallery") {
+    } else if (
+      kind === "gallery"
+    ) {
       nodes.push(
         <GallerySection
           key={section.id}
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "cta") {
+    } else if (
+      kind === "cta"
+    ) {
       nodes.push(
         <CtaSection
           key={section.id}
-          siteHandle={site.handle}
-          siteDocument={siteDocument}
+          siteHandle={
+            site.handle
+          }
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "contact") {
+    } else if (
+      kind === "contact"
+    ) {
       nodes.push(
         <ContactSection
           key={section.id}
-          siteHandle={site.handle}
-          siteDocument={siteDocument}
+          siteHandle={
+            site.handle
+          }
+          siteDocument={
+            siteDocument
+          }
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "embed") {
+    } else if (
+      kind === "embed"
+    ) {
       nodes.push(
         <EmbedSection
           key={section.id}
           section={section}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
+          editorPreview={
+            editorPreview
+          }
+          editorContext={
+            editorContext
+          }
         />,
       );
-    } else if (kind === "media") {
+    } else if (
+      kind === "media"
+    ) {
       nodes.push(
         <StandaloneMediaSection
           key={section.id}
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
     } else {
@@ -6600,7 +7133,9 @@ function MackHomeSections({
         <SimpleManualSection
           key={section.id}
           section={section}
-          editorContext={editorContext}
+          editorContext={
+            editorContext
+          }
         />,
       );
     }
@@ -6618,7 +7153,63 @@ function MackHomeSections({
     />,
   );
 
-  return <>{nodes}</>;
+  const pageContent = (
+    <>
+      {nodes}
+    </>
+  );
+
+  if (
+    !storeNavigationSection
+  ) {
+    return pageContent;
+  }
+
+  const storeTopBar = (
+    <StoreNavigationSection
+      section={
+        storeNavigationSection
+      }
+      editorContext={
+        editorContext
+      }
+      mode="topbar"
+      showDesktopNavigation={
+        showTopNavigation
+      }
+    />
+  );
+
+  if (!showSideNavigation) {
+    return (
+      <>
+        {storeTopBar}
+        {pageContent}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {storeTopBar}
+
+      <div className="md:grid md:grid-cols-[142px_minmax(0,1fr)]">
+        <StoreNavigationSection
+          section={
+            storeNavigationSection
+          }
+          editorContext={
+            editorContext
+          }
+          mode="sidebar"
+        />
+
+        <div className="min-w-0">
+          {pageContent}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function siteNavigationItemKind(
@@ -7052,11 +7643,21 @@ export default function PortfolioSite({
   editorPageId = "",
   editorSelection = null,
   onEditorSelectionRequest,
+  onEditorStorefrontNavigationRequest,
   onEditorContentEditRequest,
   onEditorMediaEditRequest,
   onEditorSectionInsertRequest,
 }: PortfolioSiteProps) {
   const renderSections = (sections ?? defaultMackSections) as SiteSection[];
+
+  const hasStoreNavigationSection =
+    renderSections.some(
+      (section) =>
+        section.visible &&
+        section.type ===
+          "store-navigation",
+    );
+
   const headerConfig = getSiteHeaderConfig({
     name: site.name,
     header: siteDocument?.header,
@@ -7072,6 +7673,91 @@ export default function PortfolioSite({
   const visibleNavigation = headerConfig.navigation.filter(
     (item) => item.visible,
   );
+
+  const currentPage =
+    siteDocument?.pages.find(
+      (page) =>
+        page.id === editorPageId,
+    );
+
+  const storefrontMode =
+    currentPage?.presentation ===
+    "storefront";
+
+  const storefrontBrand =
+    currentPage?.brandLabel?.trim() ||
+    headerConfig.brandLabel;
+
+  const storefrontNavigation =
+    (
+      currentPage
+        ?.storefrontNavigation ??
+      []
+    ).filter(
+      (item) =>
+        item.visible,
+    );
+
+  const storefrontNavigationLayout =
+    currentPage
+      ?.storefrontNavigationLayout ??
+    "sidebar";
+
+  const storefrontSideNavigation =
+    storefrontNavigationLayout ===
+      "sidebar" ||
+    storefrontNavigationLayout ===
+      "both";
+
+  const storefrontTopNavigation =
+    storefrontNavigationLayout ===
+      "top" ||
+    storefrontNavigationLayout ===
+      "both";
+
+  const storefrontShowSearch =
+    currentPage
+      ?.storefrontShowSearch !==
+    false;
+
+  const storefrontShowBag =
+    currentPage
+      ?.storefrontShowBag !==
+    false;
+
+  const storefrontMobileMenuAvailable =
+    storefrontNavigation.length >
+      0 ||
+    storefrontShowSearch ||
+    storefrontShowBag;
+
+  const storefrontHomeHref =
+    currentPage?.slug
+      ? `/portfolio/${site.handle}/${currentPage.slug}`
+      : `/portfolio/${site.handle}`;
+
+  const storefrontChromeSection =
+    renderSections.find(
+      (section) =>
+        section.visible &&
+        Boolean(
+          section.style
+            ?.backgroundColor,
+        ),
+    );
+
+  const storefrontChromeBackground =
+    storefrontChromeSection
+      ?.style
+      ?.backgroundColor ??
+    "var(--site-bg)";
+
+  const storefrontChromeText =
+    storefrontChromeSection
+      ?.style
+      ?.textColor ??
+    "var(--site-text)";
+
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const editorContext: EditorSelectionContext = {
@@ -7199,137 +7885,459 @@ export default function PortfolioSite({
           ),
         )}
 
-      <header className="sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl">
-        <div className="mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
-          <Link
-            href={`/portfolio/${site.handle}`}
-            className="text-[11px] font-semibold tracking-[0.32em]"
-            style={{ color: "var(--site-accent)" }}
+      {storefrontMode ? (
+        <>
+          <header
+            className="sticky top-0 z-50"
+            style={{
+              backgroundColor:
+                storefrontChromeBackground,
+              color:
+                storefrontChromeText,
+            }}
           >
-            {headerConfig.brandLabel}
-          </Link>
-
-          <div className="flex items-center gap-6">
-            <nav className="hidden items-center gap-8 text-[10px] text-[var(--site-text-muted)] md:flex">
-              {visibleNavigation.map(
-                (item) => (
-                  <DesktopNavigationItem
-                    key={
-                      item.id
-                    }
-                    item={
-                      item
-                    }
-                    siteDocument={
-                      siteDocument
-                    }
-                    siteHandle={
-                      site.handle
-                    }
-                    editorPreview={
-                      editorPreview
-                    }
-                  />
-                ),
-              )}
-            </nav>
-
-            {headerConfig.tagline ? (
-              <p className="hidden text-[8px] text-[var(--site-text-subtle)] xl:block">
-                • &nbsp; {headerConfig.tagline}
-              </p>
-            ) : null}
-
-            {visibleNavigation.length > 0 ? (
-              <button
-                type="button"
-                aria-expanded={mobileNavOpen}
-                aria-controls="site-mobile-navigation"
-                onClick={() =>
-                  setMobileNavOpen((current) => !current)
+            <div className="flex h-[48px] items-center justify-between px-4 md:h-[52px] md:px-5">
+              <a
+                href={
+                  storefrontHomeHref
                 }
-                className="text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-text-muted)] transition hover:text-[var(--site-text)] md:hidden"
-              >
-                {mobileNavOpen ? "Close" : "Menu"}
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {mobileNavOpen &&
-        visibleNavigation.length >
-          0 ? (
-          <nav
-            id="site-mobile-navigation"
-            className="border-t border-[var(--site-border)] md:hidden"
-          >
-            <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-3 sm:px-8">
-              {visibleNavigation.map(
-                (item) => (
-                  <MobileNavigationItem
-                    key={
-                      item.id
-                    }
-                    item={
-                      item
-                    }
-                    siteDocument={
-                      siteDocument
-                    }
-                    siteHandle={
-                      site.handle
-                    }
-                    editorPreview={
-                      editorPreview
-                    }
-                    onNavigate={() =>
-                      setMobileNavOpen(
-                        false,
-                      )
-                    }
-                  />
-                ),
-              )}
-
-              {headerConfig.tagline ? (
-                <p className="pt-3 text-[8px] leading-4 text-[var(--site-text-subtle)]">
-                  {
-                    headerConfig.tagline
+                onClick={(
+                  event,
+                ) => {
+                  if (
+                    editorPreview
+                  ) {
+                    event.preventDefault();
                   }
-                </p>
+                }}
+                className="text-[14px] font-semibold leading-none tracking-[-0.04em]"
+              >
+                {
+                  storefrontBrand
+                }
+              </a>
+
+              <div className="hidden min-w-0 items-center gap-5 text-[10px] leading-none md:flex">
+                {storefrontTopNavigation ? (
+                  <nav className="flex min-w-0 items-center gap-4">
+                    {storefrontNavigation.map(
+                      (item) => (
+                        <a
+                          key={
+                            `top-${item.id}`
+                          }
+                          href={
+                            item.href
+                          }
+                          onClick={(
+                            event,
+                          ) => {
+                            if (
+                              editorPreview
+                            ) {
+                              event.preventDefault();
+
+                              onEditorStorefrontNavigationRequest?.(
+                                {
+                                  pageId:
+                                    editorPageId,
+                                },
+                              );
+                            }
+                          }}
+                          className="whitespace-nowrap transition-opacity hover:opacity-45"
+                        >
+                          {
+                            item.label
+                          }
+                        </a>
+                      ),
+                    )}
+                  </nav>
+                ) : null}
+
+                {storefrontShowSearch ? (
+                  <button
+                    type="button"
+                    className="transition-opacity hover:opacity-45"
+                  >
+                    SEARCH
+                  </button>
+                ) : null}
+
+                {storefrontShowBag ? (
+                  <button
+                    type="button"
+                    className="transition-opacity hover:opacity-45"
+                  >
+                    BAG (0)
+                  </button>
+                ) : null}
+              </div>
+
+              {storefrontMobileMenuAvailable ? (
+                <button
+                  type="button"
+                  aria-expanded={
+                    mobileNavOpen
+                  }
+                  onClick={() =>
+                    setMobileNavOpen(
+                      (current) =>
+                        !current,
+                    )
+                  }
+                  className="text-[10px] leading-none md:hidden"
+                >
+                  {mobileNavOpen
+                    ? "CLOSE"
+                    : "MENU"}
+                </button>
               ) : null}
             </div>
-          </nav>
-        ) : null}
-      </header>
 
-      <main id="work">
-        <MackHomeSections
-          site={site}
-          siteDocument={siteDocument}
-          sections={renderSections}
-          sourceListings={sourceListings}
-          editorPreview={editorPreview}
-          editorContext={editorContext}
-        />
-      </main>
+            {mobileNavOpen &&
+            storefrontMobileMenuAvailable ? (
+              <nav className="border-t border-black/10 px-4 pb-7 pt-5 md:hidden">
+                <div className="space-y-1">
+                  {storefrontNavigation.map(
+                    (item) => (
+                      <a
+                        key={
+                          item.id
+                        }
+                        href={
+                          item.href
+                        }
+                        onClick={(
+                          event,
+                        ) => {
+                          if (
+                            editorPreview
+                          ) {
+                            event.preventDefault();
 
-      <footer className="border-t border-[var(--site-border)]">
-        <div className="mx-auto flex min-h-[42px] max-w-[var(--site-page-width)] items-center justify-between gap-4 px-[var(--site-page-x)]">
-          <p
-            className="text-[8px] font-semibold tracking-[0.42em]"
-            style={{ color: "var(--site-accent)" }}
+                            onEditorStorefrontNavigationRequest?.(
+                              {
+                                pageId:
+                                  editorPageId,
+                              },
+                            );
+                          }
+
+                          setMobileNavOpen(
+                            false,
+                          );
+                        }}
+                        className="block text-[13px] leading-6 transition-opacity hover:opacity-45"
+                      >
+                        {
+                          item.label
+                        }
+                      </a>
+                    ),
+                  )}
+                </div>
+
+                {storefrontShowSearch ||
+                storefrontShowBag ? (
+                  <div className="mt-6 flex items-center gap-5 border-t border-black/10 pt-4 text-[10px]">
+                    {storefrontShowSearch ? (
+                      <span>
+                        SEARCH
+                      </span>
+                    ) : null}
+
+                    {storefrontShowBag ? (
+                      <span>
+                        BAG (0)
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </nav>
+            ) : null}
+          </header>
+
+          <div
+            className={
+              storefrontSideNavigation
+                ? "md:grid md:grid-cols-[142px_minmax(0,1fr)]"
+                : ""
+            }
           >
-            {footerConfig.brandLabel}
-          </p>
+            {storefrontSideNavigation ? (
+            <aside
+              className="hidden md:block"
+              style={{
+                backgroundColor:
+                  storefrontChromeBackground,
+                color:
+                  storefrontChromeText,
+              }}
+            >
+              <nav className="sticky top-[52px] px-5 py-5">
+                <div className="space-y-[2px]">
+                  {storefrontNavigation.map(
+                    (item) => (
+                      <a
+                        key={
+                          item.id
+                        }
+                        href={
+                          item.href
+                        }
+                        onClick={(
+                          event,
+                        ) => {
+                          if (
+                            editorPreview
+                          ) {
+                            event.preventDefault();
 
-          {footerConfig.tagline ? (
-            <p className="text-right text-[6px] uppercase tracking-[0.33em] text-[var(--site-text-faint)]">
-              {footerConfig.tagline}
+                            onEditorStorefrontNavigationRequest?.(
+                              {
+                                pageId:
+                                  editorPageId,
+                              },
+                            );
+                          }
+                        }}
+                        className="block text-[10px] leading-[1.55] transition-opacity hover:opacity-40"
+                      >
+                        {
+                          item.label
+                        }
+                      </a>
+                    ),
+                  )}
+                </div>
+              </nav>
+            </aside>
+            ) : null}
+
+            <main
+              id="work"
+              className="min-w-0"
+            >
+              <MackHomeSections
+                site={site}
+                siteDocument={
+                  siteDocument
+                }
+                sections={
+                  renderSections
+                }
+                sourceListings={
+                  sourceListings
+                }
+                editorPreview={
+                  editorPreview
+                }
+                editorContext={
+                  editorContext
+                }
+              />
+            </main>
+          </div>
+        </>
+      ) : (
+        <>
+          <header
+        className={`${
+          hasStoreNavigationSection
+            ? "hidden"
+            : ""
+        } sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl`}
+      >
+            <div className="mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
+              <Link
+                href={`/portfolio/${site.handle}`}
+                className="text-[11px] font-semibold tracking-[0.32em]"
+                style={{
+                  color:
+                    "var(--site-accent)",
+                }}
+              >
+                {
+                  headerConfig.brandLabel
+                }
+              </Link>
+
+              <div className="flex items-center gap-6">
+                <nav className="hidden items-center gap-8 text-[10px] text-[var(--site-text-muted)] md:flex">
+                  {visibleNavigation.map(
+                    (item) => (
+                      <DesktopNavigationItem
+                        key={
+                          item.id
+                        }
+                        item={
+                          item
+                        }
+                        siteDocument={
+                          siteDocument
+                        }
+                        siteHandle={
+                          site.handle
+                        }
+                        editorPreview={
+                          editorPreview
+                        }
+                      />
+                    ),
+                  )}
+                </nav>
+
+                {headerConfig.tagline ? (
+                  <p className="hidden text-[8px] text-[var(--site-text-subtle)] xl:block">
+                    • &nbsp;{" "}
+                    {
+                      headerConfig.tagline
+                    }
+                  </p>
+                ) : null}
+
+                {visibleNavigation.length >
+                0 ? (
+                  <button
+                    type="button"
+                    aria-expanded={
+                      mobileNavOpen
+                    }
+                    aria-controls="site-mobile-navigation"
+                    onClick={() =>
+                      setMobileNavOpen(
+                        (current) =>
+                          !current,
+                      )
+                    }
+                    className="text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--site-text-muted)] transition hover:text-[var(--site-text)] md:hidden"
+                  >
+                    {mobileNavOpen
+                      ? "Close"
+                      : "Menu"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {mobileNavOpen &&
+            visibleNavigation.length >
+              0 ? (
+              <nav
+                id="site-mobile-navigation"
+                className="border-t border-[var(--site-border)] md:hidden"
+              >
+                <div className="mx-auto max-w-[var(--site-page-width)] px-5 py-3 sm:px-8">
+                  {visibleNavigation.map(
+                    (item) => (
+                      <MobileNavigationItem
+                        key={
+                          item.id
+                        }
+                        item={
+                          item
+                        }
+                        siteDocument={
+                          siteDocument
+                        }
+                        siteHandle={
+                          site.handle
+                        }
+                        editorPreview={
+                          editorPreview
+                        }
+                        onNavigate={() =>
+                          setMobileNavOpen(
+                            false,
+                          )
+                        }
+                      />
+                    ),
+                  )}
+
+                  {headerConfig.tagline ? (
+                    <p className="pt-3 text-[8px] leading-4 text-[var(--site-text-subtle)]">
+                      {
+                        headerConfig.tagline
+                      }
+                    </p>
+                  ) : null}
+                </div>
+              </nav>
+            ) : null}
+          </header>
+
+          <main id="work">
+            <MackHomeSections
+              site={site}
+              siteDocument={
+                siteDocument
+              }
+              sections={
+                renderSections
+              }
+              sourceListings={
+                sourceListings
+              }
+              editorPreview={
+                editorPreview
+              }
+              editorContext={
+                editorContext
+              }
+            />
+          </main>
+        </>
+      )}
+
+      {storefrontMode ? (
+        <footer
+          style={{
+            backgroundColor:
+              storefrontChromeBackground,
+            color:
+              storefrontChromeText,
+          }}
+        >
+          <div className="flex min-h-[78px] items-end justify-between px-4 pb-4 text-[9px] md:px-5">
+            <span>
+              {
+                storefrontBrand
+              }
+            </span>
+
+            <span className="opacity-55">
+              © 2026
+            </span>
+          </div>
+        </footer>
+      ) : (
+        <footer className="border-t border-[var(--site-border)]">
+          <div className="mx-auto flex min-h-[42px] max-w-[var(--site-page-width)] items-center justify-between gap-4 px-[var(--site-page-x)]">
+            <p
+              className="text-[8px] font-semibold tracking-[0.42em]"
+              style={{
+                color:
+                  "var(--site-accent)",
+              }}
+            >
+              {
+                footerConfig.brandLabel
+              }
             </p>
-          ) : null}
-        </div>
-      </footer>
+
+            {footerConfig.tagline ? (
+              <p className="text-right text-[6px] uppercase tracking-[0.33em] text-[var(--site-text-faint)]">
+                {
+                  footerConfig.tagline
+                }
+              </p>
+            ) : null}
+          </div>
+        </footer>
+      )}
 
       {bottomBannerSections.map(
         (section) => (

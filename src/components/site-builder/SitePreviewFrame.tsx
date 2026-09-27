@@ -14,6 +14,7 @@ import {
   createSitePreviewSectionInsertRequestMessage,
   createSitePreviewReadyMessage,
   createSitePreviewSelectionRequestMessage,
+  createSitePreviewStorefrontNavigationRequestMessage,
   isSitePreviewActiveSelectionMessage,
   isSitePreviewStateMessage,
 } from "@/lib/site-builder/previewMessages";
@@ -389,6 +390,20 @@ export default function SitePreviewFrame() {
                 window.parent.postMessage(
                   createSitePreviewSelectionRequestMessage(
                     selection,
+                  ),
+                  window.location.origin,
+                );
+              }
+        }
+        onEditorStorefrontNavigationRequest={
+          standaloneMode
+            ? undefined
+            : ({ pageId }) => {
+                window.parent.postMessage(
+                  createSitePreviewStorefrontNavigationRequestMessage(
+                    {
+                      pageId,
+                    },
                   ),
                   window.location.origin,
                 );
