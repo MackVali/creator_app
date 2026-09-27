@@ -501,6 +501,82 @@ const sectionDefinitions = [
     supportsBackground: true,
   },
   {
+    type: "store-navigation",
+    label: "Store Navigation",
+    description:
+      "Add storefront brand, navigation, search, and bag controls.",
+    category: "Commerce",
+
+    defaultContent: {
+      brandLabel: "Store",
+      showSearch: true,
+      showBag: true,
+
+      items: [
+        {
+          id: "shop",
+          label: "SHOP",
+          href: "#",
+          visible: true,
+        },
+        {
+          id: "new-arrivals",
+          label: "NEW ARRIVALS",
+          href: "#",
+          visible: true,
+        },
+        {
+          id: "collections",
+          label: "COLLECTIONS",
+          href: "#",
+          visible: true,
+        },
+        {
+          id: "archive",
+          label: "ARCHIVE",
+          href: "#",
+          visible: true,
+        },
+      ],
+    },
+
+    defaultSource: {
+      kind: "manual",
+    },
+
+    defaultLayout: {
+      variant: "sidebar",
+    },
+
+    defaultStyle: {
+      background: "default",
+    },
+
+    variants: [
+      {
+        id: "sidebar",
+        label: "Left sidebar",
+        description:
+          "Brand and utilities above a persistent left navigation.",
+      },
+      {
+        id: "top",
+        label: "Top",
+        description:
+          "Navigation stays in the top storefront bar.",
+      },
+      {
+        id: "both",
+        label: "Top + left",
+        description:
+          "Show navigation in both storefront positions.",
+      },
+    ],
+
+    usesSource: false,
+    supportsBackground: true,
+  },
+  {
     type: "products",
     label: "Products",
     description: "Show visual Catalog items or real Source products.",
@@ -522,6 +598,9 @@ const sectionDefinitions = [
       background: "default",
       showPrice: true,
       showDescription: false,
+      showSizes: true,
+      showColors: true,
+      swapImageOnHover: true,
       itemFrame: "none",
       itemRadius: 0,
       itemMediaFit: "cover",

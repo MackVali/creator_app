@@ -46,6 +46,16 @@ export type SitePreviewSelectionRequestMessage = {
   payload: SitePreviewSelectionRequestPayload;
 };
 
+export type SitePreviewStorefrontNavigationRequestPayload = {
+  pageId: string;
+};
+
+export type SitePreviewStorefrontNavigationRequestMessage = {
+  namespace: typeof SITE_PREVIEW_MESSAGE_NAMESPACE;
+  type: "storefront-navigation-request";
+  payload: SitePreviewStorefrontNavigationRequestPayload;
+};
+
 export type SitePreviewSectionInsertRequestPayload = {
   pageId: string;
   insertionIndex: number;
@@ -127,6 +137,7 @@ export type SitePreviewMessage =
   | SitePreviewStateMessage
   | SitePreviewHeightMessage
   | SitePreviewSelectionRequestMessage
+  | SitePreviewStorefrontNavigationRequestMessage
   | SitePreviewSectionInsertRequestMessage
   | SitePreviewContentEditRequestMessage
   | SitePreviewMediaEditRequestMessage
@@ -257,6 +268,18 @@ export function createSitePreviewSelectionRequestMessage(
   return {
     namespace: SITE_PREVIEW_MESSAGE_NAMESPACE,
     type: "selection-request",
+    payload,
+  };
+}
+
+export function createSitePreviewStorefrontNavigationRequestMessage(
+  payload: SitePreviewStorefrontNavigationRequestPayload,
+): SitePreviewStorefrontNavigationRequestMessage {
+  return {
+    namespace:
+      SITE_PREVIEW_MESSAGE_NAMESPACE,
+    type:
+      "storefront-navigation-request",
     payload,
   };
 }
@@ -398,6 +421,31 @@ export function isSitePreviewSelectionRequestMessage(
     nodeValid &&
     blockValid &&
     !(hasNode && hasBlock)
+  );
+}
+
+export function isSitePreviewStorefrontNavigationRequestMessage(
+  value: unknown,
+): value is SitePreviewStorefrontNavigationRequestMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    value.namespace !==
+      SITE_PREVIEW_MESSAGE_NAMESPACE ||
+    value.type !==
+      "storefront-navigation-request" ||
+    !isRecord(value.payload)
+  ) {
+    return false;
+  }
+
+  return (
+    typeof value.payload.pageId ===
+      "string" &&
+    value.payload.pageId.trim().length >
+      0
   );
 }
 

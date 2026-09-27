@@ -53,6 +53,9 @@ export default async function PublishedSitePage({
       siteDocument={site}
       sections={page.sections}
       sourceListings={sourceListings}
+      editorPageId={
+        page.id
+      }
     />
   );
 }

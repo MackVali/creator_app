@@ -48,6 +48,9 @@ export default async function PortfolioPage({
         siteDocument={publishedSite}
         sections={homePage.sections}
         sourceListings={sourceListings}
+        editorPageId={
+          homePage.id
+        }
       />
     );
   }

@@ -9,84 +9,223 @@ import {
   normalizeSiteHandle,
 } from "@/lib/site-builder/siteIdentity";
 
-export async function GET() {
-  const auth = await authenticateSiteBuilderDraftRequest();
-  if ("response" in auth) return auth.response;
+export async function GET(
+  request: Request,
+) {
+  const auth =
+    await authenticateSiteBuilderDraftRequest();
 
-  const { data, error } = await auth.db
-    .from("site_builder_public_sites")
-    .select("handle,document,published_at")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  const siteId =
+    new URL(
+      request.url,
+    ).searchParams.get(
+      "siteId",
+    );
+
+  if (!siteId) {
+    return NextResponse.json(
+      {
+        error:
+          "siteId is required",
+      },
+      {
+        status:
+          400,
+      },
+    );
+  }
+
+  const {
+    data,
+    error,
+  } =
+    await auth.db
+      .from(
+        "site_builder_public_sites",
+      )
+      .select(
+        "site_id,handle,document,published_at",
+      )
+      .eq(
+        "user_id",
+        auth.user.id,
+      )
+      .eq(
+        "site_id",
+        siteId,
+      )
+      .maybeSingle();
 
   if (error) {
-    console.error("Failed to load site publication state", error);
+    console.error(
+      "Failed to load publication state",
+      error,
+    );
 
     return NextResponse.json(
-      { error: "Unable to load publication state" },
-      { status: 500 },
+      {
+        error:
+          "Unable to load publication state",
+      },
+      {
+        status:
+          500,
+      },
     );
   }
 
   if (!data) {
     return NextResponse.json({
-      published: false,
-      site: null,
-      handle: null,
-      publishedAt: null,
+      published:
+        false,
+
+      site:
+        null,
+
+      handle:
+        null,
+
+      publishedAt:
+        null,
     });
   }
 
-  const row = data as {
-    handle?: unknown;
-    document?: unknown;
-    published_at?: unknown;
-  };
+  const row =
+    data as {
+      handle?: unknown;
+      document?: unknown;
+      published_at?: unknown;
+    };
 
   return NextResponse.json({
-    published: isSiteDocument(row.document),
-    site: isSiteDocument(row.document) ? row.document : null,
-    handle: typeof row.handle === "string" ? row.handle : null,
+    published:
+      isSiteDocument(
+        row.document,
+      ),
+
+    site:
+      isSiteDocument(
+        row.document,
+      )
+        ? row.document
+        : null,
+
+    handle:
+      typeof row.handle ===
+        "string"
+        ? row.handle
+        : null,
+
     publishedAt:
-      typeof row.published_at === "string"
+      typeof row.published_at ===
+        "string"
         ? row.published_at
         : null,
   });
 }
 
-export async function POST(request: Request) {
-  const auth = await authenticateSiteBuilderDraftRequest();
-  if ("response" in auth) return auth.response;
+export async function POST(
+  request: Request,
+) {
+  const auth =
+    await authenticateSiteBuilderDraftRequest();
 
-  let payload: unknown;
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  let payload:
+    unknown;
 
   try {
-    payload = await request.json();
+    payload =
+      await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
+      {
+        error:
+          "Invalid JSON body",
+      },
+      {
+        status:
+          400,
+      },
     );
   }
+
+  const record =
+    payload &&
+    typeof payload ===
+      "object"
+      ? payload as
+          Record<
+            string,
+            unknown
+          >
+      : null;
+
+  const siteId =
+    typeof record?.siteId ===
+      "string"
+      ? record.siteId
+      : "";
 
   const candidate =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>).site
-      : undefined;
+    record?.site;
 
-  if (!isSiteDocument(candidate)) {
+  if (!siteId) {
     return NextResponse.json(
-      { error: "Invalid site document" },
-      { status: 400 },
+      {
+        error:
+          "siteId is required",
+      },
+      {
+        status:
+          400,
+      },
     );
   }
 
-  const handle = normalizeSiteHandle(candidate.handle);
-
-  if (!isValidSiteHandle(handle)) {
+  if (
+    !isSiteDocument(
+      candidate,
+    )
+  ) {
     return NextResponse.json(
-      { error: "Invalid site handle" },
-      { status: 400 },
+      {
+        error:
+          "Invalid site document",
+      },
+      {
+        status:
+          400,
+      },
+    );
+  }
+
+  const handle =
+    normalizeSiteHandle(
+      candidate.handle,
+    );
+
+  if (
+    !isValidSiteHandle(
+      handle,
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Invalid site handle",
+      },
+      {
+        status:
+          400,
+      },
     );
   }
 
@@ -95,63 +234,146 @@ export async function POST(request: Request) {
     handle,
   };
 
-  const publishedAt = new Date().toISOString();
+  const publishedAt =
+    new Date().toISOString();
 
-  const { error } = await auth.db
-    .from("site_builder_public_sites")
-    .upsert(
-      {
-        user_id: auth.user.id,
-        handle,
-        document: site,
-        published_at: publishedAt,
-      },
-      { onConflict: "user_id" },
-    );
+  const {
+    error,
+  } =
+    await auth.db
+      .from(
+        "site_builder_public_sites",
+      )
+      .upsert(
+        {
+          user_id:
+            auth.user.id,
+
+          site_id:
+            siteId,
+
+          handle,
+
+          document:
+            site,
+
+          published_at:
+            publishedAt,
+        },
+        {
+          onConflict:
+            "site_id",
+        },
+      );
 
   if (error) {
-    console.error("Failed to publish site", error);
+    console.error(
+      "Failed to publish site",
+      error,
+    );
 
-    if (error.code === "23505") {
+    if (
+      error.code ===
+      "23505"
+    ) {
       return NextResponse.json(
-        { error: "That site handle is already in use." },
-        { status: 409 },
+        {
+          error:
+            "That site handle is already in use.",
+        },
+        {
+          status:
+            409,
+        },
       );
     }
 
     return NextResponse.json(
-      { error: "Unable to publish site" },
-      { status: 500 },
+      {
+        error:
+          "Unable to publish site",
+      },
+      {
+        status:
+          500,
+      },
     );
   }
 
   return NextResponse.json({
-    published: true,
+    published:
+      true,
+
     site,
+
     handle,
+
     publishedAt,
   });
 }
 
-export async function DELETE() {
-  const auth = await authenticateSiteBuilderDraftRequest();
-  if ("response" in auth) return auth.response;
+export async function DELETE(
+  request: Request,
+) {
+  const auth =
+    await authenticateSiteBuilderDraftRequest();
 
-  const { error } = await auth.db
-    .from("site_builder_public_sites")
-    .delete()
-    .eq("user_id", auth.user.id);
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  const siteId =
+    new URL(
+      request.url,
+    ).searchParams.get(
+      "siteId",
+    );
+
+  if (!siteId) {
+    return NextResponse.json(
+      {
+        error:
+          "siteId is required",
+      },
+      {
+        status:
+          400,
+      },
+    );
+  }
+
+  const {
+    error,
+  } =
+    await auth.db
+      .from(
+        "site_builder_public_sites",
+      )
+      .delete()
+      .eq(
+        "user_id",
+        auth.user.id,
+      )
+      .eq(
+        "site_id",
+        siteId,
+      );
 
   if (error) {
-    console.error("Failed to unpublish site", error);
-
     return NextResponse.json(
-      { error: "Unable to unpublish site" },
-      { status: 500 },
+      {
+        error:
+          "Unable to unpublish site",
+      },
+      {
+        status:
+          500,
+      },
     );
   }
 
   return NextResponse.json({
-    published: false,
+    published:
+      false,
   });
 }

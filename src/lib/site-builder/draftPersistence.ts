@@ -21,6 +21,12 @@ interface SiteBuilderDraftTableQuery extends PromiseLike<SiteBuilderDraftResult>
   select(columns?: string): SiteBuilderDraftTableQuery;
   eq(column: string, value: unknown): SiteBuilderDraftTableQuery;
   maybeSingle(): Promise<SiteBuilderDraftResult>;
+  insert(
+    values: unknown,
+  ): SiteBuilderDraftTableQuery;
+  update(
+    values: unknown,
+  ): SiteBuilderDraftTableQuery;
   upsert(
     values: unknown,
     options?: { onConflict?: string },
@@ -497,6 +503,9 @@ function isSiteSectionStyleConfig(
       "muted",
       "showPrice",
       "showDescription",
+      "showSizes",
+      "showColors",
+      "swapImageOnHover",
     ]
   ) {
     if (
@@ -714,6 +723,68 @@ function isSiteCatalog(
           "number" &&
         Number.isFinite(
           item.sortOrder,
+        ) &&
+        (
+          item.hoverImageUrl ===
+            undefined ||
+          isString(
+            item.hoverImageUrl,
+          )
+        ) &&
+        (
+          item.hoverImagePath ===
+            undefined ||
+          isString(
+            item.hoverImagePath,
+          )
+        ) &&
+        (
+          item.hoverImageAlt ===
+            undefined ||
+          isString(
+            item.hoverImageAlt,
+          )
+        ) &&
+        (
+          item.sizes ===
+            undefined ||
+          (
+            Array.isArray(
+              item.sizes,
+            ) &&
+            item.sizes.every(
+              (size) =>
+                isRecord(size) &&
+                isString(
+                  size.label,
+                ) &&
+                typeof size.available ===
+                  "boolean",
+            )
+          )
+        ) &&
+        (
+          item.colors ===
+            undefined ||
+          (
+            Array.isArray(
+              item.colors,
+            ) &&
+            item.colors.every(
+              (color) =>
+                isRecord(color) &&
+                isString(
+                  color.name,
+                ) &&
+                (
+                  color.hex ===
+                    undefined ||
+                  isHexColor(
+                    color.hex,
+                  )
+                ),
+            )
+          )
         ) &&
         (
           item.collectionId ===

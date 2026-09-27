@@ -8,6 +8,7 @@ export type SiteSectionType =
   | "faq"
   | "testimonials"
   | "projects"
+  | "store-navigation"
   | "products"
   | "services"
   | "gallery"
@@ -119,6 +120,11 @@ export type SiteSectionStyleConfig = {
 
   showPrice?: boolean;
   showDescription?: boolean;
+
+  // Storefront product-card behavior.
+  showSizes?: boolean;
+  showColors?: boolean;
+  swapImageOnHover?: boolean;
 };
 
 export type SiteSection = {
@@ -153,11 +159,44 @@ export type SiteEditorSelection =
       blockId: string;
     };
 
+export type SitePagePresentation =
+  | "default"
+  | "storefront";
+
+export type SiteStorefrontNavigationItem = {
+  id: string;
+  label: string;
+  href: string;
+  visible: boolean;
+};
+
 export type SitePage = {
   id: string;
   title: string;
   slug: string;
   previewPath?: string;
+
+  // Optional page-specific presentation.
+  // Normal portfolio pages remain unchanged.
+  presentation?: SitePagePresentation;
+
+  // Optional sub-brand identity for storefront pages.
+  brandLabel?: string;
+
+  // Optional storefront-only category navigation.
+  storefrontNavigation?: SiteStorefrontNavigationItem[];
+
+  // Controls how storefront navigation is presented.
+  storefrontNavigationLayout?:
+    | "sidebar"
+    | "top"
+    | "both"
+    | "none";
+
+  // Optional storefront utility chrome.
+  storefrontShowSearch?: boolean;
+  storefrontShowBag?: boolean;
+
   sections: SiteSection[];
 };
 
@@ -259,6 +298,16 @@ export type SiteCatalogCollection = {
   sortOrder: number;
 };
 
+export type SiteCatalogItemSize = {
+  label: string;
+  available: boolean;
+};
+
+export type SiteCatalogItemColor = {
+  name: string;
+  hex?: string;
+};
+
 export type SiteCatalogItem = {
   id: string;
   title: string;
@@ -267,12 +316,20 @@ export type SiteCatalogItem = {
   imagePath: string;
   imageAlt: string;
 
+  // Optional alternate storefront image used for hover / rollover.
+  hoverImageUrl?: string;
+  hoverImagePath?: string;
+  hoverImageAlt?: string;
+
   collectionId?: string;
 
   subtitle?: string;
   priceLabel?: string;
   status: SiteCatalogItemStatus;
   href?: string;
+
+  sizes?: SiteCatalogItemSize[];
+  colors?: SiteCatalogItemColor[];
 
   visible: boolean;
   sortOrder: number;

@@ -5,86 +5,259 @@ import {
   isSiteDocument,
 } from "@/lib/site-builder/draftPersistence";
 
-export async function GET() {
-  const auth = await authenticateSiteBuilderDraftRequest();
-  if ("response" in auth) return auth.response;
+export async function GET(
+  request: Request,
+) {
+  const auth =
+    await authenticateSiteBuilderDraftRequest();
 
-  const { data, error } = await auth.db
-    .from("site_builder_sites")
-    .select("draft_document")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  const siteId =
+    new URL(
+      request.url,
+    ).searchParams.get(
+      "siteId",
+    );
+
+  if (!siteId) {
+    return NextResponse.json(
+      {
+        error:
+          "siteId is required",
+      },
+      {
+        status:
+          400,
+      },
+    );
+  }
+
+  const {
+    data,
+    error,
+  } =
+    await auth.db
+      .from(
+        "site_builder_sites",
+      )
+      .select(
+        "id,draft_document",
+      )
+      .eq(
+        "user_id",
+        auth.user.id,
+      )
+      .eq(
+        "id",
+        siteId,
+      )
+      .maybeSingle();
 
   if (error) {
-    console.error("Failed to load site builder draft", error);
+    console.error(
+      "Failed to load Site Builder draft",
+      error,
+    );
+
     return NextResponse.json(
-      { error: "Unable to load site draft" },
-      { status: 500 },
+      {
+        error:
+          "Unable to load site draft",
+      },
+      {
+        status:
+          500,
+      },
     );
   }
 
-  const row = data as { draft_document?: unknown } | null;
-  const site = row?.draft_document;
-
-  if (site === undefined || site === null) {
-    return NextResponse.json({ site: null });
-  }
-
-  if (!isSiteDocument(site)) {
-    console.error("Stored site builder draft failed validation", {
-      userId: auth.user.id,
-    });
+  if (
+    !data ||
+    typeof data !==
+      "object"
+  ) {
     return NextResponse.json(
-      { error: "Stored site draft is invalid" },
-      { status: 500 },
+      {
+        error:
+          "Site not found",
+      },
+      {
+        status:
+          404,
+      },
     );
   }
 
-  return NextResponse.json({ site });
+  const row =
+    data as {
+      id?: unknown;
+      draft_document?: unknown;
+    };
+
+  if (
+    typeof row.id !==
+      "string" ||
+    !isSiteDocument(
+      row.draft_document,
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Stored site draft is invalid",
+      },
+      {
+        status:
+          500,
+      },
+    );
+  }
+
+  return NextResponse.json({
+    siteId:
+      row.id,
+
+    site:
+      row.draft_document,
+  });
 }
 
-export async function PUT(request: Request) {
-  const auth = await authenticateSiteBuilderDraftRequest();
-  if ("response" in auth) return auth.response;
+export async function PUT(
+  request: Request,
+) {
+  const auth =
+    await authenticateSiteBuilderDraftRequest();
 
-  let payload: unknown;
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  let payload:
+    unknown;
+
   try {
-    payload = await request.json();
+    payload =
+      await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
+      {
+        error:
+          "Invalid JSON body",
+      },
+      {
+        status:
+          400,
+      },
     );
   }
 
-  const site = payload && typeof payload === "object"
-    ? (payload as Record<string, unknown>).site
-    : undefined;
+  const record =
+    payload &&
+    typeof payload ===
+      "object"
+      ? payload as
+          Record<
+            string,
+            unknown
+          >
+      : null;
+
+  const siteId =
+    typeof record?.siteId ===
+      "string"
+      ? record.siteId
+      : "";
+
+  const site =
+    record?.site;
+
+  if (!siteId) {
+    return NextResponse.json(
+      {
+        error:
+          "siteId is required",
+      },
+      {
+        status:
+          400,
+      },
+    );
+  }
 
   if (!isSiteDocument(site)) {
     return NextResponse.json(
-      { error: "Invalid site document" },
-      { status: 400 },
+      {
+        error:
+          "Invalid site document",
+      },
+      {
+        status:
+          400,
+      },
     );
   }
 
-  const { error } = await auth.db
-    .from("site_builder_sites")
-    .upsert(
-      {
-        user_id: auth.user.id,
-        draft_document: site,
-      },
-      { onConflict: "user_id" },
-    );
+  const {
+    data,
+    error,
+  } =
+    await auth.db
+      .from(
+        "site_builder_sites",
+      )
+      .update({
+        draft_document:
+          site,
+      })
+      .eq(
+        "user_id",
+        auth.user.id,
+      )
+      .eq(
+        "id",
+        siteId,
+      )
+      .select(
+        "id",
+      )
+      .maybeSingle();
 
   if (error) {
-    console.error("Failed to save site builder draft", error);
+    console.error(
+      "Failed to save Site Builder draft",
+      error,
+    );
+
     return NextResponse.json(
-      { error: "Unable to save site draft" },
-      { status: 500 },
+      {
+        error:
+          "Unable to save site draft",
+      },
+      {
+        status:
+          500,
+      },
     );
   }
 
-  return NextResponse.json({ site });
+  if (!data) {
+    return NextResponse.json(
+      {
+        error:
+          "Site not found",
+      },
+      {
+        status:
+          404,
+      },
+    );
+  }
+
+  return NextResponse.json({
+    siteId,
+    site,
+  });
 }
