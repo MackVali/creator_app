@@ -7674,6 +7674,35 @@ export default function PortfolioSite({
     (item) => item.visible,
   );
 
+  const siteHeaderAlignmentClass =
+    headerConfig.alignment === "left"
+      ? "justify-start"
+      : headerConfig.alignment === "center"
+        ? "justify-center"
+        : headerConfig.alignment === "right"
+          ? "flex-row-reverse justify-start"
+          : "justify-between";
+
+  const siteHeaderBehaviorClass =
+    headerConfig.behavior === "static"
+      ? "relative"
+      : headerConfig.behavior === "fixed"
+        ? "fixed inset-x-0 top-0"
+        : "sticky top-0";
+
+  const siteHeaderEdgeClass =
+    headerConfig.edgeSpacing === "compact"
+      ? "px-3"
+      : headerConfig.edgeSpacing === "spacious"
+        ? "px-8 md:px-12"
+        : "px-[var(--site-page-x)]";
+
+  const siteHeaderFlowClass =
+    headerConfig.contentFlow === "overlay" &&
+    headerConfig.behavior !== "fixed"
+      ? "-mb-[64px]"
+      : "";
+
   const currentPage =
     siteDocument?.pages.find(
       (page) =>
@@ -8148,9 +8177,11 @@ export default function PortfolioSite({
           hasStoreNavigationSection
             ? "hidden"
             : ""
-        } sticky top-0 z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl`}
+        } ${siteHeaderBehaviorClass} ${siteHeaderFlowClass} z-50 border-b border-[var(--site-border)] bg-[var(--site-bg)] backdrop-blur-xl`}
       >
-            <div className="mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center justify-between px-[var(--site-page-x)]">
+            <div
+              className={`mx-auto flex h-[64px] max-w-[var(--site-page-width)] items-center gap-8 ${siteHeaderAlignmentClass} ${siteHeaderEdgeClass}`}
+            >
               <Link
                 href={`/portfolio/${site.handle}`}
                 className="text-[11px] font-semibold tracking-[0.32em]"
@@ -8268,6 +8299,15 @@ export default function PortfolioSite({
               </nav>
             ) : null}
           </header>
+
+          {!hasStoreNavigationSection &&
+          headerConfig.behavior === "fixed" &&
+          headerConfig.contentFlow !== "overlay" ? (
+            <div
+              aria-hidden="true"
+              className="h-[64px]"
+            />
+          ) : null}
 
           <main id="work">
             <MackHomeSections

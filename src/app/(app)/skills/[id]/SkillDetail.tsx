@@ -14,8 +14,6 @@ import type { MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import {
-  Grid2x2,
-  Grid3x3,
   Timer,
   MoreVertical,
   User,
@@ -26,7 +24,6 @@ import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -195,81 +192,16 @@ type DecoratedRelatedRoutine = RelatedRoutineCardRoutine & {
 type RelatedHabitCardDensity = "large" | "small";
 type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
 
-const RELATED_HABIT_GRID_CLASS =
-  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
-const RELATED_HABIT_SMALL_GRID_CLASS =
-  "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
-const RELATED_HABIT_PAGE_GRID_CLASS =
-  "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
-const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
-  "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
-const RELATED_HABIT_ADD_CARD_OUTER_CLASS =
-  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
-const RELATED_HABIT_ADD_CARD_INNER_CLASS =
-  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
+const RELATED_HABIT_GRID_CLASS = "flex w-full flex-col gap-0.5";
+const RELATED_HABIT_SMALL_GRID_CLASS = "flex w-full flex-col gap-0.5";
+const RELATED_HABIT_PAGE_GRID_CLASS = "flex w-full flex-col gap-0.5";
+const RELATED_HABIT_SMALL_PAGE_GRID_CLASS = "flex w-full flex-col gap-0.5";
 const SKILL_OVERVIEW_SURFACE_CLASS =
   "relative overflow-hidden rounded-3xl border border-white/10 bg-[#111216] shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)]";
 const SKILL_MODULE_SURFACE_CLASS =
   "relative overflow-hidden rounded-3xl border-white/10 bg-[#0D0E11] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur";
 const SKILL_MODULE_SECTION_SURFACE_CLASS =
   "rounded-3xl border border-white/10 bg-[#0D0E11] shadow-[0_24px_70px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)]";
-
-function renderRelatedHabitAddCard({
-  isSmall,
-  onClick,
-}: {
-  isSmall: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={clsx(
-        RELATED_HABIT_ADD_CARD_OUTER_CLASS,
-        isSmall
-          ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-          : ""
-      )}
-      onClick={onClick}
-      aria-label="Add habit"
-    >
-      <div className={clsx(RELATED_HABIT_ADD_CARD_INNER_CLASS, "w-full min-w-0")}>
-        <div
-          className={clsx(
-            "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
-            isSmall ? "gap-1" : ""
-          )}
-        >
-          <div
-            className={clsx(
-              "mt-1 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
-              isSmall ? "h-6 w-6 sm:h-7 sm:w-7" : ""
-            )}
-          >
-            <Plus
-              className={clsx(
-                "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
-                isSmall ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
-              )}
-              aria-hidden="true"
-            />
-          </div>
-          <div className="flex w-full min-w-0 items-center justify-center">
-            <span
-              className={clsx(
-                "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
-                isSmall ? "line-clamp-2 text-[8px] sm:text-[9px]" : ""
-              )}
-              style={{ hyphens: "auto" }}
-            >
-              Add habit
-            </span>
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -674,12 +606,28 @@ interface SkillDetailProps {
   scrollContainerRef?: RefObject<HTMLElement | null>;
 }
 
+type SkillDetailTab = "overview" | "community" | "leaderboard";
+
+const SKILL_DETAIL_TABS: Array<{
+  value: SkillDetailTab;
+  label: string;
+}> = [
+  { value: "overview", label: "OVERVIEW" },
+  { value: "community", label: "COMMUNITY" },
+  { value: "leaderboard", label: "LEADERBOARD" },
+];
+
 export function SkillDetail({
   skillId,
   onClose,
   scrollContainerRef,
 }: SkillDetailProps) {
   const id = skillId;
+  const [activeSkillTab, setActiveSkillTab] =
+    useState<SkillDetailTab>("overview");
+  const [mountedSkillTabs, setMountedSkillTabs] = useState<Set<SkillDetailTab>>(
+    () => new Set(["overview"])
+  );
   const [skill, setSkill] = useState<Skill | null>(null);
   const [skillOpenPreview, setSkillOpenPreview] =
     useState<SkillOpenPreview | null>(null);
@@ -719,6 +667,18 @@ export function SkillDetail({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [focusPomoSource, setFocusPomoSource] =
     useState<FocusPomoSource | null>(null);
+  const activateSkillTab = useCallback((tab: SkillDetailTab) => {
+    setMountedSkillTabs((current) => {
+      if (current.has(tab)) return current;
+
+      const next = new Set(current);
+      next.add(tab);
+      return next;
+    });
+
+    setActiveSkillTab(tab);
+  }, []);
+
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const toast = useToastHelpers();
@@ -736,6 +696,11 @@ export function SkillDetail({
   const [currentDateKey, setCurrentDateKey] = useState(() =>
     formatDateKeyInTimeZone(new Date(), timeZone)
   );
+  useEffect(() => {
+    setActiveSkillTab("overview");
+    setMountedSkillTabs(new Set(["overview"]));
+  }, [id]);
+
   const relatedHabitIdsKey = useMemo(
     () => relatedHabits.map((habit) => habit.id).join(","),
     [relatedHabits]
@@ -786,11 +751,6 @@ export function SkillDetail({
     axis: RelatedHabitPageSwipeAxis;
     width: number;
   } | null>(null);
-  const handleRelatedHabitDensityToggle = useCallback(() => {
-    setRelatedHabitCardDensity((currentDensity) =>
-      currentDensity === "large" ? "small" : "large"
-    );
-  }, []);
   const handleRoutineAddHabit = useCallback(
     (routine: RelatedRoutineCardRoutine) => {
       fabCreation?.requestHabitCreation(null, {
@@ -2365,54 +2325,84 @@ export function SkillDetail({
 
     return (
       <main className={detailMainClassName}>
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          <section aria-labelledby="skill-overview-loading" className={clsx(SKILL_OVERVIEW_SURFACE_CLASS, "p-4 sm:p-5 md:p-6")}>
-            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
-              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
-                {skillOpenPreview ? (
-                  <span
-                    className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-2xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20 sm:h-[76px] sm:w-[76px] sm:text-[2.75rem]"
-                    role="img"
-                    aria-label={`Opening ${skillOpenPreview.name}`}
-                  >
-                    {previewIcon}
-                  </span>
-                ) : (
-                  <Skeleton className="h-[68px] w-[68px] shrink-0 rounded-2xl bg-white/10 ring-1 ring-white/20 sm:h-[76px] sm:w-[76px]" />
-                )}
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-start justify-between gap-3">
-                    {skillOpenPreview ? (
-                      <h1 id="skill-overview-loading" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
-                        {skillOpenPreview.name}
-                      </h1>
-                    ) : (
-                      <Skeleton id="skill-overview-loading" className="h-8 min-w-0 flex-1 bg-white/10 sm:h-9 md:h-10" />
-                    )}
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <Skeleton className="size-9 rounded-full bg-white/10" />
-                      <Skeleton className="size-9 rounded-full bg-white/10" />
-                    </div>
+        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-2 overflow-x-hidden sm:gap-3">
+          <section
+            aria-labelledby="skill-overview-loading"
+            className="relative w-full px-3 py-1.5 text-white sm:px-4 sm:py-2"
+          >
+            <div className="relative z-40 flex items-center gap-4 sm:gap-5">
+              {skillOpenPreview ? (
+                <span
+                  className="relative flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-[#09090b] text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
+                  role="img"
+                  aria-label={`Opening ${skillOpenPreview.name}`}
+                >
+                  {previewIcon}
+                </span>
+              ) : (
+                <Skeleton className="h-[60px] w-[60px] shrink-0 rounded-2xl bg-white/[0.07] sm:h-[72px] sm:w-[72px]" />
+              )}
+
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-start justify-between gap-3">
+                  {skillOpenPreview ? (
+                    <h1
+                      id="skill-overview-loading"
+                      className="min-w-0 flex-1 break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+                    >
+                      {skillOpenPreview.name}
+                    </h1>
+                  ) : (
+                    <Skeleton
+                      id="skill-overview-loading"
+                      className="h-9 w-44 max-w-[60%] rounded-lg bg-white/[0.07] sm:h-10 sm:w-56"
+                    />
+                  )}
+
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Skeleton className="size-9 rounded-lg bg-white/[0.06]" />
+                    <Skeleton className="h-9 w-5 rounded-lg bg-white/[0.06]" />
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-2 leading-none">
-                      <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                      <Skeleton className="h-4 w-14 bg-white/10" />
-                    </div>
-                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-5 rounded bg-white/[0.06]" />
+                  <Skeleton className="h-3.5 w-12 rounded bg-white/[0.06]" />
                 </div>
               </div>
             </div>
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <section className={clsx(SKILL_MODULE_SECTION_SURFACE_CLASS, "p-5 sm:p-6")}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <Skeleton className="h-3 w-20 bg-white/10" />
-                </div>
-                <Skeleton className="h-8 w-20 rounded-full bg-white/10" />
+          <div
+            className="flex w-full min-w-0 items-center gap-5 overflow-hidden border-b border-white/[0.07] px-1 pt-0.5"
+            aria-hidden="true"
+          >
+            {["w-16", "w-20", "w-24"].map((width, index) => (
+              <div
+                key={index}
+                className={`relative shrink-0 ${width} pb-2 pt-1`}
+              >
+                <Skeleton className="h-3 w-full rounded bg-white/[0.06]" />
+                {index === 0 ? (
+                  <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-white/35" />
+                ) : null}
               </div>
+            ))}
+          </div>
+
+          <div className="flex w-full flex-col gap-5 lg:gap-6">
+            <section className="relative w-full overflow-visible">
+              <header className="relative px-1 pb-1 pt-1 sm:px-1.5 sm:pt-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-3 w-16 rounded bg-white/[0.06]" />
+
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-[18px] w-7 rounded-full bg-white/[0.06]" />
+                    <Skeleton className="h-6 w-6 rounded-lg bg-white/[0.06] sm:h-7 sm:w-7" />
+                  </div>
+                </div>
+              </header>
+
               <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {Array.from({ length: 3 }).map((_, index) => (
                   <Skeleton
@@ -2423,53 +2413,45 @@ export function SkillDetail({
               </div>
             </section>
 
-              <section className="relative space-y-6">
-                <Card className={SKILL_MODULE_SURFACE_CLASS}>
-                  <CardHeader className="relative pb-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-                          RELATED HABITS
-                        </CardTitle>
-                      </div>
-                      <Skeleton className="h-6 w-8 rounded-full bg-white/10" />
-                    </div>
-                  </CardHeader>
-                  <CardContent className="relative">
-                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                      {Array.from({ length: 3 }).map((_, index) => (
-                        <Skeleton
-                          key={index}
-                          className="h-[100px] rounded-2xl bg-white/[0.06]"
-                        />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+            <section className="relative w-full">
+              <header className="relative px-1 pb-1 pt-1 sm:px-1.5 sm:pt-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-3 w-14 rounded bg-white/[0.06]" />
 
-                <Card className={SKILL_MODULE_SURFACE_CLASS}>
-                  <CardHeader className="relative pb-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-                          NOTES
-                        </CardTitle>
-                      </div>
-                      <Skeleton className="h-6 w-8 rounded-full bg-white/10" />
-                    </div>
-                  </CardHeader>
-                  <CardContent className="relative">
-                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                      {Array.from({ length: 3 }).map((_, index) => (
-                        <Skeleton
-                          key={index}
-                          className="h-[100px] rounded-2xl bg-white/[0.06]"
-                        />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </section>
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-[18px] w-7 rounded-full bg-white/[0.06]" />
+                    <Skeleton className="h-6 w-6 rounded-lg bg-white/[0.06] sm:h-7 sm:w-7" />
+                  </div>
+                </div>
+              </header>
+
+              <div className="flex w-full flex-col gap-0.5 px-1 sm:px-1.5">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton
+                    key={index}
+                    className="h-[48px] w-full rounded-[8px] bg-white/[0.06]"
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="relative w-full overflow-visible">
+              <header className="relative px-1 pb-1 pt-1 sm:px-1.5 sm:pt-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-3 w-12 rounded bg-white/[0.06]" />
+                  <Skeleton className="h-6 w-6 rounded-lg bg-white/[0.06]" />
+                </div>
+              </header>
+
+              <div className="grid w-full grid-cols-2 gap-2 px-1 sm:grid-cols-3 sm:px-1.5">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton
+                    key={index}
+                    className="h-[92px] rounded-xl bg-white/[0.06]"
+                  />
+                ))}
+              </div>
+            </section>
           </div>
         </div>
       </main>
@@ -2622,12 +2604,15 @@ export function SkillDetail({
         source={focusPomoSource}
         onClose={() => setFocusPomoSource(null)}
       />
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section aria-labelledby="skill-overview" className={clsx(SKILL_OVERVIEW_SURFACE_CLASS, "p-4 sm:p-5 md:p-6")}>
-            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
-              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-2 overflow-x-hidden sm:gap-3">
+        <section
+          aria-labelledby="skill-overview"
+          className="relative w-full px-3 py-1.5 text-white sm:px-4 sm:py-2"
+        >
+            <div className="relative z-40 flex items-center gap-4 sm:gap-5">
+              <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-5">
                 <span
-                  className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-2xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20 sm:h-[76px] sm:w-[76px] sm:text-[2.75rem]"
+                  className="relative flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-[#09090b] text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
                   role="img"
                   aria-label={`Skill: ${skill.name}`}
                 >
@@ -2635,7 +2620,7 @@ export function SkillDetail({
                 </span>
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-start justify-between gap-3">
-                    <h1 id="skill-overview" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
+                    <h1 id="skill-overview" className="min-w-0 flex-1 break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                       {skill.name}
                     </h1>
                     <div className="flex shrink-0 items-center gap-0.5">
@@ -2728,82 +2713,85 @@ export function SkillDetail({
             </div>
           </section>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <Card className={SKILL_MODULE_SURFACE_CLASS}>
-              <CardContent className="relative overflow-visible">
-                <SkillProjectsList skillId={id} icon={icon} />
-              </CardContent>
-            </Card>
+        <nav
+          className="flex w-full min-w-0 items-center gap-5 overflow-x-auto border-b border-white/[0.07] px-1 pt-0.5"
+          aria-label="Skill detail sections"
+        >
+          {SKILL_DETAIL_TABS.map((tab) => {
+            const isActive = activeSkillTab === tab.value;
 
-          <section className="relative space-y-6">
-            <Card className={SKILL_MODULE_SURFACE_CLASS}>
-              <CardHeader className="relative pb-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-                      RELATED HABITS
-                    </CardTitle>
-                  </div>
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => activateSkillTab(tab.value)}
+                aria-pressed={isActive}
+                className={clsx(
+                  "relative shrink-0 px-0.5 pb-2 pt-1 text-[10px] font-semibold tracking-[0.12em] transition-colors sm:text-[11px]",
+                  isActive
+                    ? "text-white"
+                    : "text-white/38 hover:text-white/65"
+                )}
+              >
+                {tab.label}
+                <span
+                  className={clsx(
+                    "absolute inset-x-0 bottom-0 h-[2px] rounded-full transition-opacity",
+                    isActive ? "bg-white opacity-100" : "opacity-0"
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+            );
+          })}
+        </nav>
+
+        {mountedSkillTabs.has("overview") ? (
+          <div
+            className="flex w-full flex-col gap-5 lg:gap-6"
+            hidden={activeSkillTab !== "overview"}
+          >
+          <section className="relative w-full overflow-visible">
+            <SkillProjectsList skillId={id} icon={icon} />
+          </section>
+
+          <section className="relative flex min-w-0 flex-col gap-5 lg:gap-6">
+            <section className="relative w-full">
+              <header className="relative px-1 pb-1 pt-1 sm:px-1.5 sm:pt-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/48">
+                    HABITS
+                  </h2>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                    <span className="rounded-full border border-white/8 bg-white/[0.035] px-2 py-0.5 text-[9px] font-semibold leading-none text-white/48">
                       {standaloneDecoratedHabits.length + relatedRoutines.length}
                     </span>
                     <button
                       type="button"
-                      aria-label={
-                        isSmallRelatedHabitDensity
-                          ? "Use large cards"
-                          : "Use small cards"
-                      }
-                      onClick={handleRelatedHabitDensityToggle}
-                      className={clsx(
-                        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-                        isSmallRelatedHabitDensity
-                          ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
-                          : null
-                      )}
+                      aria-label="Add habit"
+                      onClick={handleRelatedHabitAdd}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95 sm:h-7 sm:w-7"
                     >
-                      {isSmallRelatedHabitDensity ? (
-                        <Grid2x2
-                          className="h-3.5 w-3.5"
-                          strokeWidth={1.8}
-                          aria-hidden
-                        />
-                      ) : (
-                        <Grid3x3
-                          className="h-3.5 w-3.5"
-                          strokeWidth={1.8}
-                          aria-hidden
-                        />
-                      )}
+                      <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
                     </button>
+
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="relative">
+              </header>
+              <div className="relative px-1 pt-0 pb-0 sm:px-1.5">
                 {habitsLoading ? (
                   <div className={relatedHabitGridClass}>
                     {Array.from({ length: 3 }).map((_, index) => (
                       <Skeleton
                         key={index}
-                        className={clsx(
-                          "bg-white/[0.06]",
-                          isSmallRelatedHabitDensity
-                            ? "h-[70px] rounded-xl"
-                            : "h-[100px] rounded-2xl"
-                        )}
+                        className="h-[48px] w-full rounded-[8px] bg-white/[0.06]"
                       />
                     ))}
                   </div>
                 ) : habitsError ? (
                   <p className="text-xs text-white/60">{habitsError}</p>
                 ) : relatedHabits.length === 0 ? (
-                  <div className={relatedHabitGridClass}>
-                    {renderRelatedHabitAddCard({
-                      isSmall: isSmallRelatedHabitDensity,
-                      onClick: handleRelatedHabitAdd,
-                    })}
-                  </div>
+                  <div className={relatedHabitGridClass} />
                 ) : (
                   <div className="space-y-2">
                     {completionError ? (
@@ -2897,20 +2885,13 @@ export function SkillDetail({
                                       : isHabitOverdue
                                         ? "related-habit-due-border"
                                         : null;
-                                  const habitPillClass = isHabitCompletedToday
-                                    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                                    : isHabitOverdue
-                                      ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
-                                      : "border-white/10 bg-white/[0.06] text-white/65";
+
 
                                 return (
                                   <div
                                     key={habit.id}
                                     className={clsx(
-                                      "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
-                                      isSmallRelatedHabitDensity
-                                        ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-                                        : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                                      "goal-card group relative flex min-h-[48px] w-full transform-gpu flex-col rounded-[8px] px-2 py-1.5 text-white transition duration-200 select-none",
                                       isHabitCompletedToday
                                         ? "emerald-completed-compact"
                                         : [
@@ -2999,55 +2980,27 @@ export function SkillDetail({
                                         </span>
                                       </span>
                                     ) : null}
-                                    <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                                    <div className="relative z-[2] flex min-h-0 flex-1 items-center gap-2 text-left">
                                       <span
                                         className={clsx(
-                                          "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-                                          isSmallRelatedHabitDensity
-                                            ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
-                                            : "h-7 w-7 text-xs sm:h-8 sm:w-8",
+                                          "flex h-[20px] w-[20px] shrink-0 items-center justify-center text-[15px] leading-none",
                                           isHabitCompletedToday
                                             ? "grayscale"
-                                            : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
+                                            : null
                                         )}
                                         aria-hidden="true"
                                       >
                                         {habitSkillIcon}
                                       </span>
-                                      <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
-                                        <span
-                                          className={clsx(
-                                            "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
-                                            isSmallRelatedHabitDensity
-                                              ? "text-[8px] sm:text-[9px]"
-                                              : "text-[9px] sm:text-[10px]"
-                                          )}
-                                          style={{ hyphens: "auto" }}
-                                        >
-                                          {habit.name}
-                                        </span>
-                                      </div>
-                                      <div className="flex w-full min-w-0 flex-col items-center gap-1">
-                                        <span
-                                          className={clsx(
-                                            "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                                            isSmallRelatedHabitDensity
-                                              ? "px-1.5 py-[2px] text-[7px]"
-                                              : "px-2 py-[3px] text-[8px]",
-                                            habitPillClass
-                                          )}
-                                        >
-                                          {habitPillLabel}
-                                        </span>
-                                      </div>
+
+                                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-tight text-white sm:text-[14px]">
+                                        {habit.name}
+                                      </span>
                                     </div>
                                   </div>
                                 );
                                 })}
-                                {renderRelatedHabitAddCard({
-                                  isSmall: isSmallRelatedHabitDensity,
-                                  onClick: handleRelatedHabitAdd,
-                                })}
+
                               </div>
                             </div>
                           ))}
@@ -3082,60 +3035,55 @@ export function SkillDetail({
                     ) : null}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <div className={clsx(SKILL_MODULE_SURFACE_CLASS, "border p-4 sm:p-5")}>
-              <div className="relative">
-                <NotesGrid skillId={id} />
               </div>
-            </div>
+            </section>
+
+            <section className="relative w-full overflow-visible">
+              <NotesGrid skillId={id} />
+            </section>
 
           </section>
         </div>
+        ) : null}
 
-        <section className="space-y-6" aria-label="Skill social">
-          <Card className={clsx(SKILL_MODULE_SURFACE_CLASS, "min-h-[360px] sm:min-h-[430px]")}>
-            <CardHeader className="relative">
-              <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+        {mountedSkillTabs.has("community") ? (
+          <section
+            className="relative w-full px-1"
+            hidden={activeSkillTab !== "community"}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
                 SKILL COMMUNITY
-              </CardTitle>
-              <CardDescription className="max-w-2xl text-sm leading-6 text-white/58">
-                A dedicated space for creators practicing {skill.name} is coming
-                soon. Community prompts, shared wins, and skill-specific momentum
-                will live here.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="relative flex min-h-[250px] items-center justify-center sm:min-h-[310px]">
-              <div className="max-w-md rounded-2xl border border-white/8 bg-white/[0.025] px-5 py-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/44">
-                  Coming Soon
-                </p>
-                <p className="mt-3 text-sm leading-6 text-white/68">
-                  The community layer is being prepared with a premium, skill-first
-                  experience.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              </h2>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36">
+                Coming Soon
+              </span>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/52">
+              Community for creators practicing {skill.name} is coming soon.
+            </p>
+          </section>
+        ) : null}
 
-          <Card className={SKILL_MODULE_SURFACE_CLASS}>
-            <CardHeader className="relative pb-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-                    SKILL LEADERBOARD
-                  </CardTitle>
-                  <CardDescription className="text-sm text-white/52">
-                    Weekly XP gained in the last 7 days.
-                  </CardDescription>
-                </div>
-                <span className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                  1 Week
-                </span>
+        {mountedSkillTabs.has("leaderboard") ? (
+          <section
+            className="relative w-full"
+            hidden={activeSkillTab !== "leaderboard"}
+          >
+            <header className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
+              <div>
+                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                  SKILL LEADERBOARD
+                </h2>
+                <p className="mt-1 text-xs text-white/45">
+                  Weekly XP gained in the last 7 days.
+                </p>
               </div>
-            </CardHeader>
-            <CardContent className="relative">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                1 Week
+              </span>
+            </header>
+            <div className="relative">
               {skillLeaderboardLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 3 }).map((_, index) => (
@@ -3215,9 +3163,9 @@ export function SkillDetail({
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </section>
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
     <MemoCompletionDialog

@@ -11,7 +11,7 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { Grid2x2, Grid3x3, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -112,14 +112,6 @@ type ProjectWithCompletion = Project & {
 
 const PROJECT_CARD_DENSITY_STORAGE_KEY =
   "creator.skillProjectLibrary.cardDensity";
-const PROJECT_SMALL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 pb-4 sm:grid-cols-3 sm:px-2 sm:gap-1 sm:pb-5 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
-const PROJECT_GRID_CLASS =
-  "-mx-3 grid grid-cols-3 gap-2.5 px-3 pb-4 sm:grid-cols-3 sm:gap-3 sm:pb-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
-const PROJECT_ADD_CARD_OUTER_CLASS =
-  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
-const PROJECT_ADD_CARD_INNER_CLASS =
-  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
 function getProjectOpenKey(section: ProjectSection, goalId: string): ProjectOpenKey {
   return `${section}:${goalId}`;
@@ -320,7 +312,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   const fabCreation = useFabCreation();
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; icon: string | null }[]>([]);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(null);
@@ -363,9 +354,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     -projectPanelViewportWidth,
     Math.min(0, projectPanelBaseTransform + projectPanelDragOffset)
   );
-  const projectGridClass =
-    projectCardDensity === "small" ? PROJECT_SMALL_GRID_CLASS : PROJECT_GRID_CLASS;
-  const isSmallProjectCardDensity = projectCardDensity === "small";
+  const projectGridClass = "flex w-full min-w-0 flex-col gap-0.5";
 
   useEffect(() => {
     setOpenProjectKey(null);
@@ -436,87 +425,9 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [getProjectPanelHeight]
   );
 
-  const handleProjectCardDensityToggle = useCallback(() => {
-    setProjectCardDensity((currentDensity) =>
-      currentDensity === "large" ? "small" : "large"
-    );
-  }, []);
-
-  const renderProjectCardDensityToggle = useCallback(
-    () => (
-      <button
-        type="button"
-        aria-label={
-          isSmallProjectCardDensity ? "Use large cards" : "Use small cards"
-        }
-        onClick={handleProjectCardDensityToggle}
-        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:border-white/20 focus-visible:bg-white/[0.06] focus-visible:outline-none ${
-          isSmallProjectCardDensity ? "text-zinc-300" : ""
-        }`}
-      >
-        {isSmallProjectCardDensity ? (
-          <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-        ) : (
-          <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-        )}
-      </button>
-    ),
-    [handleProjectCardDensityToggle, isSmallProjectCardDensity]
-  );
-
   const handleAddProject = useCallback(() => {
     fabCreation?.requestProjectCreation(null, null, { skillId });
   }, [fabCreation, skillId]);
-
-  const renderProjectAddCard = useCallback(
-    () => (
-      <button
-        type="button"
-        className={`${PROJECT_ADD_CARD_OUTER_CLASS} ${
-          isSmallProjectCardDensity
-            ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-            : ""
-        }`}
-        data-variant="compact"
-        onClick={handleAddProject}
-        aria-label="Add project"
-      >
-        <div className={`${PROJECT_ADD_CARD_INNER_CLASS} w-full min-w-0`}>
-          <div
-            className={`flex w-full min-w-0 flex-col items-center justify-center gap-1.5 ${
-              isSmallProjectCardDensity ? "gap-1" : ""
-            }`}
-          >
-            <div
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8 ${
-                isSmallProjectCardDensity ? "h-6 w-6 sm:h-7 sm:w-7" : ""
-              }`}
-            >
-              <Plus
-                className={`h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4 ${
-                  isSmallProjectCardDensity ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
-                }`}
-                aria-hidden="true"
-              />
-            </div>
-            <div className="flex w-full min-w-0 items-center justify-center">
-              <span
-                className={`line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px] ${
-                  isSmallProjectCardDensity
-                    ? "line-clamp-2 text-[8px] sm:text-[9px]"
-                    : ""
-                }`}
-                style={{ hyphens: "auto" }}
-              >
-                Add project
-              </span>
-            </div>
-          </div>
-        </div>
-      </button>
-    ),
-    [handleAddProject, isSmallProjectCardDensity]
-  );
 
   const measureActiveProjectPanel = useCallback(() => {
     const nextHeight = loading
@@ -780,47 +691,11 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     };
   }, []);
 
-  const fetchGoalForEditing = useCallback(async (goal: Goal) => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return goal;
-    try {
-      const { data, error } = await supabase
-        .from("goals")
-        .select("priority, energy, monument_id, circle_id, area_id, due_date, why, active, status")
-        .eq("id", goal.id)
-        .single();
-      if (error || !data) {
-        return goal;
-      }
-      const priorityCode =
-        typeof data.priority === "string" ? data.priority.toUpperCase() : null;
-      const energyCode =
-        typeof data.energy === "string" ? data.energy.toUpperCase() : null;
-      return {
-        ...goal,
-        priority: priorityCode ? mapPriority(priorityCode) : goal.priority,
-        priorityCode: priorityCode ?? goal.priorityCode ?? null,
-        energy: energyCode ? mapEnergy(energyCode) : goal.energy,
-        energyCode: energyCode ?? goal.energyCode ?? null,
-        monumentId: data.monument_id ?? goal.monumentId ?? null,
-        circleId: data.circle_id ?? goal.circleId ?? null,
-        areaId: data.area_id ?? goal.areaId ?? null,
-        dueDate: data.due_date ?? goal.dueDate,
-        why: data.why ?? goal.why,
-        active: typeof data.active === "boolean" ? data.active : goal.active,
-        status: normalizeGoalStatus(data.status, data.active ?? goal.active),
-      };
-    } catch (err) {
-      console.error("Failed to fetch goal for editing", err);
-      return goal;
-    }
-  }, []);
 
   const loadProjects = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase || !skillId) {
       setProjects([]);
-      setBaseGoals([]);
       setLoading(false);
       return;
     }
@@ -831,8 +706,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       } = await supabase.auth.getUser();
       if (!user) {
         setProjects([]);
-        setBaseGoals([]);
-        setUserId(null);
+          setUserId(null);
         setLoading(false);
         return;
       }
@@ -999,7 +873,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         return decorate(base);
       });
 
-      setBaseGoals(mappedGoals);
 
       const skillProjects: Goal[] = [];
       mappedGoals.forEach((goal) => {
@@ -1055,7 +928,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     } catch (err) {
       console.error("Error loading skill projects", err);
       setProjects([]);
-      setBaseGoals([]);
       setSkillOptions([]);
     } finally {
       setLoading(false);
@@ -1120,19 +992,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     setProjects((prev) => prev.filter((goal) => goal.id !== goalId));
   }, []);
 
-  const handleGoalEdit = useCallback(
-    (goal: Goal) => {
-      const parentId = goal.parentGoalId ?? goal.id;
-      const sourceGoal = baseGoals.find((item) => item.id === parentId);
-      if (!sourceGoal) return;
-      setEditingGoal(null);
-      void fetchGoalForEditing(sourceGoal).then((fresh) => {
-        setEditingGoal(fresh);
-        setDrawerOpen(true);
-      });
-    },
-    [baseGoals, fetchGoalForEditing]
-  );
 
   const handleProjectEditOpen = useCallback(
     (
@@ -1280,7 +1139,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
           goalId: goal.id,
           userId: targetUserId,
         });
-        setBaseGoals((prev) => prev.filter((item) => item.id !== goal.id));
         setProjects((prev) =>
           prev.filter(
             (projectGoal) =>
@@ -1294,28 +1152,9 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         console.error("Error deleting goal from skill view:", err);
       }
     },
-    [userId, setBaseGoals, setProjects, setEditingGoal, setDrawerOpen, setUserId]
+    [userId, setProjects, setEditingGoal, setDrawerOpen, setUserId]
   );
 
-  const handleGoalOpenChange = useCallback(
-    (section: ProjectSection, goalId: string, isOpen: boolean) => {
-      const openKey = getProjectOpenKey(section, goalId);
-      if (isOpen) {
-        setOpenProjectKey(openKey);
-        return;
-      }
-      setOpenProjectKey((current) => (current === openKey ? null : current));
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!openProjectKey) return;
-    const [, goalId] = openProjectKey.split(":");
-    if (!goalId || !projects.some((goal) => goal.id === goalId)) {
-      setOpenProjectKey(null);
-    }
-  }, [openProjectKey, projects]);
 
   const handleTaskCreate = useCallback((goalId: string) => {
     const targetGoal = projects.find((goal) => goal.id === goalId);
@@ -1506,64 +1345,91 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
   const renderProjectPanel = useCallback(
     (section: ProjectSection) => {
-      const sectionProjects = projectsBySection[section];
+      const sectionGoals = projectsBySection[section];
+
+      const sectionProjects = sectionGoals.flatMap((goal) =>
+        goal.projects.map((project) => ({
+          goal,
+          project,
+        }))
+      );
 
       if (sectionProjects.length === 0) {
         if (section === "active") {
-          return <div className={projectGridClass}>{renderProjectAddCard()}</div>;
+          return <div className={projectGridClass} />;
         }
 
         return (
-          <div className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5">
+          <div className="flex min-h-[48px] items-center gap-2.5 px-1 py-1.5">
             <span
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
               aria-hidden="true"
             >
               {icon}
             </span>
-            <div className="min-w-0">
-              <h3 className="text-[13px] font-medium leading-tight text-white/84">
-                {section === "completed" ? "No completed projects" : "No active projects"}
-              </h3>
-              <p className="mt-0.5 text-[11px] leading-4 text-white/48">
-                Link a project to this skill to build out your library.
-              </p>
-            </div>
+            <h3 className="text-[12px] font-medium text-white/42">
+              No completed projects
+            </h3>
           </div>
         );
       }
 
-
       return (
         <div className={projectGridClass}>
-          {sectionProjects.map((goal) => (
-            <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
-              <GoalCard
-                goal={goal}
-                showWeight={false}
-                showCreatedAt={false}
-                showEmojiPrefix={false}
-                variant="compact"
-                completionTheme="border"
-                projectDropdownMode="tasks-only"
-                onEdit={() => handleGoalEdit(goal)}
-                open={openProjectKey === getProjectOpenKey(section, goal.id)}
-                onOpenChange={(isOpen) =>
-                  handleGoalOpenChange(section, goal.id, isOpen)
-                }
-                onProjectUpdated={(projectId, updates) =>
-                  handleProjectUpdated(goal.id, projectId, updates)
-                }
-                onProjectEditOpen={(target, project, origin) =>
-                  handleProjectEditOpen(target, project.id, goal.id, origin)
-                }
-                onTaskToggleCompletion={handleTaskToggleCompletion}
-                onAddTask={handleTaskCreate}
-                onProjectDeleted={() => handleProjectDeleted(goal.id)}
-              />
-            </div>
-          ))}
-          {section === "active" ? renderProjectAddCard() : null}
+          {sectionProjects.map(({ goal, project }) => {
+            const projectGoal: Goal = {
+              ...goal,
+              id: project.id,
+              name: project.name,
+              progress: project.progress ?? 0,
+              projects: [project],
+            };
+
+            const projectOpenKey = `${section}:${goal.id}:${project.id}`;
+            const isOpen = openProjectKey === projectOpenKey;
+
+            return (
+              <div
+                key={project.id}
+                className="skill-project-card-wrapper relative z-0 mb-0 w-full min-w-0 overflow-visible"
+              >
+                <GoalCard
+                  goal={projectGoal}
+                  showWeight={false}
+                  showCreatedAt={false}
+                  showEmojiPrefix={false}
+                  variant="library-list"
+                  completionTheme="border"
+                  projectDropdownMode="tasks-only"
+                  onEdit={() =>
+                    handleProjectEditOpen(
+                      "project",
+                      project.id,
+                      goal.id
+                    )
+                  }
+                  open={isOpen}
+                  onOpenChange={(nextOpen) => {
+                    setOpenProjectKey(nextOpen ? projectOpenKey : null);
+                  }}
+                  onProjectUpdated={(projectId, updates) =>
+                    handleProjectUpdated(goal.id, projectId, updates)
+                  }
+                  onProjectEditOpen={(target, targetProject, origin) =>
+                    handleProjectEditOpen(
+                      target,
+                      targetProject.id,
+                      goal.id,
+                      origin
+                    )
+                  }
+                  onTaskToggleCompletion={handleTaskToggleCompletion}
+                  onAddTask={handleTaskCreate}
+                  onProjectDeleted={() => handleProjectDeleted(goal.id)}
+                />
+              </div>
+            );
+          })}
         </div>
       );
     },
@@ -1572,47 +1438,49 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       icon,
       projectGridClass,
       openProjectKey,
-      handleGoalEdit,
-      handleGoalOpenChange,
       handleProjectUpdated,
       handleProjectEditOpen,
       handleProjectDeleted,
       handleTaskCreate,
       handleTaskToggleCompletion,
-      renderProjectAddCard,
     ]
   );
 
   return (
     <div className="skill-projects-list">
       <section className="space-y-0">
-        <div className="flex items-start justify-between gap-3 pb-2">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-              PROJECT LIBRARY
-            </p>
+        <header className="relative px-1 pb-1 pt-1 sm:px-1.5 sm:pt-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/48">
+              PROJECTS
+            </h2>
+
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-2 py-0.5 text-[9px] font-semibold leading-none text-white/48">
+                {filteredProjects.length}
+              </span>
+
+              <button
+                type="button"
+                aria-label="Add project"
+                onClick={handleAddProject}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus-visible:outline-none active:scale-95 sm:h-7 sm:w-7"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-              {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
-            </p>
-            {renderProjectCardDensityToggle()}
-          </div>
-        </div>
+        </header>
         <div className="relative">
           {loading ? (
             <div
               ref={loadingProjectPanelRef}
               className={projectGridClass}
             >
-              {Array.from({ length: isSmallProjectCardDensity ? 8 : 3 }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className={`bg-white/[0.06] ${
-                    isSmallProjectCardDensity
-                      ? "min-h-[70px] rounded-xl"
-                      : "h-[100px] rounded-2xl"
-                  }`}
+                  className="h-[100px] rounded-2xl bg-white/[0.06]"
                 />
               ))}
             </div>
@@ -1662,7 +1530,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
             </div>
           )}
           </div>
-        <div className="-mb-2 flex items-center justify-center gap-1.5 sm:-mb-3">
+        <div className="flex items-center justify-center gap-1.5 pb-1 pt-3 sm:pt-2">
           {(["active", "completed"] as const).map((panel) => {
             const isActive = projectSection === panel;
             return (

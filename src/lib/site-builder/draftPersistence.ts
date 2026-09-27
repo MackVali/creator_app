@@ -110,7 +110,23 @@ function isSiteHeaderConfig(value: unknown) {
     isString(value.brandLabel) &&
     isString(value.tagline) &&
     Array.isArray(value.navigation) &&
-    value.navigation.every(isSiteNavigationItem)
+    value.navigation.every(isSiteNavigationItem) &&
+    (value.alignment === undefined ||
+      value.alignment === "split" ||
+      value.alignment === "left" ||
+      value.alignment === "center" ||
+      value.alignment === "right") &&
+    (value.behavior === undefined ||
+      value.behavior === "static" ||
+      value.behavior === "sticky" ||
+      value.behavior === "fixed") &&
+    (value.edgeSpacing === undefined ||
+      value.edgeSpacing === "compact" ||
+      value.edgeSpacing === "standard" ||
+      value.edgeSpacing === "spacious") &&
+    (value.contentFlow === undefined ||
+      value.contentFlow === "below" ||
+      value.contentFlow === "overlay")
   );
 }
 
