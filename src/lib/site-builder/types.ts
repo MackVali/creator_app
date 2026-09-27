@@ -224,6 +224,11 @@ export type SiteHeaderConfig = {
   brandLabel: string;
   tagline: string;
   navigation: SiteNavigationItem[];
+
+  alignment?: "split" | "left" | "center" | "right";
+  behavior?: "static" | "sticky" | "fixed";
+  edgeSpacing?: "compact" | "standard" | "spacious";
+  contentFlow?: "below" | "overlay";
 };
 
 export type SiteFooterConfig = {

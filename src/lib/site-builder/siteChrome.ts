@@ -26,6 +26,10 @@ export function createDefaultSiteHeader(
     brandLabel,
     tagline: "",
     navigation: [],
+    alignment: "split",
+    behavior: "sticky",
+    edgeSpacing: "standard",
+    contentFlow: "below",
   };
 }
 
@@ -52,6 +56,18 @@ export function getSiteHeaderConfig(
       cloneSiteNavigation(
         site.header.navigation,
       ),
+    alignment:
+      site.header.alignment ??
+      "split",
+    behavior:
+      site.header.behavior ??
+      "sticky",
+    edgeSpacing:
+      site.header.edgeSpacing ??
+      "standard",
+    contentFlow:
+      site.header.contentFlow ??
+      "below",
   };
 }
 

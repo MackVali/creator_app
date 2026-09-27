@@ -74,8 +74,6 @@ import {
 } from "@/lib/site-builder/sectionRegistry";
 import type {
   SiteCatalog,
-  SiteCatalogCollection,
-  SiteCatalogItem,
   SiteContentNodeId,
   SiteDataSource,
   SiteDocument,
@@ -8998,246 +8996,135 @@ function SiteInquiriesInspector({
 
 
 function SiteCatalogInspector({
-  site,
-  onCatalogChange,
+  listings,
+  sourceStatus,
+  sourceError,
+  onLoadSourceListings,
   mobile = false,
 }: {
-  site: SiteDocument;
-  onCatalogChange: (
-    catalog: SiteCatalog,
-  ) => void;
+  listings: SourceListing[];
+  sourceStatus:
+    | "idle"
+    | "loading"
+    | "loaded"
+    | "error";
+  sourceError: string | null;
+  onLoadSourceListings: () => void;
   mobile?: boolean;
 }) {
-  const catalog: SiteCatalog =
-    site.catalog ?? {
-      collections: [],
-      items: [],
-    };
+  useEffect(() => {
+    if (sourceStatus === "idle") {
+      onLoadSourceListings();
+    }
+  }, [
+    sourceStatus,
+    onLoadSourceListings,
+  ]);
 
-  const [title, setTitle] =
-    useState("");
-
-  const [
-    collectionName,
-    setCollectionName,
-  ] = useState("");
-
-  const [
-    uploadResult,
-    setUploadResult,
-  ] = useState<{
-    path: string;
-    url: string;
-  } | null>(null);
-
-  const [
-    uploadStatus,
-    setUploadStatus,
-  ] = useState<
-    "idle" | "uploading" | "error"
-  >("idle");
-
-  const [
-    uploadError,
-    setUploadError,
-  ] = useState<string | null>(
-    null,
-  );
-
-  const itemCount =
-    catalog.items.length;
-
-  const visibleItemCount =
-    catalog.items.filter(
-      (item) => item.visible,
-    ).length;
-
-  async function uploadImage(
-    file: File,
-  ) {
-    setUploadStatus(
-      "uploading",
+  const products =
+    listings.filter(
+      (listing) =>
+        listing.type ===
+        "product",
     );
-    setUploadError(null);
 
-    try {
-      const result =
-        await uploadSiteImage(
-          file,
-        );
+  const services =
+    listings.filter(
+      (listing) =>
+        listing.type ===
+        "service",
+    );
 
-      setUploadResult(result);
-      setUploadStatus("idle");
-    } catch (error) {
-      setUploadStatus("error");
-      setUploadError(
-        error instanceof Error
-          ? error.message
-          : "Unable to upload image.",
-      );
-    }
-  }
+  const commerceCount =
+    products.length +
+    services.length;
 
-  function resolveCollection() {
-    const trimmed =
-      collectionName.trim();
-
-    if (!trimmed) {
-      return {
-        collections:
-          catalog.collections,
-        collectionId:
-          undefined,
-      };
-    }
-
-    const existing =
-      catalog.collections.find(
-        (collection) =>
-          collection.title
-            .trim()
-            .toLowerCase() ===
-          trimmed.toLowerCase(),
-      );
-
-    if (existing) {
-      return {
-        collections:
-          catalog.collections,
-        collectionId:
-          existing.id,
-      };
-    }
-
-    const collection:
-      SiteCatalogCollection = {
-        id:
-          `catalog-collection-${crypto.randomUUID()}`,
-        title: trimmed,
-        slug:
-          slugifyPageTitle(
-            trimmed,
-          ) ||
-          `collection-${catalog.collections.length + 1}`,
-        sortOrder:
-          catalog.collections.reduce(
-            (
-              highest,
-              candidate,
-            ) =>
-              Math.max(
-                highest,
-                candidate.sortOrder,
-              ),
-            -1,
-          ) + 1,
-      };
-
-    return {
-      collections: [
-        ...catalog.collections,
-        collection,
-      ],
-      collectionId:
-        collection.id,
-    };
-  }
-
-  function addItem() {
-    const trimmedTitle =
-      title.trim();
-
+  function statusLabel(
+    status:
+      SourceListing["status"],
+  ) {
     if (
-      !trimmedTitle ||
-      !uploadResult
+      status ===
+      "needs_attention"
     ) {
-      return;
+      return "Needs attention";
     }
 
-    const {
-      collections,
-      collectionId,
-    } =
-      resolveCollection();
-
-    const item:
-      SiteCatalogItem = {
-        id:
-          `catalog-item-${crypto.randomUUID()}`,
-        title:
-          trimmedTitle,
-
-        imageUrl:
-          uploadResult.url,
-        imagePath:
-          uploadResult.path,
-        imageAlt:
-          trimmedTitle,
-
-        collectionId,
-
-        status:
-          "concept",
-
-        visible: true,
-        sortOrder:
-          catalog.items.reduce(
-            (
-              highest,
-              candidate,
-            ) =>
-              Math.max(
-                highest,
-                candidate.sortOrder,
-              ),
-            -1,
-          ) + 1,
-      };
-
-    onCatalogChange({
-      collections,
-      items: [
-        ...catalog.items,
-        item,
-      ],
-    });
-
-    setTitle("");
-    setCollectionName("");
-    setUploadResult(null);
-    setUploadStatus("idle");
-    setUploadError(null);
+    return (
+      status
+        .charAt(0)
+        .toUpperCase() +
+      status
+        .slice(1)
+        .replaceAll("_", " ")
+    );
   }
 
-  function updateItem(
-    itemId: string,
-    updater: (
-      item: SiteCatalogItem,
-    ) => SiteCatalogItem,
+  function renderListing(
+    listing: SourceListing,
   ) {
-    onCatalogChange({
-      ...catalog,
-      items:
-        catalog.items.map(
-          (item) =>
-            item.id === itemId
-              ? updater(item)
-              : item,
-        ),
-    });
-  }
+    const card =
+      normalizeSourceListingCardProps(
+        listing,
+      );
 
-  function deleteItem(
-    itemId: string,
-  ) {
-    onCatalogChange({
-      ...catalog,
-      items:
-        catalog.items.filter(
-          (item) =>
-            item.id !== itemId,
-        ),
-    });
+    return (
+      <div
+        key={listing.id}
+        className="flex min-h-[68px] gap-3 border-b border-white/[0.045] py-2.5 last:border-b-0"
+      >
+        <div className="relative h-[58px] w-[48px] shrink-0 overflow-hidden rounded-[5px] bg-white/[0.025]">
+          {card.image ? (
+            <img
+              src={card.image}
+              alt={listing.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <ImageIcon className="h-3.5 w-3.5 text-zinc-700" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-medium text-zinc-250">
+                {listing.title}
+              </p>
+
+              <p className="mt-1 truncate text-[9px] text-zinc-650">
+                {listing.type ===
+                "product"
+                  ? "Product"
+                  : "Service"}
+                {" · "}
+                {statusLabel(
+                  listing.status,
+                )}
+              </p>
+            </div>
+
+            {card.priceLabel ? (
+              <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
+                {
+                  card.priceLabel
+                }
+              </span>
+            ) : null}
+          </div>
+
+          {listing.description ? (
+            <p className="mt-1 line-clamp-1 text-[9px] leading-4 text-zinc-700">
+              {
+                listing.description
+              }
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -9262,21 +9149,38 @@ function SiteCatalogInspector({
             </p>
 
             <p className="mt-1 text-[11px] text-zinc-600">
-              {itemCount} item
-              {itemCount === 1
-                ? ""
-                : "s"}{" "}
-              · {visibleItemCount} visible
+              {products.length}{" "}
+              {products.length === 1
+                ? "product"
+                : "products"}
+              {" · "}
+              {services.length}{" "}
+              {services.length === 1
+                ? "service"
+                : "services"}
             </p>
           </div>
 
-          <Package
-            className={
-              mobile
-                ? "mt-1 h-5 w-5 text-zinc-600"
-                : "mt-0.5 h-4 w-4 text-zinc-600"
+          <button
+            type="button"
+            onClick={
+              onLoadSourceListings
             }
-          />
+            disabled={
+              sourceStatus ===
+              "loading"
+            }
+            aria-label="Refresh catalog"
+            title="Refresh catalog"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.035] hover:text-zinc-300 disabled:cursor-not-allowed"
+          >
+            {sourceStatus ===
+            "loading" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Package className="h-3.5 w-3.5" />
+            )}
+          </button>
         </div>
       </div>
 
@@ -9287,350 +9191,103 @@ function SiteCatalogInspector({
             : "space-y-5 p-4"
         }
       >
-        <InspectorGroup title="Quick add">
-          <div className="space-y-3">
-            <div
-              className={`relative overflow-hidden rounded-lg border border-white/[0.08] bg-black/25 ${
-                mobile
-                  ? "aspect-[4/5]"
-                  : "aspect-[4/3]"
-              }`}
-            >
-              {uploadResult ? (
-                <img
-                  src={
-                    uploadResult.url
-                  }
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
-                  <ImageIcon className="h-5 w-5" />
-                  <span className="text-[10px] uppercase tracking-[0.14em]">
-                    Product image
-                  </span>
-                </div>
-              )}
+        <div>
+          <p className="text-[10px] leading-4 text-zinc-600">
+            Catalog is synced from
+            your real products and
+            services. Site Builder
+            does not create separate
+            inventory.
+          </p>
+        </div>
 
-              <label className="absolute inset-0 cursor-pointer">
-                <span className="sr-only">
-                  Upload product
-                  image
-                </span>
-
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                  disabled={
-                    uploadStatus ===
-                    "uploading"
-                  }
-                  className="hidden"
-                  onChange={(
-                    event,
-                  ) => {
-                    const input =
-                      event.currentTarget;
-
-                    const file =
-                      input.files?.[0];
-
-                    if (!file) {
-                      return;
-                    }
-
-                    void uploadImage(
-                      file,
-                    ).finally(
-                      () => {
-                        input.value =
-                          "";
-                      },
-                    );
-                  }}
-                />
-              </label>
-
-              <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-black/70 px-2.5 py-1.5 text-[10px] font-medium text-zinc-200 backdrop-blur">
-                {uploadStatus ===
-                "uploading"
-                  ? "Uploading…"
-                  : uploadResult
-                    ? "Tap to replace"
-                    : "Tap to add photo"}
-              </div>
-            </div>
-
-            {uploadError ? (
-              <p className="rounded-md border border-red-300/15 bg-red-300/[0.04] px-3 py-2 text-[10px] leading-4 text-red-200/80">
-                {uploadError}
-              </p>
-            ) : null}
-
-            <TextInput
-              id={
-                mobile
-                  ? "mobile-catalog-item-name"
-                  : "catalog-item-name"
-              }
-              label="Product name"
-              value={title}
-              onChange={setTitle}
-              placeholder="Washed Logo Hoodie"
-            />
-
-            <div>
-              <TextInput
-                id={
-                  mobile
-                    ? "mobile-catalog-collection"
-                    : "catalog-collection"
-                }
-                label="Collection"
-                value={
-                  collectionName
-                }
-                onChange={
-                  setCollectionName
-                }
-                placeholder="Collection 01"
-              />
-
-              {catalog.collections
-                .length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {catalog.collections
-                    .slice()
-                    .sort(
-                      (a, b) =>
-                        a.sortOrder -
-                        b.sortOrder,
-                    )
-                    .map(
-                      (
-                        collection,
-                      ) => (
-                        <button
-                          key={
-                            collection.id
-                          }
-                          type="button"
-                          onClick={() =>
-                            setCollectionName(
-                              collection.title,
-                            )
-                          }
-                          className={`rounded-full border px-2.5 py-1 text-[9px] transition ${
-                            collectionName
-                              .trim()
-                              .toLowerCase() ===
-                            collection.title
-                              .trim()
-                              .toLowerCase()
-                              ? "border-white/20 bg-white/[0.08] text-zinc-200"
-                              : "border-white/[0.07] text-zinc-600 hover:border-white/[0.14] hover:text-zinc-300"
-                          }`}
-                        >
-                          {
-                            collection.title
-                          }
-                        </button>
-                      ),
-                    )}
-                </div>
-              ) : null}
-            </div>
+        {sourceStatus ===
+        "error" ? (
+          <div className="rounded-md border border-red-300/15 bg-red-300/[0.035] px-3 py-2.5">
+            <p className="text-[10px] leading-4 text-red-200/80">
+              {sourceError ??
+                "Unable to load catalog."}
+            </p>
 
             <button
               type="button"
-              onClick={addItem}
-              disabled={
-                !title.trim() ||
-                !uploadResult ||
-                uploadStatus ===
-                  "uploading"
+              onClick={
+                onLoadSourceListings
               }
-              className={`flex w-full items-center justify-center gap-2 rounded-md bg-zinc-100 font-medium text-black transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 ${
-                mobile
-                  ? "h-11 text-[13px]"
-                  : "h-9 text-[11px]"
-              }`}
+              className="mt-2 text-[9px] font-medium text-red-100/70 transition hover:text-red-100"
             >
-              <Plus className="h-4 w-4" />
-              Add to catalog
+              Try again
             </button>
           </div>
-        </InspectorGroup>
+        ) : null}
 
-        <InspectorGroup title="Products">
-          {catalog.items.length >
-          0 ? (
-            <div className="space-y-2">
-              {catalog.items
-                .slice()
-                .sort(
-                  (a, b) =>
-                    a.sortOrder -
-                    b.sortOrder,
-                )
-                .map((item) => {
-                  const collection =
-                    catalog.collections.find(
-                      (
-                        candidate,
-                      ) =>
-                        candidate.id ===
-                        item.collectionId,
-                    );
+        {sourceStatus ===
+          "loading" &&
+        commerceCount === 0 ? (
+          <div className="flex items-center gap-2 py-4 text-[10px] text-zinc-600">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading catalog…
+          </div>
+        ) : null}
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="group flex gap-3 rounded-md border border-white/[0.07] bg-white/[0.015] p-2"
-                    >
-                      <div className="relative h-[74px] w-[60px] shrink-0 overflow-hidden rounded-[5px] bg-white/[0.03]">
-                        <img
-                          src={
-                            item.imageUrl
-                          }
-                          alt={
-                            item.imageAlt
-                          }
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
-                      </div>
+        {sourceStatus ===
+          "loaded" &&
+        commerceCount === 0 ? (
+          <div className="py-6 text-center">
+            <Package className="mx-auto h-5 w-5 text-zinc-700" />
 
-                      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-[11px] font-medium text-zinc-200">
-                            {
-                              item.title
-                            }
-                          </p>
+            <p className="mt-3 text-[11px] text-zinc-400">
+              No products or services
+              yet.
+            </p>
 
-                          <p className="mt-1 truncate text-[9px] text-zinc-600">
-                            {collection?.title ??
-                              "Unsorted"}{" "}
-                            ·{" "}
-                            {
-                              item.status
-                            }
-                          </p>
-                        </div>
+            <p className="mx-auto mt-1 max-w-[220px] text-[9px] leading-4 text-zinc-700">
+              Products and services
+              you create in CREATOR
+              will appear here
+              automatically.
+            </p>
+          </div>
+        ) : null}
 
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateItem(
-                                item.id,
-                                (
-                                  current,
-                                ) => ({
-                                  ...current,
-                                  visible:
-                                    !current.visible,
-                                }),
-                              )
-                            }
-                            className={`flex h-6 items-center gap-1 rounded px-1.5 text-[9px] transition ${
-                              item.visible
-                                ? "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
-                                : "text-zinc-700 hover:bg-white/[0.03] hover:text-zinc-400"
-                            }`}
-                          >
-                            {item.visible ? (
-                              <Eye className="h-3 w-3" />
-                            ) : (
-                              <EyeOff className="h-3 w-3" />
-                            )}
-
-                            {item.visible
-                              ? "Visible"
-                              : "Hidden"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              deleteItem(
-                                item.id,
-                              )
-                            }
-                            className="flex h-6 items-center gap-1 rounded px-1.5 text-[9px] text-zinc-700 transition hover:bg-red-300/[0.04] hover:text-red-200"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed border-white/[0.08] px-4 py-8 text-center">
-              <Package className="mx-auto h-5 w-5 text-zinc-700" />
-
-              <p className="mt-3 text-[11px] text-zinc-400">
-                Your catalog is
-                empty.
+        {products.length > 0 ? (
+          <section>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+                Products
               </p>
 
-              <p className="mt-1 text-[10px] leading-4 text-zinc-700">
-                Upload a concept,
-                mockup, sample, or
-                future product.
+              <span className="text-[9px] tabular-nums text-zinc-700">
+                {products.length}
+              </span>
+            </div>
+
+            <div>
+              {products.map(
+                renderListing,
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {services.length > 0 ? (
+          <section>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+                Services
               </p>
+
+              <span className="text-[9px] tabular-nums text-zinc-700">
+                {services.length}
+              </span>
             </div>
-          )}
-        </InspectorGroup>
 
-        {catalog.collections
-          .length > 0 ? (
-          <InspectorGroup title="Collections">
-            <div className="space-y-1">
-              {catalog.collections
-                .slice()
-                .sort(
-                  (a, b) =>
-                    a.sortOrder -
-                    b.sortOrder,
-                )
-                .map(
-                  (
-                    collection,
-                  ) => {
-                    const count =
-                      catalog.items.filter(
-                        (item) =>
-                          item.collectionId ===
-                          collection.id,
-                      ).length;
-
-                    return (
-                      <div
-                        key={
-                          collection.id
-                        }
-                        className="flex h-8 items-center gap-2 border-b border-white/[0.045] px-1 last:border-b-0"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">
-                          {
-                            collection.title
-                          }
-                        </span>
-
-                        <span className="text-[9px] tabular-nums text-zinc-700">
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  },
-                )}
+            <div>
+              {services.map(
+                renderListing,
+              )}
             </div>
-          </InspectorGroup>
+          </section>
         ) : null}
       </div>
     </>
@@ -9880,7 +9537,13 @@ function SiteChromeInspector({
   onSiteHandleChange: (value: string) => void;
   onThemeChange: (theme: SiteThemeConfig) => void;
   onHeaderChange: (
-    key: "brandLabel" | "tagline",
+    key:
+      | "brandLabel"
+      | "tagline"
+      | "alignment"
+      | "behavior"
+      | "edgeSpacing"
+      | "contentFlow",
     value: string,
   ) => void;
   onFooterChange: (
@@ -9934,87 +9597,71 @@ function SiteChromeInspector({
   if (selection === "site") {
     return (
       <>
-        <div className="border-b border-white/[0.07] px-4 py-3">
+        <div className="border-b border-white/[0.06] px-4 py-3">
           <p className="text-[15px] font-medium text-zinc-100">
             Site
           </p>
           <p className="mt-0.5 text-[11px] text-zinc-600">
-            Site settings
+            Identity and site behavior
           </p>
         </div>
 
-        <div className="space-y-4 p-4">
-          <InspectorGroup title="Site">
-            <div className="space-y-2">
-              <div>
-                <FieldLabel htmlFor="site-switcher">
-                  Current site
-                </FieldLabel>
+        <div className="px-4 py-4">
+          <section>
+            <p className="mb-2 text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Current site
+            </p>
 
-                <select
-                  id="site-switcher"
-                  value={
-                    activeSiteId ??
-                    ""
+            <div className="flex gap-1.5">
+              <select
+                id="site-switcher"
+                value={activeSiteId ?? ""}
+                onChange={(event) => {
+                  const nextId =
+                    event.target.value;
+
+                  if (
+                    !nextId ||
+                    nextId === activeSiteId
+                  ) {
+                    return;
                   }
-                  onChange={(
-                    event,
-                  ) => {
-                    const nextId =
-                      event.target
-                        .value;
 
-                    if (
-                      !nextId ||
-                      nextId ===
-                        activeSiteId
-                    ) {
-                      return;
-                    }
-
-                    onSwitchSite(
-                      nextId,
-                    );
-                  }}
-                  className="mt-1.5 h-8 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.14]"
-                >
-                  {sites.map(
-                    (
-                      option,
-                    ) => (
-                      <option
-                        key={
-                          option.id
-                        }
-                        value={
-                          option.id
-                        }
-                      >
-                        {
-                          option.name ||
-                          option.handle ||
-                          "Untitled site"
-                        }
-                      </option>
-                    ),
-                  )}
-                </select>
-              </div>
+                  onSwitchSite(nextId);
+                }}
+                className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.07] bg-black/20 px-2 text-[11px] text-zinc-300 outline-none focus:border-white/[0.14]"
+              >
+                {sites.map((option) => (
+                  <option
+                    key={option.id}
+                    value={option.id}
+                  >
+                    {option.name ||
+                      option.handle ||
+                      "Untitled site"}
+                  </option>
+                ))}
+              </select>
 
               <button
                 type="button"
-                onClick={
-                  onCreateSite
-                }
-                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] text-[10px] text-zinc-500 transition hover:border-white/[0.15] hover:bg-white/[0.025] hover:text-zinc-200"
+                onClick={onCreateSite}
+                aria-label="New site"
+                title="New site"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/[0.07] text-zinc-500 transition hover:border-white/[0.14] hover:bg-white/[0.025] hover:text-zinc-200"
               >
                 <Plus className="h-3.5 w-3.5" />
-                New site
               </button>
             </div>
-          </InspectorGroup>
+          </section>
 
-          <InspectorGroup title="Identity">
+          <div className="my-4 h-px bg-white/[0.055]" />
+
+          <section className="space-y-3">
+            <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Identity
+            </p>
+
             <TextInput
               id="site-name"
               label="Site name"
@@ -10026,14 +9673,14 @@ function SiteChromeInspector({
             <div>
               <TextInput
                 id="site-handle"
-                label="Public handle"
+                label="Handle"
                 value={site.handle}
                 onChange={onSiteHandleChange}
                 placeholder="my-site"
               />
 
               <p
-                className={`mt-1.5 text-[10px] ${
+                className={`mt-1.5 truncate text-[10px] ${
                   handleValid
                     ? "text-zinc-600"
                     : "text-red-200/70"
@@ -10044,20 +9691,151 @@ function SiteChromeInspector({
                   : "Enter a valid public handle."}
               </p>
             </div>
-          </InspectorGroup>
+          </section>
 
-          <div className="rounded-md border border-white/[0.08] bg-black/20 px-3 py-2.5">
-            <p className="text-[11px] font-medium text-zinc-300">
-              Public address
+          <div className="my-4 h-px bg-white/[0.055]" />
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+                Site chrome
+              </p>
+
+              <p className="mt-1 text-[10px] leading-4 text-zinc-700">
+                Position the site identity and navigation around the page.
+              </p>
+            </div>
+
+            <InspectorSegmentedControl
+              label="Anchor"
+              value={
+                header.alignment ??
+                "split"
+              }
+              options={[
+                {
+                  label: "Split",
+                  value: "split",
+                },
+                {
+                  label: "Left",
+                  value: "left",
+                },
+                {
+                  label: "Center",
+                  value: "center",
+                },
+                {
+                  label: "Right",
+                  value: "right",
+                },
+              ]}
+              onChange={(value) =>
+                onHeaderChange(
+                  "alignment",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSegmentedControl
+              label="Behavior"
+              value={
+                header.behavior ??
+                "sticky"
+              }
+              options={[
+                {
+                  label: "Static",
+                  value: "static",
+                },
+                {
+                  label: "Sticky",
+                  value: "sticky",
+                },
+                {
+                  label: "Fixed",
+                  value: "fixed",
+                },
+              ]}
+              onChange={(value) =>
+                onHeaderChange(
+                  "behavior",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSegmentedControl
+              label="Edge spacing"
+              value={
+                header.edgeSpacing ??
+                "standard"
+              }
+              options={[
+                {
+                  label: "Tight",
+                  value: "compact",
+                },
+                {
+                  label: "Regular",
+                  value: "standard",
+                },
+                {
+                  label: "Airy",
+                  value: "spacious",
+                },
+              ]}
+              onChange={(value) =>
+                onHeaderChange(
+                  "edgeSpacing",
+                  value,
+                )
+              }
+            />
+
+            <InspectorSegmentedControl
+              label="Content flow"
+              value={
+                header.contentFlow ??
+                "below"
+              }
+              options={[
+                {
+                  label: "Below",
+                  value: "below",
+                },
+                {
+                  label: "Overlay",
+                  value: "overlay",
+                },
+              ]}
+              onChange={(value) =>
+                onHeaderChange(
+                  "contentFlow",
+                  value,
+                )
+              }
+            />
+          </section>
+
+          <div className="my-4 h-px bg-white/[0.055]" />
+
+          <section>
+            <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-zinc-650">
+              Publishing
             </p>
-            <p className="mt-1 break-all text-[11px] text-zinc-600">
-              /portfolio/{site.handle || "your-handle"}
-            </p>
-            <p className="mt-2 text-[10px] leading-4 text-zinc-700">
-              Changing the handle changes the site address the next
-              time you publish.
-            </p>
-          </div>
+
+            <div className="mt-2 flex items-center justify-between gap-3 py-1">
+              <span className="text-[11px] text-zinc-500">
+                Public address
+              </span>
+
+              <span className="min-w-0 truncate text-right text-[10px] text-zinc-600">
+                /portfolio/{site.handle || "your-handle"}
+              </span>
+            </div>
+          </section>
         </div>
       </>
     );
@@ -12219,20 +11997,65 @@ export default function SiteBuilder() {
   }
 
   function updateSiteHeaderField(
-    key: "brandLabel" | "tagline",
+    key:
+      | "brandLabel"
+      | "tagline"
+      | "alignment"
+      | "behavior"
+      | "edgeSpacing"
+      | "contentFlow",
     value: string,
   ) {
     if (editorLocked) return;
 
     setSite((current) => {
-      const header = getSiteHeaderConfig(current);
+      const header =
+        getSiteHeaderConfig(current);
+
+      const nextHeader = {
+        ...header,
+      };
+
+      if (
+        key === "brandLabel" ||
+        key === "tagline"
+      ) {
+        nextHeader[key] = value;
+      } else if (
+        key === "alignment"
+      ) {
+        nextHeader.alignment =
+          value as
+            | "split"
+            | "left"
+            | "center"
+            | "right";
+      } else if (
+        key === "behavior"
+      ) {
+        nextHeader.behavior =
+          value as
+            | "static"
+            | "sticky"
+            | "fixed";
+      } else if (
+        key === "edgeSpacing"
+      ) {
+        nextHeader.edgeSpacing =
+          value as
+            | "compact"
+            | "standard"
+            | "spacious";
+      } else {
+        nextHeader.contentFlow =
+          value as
+            | "below"
+            | "overlay";
+      }
 
       return {
         ...current,
-        header: {
-          ...header,
-          [key]: value,
-        },
+        header: nextHeader,
       };
     });
   }
@@ -12270,17 +12093,6 @@ export default function SiteBuilder() {
         },
       };
     });
-  }
-
-  function updateSiteCatalog(
-    catalog: SiteCatalog,
-  ) {
-    if (editorLocked) return;
-
-    setSite((current) => ({
-      ...current,
-      catalog,
-    }));
   }
 
   function updateStorefrontPage(
@@ -14010,9 +13822,17 @@ export default function SiteBuilder() {
 
       <div className="min-h-[100dvh] bg-[#090a0b] lg:hidden">
         <SiteCatalogInspector
-          site={site}
-          onCatalogChange={
-            updateSiteCatalog
+          listings={
+            sourceListings
+          }
+          sourceStatus={
+            sourceStatus
+          }
+          sourceError={
+            sourceError
+          }
+          onLoadSourceListings={
+            loadSourceListings
           }
           mobile
         />
@@ -14175,13 +13995,39 @@ export default function SiteBuilder() {
                 Catalog
               </span>
 
-              {site.catalog?.items
-                .length ? (
+              {sourceProducts.length +
+                sourceServices.length >
+              0 ? (
                 <span className="text-[9px] tabular-nums text-zinc-700">
-                  {
-                    site.catalog
-                      .items.length
-                  }
+                  {sourceProducts.length +
+                    sourceServices.length}
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                selectSiteChrome(
+                  "navigation",
+                )
+              }
+              className={`mb-1 flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition ${
+                siteChromeSelection ===
+                "navigation"
+                  ? "bg-white/[0.06] text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+              }`}
+            >
+              <Menu className="h-3.5 w-3.5 text-zinc-500" />
+
+              <span className="min-w-0 flex-1 font-medium">
+                Navigation
+              </span>
+
+              {site.header?.navigation.length ? (
+                <span className="text-[9px] tabular-nums text-zinc-700">
+                  {site.header?.navigation.length}
                 </span>
               ) : null}
             </button>
@@ -14213,18 +14059,6 @@ export default function SiteBuilder() {
                 Brand
               </button>
 
-              <button
-                type="button"
-                onClick={() => selectSiteChrome("navigation")}
-                className={`flex h-6 w-full items-center gap-2 rounded-sm px-2 text-left text-[11px] transition ${
-                  siteChromeSelection === "navigation"
-                    ? "bg-white/[0.04] text-zinc-100"
-                    : "text-zinc-600 hover:bg-white/[0.02] hover:text-zinc-400"
-                }`}
-              >
-                <Menu className="h-3 w-3 text-zinc-700" />
-                Navigation
-              </button>
             </div>
           </div>
 
@@ -14897,9 +14731,17 @@ export default function SiteBuilder() {
             />
           ) : siteChromeSelection === "catalog" ? (
             <SiteCatalogInspector
-              site={site}
-              onCatalogChange={
-                updateSiteCatalog
+              listings={
+                sourceListings
+              }
+              sourceStatus={
+                sourceStatus
+              }
+              sourceError={
+                sourceError
+              }
+              onLoadSourceListings={
+                loadSourceListings
               }
             />
           ) : siteChromeSelection ===
