@@ -1557,22 +1557,45 @@ function TransactionTypeSegment({
   onChange: (value: ManualTransactionType) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-white/[0.035] p-1">
-      {(["expense", "income"] as const).map((type) => (
-        <button
-          key={type}
-          type="button"
-          onClick={() => onChange(type)}
-          className={cn(
-            "min-h-9 rounded-lg px-3 text-xs font-semibold capitalize transition",
-            value === type
-              ? "bg-white text-black"
-              : "text-white/54 hover:bg-white/[0.055] hover:text-white/78"
-          )}
-        >
-          {type}
-        </button>
-      ))}
+    <div
+      className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
+      aria-label="Transaction type"
+    >
+      {(["expense", "income"] as const).map((type) => {
+        const isSelected = value === type;
+
+        return (
+          <button
+            key={type}
+            type="button"
+            aria-pressed={isSelected}
+            onClick={() => onChange(type)}
+            className={cn(
+              "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
+              isSelected
+                ? "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
+                : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200",
+            )}
+          >
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span
+                className="inline-block text-[16px] font-black leading-none"
+                style={{
+                  color:
+                    type === "expense"
+                      ? "#813D58"
+                      : "#4A8557",
+                }}
+                aria-hidden="true"
+              >
+                {type === "expense" ? "▼" : "▲"}
+              </span>
+
+              <span>{type === "expense" ? "EXPENSE" : "INCOME"}</span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1624,38 +1647,42 @@ function RecurringTypeSegment({
   onChange: (value: ManualRecurringType) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 rounded-xl border border-white/[0.075] bg-white/[0.035] p-1">
-      {[
-        { value: "expense", label: "Expense" },
-        { value: "income", label: "Income" },
-      ].map((option) => {
+    <div
+      className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
+      aria-label="Scheduled money type"
+    >
+      {(["expense", "income"] as const).map((type) => {
+        const isSelected = value === type;
+
         return (
           <button
-            key={option.value}
+            key={type}
             type="button"
-            onClick={() => onChange(option.value as ManualRecurringType)}
+            aria-pressed={isSelected}
+            onClick={() => onChange(type)}
             className={cn(
-              "min-h-10 rounded-lg border px-3 text-xs font-semibold transition",
-              value === option.value && option.value === "expense"
-                ? "border-rose-200/15 bg-rose-100/[0.09] text-rose-50/90"
-                : value === option.value
-                  ? "border-emerald-200/15 bg-emerald-100/[0.09] text-emerald-50/90"
-                  : "border-transparent text-white/46 hover:bg-white/[0.055] hover:text-white/78",
+              "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
+              isSelected
+                ? "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
+                : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200",
             )}
           >
-            <span
-              className="mr-1.5 inline-block text-[17px] font-black leading-none"
-              style={{
-                color:
-                  option.value === "expense"
-                    ? "#813D58"
-                    : "#4A8557",
-              }}
-              aria-hidden="true"
-            >
-              {option.value === "expense" ? "▼" : "▲"}
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span
+                className="inline-block text-[16px] font-black leading-none"
+                style={{
+                  color:
+                    type === "expense"
+                      ? "#813D58"
+                      : "#4A8557",
+                }}
+                aria-hidden="true"
+              >
+                {type === "expense" ? "▼" : "▲"}
+              </span>
+
+              <span>{type === "expense" ? "EXPENSE" : "INCOME"}</span>
             </span>
-            {option.label}
           </button>
         );
       })}
@@ -3241,7 +3268,7 @@ export function MoneyAreaDashboard() {
   const [budgetError, setBudgetError] = useState<string | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [workspace, setWorkspace] = useState<"activity" | "budget" | "forecast">(
-    "budget"
+    "activity"
   );
   const [projectionHorizonDays, setProjectionHorizonDays] =
     useState<ProjectionHorizonDays>(30);
@@ -3267,20 +3294,6 @@ export function MoneyAreaDashboard() {
       setIconError(null);
     }
   }, [workspace]);
-
-  const editorOpen =
-    addOpen ||
-    editingAccountId !== null ||
-    transactionFormOpen ||
-    recurringFormOpen ||
-    editingRecurringId !== null ||
-    budgetFormOpen ||
-    editingBudgetId !== null;
-
-  useEffect(() => {
-    document.body.classList.toggle("fab-panel-active", editorOpen);
-    return () => document.body.classList.remove("fab-panel-active");
-  }, [editorOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4559,6 +4572,14 @@ export function MoneyAreaDashboard() {
   const budgetsLoading =
     authLoading || (budgetsQuery.isPending && Boolean(userId));
   const hasAccounts = accounts.length > 0;
+  const accountSummaryLoading =
+    authLoading || (accountsQuery.isPending && Boolean(userId));
+  const availableSummaryLoading =
+    accountSummaryLoading ||
+    (recurringItemsQuery.isPending && Boolean(userId));
+  const balanceHistoryLoading =
+    accountSummaryLoading ||
+    (balanceHistoryQuery.isPending && Boolean(userId));
 
   return (
     <div className="space-y-2 py-2 sm:space-y-3 sm:py-3">
@@ -4573,8 +4594,15 @@ export function MoneyAreaDashboard() {
               <p className="text-[11px] font-semibold tracking-[-0.01em] text-white/64">
                 Available
               </p>
-              <p className="mt-1 text-[2rem] font-semibold tabular-nums tracking-[-0.045em] text-white">
-                {formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)}
+              <p className="mt-1 min-h-[2.5rem] text-[2rem] font-semibold tabular-nums tracking-[-0.045em] text-white">
+                {availableSummaryLoading ? (
+                  <span
+                    className="inline-block h-8 w-28 animate-pulse rounded-md bg-white/[0.08]"
+                    aria-label="Loading available balance"
+                  />
+                ) : (
+                  formatMoneyFromMinor(safeToSpendSummary.safeToSpendMinor)
+                )}
               </p>
             </div>
 
@@ -4600,21 +4628,30 @@ export function MoneyAreaDashboard() {
                 />
               </div>
 
-              <svg
-                viewBox="0 0 94 34"
-                className="h-[34px] w-[94px] overflow-visible"
-                role="img"
-                aria-label={`${dashboardRange} available cash history`}
-              >
-                <path
-                  d={moneyBalanceSparkline.path}
-                  fill="none"
-                  stroke={moneyBalanceSparkline.color}
-                  strokeWidth="2.25"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <div className="flex h-[34px] w-[94px] items-center justify-end">
+                {balanceHistoryLoading ? (
+                  <span
+                    className="h-[22px] w-[82px] animate-pulse rounded-md bg-white/[0.055]"
+                    aria-label="Loading balance history"
+                  />
+                ) : (
+                  <svg
+                    viewBox="0 0 94 34"
+                    className="h-[34px] w-[94px] overflow-visible"
+                    role="img"
+                    aria-label={`${dashboardRange} available cash history`}
+                  >
+                    <path
+                      d={moneyBalanceSparkline.path}
+                      fill="none"
+                      stroke={moneyBalanceSparkline.color}
+                      strokeWidth="2.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -4671,7 +4708,7 @@ export function MoneyAreaDashboard() {
               </dt>
 
               <dd
-                className="mt-1 truncate text-sm font-semibold tabular-nums"
+                className="mt-1 flex min-h-5 items-center justify-center truncate text-sm font-semibold tabular-nums"
                 style={{
                   color:
                     (label === "Debt" && Number(value) > 0) ||
@@ -4680,13 +4717,24 @@ export function MoneyAreaDashboard() {
                       : "rgba(255,255,255,0.82)",
                 }}
               >
-                {formatMoneyFromMinor(Number(value))}
+                {accountSummaryLoading ? (
+                  <span
+                    className="inline-block h-4 w-14 animate-pulse rounded bg-white/[0.07]"
+                    aria-label={`Loading ${label.toLowerCase()}`}
+                  />
+                ) : (
+                  formatMoneyFromMinor(Number(value))
+                )}
               </dd>
 
-              <dd className="mt-0.5 text-[9px] text-white/30">
-                {accountCount === null
-                  ? "Net position"
-                  : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`}
+              <dd className="mt-0.5 min-h-[14px] text-[9px] text-white/30">
+                {accountSummaryLoading ? (
+                  <span className="inline-block h-2.5 w-12 animate-pulse rounded bg-white/[0.045]" />
+                ) : accountCount === null ? (
+                  "Net position"
+                ) : (
+                  `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`
+                )}
               </dd>
             </button>
           ))}
