@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -106,6 +107,11 @@ type FabOfferSheetProps = {
   ) => void;
 };
 
+type OfferSheetGeometry = {
+  top: number;
+  height: number;
+};
+
 const INITIAL_DRAFT: OfferDraft = {
   title: "",
   description: "",
@@ -193,6 +199,20 @@ function formatOfferTypeLabel(
     : "service";
 }
 
+function isOfferEditableElement(
+  element: Element | null,
+) {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    (
+      element instanceof HTMLElement &&
+      element.isContentEditable
+    )
+  );
+}
+
 export default function FabOfferSheet({
   open,
   onOpenChange,
@@ -246,6 +266,14 @@ export default function FabOfferSheet({
       null,
     );
 
+  const [
+    sheetGeometry,
+    setSheetGeometry,
+  ] =
+    useState<OfferSheetGeometry | null>(
+      null,
+    );
+
   const imageInputRef =
     useRef<HTMLInputElement | null>(
       null,
@@ -255,6 +283,117 @@ export default function FabOfferSheet({
     useRef<string | null>(
       null,
     );
+
+  useLayoutEffect(() => {
+    if (
+      !open ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      setSheetGeometry(null);
+      return;
+    }
+
+    const activeElement =
+      document.activeElement;
+
+    if (
+      isOfferEditableElement(
+        activeElement,
+      ) &&
+      activeElement instanceof
+        HTMLElement
+    ) {
+      activeElement.blur();
+    }
+
+    const captureGeometry = () => {
+      const viewportHeight =
+        window.innerHeight ||
+        document.documentElement
+          .clientHeight ||
+        0;
+
+      if (
+        !Number.isFinite(
+          viewportHeight,
+        ) ||
+        viewportHeight <= 0
+      ) {
+        return;
+      }
+
+      const sheetHeight =
+        Math.min(
+          740,
+          Math.round(
+            viewportHeight *
+              0.92,
+          ),
+          Math.max(
+            0,
+            viewportHeight - 32,
+          ),
+        );
+
+      setSheetGeometry({
+        top: Math.max(
+          0,
+          viewportHeight -
+            sheetHeight,
+        ),
+        height:
+          sheetHeight,
+      });
+    };
+
+    captureGeometry();
+
+    const handleResize = () => {
+      // On iOS / WKWebView the software keyboard commonly
+      // changes viewport height. Do NOT recalculate the sheet
+      // while an editable control owns focus, otherwise the
+      // whole Add Offer UI jumps upward with the keyboard.
+      if (
+        isOfferEditableElement(
+          document.activeElement,
+        )
+      ) {
+        return;
+      }
+
+      captureGeometry();
+    };
+
+    const handleOrientationChange =
+      () => {
+        window.requestAnimationFrame(
+          captureGeometry,
+        );
+      };
+
+    window.addEventListener(
+      "resize",
+      handleResize,
+    );
+
+    window.addEventListener(
+      "orientationchange",
+      handleOrientationChange,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        handleResize,
+      );
+
+      window.removeEventListener(
+        "orientationchange",
+        handleOrientationChange,
+      );
+    };
+  }, [open]);
 
   useEffect(() => {
     setMounted(true);
@@ -1687,6 +1826,20 @@ export default function FabOfferSheet({
               duration: 0.28,
             }}
             className="absolute bottom-0 left-0 right-0 z-10 h-[min(92dvh,740px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_2rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+            style={
+              sheetGeometry
+                ? {
+                    top:
+                      sheetGeometry.top,
+                    bottom:
+                      "auto",
+                    height:
+                      sheetGeometry.height,
+                    maxHeight:
+                      sheetGeometry.height,
+                  }
+                : undefined
+            }
             onClick={(
               event,
             ) =>
@@ -1765,7 +1918,6 @@ export default function FabOfferSheet({
 
                   <div className="pt-1">
                     <input
-                      autoFocus
                       value={
                         draft.title
                       }
